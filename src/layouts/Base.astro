@@ -22,8 +22,14 @@ const {
 } = Astro.props;
 
 const pageTitle = title ? `${title} — ${SITE.name}` : `${SITE.name} — ${SITE.tagline}`;
-const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url.origin).toString();
-const ogImage = image ? new URL(image, Astro.site ?? Astro.url.origin).toString() : null;
+
+// Absolute URLs follow the host actually being served, not the configured
+// `site`. On production those are the same. On the preview deployment they are
+// not, and using `site` would point every Telegram link preview at
+// assubkibooks.co.uk — still WordPress — so the card would show a broken image.
+const origin = Astro.url.origin;
+const canonical = new URL(Astro.url.pathname, origin).toString();
+const ogImage = image ? new URL(image, origin).toString() : null;
 ---
 
 <!doctype html>

@@ -26,16 +26,16 @@
     }
   ],
 
-  // Images the owner uploads through the admin panel. The migrated covers are
-  // immutable and ship as static assets under public/img instead.
-  // Not named IMAGES: the Astro adapter treats a binding of that name as the
-  // Cloudflare Images service and wires itself to it.
-  "r2_buckets": [
-    {
-      "binding": "UPLOADS",
-      "bucket_name": "assubki-books-uploads"
-    }
-  ],
+  // Images the owner uploads through the admin panel will live in R2. The
+  // migrated covers are immutable and ship as static assets under public/img,
+  // so nothing in phase 1 needs a bucket — and R2 is not enabled on this
+  // account yet, which makes the binding fail the deploy. Restore this when
+  // building the admin panel, after enabling R2 in the dashboard:
+  //
+  //   "r2_buckets": [{ "binding": "UPLOADS", "bucket_name": "assubki-books-uploads" }]
+  //
+  // Do not name it IMAGES: the Astro adapter treats a binding of that name as
+  // the Cloudflare Images service and wires itself to it.
 
   // The 48h hold sweep runs in its own Worker (workers/expire-holds) because
   // the Astro adapter owns this Worker's entrypoint and cannot export

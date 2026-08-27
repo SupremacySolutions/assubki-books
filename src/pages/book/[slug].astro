@@ -28,7 +28,8 @@ const jsonLd = {
   name: book.title,
   alternateName: book.title_ar ?? undefined,
   description: plain || undefined,
-  image: cover ? new URL(cover, Astro.site ?? Astro.url.origin).toString() : undefined,
+  // Same reasoning as the OG tags in Base.astro: follow the served host.
+  image: cover ? new URL(cover, Astro.url.origin).toString() : undefined,
   offers: {
     '@type': 'Offer',
     price: (book.price_pence / 100).toFixed(2),
