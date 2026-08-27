@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+/* Spectral for titles: a scholarly serif with the weight range to carry an
+   entry heading without shouting. IBM Plex Sans for interface and body — its
+   reference-work character suits a catalogue, and its numerals are legible at
+   small sizes, which matters on a page that is mostly prices and counts.
+   Noto Naskh Arabic for Arabic titles: naskh is the appropriate register for
+   classical texts, where a geometric sans would read as signage. */
+@import "@fontsource/spectral/latin-400.css";
+@import "@fontsource/spectral/latin-600.css";
+@import "@fontsource/spectral/latin-ext-400.css";
+@import "@fontsource/spectral/latin-400-italic.css";
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-sans/latin-ext-400.css";
+@import "@fontsource/noto-naskh-arabic/arabic-400.css";
+@import "@fontsource/noto-naskh-arabic/arabic-700.css";
+
+@theme {
+  /* Drawn from the shop's own mark: deep navy ground, pale blue-grey rosette. */
+  --color-ink: #101828;
+  --color-ink-soft: #4a5568;
+  --color-ink-faint: #8b93a1;
+  --color-navy: #184485;
+  --color-navy-deep: #0e2a55;
+  --color-navy-hover: #1d5099;
+  --color-wash: #c3ccde;
+  --color-wash-soft: #dde3ee;
+  --color-paper: #f5f4f0;
+  --color-card: #ffffff;
+  --color-rule: #ddd9d1;
+  /* Brass earns exactly one job on this site: price. Nothing else uses it, so
+     the eye learns it instantly in a dense list. */
+  --color-brass: #8a6714;
+  --color-instock: #2f6b46;
+  --color-outstock: #9a3412;
+
+  --font-display: "Spectral", "Iowan Old Style", Georgia, serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  /* The Latin fallbacks matter: 89 descriptions use ḥ/ḍ/ṣ/ṭ/ẓ, which Google's
+     latin-ext subset may not carry. Per-glyph fallback to a system face keeps
+     scholarly transliteration intact rather than showing tofu. */
+  --font-arabic: "Noto Naskh Arabic", "Geeza Pro", "Times New Roman", serif;
+
+  --radius-card: 3px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-navy);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: var(--color-wash);
+    color: var(--color-navy-deep);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.011em;
+  }
+}
+
+@layer components {
+  /* Arabic is set a step larger than its Latin neighbour — naskh runs
+     optically smaller at the same nominal size, and these titles are the
+     form many customers actually recognise. */
+  .ar {
+    font-family: var(--font-arabic);
+    direction: rtl;
+    unicode-bidi: isolate;
+    line-height: 1.9;
+    font-size: 1.14em;
+    /* Inline-block so the RTL run hugs its own text and sits at the start of an
+       LTR column. As a plain block it stretches the full width and the Arabic
+       title drifts to the far right, visually divorced from the Latin title
+       it belongs to. */
+    display: inline-block;
+    max-width: 100%;
+  }
+
+  /* The classmark: a category rendered as a shelf code in the discipline's own
+     vocabulary (NHW for naḥw, TSW for taṣawwuf). It encodes where a book sits
+     in the syllabus, which is how this shop's customers actually navigate. */
+  .classmark {
+    font-family: var(--font-body);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-navy);
+    background: var(--color-wash-soft);
+    padding: 3px 6px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  .price {
+    font-family: var(--font-body);
+    font-weight: 600;
+    color: var(--color-brass);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    font-size: 15px;
+    padding: 0.7rem 1.4rem;
+    border-radius: 2px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .btn-primary {
+    background: var(--color-navy);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--color-navy-hover); }
+  .btn-primary:disabled {
+    background: var(--color-rule);
+    color: var(--color-ink-faint);
+    cursor: not-allowed;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-navy);
+    border-color: var(--color-rule);
+  }
+  .btn-ghost:hover {
+    border-color: var(--color-navy);
+    background: #fff;
+  }
+
+  .field {
+    width: 100%;
+    font-family: var(--font-body);
+    font-size: 15px;
+    padding: 0.65rem 0.85rem;
+    background: var(--color-card);
+    border: 1px solid var(--color-rule);
+    border-radius: 2px;
+    color: var(--color-ink);
+  }
+  .field:focus { border-color: var(--color-navy); outline-offset: 0; }
+
+  /* Prose for the imported book descriptions. Only the tags the sanitiser
+     lets through are styled. */
+  .prose-book { color: var(--color-ink-soft); font-size: 15.5px; }
+  .prose-book p { margin-block: 0.85em; }
+  .prose-book p:first-child { margin-top: 0; }
+  .prose-book strong { color: var(--color-ink); font-weight: 600; }
+  .prose-book em { font-family: var(--font-display); font-style: italic; }
+  .prose-book ul, .prose-book ol { margin-block: 0.85em; padding-inline-start: 1.3em; }
+  .prose-book ul { list-style: none; }
+  .prose-book ul li { position: relative; }
+  .prose-book ul li::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: -1em;
+    top: 0.62em;
+    width: 5px; height: 5px;
+    background: var(--color-wash);
+    transform: rotate(45deg);
+  }
+  .prose-book ol { list-style: decimal; }
+  .prose-book li { margin-block: 0.3em; }
+  .prose-book h3, .prose-book h4 {
+    color: var(--color-ink);
+    font-size: 1.05em;
+    margin-block: 1.4em 0.5em;
+  }
+  .prose-book a { color: var(--color-navy); text-decoration: underline; text-underline-offset: 2px; }
+  .prose-book blockquote {
+    border-inline-start: 2px solid var(--color-wash);
+    padding-inline-start: 1em;
+    font-family: var(--font-display);
+    font-style: italic;
+  }
+}

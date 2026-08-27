@@ -1,0 +1,81 @@
+---
+import Rosette from './Rosette.astro';
+import { SITE } from '../lib/format';
+
+const path = Astro.url.pathname;
+const q = Astro.url.searchParams.get('q') ?? '';
+const isCatalogue = path.startsWith('/catalogue');
+---
+
+<header class="border-b border-[var(--color-rule)] bg-[var(--color-paper)] sticky top-0 z-40">
+  <div class="mx-auto max-w-6xl px-5 md:px-8">
+    <div class="flex items-center gap-4 py-3">
+      <a href="/" class="flex items-center gap-2.5 shrink-0 group" aria-label={`${SITE.name} home`}>
+        <span class="text-[var(--color-navy)] transition-transform duration-300 group-hover:rotate-45 motion-reduce:transform-none">
+          <Rosette size={30} />
+        </span>
+        <span class="leading-none">
+          <span class="block font-[family-name:var(--font-display)] text-[19px] font-semibold text-[var(--color-navy-deep)] tracking-tight">
+            As-Subkī Books
+          </span>
+          <span class="ar text-[13px] text-[var(--color-ink-faint)] leading-none mt-1">{SITE.nameAr}</span>
+        </span>
+      </a>
+
+      <!-- Search is the primary action on a 226-title catalogue where people
+           arrive already knowing the text they need. -->
+      <form action="/catalogue" method="get" class="hidden md:flex flex-1 max-w-md ml-auto" role="search">
+        <label for="hdr-q" class="sr-only">Search the catalogue</label>
+        <input
+          id="hdr-q"
+          type="search"
+          name="q"
+          value={q}
+          placeholder="Search by title, English or Arabic"
+          class="field"
+          autocomplete="off"
+        />
+      </form>
+
+      <nav class="flex items-center gap-1 md:gap-2 ml-auto md:ml-0 shrink-0" aria-label="Main">
+        <a
+          href="/catalogue"
+          class:list={[
+            'px-3 py-2 text-[15px] rounded-sm hover:text-[var(--color-navy)]',
+            isCatalogue ? 'text-[var(--color-navy)] font-medium' : 'text-[var(--color-ink-soft)]',
+          ]}>Catalogue</a
+        >
+        <a
+          href="/about"
+          class:list={[
+            'hidden sm:block px-3 py-2 text-[15px] rounded-sm hover:text-[var(--color-navy)]',
+            path === '/about' ? 'text-[var(--color-navy)] font-medium' : 'text-[var(--color-ink-soft)]',
+          ]}>About</a
+        >
+        <a href="/basket" class="btn btn-ghost relative !px-3.5 !py-2 ml-1">
+          Basket
+          <span
+            data-basket-count
+            hidden
+            class="absolute -top-1.5 -right-1.5 min-w-[19px] h-[19px] px-1 grid place-items-center rounded-full bg-[var(--color-navy)] text-white text-[11px] font-semibold tabular-nums"
+          >0</span>
+        </a>
+      </nav>
+    </div>
+
+    <!-- On phones the search field drops to its own row rather than being
+         hidden behind an icon: it is the main way in. -->
+    <form action="/catalogue" method="get" class="md:hidden pb-3" role="search">
+      <label for="hdr-q-m" class="sr-only">Search the catalogue</label>
+      <input
+        id="hdr-q-m"
+        type="search"
+        name="q"
+        value={q}
+        placeholder="Search by title, English or Arabic"
+        class="field"
+        autocomplete="off"
+      />
+    </form>
+  </div>
+</header>

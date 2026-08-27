@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /basket
+Disallow: /checkout
+Disallow: /order/
+Disallow: /admin
+
+Sitemap: https://assubkibooks.co.uk/sitemap.xml

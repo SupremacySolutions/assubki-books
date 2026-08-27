@@ -1,0 +1,77 @@
+---
+import type { CategoryNode } from '../lib/db';
+import { classmark } from '../lib/classmarks';
+
+interface Props {
+  tree: CategoryNode[];
+  activePath?: string | null;
+  /** Preserved so switching category does not silently drop the search. */
+  query?: string;
+}
+const { tree, activePath = null, query = '' } = Astro.props;
+const href = (path: string) => `/catalogue${path ? `/${path}` : ''}${query}`;
+const isActive = (path: string) => activePath === path;
+const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${path}/`);
+---
+
+<nav aria-label="Categories" class="text-[14.5px]">
+  <h2 class="eyebrow mb-3">Browse by subject</h2>
+  <ul class="space-y-0.5">
+    <li>
+      <a
+        href={href('')}
+        class:list={[
+          'flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm hover:bg-white',
+          !activePath ? 'bg-white font-medium text-[var(--color-navy)]' : 'text-[var(--color-ink-soft)]',
+        ]}
+      >
+        <span>All titles</span>
+      </a>
+    </li>
+
+    {
+      tree.map((cat) => (
+        <li>
+          <a
+            href={href(cat.path)}
+            class:list={[
+              'flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm hover:bg-white',
+              isActive(cat.path) || isAncestor(cat.path)
+                ? 'bg-white font-medium text-[var(--color-navy)]'
+                : 'text-[var(--color-ink-soft)]',
+            ]}
+          >
+            <span class="flex items-center gap-2 min-w-0">
+              <span class="classmark shrink-0">{classmark(cat.slug)}</span>
+              <span class="truncate">{cat.name}</span>
+            </span>
+            <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0">{cat.count}</span>
+          </a>
+
+          {cat.children.length > 0 && (
+            <ul class="ml-3 mt-0.5 mb-1 space-y-0.5 border-l border-[var(--color-rule)] pl-2">
+              {cat.children.map((child) => (
+                <li>
+                  <a
+                    href={href(child.path)}
+                    class:list={[
+                      'flex items-center justify-between gap-2 px-2 py-1 rounded-sm hover:bg-white',
+                      isActive(child.path)
+                        ? 'bg-white font-medium text-[var(--color-navy)]'
+                        : 'text-[var(--color-ink-soft)]',
+                    ]}
+                  >
+                    <span class="truncate">{child.name}</span>
+                    <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0">
+                      {child.count}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))
+    }
+  </ul>
+</nav>

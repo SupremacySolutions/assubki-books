@@ -1,0 +1,136 @@
+---
+import Base from '../layouts/Base.astro';
+import Rosette from '../components/Rosette.astro';
+---
+
+<Base title="Your basket" noindex>
+  <div class="py-10 md:py-14 max-w-3xl">
+    <h1 class="font-[family-name:var(--font-display)] text-[32px] md:text-[38px] font-semibold">
+      Your basket
+    </h1>
+
+    <div id="loading" class="py-16 text-center text-[var(--color-ink-faint)]">Loading your basket…</div>
+
+    <div id="empty" hidden class="py-16 text-center">
+      <div class="grid place-items-center text-[var(--color-wash)] mb-5"><Rosette size={64} /></div>
+      <h2 class="font-[family-name:var(--font-display)] text-[22px]">Nothing in the basket yet</h2>
+      <p class="mt-2 text-[15px] text-[var(--color-ink-soft)]">
+        Add the titles you need and send them to us as one request.
+      </p>
+      <a href="/catalogue" class="btn btn-primary mt-6">Browse the catalogue</a>
+    </div>
+
+    <div id="basket" hidden>
+      <ul id="rows" class="divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)]"></ul>
+
+      <div class="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <p class="text-[15px] text-[var(--color-ink-soft)]">
+          Subtotal <span id="subtotal" class="price text-[22px] ml-2"></span>
+        </p>
+        <a href="/checkout" class="btn btn-primary">Continue to request</a>
+      </div>
+
+      <p class="mt-4 text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed max-w-lg">
+        Postage is not included above — we confirm the full total when we reply. Nothing is charged
+        on this website.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    import { read, setQty, remove } from '../scripts/basket.ts';
+
+    const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
+
+    async function render() {
+      const basket = read();
+      const ids = Object.keys(basket);
+      const loading = document.querySelector<HTMLElement>('#loading')!;
+      const empty = document.querySelector<HTMLElement>('#empty')!;
+      const wrap = document.querySelector<HTMLElement>('#basket')!;
+
+      if (!ids.length) {
+        loading.hidden = true;
+        wrap.hidden = true;
+        empty.hidden = false;
+        return;
+      }
+
+      const res = await fetch(`/api/basket?ids=${ids.join(',')}`);
+      const { books } = (await res.json()) as {
+        books: {
+          id: number; slug: string; title: string; titleAr: string | null;
+          pricePence: number; available: number; imageKey: string | null;
+        }[];
+      };
+
+      loading.hidden = true;
+
+      // A book pulled from the catalogue since it was added is dropped rather
+      // than shown as a broken row.
+      const live = books.filter((b) => basket[String(b.id)]);
+      if (!live.length) {
+        wrap.hidden = true;
+        empty.hidden = false;
+        return;
+      }
+
+      const rows = document.querySelector<HTMLUListElement>('#rows')!;
+      rows.innerHTML = '';
+      let subtotal = 0;
+
+      for (const book of live) {
+        const qty = Math.min(basket[String(book.id)], Math.max(book.available, 0));
+        const overrun = basket[String(book.id)] > book.available;
+        subtotal += book.pricePence * qty;
+
+        const li = document.createElement('li');
+        li.className = 'py-4 flex gap-4 items-start';
+        li.innerHTML = `
+          <a href="/book/${book.slug}" class="shrink-0 w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[3px] grid place-items-center overflow-hidden">
+            ${book.imageKey ? `<img src="/img/${book.imageKey}" alt="" class="max-h-full max-w-full object-contain p-1">` : ''}
+          </a>
+          <div class="flex-1 min-w-0">
+            <a href="/book/${book.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${book.title}</a>
+            ${book.titleAr ? `<p class="ar text-[14.5px] text-[var(--color-ink-soft)]">${book.titleAr}</p>` : ''}
+            <p class="price text-[15px] mt-1">${gbp(book.pricePence)}</p>
+            ${
+              book.available <= 0
+                ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Out of stock — removed from your request</p>`
+                : overrun
+                  ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Only ${book.available} available — quantity reduced</p>`
+                  : ''
+            }
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <label class="sr-only" for="q${book.id}">Quantity for ${book.title}</label>
+            <input id="q${book.id}" type="number" min="0" max="${Math.max(book.available, 0)}" value="${qty}"
+                   class="field !w-16 !py-1.5 tabular-nums" data-id="${book.id}">
+            <button type="button" class="text-[13.5px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] underline underline-offset-2" data-remove="${book.id}">Remove</button>
+          </div>`;
+        rows.appendChild(li);
+
+        if (qty !== basket[String(book.id)]) setQty(book.id, qty);
+      }
+
+      document.querySelector<HTMLElement>('#subtotal')!.textContent = gbp(subtotal);
+      wrap.hidden = false;
+      empty.hidden = true;
+
+      for (const input of rows.querySelectorAll<HTMLInputElement>('input[data-id]')) {
+        input.addEventListener('change', () => {
+          setQty(Number(input.dataset.id), Math.max(0, Number(input.value) || 0));
+          render();
+        });
+      }
+      for (const btn of rows.querySelectorAll<HTMLButtonElement>('button[data-remove]')) {
+        btn.addEventListener('click', () => {
+          remove(Number(btn.dataset.remove));
+          render();
+        });
+      }
+    }
+
+    render();
+  </script>
+</Base>

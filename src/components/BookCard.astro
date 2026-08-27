@@ -1,0 +1,105 @@
+---
+/**
+ * The catalogue card — the shop's signature unit.
+ *
+ * It is set as a library entry rather than a product tile: transliterated title
+ * as the main entry, the Arabic title beneath it in naskh at a larger optical
+ * size (that is the form many customers recognise), and the category as a shelf
+ * classmark. The cover sits in a fixed-ratio well so a grid of 24 books does not
+ * reflow as images load.
+ */
+import { price, availability, imageUrl } from '../lib/format';
+import { classmark } from '../lib/classmarks';
+import Rosette from './Rosette.astro';
+import type { BookRow } from '../lib/db';
+
+interface Props {
+  book: BookRow;
+  eager?: boolean;
+}
+const { book, eager = false } = Astro.props;
+
+const img = imageUrl(book.image_key);
+const avail = availability(book.available);
+const marks = (book.cat_slugs ?? '')
+  .split(',')
+  .filter(Boolean)
+  .map(classmark)
+  .filter((v, i, a) => a.indexOf(v) === i)
+  .slice(0, 3);
+---
+
+<article class="group h-full">
+  <a href={`/book/${book.slug}`} class="flex h-full flex-col focus:outline-none">
+    <div
+      class="relative overflow-hidden bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] aspect-[3/4] grid place-items-center group-focus-visible:outline group-focus-visible:outline-2 group-focus-visible:outline-[var(--color-navy)]"
+    >
+      {
+        img ? (
+          <img
+            src={img}
+            alt={book.title}
+            width={book.width ?? undefined}
+            height={book.height ?? undefined}
+            loading={eager ? 'eager' : 'lazy'}
+            decoding="async"
+            class="h-full w-full object-contain p-3 transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transform-none"
+          />
+        ) : (
+          /* 18 titles arrived with no cover. A rosette placeholder keeps the
+             grid even and reads as intentional rather than broken. */
+          <div class="grid place-items-center text-[var(--color-wash)]">
+            <Rosette size={56} />
+          </div>
+        )
+      }
+
+      {
+        avail.state === 'out' && (
+          <span class="absolute inset-x-0 bottom-0 bg-[var(--color-ink)]/80 text-white text-[11px] font-semibold tracking-wide uppercase text-center py-1.5">
+            Out of stock
+          </span>
+        )
+      }
+      {
+        avail.state === 'low' && (
+          <span class="absolute top-2 right-2 bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-wide uppercase px-1.5 py-1 rounded-sm">
+            {book.available} left
+          </span>
+        )
+      }
+    </div>
+
+    <div class="pt-3 flex flex-1 flex-col">
+      {
+        marks.length > 0 && (
+          <div class="flex flex-wrap gap-1 mb-1.5">
+            {marks.map((m) => (
+              <span class="classmark">{m}</span>
+            ))}
+          </div>
+        )
+      }
+
+      <h3
+        class="font-[family-name:var(--font-display)] text-[16.5px] leading-snug text-[var(--color-ink)] group-hover:text-[var(--color-navy)] transition-colors"
+      >
+        {book.title}
+      </h3>
+
+      {book.title_ar && <p class="ar mt-0.5 text-[15px] text-[var(--color-ink-soft)]">{book.title_ar}</p>}
+
+      <div class="mt-auto pt-2.5 flex items-baseline justify-between gap-2">
+        <span class="price text-[16px]">{price(book.price_pence)}</span>
+        <span
+          class:list={[
+            'text-[12px] font-medium',
+            avail.state === 'in' && 'text-[var(--color-instock)]',
+            avail.state === 'low' && 'text-[var(--color-outstock)]',
+            avail.state === 'out' && 'text-[var(--color-ink-faint)]',
+          ]}>{avail.label}</span
+        >
+      </div>
+    </div>
+  </a>
+</article>

@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+
+  // The adapter supplies the Worker entrypoint; ./dist is served as static
+  // assets alongside it.
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "name": "assubki-books",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+
+  // No "routes" yet — this deploys to assubki-books.<subdomain>.workers.dev so
+  // the live WordPress site is never touched. The custom domains for
+  // assubkibooks.co.uk get added at cutover, once the admin panel exists and
+  // the IONOS MX records have been recreated in Cloudflare.
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "assubki-books",
+      "database_id": "efc0b55d-885f-44cb-9baf-a4431bb169ce"
+    }
+  ],
+
+  // Images the owner uploads through the admin panel. The migrated covers are
+  // immutable and ship as static assets under public/img instead.
+  // Not named IMAGES: the Astro adapter treats a binding of that name as the
+  // Cloudflare Images service and wires itself to it.
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS",
+      "bucket_name": "assubki-books-uploads"
+    }
+  ],
+
+  // The 48h hold sweep runs in its own Worker (workers/expire-holds) because
+  // the Astro adapter owns this Worker's entrypoint and cannot export
+  // `scheduled`.
+
+  "observability": {
+    "enabled": true
+  }
+}

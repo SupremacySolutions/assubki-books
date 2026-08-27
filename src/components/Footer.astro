@@ -1,0 +1,52 @@
+---
+import Rosette from './Rosette.astro';
+import { SITE } from '../lib/format';
+const year = new Date().getFullYear();
+---
+
+<footer class="mt-20 bg-[var(--color-navy-deep)] text-[var(--color-wash)]">
+  <div class="mx-auto max-w-6xl px-5 md:px-8 py-12">
+    <div class="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
+      <div>
+        <div class="flex items-center gap-2.5 text-[var(--color-wash)]">
+          <Rosette size={26} />
+          <span class="font-[family-name:var(--font-display)] text-[18px] font-semibold text-white">
+            As-Subkī Books
+          </span>
+        </div>
+        <p class="ar mt-2 text-[15px] text-[var(--color-wash)]/80">{SITE.nameAr}</p>
+        <p class="mt-4 text-[14.5px] leading-relaxed text-[var(--color-wash)]/75 max-w-sm">
+          Classical texts, syllabus sets and study editions for madrasah students and teachers
+          across the UK.
+        </p>
+      </div>
+
+      <nav aria-label="Catalogue">
+        <h2 class="eyebrow !text-[var(--color-wash)]/60">Browse</h2>
+        <ul class="mt-3 space-y-2 text-[14.5px]">
+          <li><a class="hover:text-white" href="/catalogue">All titles</a></li>
+          <li><a class="hover:text-white" href="/catalogue/syllabus">Syllabus</a></li>
+          <li><a class="hover:text-white" href="/catalogue/hadith">Hadith</a></li>
+          <li><a class="hover:text-white" href="/catalogue/fiqh">Fiqh</a></li>
+          <li><a class="hover:text-white" href="/catalogue/quran">Quran &amp; Tafsir</a></li>
+        </ul>
+      </nav>
+
+      <div>
+        <h2 class="eyebrow !text-[var(--color-wash)]/60">Contact</h2>
+        <ul class="mt-3 space-y-2 text-[14.5px]">
+          <li><a class="hover:text-white" href={SITE.telegram} rel="noopener">Telegram channel</a></li>
+          <li><a class="hover:text-white" href="/contact">Contact the shop</a></li>
+          <li><a class="hover:text-white" href="/about">How ordering works</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div
+      class="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between text-[13px] text-[var(--color-wash)]/60"
+    >
+      <p>© {year} As-Subkī Books</p>
+      <p>Payment is arranged directly — nothing is charged on this site.</p>
+    </div>
+  </div>
+</footer>

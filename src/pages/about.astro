@@ -1,0 +1,84 @@
+---
+import Base from '../layouts/Base.astro';
+import Rosette from '../components/Rosette.astro';
+import { catalogueStats } from '../lib/db';
+import { SITE } from '../lib/format';
+
+const stats = await catalogueStats();
+---
+
+<Base
+  title="How ordering works"
+  description="How to order from As-Subkī Books: request your titles, we hold them for 48 hours, and payment is arranged directly."
+>
+  <div class="py-10 md:py-14 max-w-2xl">
+    <h1 class="font-[family-name:var(--font-display)] text-[34px] md:text-[40px] font-semibold leading-tight">
+      A bookshop that runs on conversation
+    </h1>
+    <p class="mt-5 text-[17px] leading-relaxed text-[var(--color-ink-soft)]">
+      As-Subkī Books stocks {stats.titles} titles — classical Arabic texts, the Dars Nizami and
+      Maktab syllabus, hadith, fiqh, tafsir and children's readers. Most of what we carry is
+      difficult to find on the high street and expensive to import one copy at a time, so we buy in
+      quantity and pass the price on.
+    </p>
+
+    <div class="my-10 flex justify-center text-[var(--color-wash)]">
+      <Rosette size={44} />
+    </div>
+
+    <h2 class="font-[family-name:var(--font-display)] text-[24px] font-semibold">Ordering, step by step</h2>
+    <ol class="mt-5 space-y-6">
+      <li>
+        <h3 class="text-[17px]">1. Build your basket</h3>
+        <p class="mt-1 text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+          Browse or search the catalogue and add what you need. Stock counts on the site are live.
+        </p>
+      </li>
+      <li>
+        <h3 class="text-[17px]">2. Send your request</h3>
+        <p class="mt-1 text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+          Give us your name, email and whether you want delivery or collection. You will get an
+          itemised confirmation straight away with a reference number such as ASB-4F7K.
+        </p>
+      </li>
+      <li>
+        <h3 class="text-[17px]">3. Your books are held for 48 hours</h3>
+        <p class="mt-1 text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+          Nobody else can request the same copies while we reply. If we do not hear back within two
+          days the hold lapses and the books return to the shelf — nothing is charged and there is
+          nothing to cancel.
+        </p>
+      </li>
+      <li>
+        <h3 class="text-[17px]">4. We send payment details</h3>
+        <p class="mt-1 text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+          We reply with the total including postage and how to pay. Once payment clears we post the
+          books and confirm by email.
+        </p>
+      </li>
+    </ol>
+
+    <div class="mt-10 p-5 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)]">
+      <h2 class="text-[18px]">Why you cannot pay on the website</h2>
+      <p class="mt-2 text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        We keep the shop small and the prices low, and card processing would add a fee to every
+        order. So payment is arranged directly with us instead.
+        <strong class="text-[var(--color-ink)]">
+          No card or bank details are ever entered on this website.
+        </strong>
+        If a page ever asks you for them, it is not us.
+      </p>
+    </div>
+
+    <h2 class="mt-12 font-[family-name:var(--font-display)] text-[24px] font-semibold">
+      Looking for something we do not list?
+    </h2>
+    <p class="mt-3 text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+      Ask. We can often source a title, and new stock is announced on our Telegram channel first.
+    </p>
+    <div class="mt-5 flex flex-wrap gap-3">
+      <a href={SITE.telegram} rel="noopener" class="btn btn-primary">Join the Telegram channel</a>
+      <a href="/contact" class="btn btn-ghost">Contact the shop</a>
+    </div>
+  </div>
+</Base>

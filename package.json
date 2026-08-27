@@ -1,0 +1,32 @@
+{
+  "name": "assubki-books",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "wrangler dev",
+    "deploy": "astro build && wrangler deploy",
+    "db:local": "wrangler d1 execute assubki-books --local",
+    "db:remote": "wrangler d1 execute assubki-books --remote",
+    "migrate:woo": "node scripts/migrate-from-woo.mjs",
+    "images:fetch": "node scripts/fetch-images.mjs"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^14.2.5",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/noto-naskh-arabic": "^5.3.0",
+    "@fontsource/spectral": "^5.3.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "astro": "^7.2.0",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.4",
+    "wrangler": "^4.127.0"
+  }
+}

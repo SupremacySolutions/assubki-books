@@ -1,0 +1,30 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+
+  // A separate Worker purely so the hold sweep can run on a cron trigger: the
+  // Astro Cloudflare adapter owns the main Worker's entrypoint and exposes no
+  // way to add a `scheduled` handler to it.
+  //
+  // Deploy from the repo root:
+  //   npx wrangler deploy -c workers/expire-holds/wrangler.jsonc
+  "name": "assubki-books-expire-holds",
+  "main": "./index.ts",
+  "compatibility_date": "2026-08-01",
+
+  // Same database as the site.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "assubki-books",
+      "database_id": "efc0b55d-885f-44cb-9baf-a4431bb169ce"
+    }
+  ],
+
+  // Every 15 minutes. A book whose hold has lapsed should return to the shelf
+  // quickly — an hour of showing "out of stock" when it is free is a lost sale.
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+
+  "observability": { "enabled": true }
+}

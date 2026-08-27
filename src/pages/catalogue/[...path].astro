@@ -1,0 +1,227 @@
+---
+import Base from '../../layouts/Base.astro';
+import BookCard from '../../components/BookCard.astro';
+import CategoryNav from '../../components/CategoryNav.astro';
+import Rosette from '../../components/Rosette.astro';
+import { categoryTree, categoryByPath, listBooks, type Sort } from '../../lib/db';
+import { buildQuery } from '../../lib/format';
+
+const { path } = Astro.params;
+const params = Astro.url.searchParams;
+
+const categoryPath = path ?? null;
+const category = categoryPath ? await categoryByPath(categoryPath) : null;
+
+// An unknown category path is a 404, not an empty grid — otherwise a typo
+// looks like a shop with nothing in it.
+if (categoryPath && !category) return Astro.rewrite('/404');
+
+const q = params.get('q')?.trim() || null;
+const inStockOnly = params.get('stock') === 'in';
+const sortParam = params.get('sort');
+const validSorts: Sort[] = ['relevance', 'title', 'price-asc', 'price-desc', 'newest'];
+const sort = (validSorts.includes(sortParam as Sort) ? sortParam : null) as Sort | null;
+const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
+
+const [tree, result] = await Promise.all([
+  categoryTree(),
+  listBooks({ categoryPath, q, inStockOnly, sort: sort ?? undefined, page }),
+]);
+
+const base = { q, sort, stock: inStockOnly ? 'in' : null };
+const keep = buildQuery(base);
+const heading = category?.name ?? 'All titles';
+const crumbs = category
+  ? category.path.split('/').map((seg, i, arr) => ({ seg, path: arr.slice(0, i + 1).join('/') }))
+  : [];
+
+const sortOptions: { value: Sort; label: string }[] = [
+  { value: 'title', label: 'Title A–Z' },
+  { value: 'price-asc', label: 'Price low to high' },
+  { value: 'price-desc', label: 'Price high to low' },
+  { value: 'newest', label: 'Recently added' },
+];
+
+const pageUrl = (n: number) =>
+  `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery(base, { page: n > 1 ? n : null })}`;
+
+const title = q ? `“${q}”` : heading;
+const description = category
+  ? `${result.total} ${category.name} titles at As-Subkī Books.`
+  : `Browse ${result.total} Islamic titles — hadith, fiqh, tafsir, Dars Nizami and Maktab syllabus sets.`;
+---
+
+<Base title={title} description={description} noindex={!!q}>
+  <div class="py-8 md:py-10">
+    <nav aria-label="Breadcrumb" class="text-[13.5px] text-[var(--color-ink-faint)] mb-3">
+      <a href="/" class="hover:text-[var(--color-navy)]">Home</a>
+      <span class="mx-1.5">/</span>
+      <a href="/catalogue" class="hover:text-[var(--color-navy)]">Catalogue</a>
+      {
+        crumbs.map((c, i) => (
+          <>
+            <span class="mx-1.5">/</span>
+            {i === crumbs.length - 1 ? (
+              <span class="text-[var(--color-ink-soft)]">{heading}</span>
+            ) : (
+              <a href={`/catalogue/${c.path}`} class="hover:text-[var(--color-navy)] capitalize">
+                {c.seg.replace(/-/g, ' ')}
+              </a>
+            )}
+          </>
+        ))
+      }
+    </nav>
+
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <h1 class="font-[family-name:var(--font-display)] text-[30px] md:text-[36px] font-semibold">
+        {q ? <>Results for “{q}”</> : heading}
+      </h1>
+      <p class="text-[15px] text-[var(--color-ink-faint)] tabular-nums">
+        {result.total} {result.total === 1 ? 'title' : 'titles'}
+      </p>
+    </div>
+
+    <div class="mt-8 grid gap-8 lg:grid-cols-[220px_1fr] lg:gap-10">
+      <!-- Books come first on a phone. As a sidebar, the 26-entry subject tree
+           filled the whole first screen and pushed every book below the fold;
+           on mobile it moves below the grid, with the select above standing in
+           for it. -->
+      <aside
+        class="order-2 lg:order-1 lg:sticky lg:top-[92px] lg:self-start lg:max-h-[calc(100vh-110px)] lg:overflow-y-auto"
+      >
+        <CategoryNav tree={tree} activePath={categoryPath} query={keep} />
+      </aside>
+
+      <div class="order-1 lg:order-2">
+        <label class="lg:hidden block mb-4">
+          <span class="sr-only">Jump to a subject</span>
+          <select
+            class="field"
+            onchange="if(this.value)window.location.href=this.value"
+            aria-label="Jump to a subject"
+          >
+            <option value={`/catalogue${keep}`} selected={!categoryPath}>All titles</option>
+            {
+              tree.map((cat) => (
+                <>
+                  <option value={`/catalogue/${cat.path}${keep}`} selected={categoryPath === cat.path}>
+                    {cat.name} ({cat.count})
+                  </option>
+                  {cat.children.map((child) => (
+                    <option
+                      value={`/catalogue/${child.path}${keep}`}
+                      selected={categoryPath === child.path}
+                    >
+                      &nbsp;&nbsp;— {child.name} ({child.count})
+                    </option>
+                  ))}
+                </>
+              ))
+            }
+          </select>
+        </label>
+
+        <div
+          class="flex flex-wrap items-center gap-3 pb-4 mb-6 border-b border-[var(--color-rule)]"
+        >
+          <form method="get" class="flex flex-wrap items-center gap-3">
+            {q && <input type="hidden" name="q" value={q} />}
+
+            <label class="flex items-center gap-2 text-[14.5px] text-[var(--color-ink-soft)] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                name="stock"
+                value="in"
+                checked={inStockOnly}
+                onchange="this.form.submit()"
+                class="w-4 h-4 accent-[var(--color-navy)]"
+              />
+              In stock only
+            </label>
+
+            <label class="flex items-center gap-2 text-[14.5px] text-[var(--color-ink-soft)]">
+              <span class="sr-only sm:not-sr-only">Sort</span>
+              <select
+                name="sort"
+                onchange="this.form.submit()"
+                class="field !py-1.5 !w-auto !text-[14px]"
+              >
+                {q && <option value="relevance" selected={!sort}>Best match</option>}
+                {
+                  sortOptions.map((o) => (
+                    <option value={o.value} selected={sort === o.value || (!sort && !q && o.value === 'title')}>
+                      {o.label}
+                    </option>
+                  ))
+                }
+              </select>
+            </label>
+
+            <noscript><button type="submit" class="btn btn-ghost !py-1.5">Apply</button></noscript>
+          </form>
+
+          {
+            (q || inStockOnly) && (
+              <a
+                href={`/catalogue${categoryPath ? `/${categoryPath}` : ''}`}
+                class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2 ml-auto"
+              >
+                Clear filters
+              </a>
+            )
+          }
+        </div>
+
+        {
+          result.books.length === 0 ? (
+            <div class="py-20 text-center">
+              <div class="grid place-items-center text-[var(--color-wash)] mb-5">
+                <Rosette size={64} />
+              </div>
+              <h2 class="font-[family-name:var(--font-display)] text-[22px]">Nothing matches that yet</h2>
+              <p class="mt-2 text-[15px] text-[var(--color-ink-soft)] max-w-sm mx-auto">
+                Try a shorter search, or the Arabic title. If we do not list a text, ask on Telegram —
+                we can often source it.
+              </p>
+              <a href="/catalogue" class="btn btn-ghost mt-6">Browse all titles</a>
+            </div>
+          ) : (
+            <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-9">
+              {result.books.map((book, i) => (
+                <BookCard book={book} eager={i < 4} />
+              ))}
+            </div>
+          )
+        }
+
+        {
+          result.pages > 1 && (
+            <nav
+              class="mt-12 flex items-center justify-between gap-4 border-t border-[var(--color-rule)] pt-6"
+              aria-label="Pagination"
+            >
+              {result.page > 1 ? (
+                <a href={pageUrl(result.page - 1)} class="btn btn-ghost">
+                  ← Previous
+                </a>
+              ) : (
+                <span />
+              )}
+              <p class="text-[14px] text-[var(--color-ink-faint)] tabular-nums">
+                Page {result.page} of {result.pages}
+              </p>
+              {result.page < result.pages ? (
+                <a href={pageUrl(result.page + 1)} class="btn btn-ghost">
+                  Next →
+                </a>
+              ) : (
+                <span />
+              )}
+            </nav>
+          )
+        }
+      </div>
+    </div>
+  </div>
+</Base>

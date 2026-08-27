@@ -1,0 +1,245 @@
+---
+import Base from '../../layouts/Base.astro';
+import BookCard from '../../components/BookCard.astro';
+import Rosette from '../../components/Rosette.astro';
+import { bookBySlug, relatedBooks } from '../../lib/db';
+import { price, availability, imageUrl, stripTags, truncate, SITE } from '../../lib/format';
+import { classmark } from '../../lib/classmarks';
+
+const { slug } = Astro.params;
+const book = slug ? await bookBySlug(slug) : null;
+if (!book) return Astro.rewrite('/404');
+
+const related = await relatedBooks(book.id, 6);
+const avail = availability(book.available);
+const cover = imageUrl(book.images[0]?.image_key);
+const plain = stripTags(book.description_html);
+
+// This is the description Telegram shows when the owner posts the link, so it
+// has to stand alone: what the book is, then price and availability.
+const shareDescription = truncate(
+  plain || `${book.title}${book.title_ar ? ` — ${book.title_ar}` : ''}`,
+  160,
+);
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Book',
+  name: book.title,
+  alternateName: book.title_ar ?? undefined,
+  description: plain || undefined,
+  image: cover ? new URL(cover, Astro.site ?? Astro.url.origin).toString() : undefined,
+  offers: {
+    '@type': 'Offer',
+    price: (book.price_pence / 100).toFixed(2),
+    priceCurrency: 'GBP',
+    availability:
+      book.available > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+    seller: { '@type': 'Organization', name: SITE.name },
+  },
+};
+---
+
+<Base title={book.title} description={shareDescription} image={cover}>
+  <div class="py-8 md:py-10">
+    <nav aria-label="Breadcrumb" class="text-[13.5px] text-[var(--color-ink-faint)] mb-6">
+      <a href="/" class="hover:text-[var(--color-navy)]">Home</a>
+      <span class="mx-1.5">/</span>
+      <a href="/catalogue" class="hover:text-[var(--color-navy)]">Catalogue</a>
+      {
+        book.categories[0] && (
+          <>
+            <span class="mx-1.5">/</span>
+            <a href={`/catalogue/${book.categories[0].path}`} class="hover:text-[var(--color-navy)]">
+              {book.categories[0].name}
+            </a>
+          </>
+        )
+      }
+    </nav>
+
+    <div class="grid gap-8 md:grid-cols-[minmax(0,420px)_1fr] md:gap-12 lg:gap-16">
+      <div>
+        <div
+          class="bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] aspect-[3/4] grid place-items-center overflow-hidden"
+        >
+          {
+            cover ? (
+              <img
+                id="cover"
+                src={cover}
+                alt={book.images[0]?.alt ?? book.title}
+                width={book.images[0]?.width ?? undefined}
+                height={book.images[0]?.height ?? undefined}
+                class="h-full w-full object-contain p-4"
+                fetchpriority="high"
+              />
+            ) : (
+              <div class="grid place-items-center text-[var(--color-wash)]">
+                <Rosette size={96} />
+              </div>
+            )
+          }
+        </div>
+
+        {
+          book.images.length > 1 && (
+            <ul class="mt-3 flex gap-2.5 flex-wrap">
+              {book.images.map((img, i) => (
+                <li>
+                  <button
+                    type="button"
+                    class="thumb w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] p-1 grid place-items-center hover:border-[var(--color-navy)] transition-colors aria-pressed:border-[var(--color-navy)] aria-pressed:ring-1 aria-pressed:ring-[var(--color-navy)]"
+                    data-src={imageUrl(img.image_key)}
+                    aria-pressed={i === 0 ? 'true' : 'false'}
+                  >
+                    <img src={imageUrl(img.image_key)} alt="" class="max-h-full max-w-full object-contain" loading="lazy" />
+                    <span class="sr-only">View image {i + 1}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </div>
+
+      <div>
+        {
+          book.categories.length > 0 && (
+            <div class="flex flex-wrap gap-1.5 mb-3">
+              {book.categories.map((c) => (
+                <a href={`/catalogue/${c.path}`} class="classmark hover:bg-[var(--color-wash)]">
+                  {classmark(c.slug)} · {c.name}
+                </a>
+              ))}
+            </div>
+          )
+        }
+
+        <h1 class="font-[family-name:var(--font-display)] text-[30px] md:text-[38px] font-semibold leading-tight">
+          {book.title}
+        </h1>
+        {book.title_ar && <p class="ar mt-2 text-[24px] text-[var(--color-ink-soft)]">{book.title_ar}</p>}
+
+        <div class="mt-6 flex items-center gap-4 flex-wrap">
+          <span class="price text-[30px]">{price(book.price_pence)}</span>
+          <span
+            class:list={[
+              'text-[14px] font-medium px-2.5 py-1 rounded-sm',
+              avail.state === 'in' && 'text-[var(--color-instock)] bg-[var(--color-instock)]/10',
+              avail.state === 'low' && 'text-[var(--color-outstock)] bg-[var(--color-outstock)]/10',
+              avail.state === 'out' && 'text-[var(--color-ink-faint)] bg-[var(--color-rule)]/60',
+            ]}>{avail.label}</span
+          >
+        </div>
+
+        <div class="mt-6">
+          {
+            book.available > 0 ? (
+              <div class="flex flex-wrap items-center gap-3">
+                <label for="qty" class="sr-only">
+                  Quantity
+                </label>
+                <input
+                  id="qty"
+                  type="number"
+                  min="1"
+                  max={book.available}
+                  value="1"
+                  class="field !w-20 !py-2.5 tabular-nums"
+                />
+                <button
+                  type="button"
+                  id="add"
+                  class="btn btn-primary !py-2.5 !px-6"
+                  data-book-id={book.id}
+                  data-max={book.available}
+                >
+                  Add to basket
+                </button>
+                <a href="/basket" id="tobasket" class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2 hidden">
+                  View basket →
+                </a>
+              </div>
+            ) : (
+              <div class="p-4 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)]">
+                <p class="text-[15px] text-[var(--color-ink-soft)]">
+                  This title is out of stock. Ask on
+                  <a href={SITE.telegram} rel="noopener" class="text-[var(--color-navy)] underline underline-offset-2">
+                    Telegram
+                  </a>
+                  and we will tell you when it is back.
+                </p>
+              </div>
+            )
+          }
+          <p class="mt-3 text-[13.5px] text-[var(--color-ink-faint)] max-w-md">
+            Adding to the basket reserves nothing yet. You send a request, we confirm, then we send
+            payment details — no card details are taken on this site.
+          </p>
+        </div>
+
+        {
+          book.description_html && (
+            <div class="mt-9 pt-8 border-t border-[var(--color-rule)]">
+              <h2 class="eyebrow mb-3">About this edition</h2>
+              <div class="prose-book max-w-prose" set:html={book.description_html} />
+            </div>
+          )
+        }
+      </div>
+    </div>
+
+    {
+      related.length > 0 && (
+        <section class="mt-16 pt-10 border-t border-[var(--color-rule)]">
+          <h2 class="font-[family-name:var(--font-display)] text-[24px] font-semibold mb-6">
+            On the same shelf
+          </h2>
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-5 gap-y-8">
+            {related.map((b) => (
+              <BookCard book={b} />
+            ))}
+          </div>
+        </section>
+      )
+    }
+  </div>
+
+  <script is:inline set:html={JSON.stringify(jsonLd)} type="application/ld+json" />
+
+  <script>
+    const addBtn = document.querySelector<HTMLButtonElement>('#add');
+    const qtyInput = document.querySelector<HTMLInputElement>('#qty');
+    const toBasket = document.querySelector<HTMLAnchorElement>('#tobasket');
+
+    addBtn?.addEventListener('click', () => {
+      const id = addBtn.dataset.bookId;
+      const max = Number(addBtn.dataset.max ?? '1');
+      const qty = Math.max(1, Math.min(Number(qtyInput?.value ?? '1') || 1, max));
+      if (!id) return;
+      window.asbBasket.add(id, qty);
+
+      // Confirm in place. A redirect to the basket costs the customer their
+      // position in a 226-title catalogue.
+      addBtn.textContent = 'Added';
+      addBtn.disabled = true;
+      toBasket?.classList.remove('hidden');
+      setTimeout(() => {
+        addBtn.textContent = 'Add to basket';
+        addBtn.disabled = false;
+      }, 1800);
+    });
+
+    const cover = document.querySelector<HTMLImageElement>('#cover');
+    for (const thumb of document.querySelectorAll<HTMLButtonElement>('.thumb')) {
+      thumb.addEventListener('click', () => {
+        const src = thumb.dataset.src;
+        if (!src || !cover) return;
+        cover.src = src;
+        for (const t of document.querySelectorAll('.thumb')) t.setAttribute('aria-pressed', 'false');
+        thumb.setAttribute('aria-pressed', 'true');
+      });
+    }
+  </script>
+</Base>

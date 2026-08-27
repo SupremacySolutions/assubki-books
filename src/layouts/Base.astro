@@ -1,0 +1,78 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../lib/format';
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** Absolute or root-relative image for link previews (Telegram, WhatsApp). */
+  image?: string | null;
+  noindex?: boolean;
+  wide?: boolean;
+}
+
+const {
+  title,
+  description = SITE.tagline,
+  image = null,
+  noindex = false,
+  wide = false,
+} = Astro.props;
+
+const pageTitle = title ? `${title} — ${SITE.name}` : `${SITE.name} — ${SITE.tagline}`;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url.origin).toString();
+const ogImage = image ? new URL(image, Astro.site ?? Astro.url.origin).toString() : null;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex" />}
+
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={title ?? SITE.name} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+
+    <meta name="theme-color" content="#184485" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+
+  <body class="min-h-screen flex flex-col">
+    <a href="#main" class="skip">Skip to catalogue</a>
+    <Header />
+    <main id="main" class={wide ? 'flex-1' : 'flex-1 mx-auto w-full max-w-6xl px-5 md:px-8'}>
+      <slot />
+    </main>
+    <Footer />
+
+    <script>
+      import '../scripts/basket.ts';
+    </script>
+
+    <style>
+      .skip {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        z-index: 100;
+        background: var(--color-navy);
+        color: #fff;
+        padding: 0.75rem 1.25rem;
+      }
+      .skip:focus {
+        left: 0;
+      }
+    </style>
+  </body>
+</html>
