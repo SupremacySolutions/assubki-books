@@ -1,0 +1,93 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { listOrders, orderCounts } from '../../../lib/admin-db';
+import { price } from '../../../lib/format';
+
+const status = Astro.url.searchParams.get('status');
+const [orders, counts] = await Promise.all([listOrders(status), orderCounts()]);
+
+const TABS = [
+  { key: null, label: 'All' },
+  { key: 'requested', label: 'Needs reply' },
+  { key: 'awaiting_payment', label: 'Awaiting payment' },
+  { key: 'paid', label: 'Paid' },
+  { key: 'dispatched', label: 'Dispatched' },
+  { key: 'expired', label: 'Lapsed' },
+  { key: 'cancelled', label: 'Cancelled' },
+];
+
+const TONE: Record<string, string> = {
+  requested: 'bg-[var(--color-navy)]/10 text-[var(--color-navy)]',
+  awaiting_payment: 'bg-[var(--color-brass)]/15 text-[var(--color-brass)]',
+  paid: 'bg-[var(--color-instock)]/12 text-[var(--color-instock)]',
+  dispatched: 'bg-[var(--color-instock)]/12 text-[var(--color-instock)]',
+  expired: 'bg-[var(--color-rule)] text-[var(--color-ink-faint)]',
+  cancelled: 'bg-[var(--color-rule)] text-[var(--color-ink-faint)]',
+};
+
+const LABEL: Record<string, string> = {
+  requested: 'Needs reply',
+  awaiting_payment: 'Awaiting payment',
+  paid: 'Paid',
+  dispatched: 'Dispatched',
+  expired: 'Lapsed',
+  cancelled: 'Cancelled',
+};
+---
+
+<Admin title="Orders" sub={`${orders.length} shown`}>
+  <nav class="flex flex-wrap gap-1.5 mb-5" aria-label="Filter by status">
+    {
+      TABS.map((tab) => (
+        <a
+          href={tab.key ? `/admin/orders?status=${tab.key}` : '/admin/orders'}
+          class:list={[
+            'px-3 py-1.5 rounded-full text-[13.5px] border transition-colors',
+            status === tab.key || (!status && !tab.key)
+              ? 'bg-[var(--color-navy)] text-white border-[var(--color-navy)]'
+              : 'bg-white border-[var(--color-rule)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
+          ]}
+        >
+          {tab.label}
+          {tab.key && counts[tab.key] ? ` (${counts[tab.key]})` : ''}
+        </a>
+      ))
+    }
+  </nav>
+
+  {
+    orders.length === 0 ? (
+      <p class="p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-[15px] text-[var(--color-ink-soft)]">
+        No orders with that status.
+      </p>
+    ) : (
+      <ul class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
+        {orders.map((o) => (
+          <li>
+            <a href={`/admin/orders/${o.ref}`} class="flex items-center gap-4 p-4 hover:bg-[var(--color-paper)]">
+              <div class="min-w-0 flex-1">
+                <p class="text-[15px] font-medium truncate">
+                  {o.customer_name}
+                  <span class="ml-2 text-[13px] font-normal text-[var(--color-ink-faint)]">{o.ref}</span>
+                </p>
+                <p class="text-[13.5px] text-[var(--color-ink-faint)] truncate">
+                  {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment} ·{' '}
+                  {new Date(o.created_at * 1000).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+                </p>
+              </div>
+              <span class:list={['px-2 py-1 rounded-sm text-[12px] font-medium shrink-0', TONE[o.status]]}>
+                {LABEL[o.status] ?? o.status}
+              </span>
+              <span class="price text-[15px] shrink-0 w-16 text-right">
+                {price(o.total_pence ?? o.subtotal_pence)}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</Admin>

@@ -1,0 +1,82 @@
+---
+import Admin from '../../layouts/Admin.astro';
+import { getSettings } from '../../lib/settings';
+import { botConfigured, botUsername } from '../../lib/telegram';
+import { emailConfigured, ownerAddress } from '../../lib/email';
+
+const settings = await getSettings();
+const saved = Astro.url.searchParams.get('saved');
+---
+
+<Admin title="Settings">
+  {
+    saved && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Settings saved.
+      </p>
+    )
+  }
+
+  <form method="post" action="/api/admin/settings" class="space-y-5 max-w-2xl">
+    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+        How customers pay
+      </h2>
+      <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        Sent to the customer when you confirm an order, by Telegram and email. Their order
+        reference is added automatically.
+      </p>
+      <label for="payment_instructions" class="sr-only">Payment instructions</label>
+      <textarea
+        id="payment_instructions"
+        name="payment_instructions"
+        rows="10"
+        maxlength="4000"
+        class="field font-[family-name:var(--font-body)]">{settings.payment_instructions ?? ''}</textarea
+      >
+    </section>
+
+    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Postage</h2>
+      <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)]">
+        Filled in for you when confirming an order. You can change it per order.
+      </p>
+      <label for="default_postage" class="block text-[14.5px] font-medium mb-1.5">
+        Usual postage (£)
+      </label>
+      <input
+        id="default_postage"
+        name="default_postage"
+        type="number"
+        step="0.01"
+        min="0"
+        value={((Number(settings.default_postage_pence ?? '0') || 0) / 100).toFixed(2)}
+        class="field !w-32 tabular-nums"
+      />
+    </section>
+
+    <button type="submit" class="btn btn-primary">Save settings</button>
+  </form>
+
+  <!-- Read-only: these are secrets, set from the command line, not the browser. -->
+  <section class="mt-8 max-w-2xl bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+    <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Connections</h2>
+    <p class="mt-1.5 mb-4 text-[14.5px] text-[var(--color-ink-soft)]">
+      Set with <code class="text-[13px]">wrangler secret put</code>, not here — they are secrets.
+    </p>
+    <dl class="space-y-3 text-[14.5px]">
+      <div class="flex justify-between gap-4">
+        <dt class="text-[var(--color-ink-soft)]">Customer email</dt>
+        <dd class:list={[emailConfigured() ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]']}>
+          {emailConfigured() ? `Sending · orders go to ${ownerAddress()}` : 'Not configured'}
+        </dd>
+      </div>
+      <div class="flex justify-between gap-4">
+        <dt class="text-[var(--color-ink-soft)]">Telegram bot</dt>
+        <dd class:list={[botConfigured() ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]']}>
+          {botConfigured() ? `Connected${botUsername() ? ` · @${botUsername()}` : ''}` : 'Not configured'}
+        </dd>
+      </div>
+    </dl>
+  </section>
+</Admin>

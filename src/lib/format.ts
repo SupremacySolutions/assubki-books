@@ -22,8 +22,36 @@ export function imageUrl(key: string | null | undefined): string | null {
   return key ? `/img/${key}` : null;
 }
 
+/** Flattens to a single line — for meta descriptions and Telegram blurbs. */
 export function stripTags(html: string | null | undefined): string {
   return (html ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+const ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ',
+};
+
+/**
+ * Reverses the editor's text→HTML conversion, keeping paragraph breaks.
+ *
+ * `stripTags` cannot be used to populate the edit form: it collapses all
+ * whitespace, so two paragraphs come back as one line and re-saving silently
+ * merges them. Anything that round-trips through the form must use this.
+ */
+export function htmlToPlainText(html: string | null | undefined): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|blockquote)>/gi, '\n\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&([a-z#0-9]+);/gi, (m, name) => ENTITIES[name.toLowerCase()] ?? m)
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .join('\n')
+    .trim();
 }
 
 export function truncate(text: string, max: number): string {

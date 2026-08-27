@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { createOrder, StockConflict, type RequestedItem } from '../../lib/orders';
-import { sendOrderEmails } from '../../lib/notify';
+import { notifyOrderPlaced } from '../../lib/notify';
 
 export const prerender = false;
 
@@ -59,7 +59,7 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     // Notifications must never cost the customer their order — the books are
     // already held and the confirmation page renders from the database.
     const origin = url.origin;
-    const notify = sendOrderEmails({ order, name, email, phone, fulfilment, address, notes, origin }).catch(
+    const notify = notifyOrderPlaced({ order, name, email, phone, telegram, fulfilment, address, notes, origin }).catch(
       (err) => console.error('order notification failed', order.ref, err),
     );
     // `locals.runtime.ctx` was removed in Astro v6; `cfContext` is the

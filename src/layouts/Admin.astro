@@ -1,0 +1,92 @@
+---
+import '../styles/global.css';
+import Rosette from '../components/Rosette.astro';
+
+interface Props {
+  title: string;
+  /** Shown under the heading — counts, status, context. */
+  sub?: string;
+  back?: { href: string; label: string };
+}
+const { title, sub, back } = Astro.props;
+const admin = Astro.locals.admin;
+const path = Astro.url.pathname;
+
+const NAV = [
+  { href: '/admin', label: 'Dashboard' },
+  { href: '/admin/orders', label: 'Orders' },
+  { href: '/admin/books', label: 'Listings' },
+  { href: '/admin/settings', label: 'Settings' },
+];
+
+const active = (href: string) =>
+  href === '/admin' ? path === '/admin' : path.startsWith(href);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} — As-Subkī Books portal</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+
+  <body class="min-h-screen bg-[var(--color-paper)]">
+    <header class="bg-[var(--color-navy-deep)] text-white">
+      <div class="mx-auto max-w-5xl px-5 md:px-8">
+        <div class="flex items-center gap-3 py-3">
+          <span class="text-[var(--color-wash)]"><Rosette size={24} /></span>
+          <span class="font-[family-name:var(--font-display)] text-[16px] font-semibold">
+            Shop portal
+          </span>
+          <span class="ml-auto text-[13px] text-[var(--color-wash)]/70 truncate max-w-[45%]">
+            {admin?.email}
+          </span>
+          <a href="/" class="text-[13px] text-[var(--color-wash)] hover:text-white underline underline-offset-2">
+            View shop
+          </a>
+        </div>
+        <nav class="flex gap-1 -mb-px overflow-x-auto" aria-label="Portal">
+          {
+            NAV.map((item) => (
+              <a
+                href={item.href}
+                class:list={[
+                  'px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors',
+                  active(item.href)
+                    ? 'border-[var(--color-wash)] text-white font-medium'
+                    : 'border-transparent text-[var(--color-wash)]/70 hover:text-white',
+                ]}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+        </nav>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-5xl px-5 md:px-8 py-8">
+      {
+        back && (
+          <a
+            href={back.href}
+            class="inline-block mb-4 text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2"
+          >
+            ← {back.label}
+          </a>
+        )
+      }
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-6">
+        <h1 class="font-[family-name:var(--font-display)] text-[28px] md:text-[32px] font-semibold">
+          {title}
+        </h1>
+        {sub && <p class="text-[15px] text-[var(--color-ink-faint)]">{sub}</p>}
+      </div>
+
+      <slot />
+    </main>
+  </body>
+</html>

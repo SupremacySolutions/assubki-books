@@ -1,0 +1,64 @@
+---
+import '../../styles/global.css';
+import Rosette from '../../components/Rosette.astro';
+import { passwordFallbackActive } from '../../lib/admin-auth';
+
+// Only reachable while Access is unconfigured; once ACCESS_AUD is set,
+// Cloudflare shows its own login and this page stops accepting anything.
+if (!passwordFallbackActive()) return Astro.redirect('/admin', 302);
+
+const next = Astro.url.searchParams.get('next') ?? '/admin';
+const failed = Astro.url.searchParams.get('e') === '1';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Portal sign in</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body class="min-h-screen grid place-items-center bg-[var(--color-navy-deep)] p-5">
+    <main class="w-full max-w-sm">
+      <div class="text-center text-[var(--color-wash)] mb-6">
+        <div class="flex justify-center mb-3"><Rosette size={44} /></div>
+        <h1 class="font-[family-name:var(--font-display)] text-[22px] font-semibold text-white">
+          Shop portal
+        </h1>
+      </div>
+
+      <form
+        method="post"
+        action="/api/admin/login"
+        class="bg-white rounded-[3px] p-6 border border-[var(--color-rule)]"
+      >
+        <input type="hidden" name="next" value={next} />
+        <label for="password" class="block text-[14.5px] font-medium mb-1.5">Password</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          required
+          autocomplete="current-password"
+          autofocus
+          class="field"
+        />
+        {
+          failed && (
+            <p role="alert" class="mt-2.5 text-[14px] text-[var(--color-outstock)]">
+              That password was not recognised.
+            </p>
+          )
+        }
+        <button type="submit" class="btn btn-primary w-full mt-4">Sign in</button>
+      </form>
+
+      <p class="mt-4 text-center text-[13px] text-[var(--color-wash)]/60 leading-relaxed">
+        Interim sign-in. Once Cloudflare Access is switched on this page retires
+        itself and sign-in moves to an emailed one-time code.
+      </p>
+    </main>
+  </body>
+</html>

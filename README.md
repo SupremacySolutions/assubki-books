@@ -86,16 +86,38 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   titles were seeded at 3 — enough to read "In stock" without claiming a
   scarcity the source never asserted. The owner sets real numbers in the admin.
 
-## Not built yet (phase 2)
+## The portal
 
-The admin panel (`/admin`, behind Cloudflare Access), one-click Telegram
-posting, and the domain cutover. `src/lib/notify.ts` already has the Telegram
-code path; it needs `TELEGRAM_BOT_TOKEN` and `TELEGRAM_OWNER_CHAT_ID`.
+`/admin`, guarded in `src/middleware.ts` rather than per-page, so a new admin
+route cannot be added unprotected by forgetting to guard it. Listings, stock,
+photo uploads, the order queue, and the confirm step that sets postage and
+sends payment details.
 
-Email needs the Workers Paid plan, a domain onboarded to Cloudflare Email
-Sending, a `send_email` binding named `EMAIL`, and an `ORDER_FROM` var. Until
-then `sendOrderEmails` logs what it would have sent and the order still
-completes.
+Two auth paths, and only ever one active: Cloudflare Access when `ACCESS_AUD`
+is set, otherwise a shared password. See SETUP.md.
+
+**A confirmed order only advances if a message actually reached the customer.**
+An order marked "awaiting payment" that the customer never heard about looks
+handled but is not, so the confirm endpoint keeps it in the queue and says
+plainly that nothing went out.
+
+## Connections
+
+Email (Resend), the Telegram bot, and portal sign-in are all optional — the
+shop takes orders and holds stock without them, logging what it would have
+sent. **SETUP.md** covers turning each one on.
+
+The constraint worth knowing: **a Telegram bot cannot open a conversation.** It
+can only message someone who messaged it first. That is why an order carries a
+`t.me/<bot>?start=<ref>_<token>` deep link and why `/api/telegram/webhook`
+exists — tapping it is the moment permission is granted. Email is the fallback
+for anyone who never taps.
+
+## Not built yet
+
+The domain cutover. See the cutover plan — the domain carries the owner's IONOS
+email, and moving nameservers without recreating the MX records first will
+silently kill their mail.
 
 ## Deploying
 

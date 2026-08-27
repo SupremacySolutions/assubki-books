@@ -1,0 +1,92 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { listBooksAdmin } from '../../../lib/admin-db';
+import { price, imageUrl } from '../../../lib/format';
+
+const q = Astro.url.searchParams.get('q');
+const books = await listBooksAdmin(q);
+const saved = Astro.url.searchParams.get('saved');
+---
+
+<Admin title="Listings" sub={q ? `${books.length} matching “${q}”` : `${books.length} most recently edited`}>
+  {
+    saved && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Listing saved.
+      </p>
+    )
+  }
+
+  <div class="flex flex-wrap gap-3 items-center mb-5">
+    <form method="get" class="flex gap-2 flex-1 min-w-[240px]">
+      <label for="q" class="sr-only">Search listings</label>
+      <input id="q" name="q" type="search" value={q ?? ''} placeholder="Search by title" class="field" />
+      <button type="submit" class="btn btn-ghost">Search</button>
+    </form>
+    <a href="/admin/books/new" class="btn btn-primary">Add a listing</a>
+  </div>
+
+  <ul class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
+    {
+      books.map((b) => (
+        <li class="flex items-center gap-3 p-3">
+          <a href={`/admin/books/${b.id}`} class="shrink-0 w-11 h-14 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
+            {b.image_key ? (
+              <img src={imageUrl(b.image_key)} alt="" class="max-h-full max-w-full object-contain" loading="lazy" />
+            ) : (
+              <span class="text-[10px] text-[var(--color-ink-faint)] text-center leading-tight px-0.5">
+                no photo
+              </span>
+            )}
+          </a>
+
+          <div class="min-w-0 flex-1">
+            <a href={`/admin/books/${b.id}`} class="text-[15px] font-medium hover:text-[var(--color-navy)] block truncate">
+              {b.title}
+            </a>
+            <p class="text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-2">
+              <span class="price !text-[13px]">{price(b.price_pence)}</span>
+              {b.reserved > 0 && <span>{b.reserved} held</span>}
+              {!b.has_description && <span class="text-[var(--color-outstock)]">no description</span>}
+              {b.cat_count === 0 && <span class="text-[var(--color-outstock)]">no subject</span>}
+              {b.status !== 'live' && <span class="text-[var(--color-outstock)]">{b.status}</span>}
+              {!b.telegram_message_id && <span>not announced</span>}
+            </p>
+          </div>
+
+          {/* Stock is the field the owner touches most, so it is editable
+              without opening the listing. */}
+          <form
+            method="post"
+            action="/api/admin/books/stock"
+            class="flex items-center gap-1.5 shrink-0"
+          >
+            <input type="hidden" name="id" value={b.id} />
+            <label for={`s${b.id}`} class="sr-only">
+              Stock for {b.title}
+            </label>
+            <input
+              id={`s${b.id}`}
+              name="stock"
+              type="number"
+              min={b.reserved}
+              value={b.stock}
+              class="field !w-16 !py-1.5 !px-2 tabular-nums text-center"
+            />
+            <button type="submit" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">
+              Save
+            </button>
+          </form>
+        </li>
+      ))
+    }
+  </ul>
+
+  {
+    books.length === 0 && (
+      <p class="p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-[15px] text-[var(--color-ink-soft)]">
+        Nothing matches that search.
+      </p>
+    )
+  }
+</Admin>

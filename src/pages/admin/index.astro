@@ -1,0 +1,154 @@
+---
+import Admin from '../../layouts/Admin.astro';
+import { orderCounts, listOrders, backlog } from '../../lib/admin-db';
+import { catalogueStats } from '../../lib/db';
+import { price } from '../../lib/format';
+import { botConfigured } from '../../lib/telegram';
+import { emailConfigured } from '../../lib/email';
+
+const [counts, pending, work, stats] = await Promise.all([
+  orderCounts(),
+  listOrders('requested'),
+  backlog(),
+  catalogueStats(),
+]);
+
+const needsAction = (counts.requested ?? 0) + (counts.awaiting_payment ?? 0);
+const warnings = [
+  !emailConfigured() && 'Email is not configured — customers are not being emailed. Add RESEND_API_KEY and ORDER_FROM.',
+  !botConfigured() && 'Telegram is not configured — new listings cannot be posted to the channel. Add TELEGRAM_BOT_TOKEN.',
+].filter(Boolean) as string[];
+---
+
+<Admin title="Dashboard" sub={`${stats.titles} titles · ${stats.inStock} in stock`}>
+  {
+    warnings.length > 0 && (
+      <div class="mb-6 space-y-2">
+        {warnings.map((w) => (
+          <p class="p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14px] text-[var(--color-outstock)]">
+            {w}
+          </p>
+        ))}
+      </div>
+    )
+  }
+
+  <section class="grid gap-3 sm:grid-cols-3 mb-8">
+    <a
+      href="/admin/orders?status=requested"
+      class="p-4 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
+    >
+      <p class="eyebrow">Needs your reply</p>
+      <p class="mt-1 text-[30px] font-semibold tabular-nums leading-none">{counts.requested ?? 0}</p>
+    </a>
+    <a
+      href="/admin/orders?status=awaiting_payment"
+      class="p-4 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
+    >
+      <p class="eyebrow">Awaiting payment</p>
+      <p class="mt-1 text-[30px] font-semibold tabular-nums leading-none">
+        {counts.awaiting_payment ?? 0}
+      </p>
+    </a>
+    <a
+      href="/admin/orders?status=paid"
+      class="p-4 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
+    >
+      <p class="eyebrow">Paid, to post</p>
+      <p class="mt-1 text-[30px] font-semibold tabular-nums leading-none">{counts.paid ?? 0}</p>
+    </a>
+  </section>
+
+  <section class="mb-10">
+    <div class="flex items-baseline justify-between mb-3">
+      <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold">
+        Requests waiting
+      </h2>
+      <a href="/admin/orders" class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2">
+        All orders →
+      </a>
+    </div>
+
+    {
+      pending.length === 0 ? (
+        <p class="p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-[15px] text-[var(--color-ink-soft)]">
+          Nothing waiting. New requests appear here and in your inbox.
+        </p>
+      ) : (
+        <ul class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
+          {pending.map((o) => {
+            const hoursLeft = o.expires_at
+              ? Math.max(0, Math.round((o.expires_at * 1000 - Date.now()) / 3_600_000))
+              : null;
+            return (
+              <li>
+                <a href={`/admin/orders/${o.ref}`} class="flex items-center gap-4 p-4 hover:bg-[var(--color-paper)]">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-[15px] font-medium truncate">
+                      {o.customer_name}
+                      <span class="ml-2 text-[13px] font-normal text-[var(--color-ink-faint)]">{o.ref}</span>
+                    </p>
+                    <p class="text-[13.5px] text-[var(--color-ink-faint)] truncate">
+                      {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment}
+                      {o.telegram_chat_id ? ' · Telegram linked' : ''}
+                    </p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="price text-[15px]">{price(o.subtotal_pence)}</p>
+                    {hoursLeft !== null && (
+                      <p
+                        class:list={[
+                          'text-[12.5px] tabular-nums',
+                          hoursLeft <= 6 ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-faint)]',
+                        ]}
+                      >
+                        {hoursLeft}h left
+                      </p>
+                    )}
+                  </div>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      )
+    }
+  </section>
+
+  <section>
+    <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold mb-3">
+      Catalogue to tidy
+    </h2>
+    <p class="text-[14.5px] text-[var(--color-ink-soft)] mb-4 max-w-2xl">
+      Carried over from the old site. None of it stops the shop working — it is the
+      polish the import could not do for you.
+    </p>
+    <ul class="grid gap-3 sm:grid-cols-2">
+      {
+        [
+          { n: work.noImage, label: 'listings with no photo', href: '/admin/books' },
+          { n: work.noDescription, label: 'listings with no description', href: '/admin/books' },
+          { n: work.noCategory, label: 'listings with no subject', href: '/admin/books' },
+          { n: work.unposted, label: 'never announced on Telegram', href: '/admin/books' },
+        ].map((row) => (
+          <li>
+            <a
+              href={row.href}
+              class="flex items-baseline gap-3 p-3.5 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
+            >
+              <span
+                class:list={[
+                  'text-[22px] font-semibold tabular-nums',
+                  row.n === 0 ? 'text-[var(--color-instock)]' : 'text-[var(--color-ink)]',
+                ]}
+              >
+                {row.n}
+              </span>
+              <span class="text-[14.5px] text-[var(--color-ink-soft)]">{row.label}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</Admin>

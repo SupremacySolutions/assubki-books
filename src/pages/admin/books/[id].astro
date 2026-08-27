@@ -1,0 +1,327 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { getBookAdmin } from '../../../lib/admin-db';
+import { allCategories } from '../../../lib/db';
+import { imageUrl, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
+import { botConfigured, listingCaption } from '../../../lib/telegram';
+
+const { id } = Astro.params;
+const isNew = id === 'new';
+const bookId = isNew ? null : Number.parseInt(id ?? '', 10);
+
+if (!isNew && (!bookId || Number.isNaN(bookId))) return Astro.rewrite('/404');
+
+const book = bookId ? await getBookAdmin(bookId) : null;
+if (!isNew && !book) return Astro.rewrite('/404');
+
+const categories = await allCategories();
+const selected = new Set(book?.categoryIds ?? []);
+const posted = Astro.url.searchParams.get('posted');
+const error = Astro.url.searchParams.get('e');
+
+// What the channel post will look like, rendered from the same function that
+// builds the real caption — so the preview cannot drift from what is sent.
+const previewCaption = book
+  ? listingCaption({
+      title: book.title,
+      titleAr: book.title_ar,
+      pricePence: book.price_pence,
+      blurb: truncate(stripTags(book.description_html), 180) || null,
+      available: book.available,
+      url: `${Astro.url.origin}/book/${book.slug}`,
+    })
+      // Undo the MarkdownV2 escaping for display only.
+      .replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+  : '';
+---
+
+<Admin
+  title={isNew ? 'Add a listing' : book!.title}
+  sub={isNew ? undefined : `£${(book!.price_pence / 100).toFixed(2)} · ${book!.available} available`}
+  back={{ href: '/admin/books', label: 'All listings' }}
+>
+  {
+    error === 'upload' && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        That photo could not be saved. Check it is a JPEG, PNG or WebP under 8 MB.
+      </p>
+    )
+  }
+  {
+    posted === '1' && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Posted to the Telegram channel.
+      </p>
+    )
+  }
+  {
+    posted === '0' && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        Telegram rejected the post. Check the bot is an admin of the channel.
+      </p>
+    )
+  }
+
+  <form method="post" action="/api/admin/books/save" class="grid gap-6 lg:grid-cols-[1fr_300px] items-start">
+    <input type="hidden" name="id" value={book?.id ?? ''} />
+
+    <div class="space-y-5">
+      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 space-y-4">
+        <div>
+          <label for="title" class="block text-[14.5px] font-medium mb-1.5">Title</label>
+          <input id="title" name="title" required maxlength="200" value={book?.title ?? ''} class="field" />
+        </div>
+
+        <div>
+          <label for="title_ar" class="block text-[14.5px] font-medium mb-1.5">
+            Arabic title <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <input
+            id="title_ar"
+            name="title_ar"
+            dir="rtl"
+            maxlength="200"
+            value={book?.title_ar ?? ''}
+            class="field ar"
+          />
+        </div>
+
+        <div>
+          <label for="description" class="block text-[14.5px] font-medium mb-1.5">Description</label>
+          <textarea id="description" name="description" rows="7" maxlength="6000" class="field"
+            >{htmlToPlainText(book?.description_html)}</textarea
+          >
+          <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+            Plain text. Blank lines start a new paragraph. The first couple of lines are what
+            appears on Telegram.
+          </p>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-3">
+          <div>
+            <label for="price" class="block text-[14.5px] font-medium mb-1.5">Price (£)</label>
+            <input
+              id="price"
+              name="price"
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              value={((book?.price_pence ?? 0) / 100).toFixed(2)}
+              class="field tabular-nums"
+            />
+          </div>
+          <div>
+            <label for="stock" class="block text-[14.5px] font-medium mb-1.5">In stock</label>
+            <input
+              id="stock"
+              name="stock"
+              type="number"
+              min={book?.reserved ?? 0}
+              required
+              value={book?.stock ?? 1}
+              class="field tabular-nums"
+            />
+            {
+              book && book.reserved > 0 && (
+                <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+                  {book.reserved} held by open orders
+                </p>
+              )
+            }
+          </div>
+          <div>
+            <label for="status" class="block text-[14.5px] font-medium mb-1.5">Visibility</label>
+            <select id="status" name="status" class="field">
+              <option value="live" selected={(book?.status ?? 'live') === 'live'}>Live in shop</option>
+              <option value="draft" selected={book?.status === 'draft'}>Draft (hidden)</option>
+              <option value="archived" selected={book?.status === 'archived'}>Archived</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+        <h2 class="eyebrow mb-3">Subjects</h2>
+        <div class="grid gap-1.5 sm:grid-cols-2 max-h-64 overflow-y-auto">
+          {
+            categories.map((c) => (
+              <label class="flex items-center gap-2 text-[14.5px] cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="categories"
+                  value={c.id}
+                  checked={selected.has(c.id)}
+                  class="w-4 h-4 accent-[var(--color-navy)]"
+                />
+                <span class:list={[c.parent_id ? 'text-[var(--color-ink-soft)] pl-2' : '']}>
+                  {c.name}
+                </span>
+              </label>
+            ))
+          }
+        </div>
+      </section>
+
+      <button type="submit" class="btn btn-primary">
+        {isNew ? 'Create listing' : 'Save changes'}
+      </button>
+    </div>
+
+    <aside class="space-y-4">
+      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+        <h2 class="eyebrow mb-3">Photos</h2>
+
+        {
+          book && book.images.length > 0 && (
+            <ul class="grid grid-cols-3 gap-2 mb-3">
+              {book.images.map((img) => (
+                <li class="relative">
+                  <div class="aspect-[3/4] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
+                    <img src={imageUrl(img.image_key)} alt="" class="max-h-full max-w-full object-contain" />
+                  </div>
+                  <button
+                    type="button"
+                    data-remove-image={img.id}
+                    class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--color-outstock)] text-white text-[12px] leading-none grid place-items-center"
+                    title="Remove this photo"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+
+        {
+          isNew ? (
+            <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">
+              Save the listing first, then photos can be added here.
+            </p>
+          ) : (
+            <div>
+              <label
+                for="photo"
+                class="block p-4 text-center border-2 border-dashed border-[var(--color-rule)] rounded-[3px] cursor-pointer hover:border-[var(--color-navy)] transition-colors"
+              >
+                <span class="text-[14px] text-[var(--color-navy)]">Choose a photo</span>
+                <span class="block text-[12.5px] text-[var(--color-ink-faint)] mt-0.5">
+                  JPEG, PNG or WebP, up to 8 MB
+                </span>
+              </label>
+              <input id="photo" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" />
+              <p id="uploadStatus" class="mt-2 text-[13.5px] text-[var(--color-ink-soft)]" hidden />
+            </div>
+          )
+        }
+      </section>
+
+      {
+        book && (
+          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+            <h2 class="eyebrow mb-2">Telegram channel</h2>
+            {book.telegram_message_id ? (
+              <p class="text-[13.5px] text-[var(--color-instock)] mb-3">
+                ✓ Announced. Posting again updates that message rather than adding a new one.
+              </p>
+            ) : (
+              <p class="text-[13.5px] text-[var(--color-ink-soft)] mb-3">Not announced yet.</p>
+            )}
+
+            <details class="mb-3">
+              <summary class="text-[14px] text-[var(--color-navy)] cursor-pointer">
+                Preview the post
+              </summary>
+              <div class="mt-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]">
+                {book.images[0] && (
+                  <img
+                    src={imageUrl(book.images[0].image_key)}
+                    alt=""
+                    class="w-full max-h-40 object-contain mb-2"
+                  />
+                )}
+                <pre class="text-[13px] whitespace-pre-wrap font-[family-name:var(--font-body)] text-[var(--color-ink-soft)] leading-relaxed">{previewCaption}</pre>
+              </div>
+            </details>
+
+            {botConfigured() ? (
+              <button
+                type="submit"
+                form="telegramForm"
+                class="btn btn-primary w-full !py-2"
+                disabled={book.status !== 'live'}
+              >
+                {book.telegram_message_id ? 'Update channel post' : 'Post to channel'}
+              </button>
+            ) : (
+              <p class="text-[13px] text-[var(--color-ink-faint)]">
+                Add TELEGRAM_BOT_TOKEN to enable posting.
+              </p>
+            )}
+            {book.status !== 'live' && (
+              <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
+                Only live listings can be announced.
+              </p>
+            )}
+          </section>
+        )
+      }
+
+      {
+        book && (
+          <a
+            href={`/book/${book.slug}`}
+            class="block text-center text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2"
+          >
+            View in the shop →
+          </a>
+        )
+      }
+    </aside>
+  </form>
+
+  {/* Kept outside the main form: nesting forms is invalid HTML and the browser
+      silently drops the inner one. */}
+  {book && <form id="telegramForm" method="post" action={`/api/admin/books/${book.id}/telegram`} />}
+
+  {
+    book && (
+      <script is:inline define:vars={{ bookId: book.id }}>
+        const input = document.querySelector('#photo');
+        const status = document.querySelector('#uploadStatus');
+
+        input?.addEventListener('change', async () => {
+          const file = input.files?.[0];
+          if (!file) return;
+          status.hidden = false;
+          status.textContent = 'Uploading…';
+
+          const body = new FormData();
+          body.append('bookId', String(bookId));
+          body.append('photo', file);
+
+          try {
+            const res = await fetch('/api/admin/upload', { method: 'POST', body });
+            if (!res.ok) throw new Error(await res.text());
+            status.textContent = 'Uploaded.';
+            window.location.reload();
+          } catch (err) {
+            status.textContent = `Could not upload that photo. ${err}`;
+          }
+        });
+
+        for (const btn of document.querySelectorAll('[data-remove-image]')) {
+          btn.addEventListener('click', async () => {
+            if (!confirm('Remove this photo?')) return;
+            const body = new FormData();
+            body.append('imageId', btn.dataset.removeImage);
+            const res = await fetch('/api/admin/upload', { method: 'DELETE', body });
+            if (res.ok) window.location.reload();
+          });
+        }
+      </script>
+    )
+  }
+</Admin>

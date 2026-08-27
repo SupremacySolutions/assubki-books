@@ -1,0 +1,269 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { getOrderByRef, getOrderItems } from '../../../lib/admin-db';
+import { price } from '../../../lib/format';
+import { defaultPostagePence, getSetting } from '../../../lib/settings';
+
+const { ref } = Astro.params;
+const order = ref ? await getOrderByRef(ref) : null;
+if (!order) return Astro.rewrite('/404');
+
+const [items, postageDefault, paymentInstructions] = await Promise.all([
+  getOrderItems(order.id),
+  defaultPostagePence(),
+  getSetting('payment_instructions'),
+]);
+
+const isCollection = order.fulfilment === 'collection';
+const suggestedPostage = order.postage_pence ?? (isCollection ? 0 : postageDefault);
+const canConfirm = order.status === 'requested';
+const hoursLeft = order.expires_at
+  ? Math.max(0, Math.round((order.expires_at * 1000 - Date.now()) / 3_600_000))
+  : null;
+
+const sentVia = Astro.url.searchParams.get('sent');
+const problem = Astro.url.searchParams.get('e');
+
+const NEXT: Record<string, { action: string; label: string; hint: string }[]> = {
+  awaiting_payment: [
+    { action: 'paid', label: 'Mark payment received', hint: 'Emails the customer that payment arrived.' },
+    { action: 'cancelled', label: 'Cancel order', hint: 'Releases the held stock.' },
+  ],
+  paid: [{ action: 'dispatched', label: 'Mark as posted', hint: 'Tells the customer the books are on the way.' }],
+  dispatched: [],
+  expired: [],
+  cancelled: [],
+  requested: [{ action: 'cancelled', label: 'Cancel order', hint: 'Releases the held stock.' }],
+};
+---
+
+<Admin
+  title={order.customer_name}
+  sub={order.ref}
+  back={{ href: '/admin/orders', label: 'All orders' }}
+>
+  {
+    sentVia && (
+      <p class="mb-5 p-3.5 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Confirmed. Payment details sent by {sentVia.replace('+', ' and ')}.
+      </p>
+    )
+  }
+  {
+    problem === 'nosend' && (
+      <div class="mb-5 p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        <p class="font-medium">Nothing was sent, so this order is still waiting.</p>
+        <p class="mt-1 leading-relaxed">
+          The postage and total have been saved, but no message could be delivered — email is not
+          configured, and this customer has not connected Telegram. Set{' '}
+          <code class="text-[13px]">RESEND_API_KEY</code> and{' '}
+          <code class="text-[13px]">ORDER_FROM</code>, then confirm again. Until then you can
+          contact them directly using the details on the right.
+        </p>
+      </div>
+    )
+  }
+  {
+    problem === 'state' && (
+      <p class="mb-5 p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        That order had already moved on — nothing was changed.
+      </p>
+    )
+  }
+
+  <div class="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+    <div class="space-y-6">
+      <!-- Everything needed to pack and post, in one block. -->
+      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+        <h2 class="eyebrow mb-3">Books to pack</h2>
+        <ul class="divide-y divide-[var(--color-rule)]">
+          {
+            items.map((item) => (
+              <li class="py-2.5 flex justify-between gap-4 text-[15px]">
+                <span class="min-w-0">
+                  {item.slug ? (
+                    <a href={`/book/${item.slug}`} class="hover:text-[var(--color-navy)]">
+                      {item.title_snapshot}
+                    </a>
+                  ) : (
+                    item.title_snapshot
+                  )}
+                  {item.qty > 1 && (
+                    <strong class="ml-2 text-[var(--color-navy)]">× {item.qty}</strong>
+                  )}
+                </span>
+                <span class="shrink-0 tabular-nums">
+                  {price(item.price_pence_snapshot * item.qty)}
+                </span>
+              </li>
+            ))
+          }
+        </ul>
+        <div class="mt-3 pt-3 border-t border-[var(--color-rule)] flex justify-between text-[15px]">
+          <span>Subtotal</span>
+          <span class="price">{price(order.subtotal_pence)}</span>
+        </div>
+        {
+          order.total_pence !== null && (
+            <>
+              <div class="mt-1 flex justify-between text-[15px] text-[var(--color-ink-soft)]">
+                <span>Postage</span>
+                <span class="tabular-nums">{price(order.postage_pence ?? 0)}</span>
+              </div>
+              <div class="mt-2 pt-2 border-t border-[var(--color-rule)] flex justify-between text-[16px] font-semibold">
+                <span>Total quoted</span>
+                <span class="price text-[19px]">{price(order.total_pence)}</span>
+              </div>
+            </>
+          )
+        }
+      </section>
+
+      {
+        canConfirm && (
+          <section class="bg-white border-2 border-[var(--color-navy)] rounded-[3px] p-5">
+            <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+              Confirm and send payment details
+            </h2>
+            <p class="mt-1.5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+              Set the postage and we will send {order.customer_name.split(' ')[0]} the total and how
+              to pay
+              {order.telegram_chat_id
+                ? ' — by Telegram and email, since they connected their Telegram.'
+                : ' by email. They have not connected Telegram, so email is the only way to reach them.'}
+            </p>
+
+            <form method="post" action={`/api/admin/orders/${order.ref}/confirm`} class="mt-4">
+              <div class="flex flex-wrap items-end gap-4">
+                <div>
+                  <label for="postage" class="block text-[14px] font-medium mb-1.5">
+                    Postage (£)
+                  </label>
+                  <input
+                    id="postage"
+                    name="postage"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={(suggestedPostage / 100).toFixed(2)}
+                    class="field !w-28 tabular-nums"
+                  />
+                </div>
+                <p class="text-[14.5px] text-[var(--color-ink-soft)] pb-2.5">
+                  Total becomes{' '}
+                  <strong id="total" class="price text-[17px]">
+                    {price(order.subtotal_pence + suggestedPostage)}
+                  </strong>
+                </p>
+              </div>
+
+              <details class="mt-4">
+                <summary class="text-[14px] text-[var(--color-navy)] cursor-pointer">
+                  Preview the payment instructions they will receive
+                </summary>
+                <pre class="mt-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px] text-[13.5px] whitespace-pre-wrap font-[family-name:var(--font-body)] text-[var(--color-ink-soft)]">{paymentInstructions}</pre>
+                <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+                  Edit these in <a href="/admin/settings" class="text-[var(--color-navy)] underline underline-offset-2">Settings</a>.
+                </p>
+              </details>
+
+              <button type="submit" class="btn btn-primary mt-4">
+                Confirm and send
+              </button>
+            </form>
+          </section>
+        )
+      }
+
+      {
+        (NEXT[order.status] ?? []).length > 0 && (
+          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+            <h2 class="eyebrow mb-3">Next steps</h2>
+            <div class="flex flex-wrap gap-3">
+              {(NEXT[order.status] ?? []).map((step) => (
+                <form method="post" action={`/api/admin/orders/${order.ref}/status`}>
+                  <input type="hidden" name="status" value={step.action} />
+                  <button
+                    type="submit"
+                    class:list={['btn', step.action === 'cancelled' ? 'btn-ghost' : 'btn-primary']}
+                    title={step.hint}
+                  >
+                    {step.label}
+                  </button>
+                </form>
+              ))}
+            </div>
+          </section>
+        )
+      }
+    </div>
+
+    <aside class="space-y-4">
+      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+        <h2 class="eyebrow mb-3">Send to</h2>
+        <p class="text-[15px] font-medium">{order.customer_name}</p>
+        <p class="mt-2 text-[14.5px] text-[var(--color-ink-soft)] whitespace-pre-line leading-relaxed">
+          {isCollection ? 'Collecting in person.' : order.address}
+        </p>
+        <div class="mt-4 pt-3 border-t border-[var(--color-rule)] space-y-1.5 text-[14px]">
+          <p><a href={`mailto:${order.email}`} class="text-[var(--color-navy)] break-all">{order.email}</a></p>
+          {order.phone && <p><a href={`tel:${order.phone}`} class="text-[var(--color-navy)]">{order.phone}</a></p>}
+          {order.telegram && <p class="text-[var(--color-ink-soft)]">{order.telegram}</p>}
+          <p
+            class:list={[
+              'text-[13px]',
+              order.telegram_chat_id ? 'text-[var(--color-instock)]' : 'text-[var(--color-ink-faint)]',
+            ]}
+          >
+            {order.telegram_chat_id ? '✓ Telegram connected' : 'Telegram not connected'}
+          </p>
+        </div>
+      </section>
+
+      {
+        order.notes && (
+          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+            <h2 class="eyebrow mb-2">Their note</h2>
+            <p class="text-[14.5px] text-[var(--color-ink-soft)] whitespace-pre-line">{order.notes}</p>
+          </section>
+        )
+      }
+
+      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 text-[14px] space-y-2">
+        <div class="flex justify-between gap-3">
+          <span class="text-[var(--color-ink-faint)]">Status</span>
+          <span class="font-medium">{order.status.replace('_', ' ')}</span>
+        </div>
+        <div class="flex justify-between gap-3">
+          <span class="text-[var(--color-ink-faint)]">Requested</span>
+          <span>{new Date(order.created_at * 1000).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+        </div>
+        {
+          order.status === 'requested' && hoursLeft !== null && (
+            <div class="flex justify-between gap-3">
+              <span class="text-[var(--color-ink-faint)]">Hold expires</span>
+              <span class={hoursLeft <= 6 ? 'text-[var(--color-outstock)] font-medium' : ''}>
+                in {hoursLeft}h
+              </span>
+            </div>
+          )
+        }
+        <a
+          href={`/order/${order.ref}?t=${order.access_token}`}
+          class="block pt-2 text-[var(--color-navy)] hover:underline underline-offset-2"
+        >
+          See what the customer sees →
+        </a>
+      </section>
+    </aside>
+  </div>
+
+  <script is:inline define:vars={{ subtotal: order.subtotal_pence }}>
+    const postage = document.querySelector('#postage');
+    const total = document.querySelector('#total');
+    postage?.addEventListener('input', () => {
+      const pence = Math.round((Number(postage.value) || 0) * 100);
+      total.textContent = `£${((subtotal + pence) / 100).toFixed(2)}`;
+    });
+  </script>
+</Admin>
