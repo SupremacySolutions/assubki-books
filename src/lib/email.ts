@@ -16,6 +16,7 @@ import { SITE } from './format';
 
 interface EmailEnv {
   RESEND_API_KEY?: string;
+  EMAIL_DRY_RUN?: string;
   ORDER_FROM?: string;
   OWNER_EMAIL?: string;
 }
@@ -81,8 +82,25 @@ async function clearFailure(): Promise<void> {
   }
 }
 
+/**
+ * Whether sends are pretend.
+ *
+ * The test suite places a dozen orders a run and each one emails twice, which
+ * is most of a day's free quota. Set EMAIL_DRY_RUN=1 in .dev.vars so working
+ * locally costs nothing and the shop keeps its allowance for real customers.
+ *
+ * It is read from the environment only, and is deliberately not set in
+ * wrangler.jsonc - production must never be able to silently stop emailing.
+ */
+export const emailDryRun = (): boolean => cfg().EMAIL_DRY_RUN === '1';
+
 export async function deliver(msg: Message): Promise<boolean> {
   const { RESEND_API_KEY, ORDER_FROM } = cfg();
+
+  if (emailDryRun()) {
+    console.log(`[email] dry run → ${msg.to}: ${msg.subject}`);
+    return true;
+  }
 
   if (!RESEND_API_KEY || !ORDER_FROM) {
     console.log(`[email] skipped (no RESEND_API_KEY/ORDER_FROM) → ${msg.to}: ${msg.subject}`);

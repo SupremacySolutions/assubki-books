@@ -509,6 +509,33 @@ const SUITES = [
 console.log(`\nRunning against ${PROD ? `\x1b[33m${SITE} (REAL)\x1b[0m` : SITE}`);
 if (PROD) console.log(`  channel ${prodVars.TELEGRAM_CHANNEL_ID}  ·  owner ${prodVars.OWNER_EMAIL}`);
 
+/*
+ * Email is a metered resource, and a full run is about 38 messages - most of a
+ * day's free allowance. Spending it on tests means a real customer's
+ * confirmation silently fails, so the cost is stated up front and production
+ * has to be asked for explicitly.
+ *
+ * Locally EMAIL_DRY_RUN=1 makes sends free, and the run refuses to start
+ * without it rather than quietly billing the shop for a development loop.
+ */
+const forReal = process.argv.includes('--send-for-real');
+
+if (!PROD && vars.EMAIL_DRY_RUN !== '1' && !forReal) {
+  console.log(
+    '\n  \x1b[31mrefusing to run\x1b[0m - a local run would send ~38 real emails.' +
+      '\n  Add EMAIL_DRY_RUN=1 to .dev.vars, or pass --send-for-real if you mean it.\n',
+  );
+  process.exit(1);
+}
+
+if (PROD && !only && !forReal) {
+  console.log(
+    '\n  \x1b[33ma full production run sends ~38 real emails\x1b[0m against a 100/day quota.' +
+      '\n  Pass --send-for-real to confirm, or --only=<suite> to test one area.\n',
+  );
+  process.exit(1);
+}
+
 // Without a session the portal suites cannot build their fixtures. Rather than
 // abort, run the ones that need no sign-in and say plainly which were skipped -
 // a partial run is worth having, as long as it can never be read as a full one.
