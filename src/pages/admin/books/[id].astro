@@ -63,6 +63,14 @@ const previewCaption = book
     )
   }
   {
+    error === 'held' && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        This listing cannot be deleted while copies are held by an open order. Cancel or complete
+        that order first.
+      </p>
+    )
+  }
+  {
     posted === 'draft' && (
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
         Not announced — only live listings can be posted to the channel.
@@ -290,6 +298,36 @@ const previewCaption = book
       }
     </aside>
   </form>
+
+  {
+    book && (
+      <section class="mt-8 max-w-md border border-[var(--color-outstock)]/30 rounded-[3px] p-5">
+        <h2 class="text-[16px] font-medium text-[var(--color-outstock)]">Delete this listing</h2>
+        <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+          Removes it from the shop for good, along with any photos you uploaded
+          {book.telegram_message_id ? ' and its post in the Telegram channel' : ''}. Past orders
+          keep their record of it. To hide a listing without losing it, set its visibility to
+          Archived instead.
+        </p>
+        {book.reserved > 0 && (
+          <p class="mt-2 text-[14px] text-[var(--color-outstock)]">
+            {book.reserved} {book.reserved === 1 ? 'copy is' : 'copies are'} held by an open order,
+            so this cannot be deleted yet.
+          </p>
+        )}
+        <form
+          method="post"
+          action={`/api/admin/books/${book.id}/delete`}
+          class="mt-4"
+          onsubmit="return confirm('Delete this listing for good? Past orders keep their record of it.')"
+        >
+          <button type="submit" class="btn btn-ghost !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40" disabled={book.reserved > 0}>
+            Delete listing
+          </button>
+        </form>
+      </section>
+    )
+  }
 
   {
     book && (

@@ -185,6 +185,21 @@ export async function editListing(messageId: number, post: ListingPost): Promise
   return asText !== null || notModified;
 }
 
+/**
+ * Removes a channel post. Used when a listing is deleted — otherwise the
+ * channel keeps advertising a book, and the link goes to a dead page.
+ *
+ * Telegram only allows a bot to delete its own messages, and only within 48
+ * hours of posting. An older post has to be removed by hand, so this reports
+ * whether it succeeded rather than pretending.
+ */
+export async function deleteChannelMessage(messageId: number): Promise<boolean> {
+  const channel = cfg().TELEGRAM_CHANNEL_ID;
+  if (!channel) return false;
+  const result = await call('deleteMessage', { chat_id: channel, message_id: messageId });
+  return result !== null;
+}
+
 export function webhookSecret(): string | null {
   return cfg().TELEGRAM_WEBHOOK_SECRET ?? null;
 }

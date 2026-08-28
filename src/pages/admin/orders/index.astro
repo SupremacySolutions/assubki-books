@@ -5,6 +5,8 @@ import { price } from '../../../lib/format';
 
 const status = Astro.url.searchParams.get('status');
 const [orders, counts] = await Promise.all([listOrders(status), orderCounts()]);
+const cleared = Astro.url.searchParams.get('cleared');
+const clearable = (counts.cancelled ?? 0) + (counts.expired ?? 0);
 
 const TABS = [
   { key: null, label: 'All' },
@@ -36,6 +38,14 @@ const LABEL: Record<string, string> = {
 ---
 
 <Admin title="Orders" sub={`${orders.length} shown`}>
+  {
+    cleared && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Cleared {cleared} {cleared === '1' ? 'order' : 'orders'}.
+      </p>
+    )
+  }
+
   <nav class="flex flex-wrap gap-1.5 mb-5" aria-label="Filter by status">
     {
       TABS.map((tab) => (
@@ -54,6 +64,23 @@ const LABEL: Record<string, string> = {
       ))
     }
   </nav>
+
+  {
+    clearable > 0 && (
+      <form
+        method="post"
+        action="/api/admin/orders/clear"
+        class="mb-5 flex flex-wrap items-center gap-3 p-3.5 bg-white border border-[var(--color-rule)] rounded-[3px]"
+        onsubmit="return confirm('Delete every cancelled and lapsed order? Orders that were quoted or paid are kept.')"
+      >
+        <p class="text-[14px] text-[var(--color-ink-soft)] flex-1 min-w-[220px]">
+          {clearable} {clearable === 1 ? 'order' : 'orders'} came to nothing — cancelled or lapsed.
+          Clearing them tidies this list; anything quoted or paid is kept.
+        </p>
+        <button type="submit" class="btn btn-ghost !py-1.5">Clear them</button>
+      </form>
+    )
+  }
 
   {
     orders.length === 0 ? (

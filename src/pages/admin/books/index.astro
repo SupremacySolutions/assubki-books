@@ -6,6 +6,8 @@ import { price, imageUrl } from '../../../lib/format';
 const q = Astro.url.searchParams.get('q');
 const books = await listBooksAdmin(q);
 const saved = Astro.url.searchParams.get('saved');
+const deleted = Astro.url.searchParams.get('deleted');
+const deletedOrphan = Astro.url.searchParams.get('deleted-orphan');
 ---
 
 <Admin title="Listings" sub={q ? `${books.length} matching “${q}”` : `${books.length} most recently edited`}>
@@ -13,6 +15,21 @@ const saved = Astro.url.searchParams.get('saved');
     saved && (
       <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
         Listing saved.
+      </p>
+    )
+  }
+  {
+    deleted && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Deleted “{deleted}”.
+      </p>
+    )
+  }
+  {
+    deletedOrphan && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        Deleted “{deletedOrphan}”, but its Telegram post could not be removed — a bot can only
+        delete its own posts, and only within 48 hours. Remove that one in the channel by hand.
       </p>
     )
   }
