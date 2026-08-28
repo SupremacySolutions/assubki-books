@@ -13,6 +13,15 @@ import { authenticate, adminLocked, passwordFallbackActive } from './lib/admin-a
 export const onRequest = defineMiddleware(async (context, next) => {
   const { pathname } = context.url;
 
+  // One canonical address. Both hostnames reach the Worker, so without this
+  // every page would exist at two URLs and each would name itself canonical.
+  if (context.url.hostname === 'www.assubkibooks.co.uk') {
+    return context.redirect(
+      `https://assubkibooks.co.uk${pathname}${context.url.search}`,
+      301,
+    );
+  }
+
   // ---------------------------------------------------------------------
   // The portal. Guarded here rather than per-page so a new admin route
   // cannot be added without protection by simply forgetting to add it.
