@@ -40,7 +40,7 @@ export interface PlacedInput {
 
 function customerPlaced(input: PlacedInput) {
   const { order, name, origin } = input;
-  const link = `${origin}/order/${order.ref}?t=${order.token}`;
+  const link = `${origin}/order?ref=${order.ref}&t=${order.token}`;
   const optIn = optInLink(order.ref, order.token);
   const expires = new Date(order.expiresAt * 1000).toUTCString();
 
@@ -168,7 +168,7 @@ export interface ConfirmedInput {
 }
 
 function confirmedEmail(input: ConfirmedInput) {
-  const link = `${input.origin}/order/${input.ref}?t=${input.token}`;
+  const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
 
   const html = shell(
     'Your order is confirmed',
@@ -293,7 +293,7 @@ export async function notifyStatusChange(input: {
   const copy = COPY[input.status];
   if (!copy) return;
 
-  const link = `${input.origin}/order/${input.ref}?t=${input.token}`;
+  const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
 
   await Promise.allSettled([
     deliver({

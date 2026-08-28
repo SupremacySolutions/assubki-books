@@ -20,7 +20,7 @@ export const POST: APIRoute = async ({ request }) => {
   return new Response(null, {
     status: 302,
     headers: {
-      Location: found ? `/order/${found.ref}?t=${found.token}` : '/order?e=1',
+      Location: found ? `/order?ref=${found.ref}&t=${found.token}` : '/order?e=1',
     },
   });
 };

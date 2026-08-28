@@ -52,6 +52,13 @@ const isCatalogue = path.startsWith('/catalogue');
             path === '/about' ? 'text-[var(--color-navy)] font-medium' : 'text-[var(--color-ink-soft)]',
           ]}>About</a
         >
+        <a
+          href="/order"
+          class:list={[
+            'hidden lg:block px-3 py-2 text-[15px] rounded-sm hover:text-[var(--color-navy)] whitespace-nowrap',
+            path.startsWith('/order') ? 'text-[var(--color-navy)] font-medium' : 'text-[var(--color-ink-soft)]',
+          ]}>Look up order</a
+        >
         <a href="/basket" class="btn btn-ghost relative !px-3.5 !py-2 ml-1">
           Basket
           <span

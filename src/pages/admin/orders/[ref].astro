@@ -278,7 +278,7 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
           </div>
         )}
         <a
-          href={`/order/${order.ref}?t=${order.access_token}`}
+          href={`/order?ref=${order.ref}&t=${order.access_token}`}
           class="block pt-2 text-[var(--color-navy)] hover:underline underline-offset-2"
         >
           See what the customer sees →
