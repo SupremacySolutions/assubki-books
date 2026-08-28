@@ -9,7 +9,7 @@
   "compatibility_flags": ["nodejs_compat"],
 
   "vars": {
-  "ORDER_FROM": "orders@assubkibooks.co.uk",
+  "ORDER_FROM": "As-Subki Orders <orders@assubkibooks.co.uk>",
   "OWNER_EMAIL": "subkibooks@gmail.com",
   "TELEGRAM_BOT_USERNAME": "AsSubkiBooksBot",
   "TELEGRAM_CHANNEL_ID": "-1003850128293"

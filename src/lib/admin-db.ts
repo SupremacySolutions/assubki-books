@@ -24,6 +24,7 @@ export interface AdminOrderRow {
   expires_at: number | null;
   confirmed_at: number | null;
   telegram_chat_id: string | null;
+  tracking_number: string | null;
   item_count: number;
 }
 

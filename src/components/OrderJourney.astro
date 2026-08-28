@@ -1,0 +1,164 @@
+---
+/**
+ * The order as a story rather than a status.
+ *
+ * A customer coming back days later wants to know what has happened and what
+ * happens next, not a single word. Steps that are done carry the date they
+ * happened; the one in progress says what is being waited on; the rest are
+ * dimmed so it is obvious how much is left.
+ *
+ * Collection and delivery are genuinely different journeys, so they show
+ * different final steps rather than one wording bent to cover both.
+ */
+import type { OrderView } from '../lib/orders';
+
+interface Props {
+  order: OrderView;
+}
+const { order } = Astro.props;
+
+const isCollection = order.fulfilment === 'collection';
+const cancelled = order.status === 'cancelled' || order.status === 'expired';
+
+const when = (t: number | null) =>
+  t ? new Date(t * 1000).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : null;
+
+type Step = { title: string; done: boolean; at: string | null; note?: string };
+
+const reached = {
+  confirmed: Boolean(order.confirmed_at) || ['awaiting_payment', 'paid', 'dispatched'].includes(order.status),
+  paid: Boolean(order.paid_at) || ['paid', 'dispatched'].includes(order.status),
+  done: order.status === 'dispatched',
+};
+
+const steps: Step[] = [
+  {
+    title: 'Request received',
+    done: true,
+    at: when(order.created_at),
+    note: 'Your books were set aside for you.',
+  },
+  {
+    title: 'Confirmed, payment details sent',
+    done: reached.confirmed,
+    at: when(order.confirmed_at),
+    note: reached.confirmed
+      ? undefined
+      : 'We are checking the books and working out the total.',
+  },
+  {
+    title: 'Payment received',
+    done: reached.paid,
+    at: when(order.paid_at),
+    note: reached.paid ? undefined : 'Once your payment reaches us we will confirm here.',
+  },
+  isCollection
+    ? {
+        title: 'Ready to collect',
+        done: reached.done,
+        at: when(order.dispatched_at),
+        note: reached.done ? 'Come and collect whenever suits you.' : undefined,
+      }
+    : {
+        title: 'Posted',
+        done: reached.done,
+        at: when(order.dispatched_at),
+        note: reached.done ? undefined : 'We will post your books and note it here.',
+      },
+];
+
+// The first step not yet done is the one being waited on.
+const currentIndex = steps.findIndex((s) => !s.done);
+---
+
+{
+  cancelled ? (
+    <p class="text-[15px] text-[var(--color-ink-soft)]">
+      {order.status === 'expired'
+        ? 'This request lapsed before it was confirmed, so the books went back on the shelf.'
+        : 'This request was cancelled.'}{' '}
+      Nothing was charged.
+    </p>
+  ) : (
+    <ol class="relative">
+      {steps.map((step, i) => {
+        const isCurrent = i === currentIndex;
+        return (
+          <li class="relative flex gap-4 pb-6 last:pb-0">
+            {/* The line joins a step to the next, so it stops at the last. */}
+            {i < steps.length - 1 && (
+              <span
+                class:list={[
+                  'absolute left-[9px] top-6 bottom-0 w-px',
+                  step.done ? 'bg-[var(--color-instock)]/40' : 'bg-[var(--color-rule)]',
+                ]}
+                aria-hidden="true"
+              />
+            )}
+
+            <span
+              class:list={[
+                'relative z-10 mt-0.5 w-[19px] h-[19px] rounded-full grid place-items-center shrink-0 border-2',
+                step.done
+                  ? 'bg-[var(--color-instock)] border-[var(--color-instock)]'
+                  : isCurrent
+                    ? 'bg-white border-[var(--color-navy)]'
+                    : 'bg-white border-[var(--color-rule)]',
+              ]}
+              aria-hidden="true"
+            >
+              {step.done && (
+                <svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 6.5l2.5 2.5L10 3.5" />
+                </svg>
+              )}
+              {isCurrent && <span class="w-[7px] h-[7px] rounded-full bg-[var(--color-navy)]" />}
+            </span>
+
+            <div class="min-w-0 -mt-0.5">
+              <p
+                class:list={[
+                  'text-[15.5px]',
+                  step.done
+                    ? 'text-[var(--color-ink)] font-medium'
+                    : isCurrent
+                      ? 'text-[var(--color-navy)] font-medium'
+                      : 'text-[var(--color-ink-faint)]',
+                ]}
+              >
+                {step.title}
+                {isCurrent && <span class="ml-2 text-[12.5px] font-normal">in progress</span>}
+              </p>
+              {step.at && (
+                <p class="text-[13px] text-[var(--color-ink-faint)] tabular-nums">{step.at}</p>
+              )}
+              {step.note && (
+                <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-soft)]">{step.note}</p>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  )
+}
+
+{
+  order.tracking_number && !isCollection && (
+    <div class="mt-4 p-4 bg-white border border-[var(--color-rule)] rounded-[3px]">
+      <p class="eyebrow">Tracking number</p>
+      <p class="mt-1 text-[17px] font-medium tabular-nums select-all">{order.tracking_number}</p>
+      <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+        Track it on the{' '}
+        <a
+          href={`https://www.royalmail.com/track-your-item#/tracking-results/${encodeURIComponent(order.tracking_number)}`}
+          rel="noopener"
+          class="text-[var(--color-navy)] underline underline-offset-2"
+        >
+          Royal Mail site
+        </a>
+        . If it was sent another way, use this number with that carrier instead.
+      </p>
+    </div>
+  )
+}

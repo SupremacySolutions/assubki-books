@@ -28,16 +28,25 @@ export const POST: APIRoute = async ({ params, request, url }) => {
 
   const form = await request.formData();
   const next = String(form.get('status') ?? '');
+  const tracking = String(form.get('tracking') ?? '').trim().slice(0, 80) || null;
 
   if (!(ALLOWED[order.status] ?? []).includes(next)) {
     return new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}?e=state` } });
   }
 
+  // Stamp when each step happened, so the customer's page can show the story
+  // rather than just where the order stands now.
+  const stamp =
+    next === 'paid' ? ', paid_at = unixepoch()'
+    : next === 'dispatched' ? ', dispatched_at = unixepoch()'
+    : '';
+
   const statements = [
-    env.DB.prepare('UPDATE orders SET status = ?, updated_at = unixepoch() WHERE id = ?').bind(
-      next,
-      order.id,
-    ),
+    env.DB.prepare(
+      `UPDATE orders SET status = ?, updated_at = unixepoch()${stamp}` +
+        (next === 'dispatched' ? ', tracking_number = ?' : '') +
+        ' WHERE id = ?',
+    ).bind(...(next === 'dispatched' ? [next, tracking, order.id] : [next, order.id])),
   ];
 
   if (RELEASES_STOCK.has(next) && ['requested', 'awaiting_payment'].includes(order.status)) {
@@ -93,6 +102,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     telegramChatId: order.telegram_chat_id,
     status: next,
     origin: url.origin,
+    tracking,
   }).catch((err) => console.error('[admin] status notification failed', ref, err));
 
   return new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}` } });

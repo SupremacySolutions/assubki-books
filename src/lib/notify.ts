@@ -271,6 +271,7 @@ export async function notifyStatusChange(input: {
   telegramChatId?: string | null;
   status: string;
   origin: string;
+  tracking?: string | null;
 }): Promise<void> {
   const COPY: Record<string, { subject: string; line: string }> = {
     paid: {
@@ -279,7 +280,9 @@ export async function notifyStatusChange(input: {
     },
     dispatched: {
       subject: `Your books are on the way - ${input.ref}`,
-      line: 'Your order has been posted. Thank you for your custom.',
+      line: input.tracking
+        ? `Your order has been posted. Your tracking number is ${input.tracking}.`
+        : 'Your order has been posted. Thank you for your custom.',
     },
     cancelled: {
       subject: `Order ${input.ref} cancelled`,

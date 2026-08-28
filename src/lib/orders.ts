@@ -226,6 +226,23 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   throw new Error('Could not allocate an order reference');
 }
 
+/**
+ * Finds an order from what a customer can remember.
+ *
+ * Both the reference and the email must match, and a miss is reported the same
+ * way whether the reference was wrong or the email was: telling someone a
+ * reference exists but the email is wrong would confirm an order to a stranger.
+ */
+export async function findOrder(ref: string, email: string): Promise<{ ref: string; token: string } | null> {
+  const row = await env.DB.prepare(
+    `SELECT ref, access_token FROM orders
+      WHERE UPPER(ref) = UPPER(?) AND LOWER(email) = LOWER(?)`,
+  )
+    .bind(ref.trim(), email.trim())
+    .first<{ ref: string; access_token: string }>();
+  return row ? { ref: row.ref, token: row.access_token } : null;
+}
+
 export interface OrderView {
   ref: string;
   status: string;
@@ -238,6 +255,12 @@ export interface OrderView {
   created_at: number;
   expires_at: number | null;
   telegram_chat_id: string | null;
+  postage_pence: number | null;
+  total_pence: number | null;
+  confirmed_at: number | null;
+  paid_at: number | null;
+  dispatched_at: number | null;
+  tracking_number: string | null;
   items: { title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null }[];
 }
 
@@ -245,7 +268,9 @@ export interface OrderView {
 export async function getOrder(ref: string, token: string): Promise<OrderView | null> {
   const order = await env.DB.prepare(
     `SELECT ref, status, customer_name, email, fulfilment, address, notes,
-            subtotal_pence, created_at, expires_at, access_token, telegram_chat_id
+            subtotal_pence, postage_pence, total_pence, created_at, expires_at,
+            confirmed_at, paid_at, dispatched_at, tracking_number,
+            access_token, telegram_chat_id
        FROM orders WHERE ref = ?`,
   )
     .bind(ref)

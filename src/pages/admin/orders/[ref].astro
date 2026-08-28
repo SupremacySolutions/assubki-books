@@ -184,10 +184,26 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
         (NEXT[order.status] ?? []).length > 0 && (
           <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
             <h2 class="eyebrow mb-3">Next steps</h2>
-            <div class="flex flex-wrap gap-3">
+            <div class="flex flex-wrap items-end gap-3">
               {(NEXT[order.status] ?? []).map((step) => (
-                <form method="post" action={`/api/admin/orders/${order.ref}/status`}>
+                <form method="post" action={`/api/admin/orders/${order.ref}/status`} class="flex items-end gap-2">
                   <input type="hidden" name="status" value={step.action} />
+                  {/* Captured at the moment of posting, which is the only time
+                      the owner is holding the receipt. */}
+                  {step.action === 'dispatched' && !isCollection && (
+                    <span>
+                      <label for="tracking" class="block text-[13px] font-medium mb-1.5">
+                        Tracking number <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+                      </label>
+                      <input
+                        id="tracking"
+                        name="tracking"
+                        maxlength="80"
+                        placeholder="e.g. AB123456789GB"
+                        class="field !py-2 !w-52"
+                      />
+                    </span>
+                  )}
                   <button
                     type="submit"
                     class:list={['btn', step.action === 'cancelled' ? 'btn-ghost' : 'btn-primary']}
@@ -255,6 +271,12 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
             </div>
           )
         }
+        {order.tracking_number && (
+          <div class="flex justify-between gap-3">
+            <span class="text-[var(--color-ink-faint)]">Tracking</span>
+            <span class="tabular-nums select-all">{order.tracking_number}</span>
+          </div>
+        )}
         <a
           href={`/order/${order.ref}?t=${order.access_token}`}
           class="block pt-2 text-[var(--color-navy)] hover:underline underline-offset-2"
