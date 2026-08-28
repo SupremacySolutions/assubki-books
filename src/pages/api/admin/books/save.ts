@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { setStock } from '../../../../lib/admin-db';
+import { publishListing, publishQuery } from '../../../../lib/publish';
 
 export const prerender = false;
 
@@ -43,7 +44,7 @@ async function uniqueSlug(base: string, excludeId: number | null): Promise<strin
   return `${base}-${Date.now()}`;
 }
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, url }) => {
   const form = await request.formData();
 
   const idRaw = String(form.get('id') ?? '').trim();
@@ -102,6 +103,17 @@ export const POST: APIRoute = async ({ request }) => {
         ).bind(bookId, cid),
       ),
     );
+  }
+
+  // "Save and post" calls the publisher directly. Redirecting to the posting
+  // endpoint instead would turn this POST into a GET, and that endpoint changes
+  // state — see src/lib/publish.ts.
+  if (form.get('publish_telegram') === '1') {
+    const result = await publishListing(bookId!, url.origin);
+    return new Response(null, {
+      status: 302,
+      headers: { Location: `/admin/books/${bookId}?saved=1&posted=${publishQuery(result)}` },
+    });
   }
 
   return new Response(null, {

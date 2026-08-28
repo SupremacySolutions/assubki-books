@@ -4,18 +4,23 @@ import { orderCounts, listOrders, backlog } from '../../lib/admin-db';
 import { catalogueStats } from '../../lib/db';
 import { price } from '../../lib/format';
 import { botConfigured } from '../../lib/telegram';
-import { emailConfigured } from '../../lib/email';
+import { emailConfigured, lastEmailError, fromAddress } from '../../lib/email';
 
-const [counts, pending, work, stats] = await Promise.all([
+const [counts, pending, work, stats, emailError] = await Promise.all([
   orderCounts(),
   listOrders('requested'),
   backlog(),
   catalogueStats(),
+  lastEmailError(),
 ]);
 
 const needsAction = (counts.requested ?? 0) + (counts.awaiting_payment ?? 0);
+// A key being present is not the same as email working: an unverified sending
+// domain rejects every message. `emailError` is what the provider last said.
 const warnings = [
   !emailConfigured() && 'Email is not configured — customers are not being emailed. Add RESEND_API_KEY and ORDER_FROM.',
+  emailConfigured() && emailError &&
+    `Email is failing, so customers are not being reached. Sending as ${fromAddress()} was rejected: “${emailError}”`,
   !botConfigured() && 'Telegram is not configured — new listings cannot be posted to the channel. Add TELEGRAM_BOT_TOKEN.',
 ].filter(Boolean) as string[];
 ---

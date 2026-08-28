@@ -2,9 +2,9 @@
 import Admin from '../../layouts/Admin.astro';
 import { getSettings } from '../../lib/settings';
 import { botConfigured, botUsername } from '../../lib/telegram';
-import { emailConfigured, ownerAddress } from '../../lib/email';
+import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
 
-const settings = await getSettings();
+const [settings, emailError] = await Promise.all([getSettings(), lastEmailError()]);
 const saved = Astro.url.searchParams.get('saved');
 ---
 
@@ -67,8 +67,19 @@ const saved = Astro.url.searchParams.get('saved');
     <dl class="space-y-3 text-[14.5px]">
       <div class="flex justify-between gap-4">
         <dt class="text-[var(--color-ink-soft)]">Customer email</dt>
-        <dd class:list={[emailConfigured() ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]']}>
-          {emailConfigured() ? `Sending · orders go to ${ownerAddress()}` : 'Not configured'}
+        <dd
+          class:list={[
+            'text-right max-w-[60%]',
+            emailConfigured() && !emailError
+              ? 'text-[var(--color-instock)]'
+              : 'text-[var(--color-outstock)]',
+          ]}
+        >
+          {!emailConfigured()
+            ? 'Not configured'
+            : emailError
+              ? `Failing as ${fromAddress()} — ${emailError}`
+              : `Sending · orders go to ${ownerAddress()}`}
         </dd>
       </div>
       <div class="flex justify-between gap-4">

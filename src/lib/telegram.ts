@@ -16,6 +16,8 @@ interface TelegramEnv {
   TELEGRAM_BOT_USERNAME?: string;
   TELEGRAM_CHANNEL_ID?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
+  /** Set to "1" in .dev.vars — see dryRun() below. */
+  TELEGRAM_DRY_RUN?: string;
 }
 
 const cfg = () => env as unknown as TelegramEnv;
@@ -38,11 +40,31 @@ export function optInLink(ref: string, token: string): string | null {
   return `https://t.me/${user}?start=${ref}_${token.slice(0, 16)}`;
 }
 
-async function call<T = unknown>(method: string, body: unknown): Promise<T | null> {
+/**
+ * Local development shares the production bot token and channel id, because
+ * that is the only way to exercise the real flow. That means an ordinary local
+ * test can post to the shop's live channel — which has happened. Setting
+ * TELEGRAM_DRY_RUN=1 in .dev.vars makes every write a log line instead.
+ */
+function dryRun(): boolean {
+  return cfg().TELEGRAM_DRY_RUN === '1';
+}
+
+async function call<T = unknown>(
+  method: string,
+  body: unknown,
+  onError?: (description: string) => void,
+): Promise<T | null> {
   const token = cfg().TELEGRAM_BOT_TOKEN;
   if (!token) {
     console.log(`[telegram] ${method} skipped — no bot token`);
     return null;
+  }
+
+  if (dryRun()) {
+    console.log(`[telegram] DRY RUN — would have called ${method}:`, JSON.stringify(body).slice(0, 300));
+    // A plausible message id so the calling code follows its success path.
+    return { message_id: 0 } as T;
   }
 
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
@@ -53,7 +75,9 @@ async function call<T = unknown>(method: string, body: unknown): Promise<T | nul
 
   const data = (await res.json()) as { ok: boolean; result?: T; description?: string };
   if (!data.ok) {
-    console.error(`[telegram] ${method} failed:`, data.description);
+    const description = data.description ?? 'Unknown Telegram error';
+    onError?.(description);
+    console.error(`[telegram] ${method} failed:`, description);
     return null;
   }
   return data.result ?? null;
@@ -91,7 +115,8 @@ export function listingCaption(post: ListingPost): string {
   if (post.titleAr) lines.push(esc(post.titleAr));
   lines.push('');
   if (post.blurb) lines.push(esc(post.blurb), '');
-  lines.push(`*${esc(price)}*${post.available > 0 ? '' : esc(' — out of stock')}`);
+  lines.push(`*${esc(price)}*`);
+  lines.push(post.available > 0 ? esc(`${post.available} available`) : esc('out of stock'));
   lines.push('', esc('Order here:'), esc(post.url));
   return lines.join('\n');
 }
@@ -136,6 +161,10 @@ export async function editListing(messageId: number, post: ListingPost): Promise
   if (!channel) return false;
 
   const caption = listingCaption(post);
+  let notModified = false;
+  const recordError = (description: string) => {
+    if (description.includes('message is not modified')) notModified = true;
+  };
 
   // A post made with a photo has a caption; a text post has text. Editing the
   // wrong one is an error, so try the caption first and fall back.
@@ -144,7 +173,7 @@ export async function editListing(messageId: number, post: ListingPost): Promise
     message_id: messageId,
     caption,
     parse_mode: 'MarkdownV2',
-  });
+  }, recordError);
   if (asCaption !== null) return true;
 
   const asText = await call('editMessageText', {
@@ -152,8 +181,8 @@ export async function editListing(messageId: number, post: ListingPost): Promise
     message_id: messageId,
     text: caption,
     parse_mode: 'MarkdownV2',
-  });
-  return asText !== null;
+  }, recordError);
+  return asText !== null || notModified;
 }
 
 export function webhookSecret(): string | null {

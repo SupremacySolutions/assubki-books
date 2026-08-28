@@ -29,12 +29,52 @@ export interface Message {
   replyTo?: string;
 }
 
+/** Configured is not the same as working — see lastEmailError(). */
 export function emailConfigured(): boolean {
   return Boolean(cfg().RESEND_API_KEY && cfg().ORDER_FROM);
 }
 
+export async function lastEmailError(): Promise<string | null> {
+  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'last_email_error'`)
+    .first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+export function fromAddress(): string | null {
+  return cfg().ORDER_FROM ?? null;
+}
+
 export function ownerAddress(): string {
   return cfg().OWNER_EMAIL ?? 'support.supremacysolutions@gmail.com';
+}
+
+/**
+ * Records why the last send failed, so the portal can report the truth.
+ *
+ * Having a key and a From address is not the same as being able to send: a
+ * domain that is not verified with the provider rejects every message. Without
+ * this, the dashboard reports "email configured" while nothing is reaching
+ * anyone — which is exactly what happened.
+ */
+async function recordFailure(reason: string): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('last_email_error', ?, unixepoch())
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()`,
+    )
+      .bind(reason.slice(0, 500))
+      .run();
+  } catch {
+    /* never let health-reporting break a send path */
+  }
+}
+
+async function clearFailure(): Promise<void> {
+  try {
+    await env.DB.prepare(`DELETE FROM settings WHERE key = 'last_email_error'`).run();
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function deliver(msg: Message): Promise<boolean> {
@@ -42,6 +82,7 @@ export async function deliver(msg: Message): Promise<boolean> {
 
   if (!RESEND_API_KEY || !ORDER_FROM) {
     console.log(`[email] skipped (no RESEND_API_KEY/ORDER_FROM) → ${msg.to}: ${msg.subject}`);
+    await recordFailure('No RESEND_API_KEY or ORDER_FROM is set.');
     return false;
   }
 
@@ -63,12 +104,23 @@ export async function deliver(msg: Message): Promise<boolean> {
     });
 
     if (!res.ok) {
-      console.error(`[email] resend rejected → ${msg.to}:`, res.status, await res.text());
+      const body = await res.text();
+      console.error(`[email] resend rejected → ${msg.to}:`, res.status, body);
+      let reason = `${res.status}: ${body}`;
+      try {
+        const parsed = JSON.parse(body) as { message?: string };
+        if (parsed.message) reason = parsed.message;
+      } catch {
+        /* keep the raw body */
+      }
+      await recordFailure(reason);
       return false;
     }
+    await clearFailure();
     return true;
   } catch (err) {
     console.error(`[email] send threw → ${msg.to}:`, err);
+    await recordFailure(String(err));
     return false;
   }
 }

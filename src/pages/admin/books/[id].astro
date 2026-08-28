@@ -62,8 +62,15 @@ const previewCaption = book
       </p>
     )
   }
+  {
+    posted === 'draft' && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        Not announced — only live listings can be posted to the channel.
+      </p>
+    )
+  }
 
-  <form method="post" action="/api/admin/books/save" class="grid gap-6 lg:grid-cols-[1fr_300px] items-start">
+  <form id="bookForm" method="post" action="/api/admin/books/save" class="grid gap-6 lg:grid-cols-[1fr_300px] items-start">
     <input type="hidden" name="id" value={book?.id ?? ''} />
 
     <div class="space-y-5">
@@ -249,7 +256,9 @@ const previewCaption = book
             {botConfigured() ? (
               <button
                 type="submit"
-                form="telegramForm"
+                form="bookForm"
+                name="publish_telegram"
+                value="1"
                 class="btn btn-primary w-full !py-2"
                 disabled={book.status !== 'live'}
               >
@@ -281,10 +290,6 @@ const previewCaption = book
       }
     </aside>
   </form>
-
-  {/* Kept outside the main form: nesting forms is invalid HTML and the browser
-      silently drops the inner one. */}
-  {book && <form id="telegramForm" method="post" action={`/api/admin/books/${book.id}/telegram`} />}
 
   {
     book && (
