@@ -483,25 +483,42 @@ async function integrity() {
 }
 
 // ---------------------------------------------------------------------------
+// The third field says whether the suite needs a signed-in portal session.
+// Everything that builds a fixture listing does; the public pages and the
+// checks that admin routes stay shut do not.
 const SUITES = [
-  ['catalogue', publicCatalogue], ['legacy', legacyUrls], ['validation', validation],
-  ['stock', stockAndHolds], ['fulfilment', fulfilment], ['lookup', orderPageAndLookup],
-  ['auth', adminAuth], ['listings', listings], ['shelves', shelves],
-  ['orders', portalOrders], ['notifications', notifications], ['integrity', integrity],
+  ['catalogue', publicCatalogue, false], ['legacy', legacyUrls, false],
+  ['validation', validation, true], ['stock', stockAndHolds, true],
+  ['fulfilment', fulfilment, true], ['lookup', orderPageAndLookup, true],
+  ['auth', adminAuth, false], ['listings', listings, true],
+  ['shelves', shelves, true], ['orders', portalOrders, true],
+  ['notifications', notifications, true], ['integrity', integrity, false],
 ];
 
 console.log(`\nRunning against ${PROD ? `\x1b[33m${SITE} (REAL)\x1b[0m` : SITE}`);
 if (PROD) console.log(`  channel ${prodVars.TELEGRAM_CHANNEL_ID}  ·  owner ${prodVars.OWNER_EMAIL}`);
 
-if (!(await signIn())) {
-  console.log('\n  could not sign in to the portal - check the password in .dev.vars\n');
-  process.exit(1);
+// Without a session the portal suites cannot build their fixtures. Rather than
+// abort, run the ones that need no sign-in and say plainly which were skipped -
+// a partial run is worth having, as long as it can never be read as a full one.
+const signedIn = await signIn();
+if (!signedIn) {
+  console.log(
+    '\n  \x1b[31mnot signed in\x1b[0m - ADMIN_PASSWORD in .dev.vars is not the one ' +
+      `${PROD ? 'production' : 'this environment'} expects.\n` +
+      '  Running only the suites that need no portal session.',
+  );
 }
 
 let orphanedMessages = [];
+const skipped = [];
 try {
-  for (const [name, fn] of SUITES) {
+  for (const [name, fn, needsAuth] of SUITES) {
     if (!wanted(name)) continue;
+    if (needsAuth && !signedIn) {
+      skipped.push(name);
+      continue;
+    }
     try {
       await fn();
     } catch (err) {
@@ -521,4 +538,9 @@ try {
   }
 }
 
-process.exit(report() ? 1 : 0);
+if (skipped.length) {
+  console.log(`  \x1b[33mskipped (no portal session): ${skipped.join(', ')}\x1b[0m`);
+}
+
+// A run that could not sign in is not a pass, however green the rest looks.
+process.exit(report() || skipped.length ? 1 : 0);

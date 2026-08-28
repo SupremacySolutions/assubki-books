@@ -98,8 +98,13 @@ export const one = async (sql) => (await db(sql))[0] ?? {};
 let cookie = '';
 
 export async function signIn() {
-  const password = PROD ? vars.ADMIN_PASSWORD_PROD : vars.ADMIN_PASSWORD;
-  if (!password) throw new Error(`no ${PROD ? 'ADMIN_PASSWORD_PROD' : 'ADMIN_PASSWORD'} in .dev.vars`);
+  // ADMIN_PASSWORD_PROD lets local and production differ; when only one
+  // password is kept, ADMIN_PASSWORD is it. A wrong guess just fails sign-in
+  // and the run stops, so falling back costs nothing.
+  const password = PROD
+    ? (vars.ADMIN_PASSWORD_PROD ?? vars.ADMIN_PASSWORD)
+    : vars.ADMIN_PASSWORD;
+  if (!password) throw new Error('no ADMIN_PASSWORD in .dev.vars');
 
   const res = await fetch(`${SITE}/api/admin/login`, {
     method: 'POST',
