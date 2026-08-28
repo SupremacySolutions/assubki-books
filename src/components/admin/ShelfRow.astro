@@ -1,0 +1,131 @@
+---
+/**
+ * One editable shelf. Shared by both levels so a parent and a child can never
+ * drift apart in layout, with the classmark the only deliberate difference:
+ * it is a top-level shorthand, and repeating it on children made the two
+ * levels read as one flat list.
+ */
+import { classmark } from '../../lib/classmarks';
+import type { ShelfNode } from '../../lib/shelves';
+
+interface Props {
+  shelf: ShelfNode;
+  isTop: boolean;
+  index: number;
+  lastIndex: number;
+  parentOptions: { id: number; label: string }[];
+}
+const { shelf, isTop, index, lastIndex, parentOptions } = Astro.props;
+
+// Spelled out on the confirm dialog so the owner sees the cost before the
+// click, not after it.
+const consequences = [
+  shelf.direct_books > 0 &&
+    `${shelf.direct_books} ${shelf.direct_books === 1 ? 'listing loses' : 'listings lose'} this subject`,
+  shelf.child_count > 0 &&
+    `${shelf.child_count} ${shelf.child_count === 1 ? 'shelf moves' : 'shelves move'} up a level`,
+].filter(Boolean) as string[];
+---
+
+<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+  {isTop && <span class="classmark shrink-0">{classmark(shelf.slug)}</span>}
+
+  <form
+    method="post"
+    action="/api/admin/shelves/update"
+    id={`shelf-form-${shelf.id}`}
+    class="contents"
+  >
+    <input type="hidden" name="id" value={shelf.id} />
+
+    <div class="flex-1 min-w-[170px]">
+      <label for={`n${shelf.id}`} class="sr-only">Shelf name</label>
+      <input
+        id={`n${shelf.id}`}
+        name="name"
+        value={shelf.name}
+        maxlength="80"
+        class:list={['field !py-1.5', isTop && 'font-medium']}
+      />
+    </div>
+
+    <label class="text-[13px] text-[var(--color-ink-faint)] flex items-center gap-1.5">
+      <span class="hidden sm:inline">Under</span>
+      <select name="parent" class="field !py-1.5 !w-auto !text-[13.5px] max-w-[170px]">
+        <option value="" selected={shelf.parent_id === null}>Top level</option>
+        {
+          parentOptions
+            .filter((o) => o.id !== shelf.id)
+            .map((o) => (
+              <option value={o.id} selected={shelf.parent_id === o.id} set:html={o.label} />
+            ))
+        }
+      </select>
+    </label>
+  </form>
+
+  <!-- Order is set by moving, never by typing a number: the number only ever
+       mattered relative to its siblings. -->
+  <span class="flex items-center shrink-0">
+    <form method="post" action="/api/admin/shelves/move">
+      <input type="hidden" name="id" value={shelf.id} />
+      <input type="hidden" name="direction" value="up" />
+      <button
+        type="submit"
+        class="w-7 h-7 grid place-items-center rounded-s-sm border border-[var(--color-rule)] text-[var(--color-ink-faint)] hover:text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-35 disabled:hover:text-[var(--color-ink-faint)] disabled:hover:border-[var(--color-rule)]"
+        disabled={index === 0}
+        title="Move up"
+      >
+        <span class="sr-only">Move {shelf.name} up</span>
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 10l4-4 4 4" />
+        </svg>
+      </button>
+    </form>
+    <form method="post" action="/api/admin/shelves/move">
+      <input type="hidden" name="id" value={shelf.id} />
+      <input type="hidden" name="direction" value="down" />
+      <button
+        type="submit"
+        class="w-7 h-7 grid place-items-center rounded-e-sm border border-s-0 border-[var(--color-rule)] text-[var(--color-ink-faint)] hover:text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-35 disabled:hover:text-[var(--color-ink-faint)] disabled:hover:border-[var(--color-rule)]"
+        disabled={index === lastIndex}
+        title="Move down"
+      >
+        <span class="sr-only">Move {shelf.name} down</span>
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      </button>
+    </form>
+  </span>
+
+  <button type="submit" form={`shelf-form-${shelf.id}`} class="btn btn-ghost !py-1.5 !px-3 !text-[13.5px] shrink-0">
+    Save
+  </button>
+
+  <!-- Its own form so a rename can never be mistaken for a delete, but sat
+       beside Save because that is where the owner looks for it. -->
+  <form
+    method="post"
+    action="/api/admin/shelves/delete"
+    data-delete-shelf={shelf.name}
+    data-consequences={consequences.join(', ')}
+    class="shrink-0"
+  >
+    <input type="hidden" name="id" value={shelf.id} />
+    <button
+      type="submit"
+      class="btn btn-ghost !py-1.5 !px-3 !text-[13.5px] !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40 hover:!border-[var(--color-outstock)] hover:!bg-[var(--color-outstock)]/5"
+      title="Delete this shelf"
+    >
+      Delete
+    </button>
+  </form>
+</div>
+
+<p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
+  /catalogue/{shelf.path}
+  {shelf.total_books > 0 && (
+    <span> · {shelf.total_books} {shelf.total_books === 1 ? 'listing' : 'listings'}</span>
+  )}
+</p>

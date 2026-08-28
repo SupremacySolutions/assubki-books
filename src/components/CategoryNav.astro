@@ -54,10 +54,10 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
                 </span>
               </a>
 
-              {cat.children.length > 0 && (
+              {cat.children.length > 0 ? (
                 <button
                   type="button"
-                  class="shelf-toggle px-1.5 rounded-sm text-[var(--color-ink-faint)] hover:bg-white hover:text-[var(--color-navy)] shrink-0"
+                  class="shelf-toggle w-6 grid place-items-center rounded-sm text-[var(--color-ink-faint)] hover:bg-white hover:text-[var(--color-navy)] shrink-0"
                   aria-expanded={open ? 'true' : 'false'}
                   aria-controls={panelId}
                 >
@@ -77,6 +77,10 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
                     <path d="M4 6l4 4 4-4" />
                   </svg>
                 </button>
+              ) : (
+                /* Empty slot of the same width: without it the count column
+                   shifts on every shelf that has no children. */
+                <span class="w-6 shrink-0" aria-hidden="true" />
               )}
             </div>
 
@@ -98,7 +102,7 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
                       ]}
                     >
                       <span class="truncate">{child.name}</span>
-                      <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0">
+                      <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0 pe-6">
                         {child.count}
                       </span>
                     </a>

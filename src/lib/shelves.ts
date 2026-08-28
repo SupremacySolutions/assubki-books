@@ -136,16 +136,10 @@ export async function createShelf(name: string, parentId: number | null): Promis
     : null;
 
   const path = parent ? `${parent.path}/${slug}` : slug;
-  const nextSort = await env.DB.prepare(
-    'SELECT COALESCE(MAX(sort), -1) + 1 AS n FROM categories WHERE parent_id IS ?',
-  )
-    .bind(parentId)
-    .first<{ n: number }>();
-
   const row = await env.DB.prepare(
     'INSERT INTO categories (slug, name, parent_id, sort, path) VALUES (?,?,?,?,?) RETURNING id',
   )
-    .bind(slug, name.trim(), parentId, nextSort?.n ?? 0, path)
+    .bind(slug, name.trim(), parentId, await nextSort(parentId), path)
     .first<{ id: number }>();
 
   return row!.id;
@@ -153,11 +147,64 @@ export async function createShelf(name: string, parentId: number | null): Promis
 
 export type ShelfError = 'not-found' | 'cycle' | 'has-books' | 'has-children';
 
+/** Next free position among a parent's children. */
+async function nextSort(parentId: number | null): Promise<number> {
+  const row = await env.DB.prepare(
+    'SELECT COALESCE(MAX(sort), -1) + 1 AS n FROM categories WHERE parent_id IS ?',
+  )
+    .bind(parentId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/**
+ * Renumbers a parent's children 0..n in their current display order.
+ *
+ * The imported shelves all share a position, so "swap with the one above" has
+ * nothing to swap against until the row actually holds distinct numbers. This
+ * settles them the first time anything is moved.
+ */
+async function normaliseSiblings(parentId: number | null): Promise<ShelfRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, sort, name FROM categories WHERE parent_id IS ? ORDER BY sort, name`,
+  )
+    .bind(parentId)
+    .all<{ id: number; sort: number; name: string }>();
+
+  const needsWork = results.some((r, i) => r.sort !== i);
+  if (needsWork && results.length) {
+    await env.DB.batch(
+      results.map((r, i) =>
+        env.DB.prepare('UPDATE categories SET sort = ? WHERE id = ?').bind(i, r.id),
+      ),
+    );
+  }
+  return results.map((r, i) => ({ ...r, sort: i }) as ShelfRow);
+}
+
+/** Moves a shelf one place among its siblings. Order is never typed by hand. */
+export async function moveShelf(id: number, direction: 'up' | 'down'): Promise<ShelfError | null> {
+  const shelf = await env.DB.prepare('SELECT id, parent_id FROM categories WHERE id = ?')
+    .bind(id)
+    .first<{ id: number; parent_id: number | null }>();
+  if (!shelf) return 'not-found';
+
+  const siblings = await normaliseSiblings(shelf.parent_id);
+  const index = siblings.findIndex((s) => s.id === id);
+  const swapWith = direction === 'up' ? index - 1 : index + 1;
+  if (index === -1 || swapWith < 0 || swapWith >= siblings.length) return null; // already at the end
+
+  await env.DB.batch([
+    env.DB.prepare('UPDATE categories SET sort = ? WHERE id = ?').bind(swapWith, id),
+    env.DB.prepare('UPDATE categories SET sort = ? WHERE id = ?').bind(index, siblings[swapWith].id),
+  ]);
+  return null;
+}
+
 export async function updateShelf(
   id: number,
   name: string,
   parentId: number | null,
-  sort: number,
 ): Promise<ShelfError | null> {
   const shelf = await env.DB.prepare('SELECT id, slug, name, parent_id FROM categories WHERE id = ?')
     .bind(id)
@@ -185,32 +232,62 @@ export async function updateShelf(
   const nextSlug =
     name.trim() !== shelf.name ? await uniqueSlug(slugifyShelf(name), id) : shelf.slug;
 
+  // Moving to a different parent puts it at the end of that parent's shelves;
+  // keeping its old position would drop it in at an arbitrary point.
+  const moved = parentId !== shelf.parent_id;
+  const sort = moved ? await nextSort(parentId) : undefined;
+
   await env.DB.prepare(
-    'UPDATE categories SET name = ?, slug = ?, parent_id = ?, sort = ? WHERE id = ?',
+    sort === undefined
+      ? 'UPDATE categories SET name = ?, slug = ?, parent_id = ? WHERE id = ?'
+      : 'UPDATE categories SET name = ?, slug = ?, parent_id = ?, sort = ? WHERE id = ?',
   )
-    .bind(name.trim(), nextSlug, parentId, sort, id)
+    .bind(...(sort === undefined
+      ? [name.trim(), nextSlug, parentId, id]
+      : [name.trim(), nextSlug, parentId, sort, id]))
     .run();
 
   await rebuildPaths(id);
+  if (moved) await normaliseSiblings(shelf.parent_id);
   return null;
 }
 
+/**
+ * Deletes a shelf, and says what it cost.
+ *
+ * Refusing whenever a shelf held listings made almost every shelf permanently
+ * undeletable, which is not a rule so much as a dead end. Nothing here is
+ * destructive to a book: listings only lose this one subject, and any shelves
+ * underneath move up a level rather than being orphaned. The page states both
+ * numbers before asking.
+ */
 export async function deleteShelf(id: number): Promise<ShelfError | null> {
-  const shelf = await env.DB.prepare(
-    `SELECT c.id,
-            (SELECT COUNT(*) FROM book_categories WHERE category_id = c.id) AS books,
-            (SELECT COUNT(*) FROM categories WHERE parent_id = c.id) AS children
-       FROM categories c WHERE c.id = ?`,
+  const shelf = await env.DB.prepare('SELECT id, parent_id FROM categories WHERE id = ?')
+    .bind(id)
+    .first<{ id: number; parent_id: number | null }>();
+  if (!shelf) return 'not-found';
+
+  const { results: children } = await env.DB.prepare(
+    'SELECT id FROM categories WHERE parent_id = ?',
   )
     .bind(id)
-    .first<{ id: number; books: number; children: number }>();
+    .all<{ id: number }>();
 
-  if (!shelf) return 'not-found';
-  // Deleting either would silently strip listings of their subject or orphan a
-  // whole branch of the tree. Both are the owner's call to make explicitly.
-  if (shelf.children > 0) return 'has-children';
-  if (shelf.books > 0) return 'has-books';
+  // Lift the children before the delete, so ON DELETE SET NULL never gets the
+  // chance to strand them at the top level by accident.
+  if (children.length) {
+    await env.DB.batch(
+      children.map((c) =>
+        env.DB.prepare('UPDATE categories SET parent_id = ? WHERE id = ?').bind(shelf.parent_id, c.id),
+      ),
+    );
+  }
 
+  // book_categories rows cascade, which unfiles the listings without touching
+  // the books themselves.
   await env.DB.prepare('DELETE FROM categories WHERE id = ?').bind(id).run();
+
+  for (const child of children) await rebuildPaths(child.id);
+  await normaliseSiblings(shelf.parent_id);
   return null;
 }

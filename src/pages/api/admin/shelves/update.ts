@@ -9,13 +9,11 @@ export const POST: APIRoute = async ({ request }) => {
   const name = String(form.get('name') ?? '').trim();
   const parentRaw = String(form.get('parent') ?? '').trim();
   const parentId = parentRaw ? Number.parseInt(parentRaw, 10) : null;
-  const sort = Number.parseInt(String(form.get('sort') ?? '0'), 10) || 0;
-
   if (!Number.isInteger(id) || !name) {
     return new Response(null, { status: 302, headers: { Location: '/admin/shelves' } });
   }
 
-  const problem = await updateShelf(id, name, Number.isInteger(parentId) ? parentId : null, sort);
+  const problem = await updateShelf(id, name, Number.isInteger(parentId) ? parentId : null);
   const query = problem ? `?e=${problem}` : '?saved=1';
   return new Response(null, { status: 302, headers: { Location: `/admin/shelves${query}` } });
 };

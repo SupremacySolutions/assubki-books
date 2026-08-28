@@ -1,37 +1,30 @@
 ---
 import Admin from '../../layouts/Admin.astro';
-import { shelfTree, listShelves, type ShelfNode } from '../../lib/shelves';
-import { classmark } from '../../lib/classmarks';
+import { shelfTree } from '../../lib/shelves';
+import ShelfRow from '../../components/admin/ShelfRow.astro';
 
-const [tree, flat] = await Promise.all([shelfTree(), listShelves()]);
+const tree = await shelfTree();
 const params = Astro.url.searchParams;
 const saved = params.get('saved');
 const problem = params.get('e');
 
 const PROBLEMS: Record<string, string> = {
-  'has-books': 'That shelf still has listings on it. Move them to another shelf first.',
-  'has-children': 'That shelf has shelves under it. Delete or move those first.',
   cycle: 'A shelf cannot sit inside itself.',
   'not-found': 'That shelf no longer exists.',
 };
 
-// Flattened for the parent picker, indented so the hierarchy is readable.
-const options = flat
-  .slice()
-  .sort((a, b) => a.path.localeCompare(b.path))
-  .map((s) => ({ id: s.id, label: `${'- '.repeat(s.path.split('/').length - 1)}${s.name}` }));
+const totalShelves = tree.reduce((n, t) => n + 1 + t.children.length, 0);
 
-const rows: { shelf: ShelfNode; depth: number }[] = [];
-const flatten = (nodes: ShelfNode[], depth = 0) => {
-  for (const node of nodes) {
-    rows.push({ shelf: node, depth });
-    flatten(node.children, depth + 1);
-  }
-};
-flatten(tree);
+// Built from the tree rather than sorted by path, so the picker reads in the
+// same order as the page: each top-level shelf followed by its own children.
+const parentOptions: { id: number; label: string }[] = [];
+for (const top of tree) {
+  parentOptions.push({ id: top.id, label: top.name });
+  for (const child of top.children) parentOptions.push({ id: child.id, label: `   ${child.name}` });
+}
 ---
 
-<Admin title="Shelves" sub={`${flat.length} shelves`}>
+<Admin title="Shelves" sub={`${tree.length} top level, ${totalShelves} in total`}>
   {
     saved && (
       <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
@@ -48,120 +41,82 @@ flatten(tree);
   }
 
   <p class="mb-6 text-[14.5px] text-[var(--color-ink-soft)] max-w-2xl leading-relaxed">
-    Shelves are how customers browse the catalogue, and how a listing is filed. Renaming one
-    changes its web address too, so old links to it stop working - worth doing early rather than
-    once the shop is busy.
+    Shelves are how customers browse, and how a listing is filed. Renaming one changes its web
+    address too, so links to it stop working. The order here is the order customers see.
   </p>
 
   <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 mb-8">
-    <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold mb-3">
-      Add a shelf
-    </h2>
+    <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold mb-3">Add a shelf</h2>
     <form method="post" action="/api/admin/shelves/create" class="flex flex-wrap gap-3 items-end">
       <div class="flex-1 min-w-[200px]">
-        <label for="newName" class="block text-[14px] font-medium mb-1.5">Name</label>
+        <label for="newName" class="block text-[13px] font-medium mb-1.5 text-[var(--color-ink-soft)]">
+          Name
+        </label>
         <input id="newName" name="name" required maxlength="80" class="field" placeholder="e.g. Tajweed" />
       </div>
       <div>
-        <label for="newParent" class="block text-[14px] font-medium mb-1.5">Sits under</label>
+        <label for="newParent" class="block text-[13px] font-medium mb-1.5 text-[var(--color-ink-soft)]">
+          Sits under
+        </label>
         <select id="newParent" name="parent" class="field !w-auto">
-          <option value="">Nothing - top level</option>
-          {options.map((o) => <option value={o.id}>{o.label}</option>)}
+          <option value="">Nothing, a top-level shelf</option>
+          {parentOptions.map((o) => <option value={o.id} set:html={o.label} />)}
         </select>
       </div>
       <button type="submit" class="btn btn-primary">Add shelf</button>
     </form>
   </section>
 
-  <ul class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
+  <div class="space-y-4">
     {
-      rows.map(({ shelf, depth }) => (
-        <li class="p-4">
-          <form
-            method="post"
-            action="/api/admin/shelves/update"
-            class="flex flex-wrap items-end gap-3"
-            style={depth ? `padding-inline-start:${depth * 18}px` : undefined}
-          >
-            <input type="hidden" name="id" value={shelf.id} />
+      tree.map((top, topIndex) => (
+        <section class="bg-white border border-[var(--color-rule)] rounded-[3px] overflow-hidden">
+          {/* Top-level shelf: tinted header band, so a parent never reads as
+              just another row in a flat list. */}
+          <div class="bg-[var(--color-paper)] border-b border-[var(--color-rule)] p-4">
+            <ShelfRow
+              shelf={top}
+              isTop={true}
+              index={topIndex}
+              lastIndex={tree.length - 1}
+              parentOptions={parentOptions}
+            />
+          </div>
 
-            <span class="classmark shrink-0 mb-2.5">{classmark(shelf.slug)}</span>
-
-            <div class="flex-1 min-w-[180px]">
-              <label for={`n${shelf.id}`} class="sr-only">Name</label>
-              <input id={`n${shelf.id}`} name="name" value={shelf.name} maxlength="80" class="field !py-1.5" />
-              <p class="mt-1 text-[12px] text-[var(--color-ink-faint)]">
-                /catalogue/{shelf.path}
-                {shelf.total_books > 0 && <span> · {shelf.total_books} listings</span>}
-                {shelf.child_count > 0 && <span> · {shelf.child_count} under it</span>}
-              </p>
-            </div>
-
-            <div>
-              <label for={`p${shelf.id}`} class="sr-only">Sits under</label>
-              <select id={`p${shelf.id}`} name="parent" class="field !py-1.5 !w-auto !text-[14px]">
-                <option value="" selected={shelf.parent_id === null}>Top level</option>
-                {options
-                  .filter((o) => o.id !== shelf.id)
-                  .map((o) => (
-                    <option value={o.id} selected={shelf.parent_id === o.id}>
-                      {o.label}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label for={`s${shelf.id}`} class="sr-only">Order</label>
-              <input
-                id={`s${shelf.id}`}
-                name="sort"
-                type="number"
-                value={shelf.sort}
-                class="field !py-1.5 !w-16 tabular-nums text-center"
-                title="Lower numbers come first"
-              />
-            </div>
-
-            <button type="submit" class="btn btn-ghost !py-1.5 !px-3 !text-[13.5px]">Save</button>
-          </form>
-
-          {/* Its own form, so saving a rename cannot be confused with deleting. */}
-          <form
-            method="post"
-            action="/api/admin/shelves/delete"
-            class="inline"
-            data-delete-shelf={shelf.name}
-            style={depth ? `padding-inline-start:${depth * 18}px` : undefined}
-          >
-            <input type="hidden" name="id" value={shelf.id} />
-            <button
-              type="submit"
-              class="mt-2 text-[13px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] underline underline-offset-2 disabled:no-underline disabled:hover:text-[var(--color-ink-faint)]"
-              disabled={shelf.total_books > 0 || shelf.child_count > 0}
-              title={
-                shelf.child_count > 0
-                  ? 'Has shelves under it'
-                  : shelf.total_books > 0
-                    ? 'Still has listings on it'
-                    : 'Delete this shelf'
-              }
-            >
-              Delete
-            </button>
-          </form>
-        </li>
+          {top.children.length > 0 && (
+            <ul class="divide-y divide-[var(--color-rule)]">
+              {top.children.map((child, childIndex) => (
+                <li class="p-4 ps-8 relative">
+                  {/* A rule down the left ties children to their parent. */}
+                  <span
+                    class="absolute left-4 top-0 bottom-0 w-px bg-[var(--color-rule)]"
+                    aria-hidden="true"
+                  />
+                  <ShelfRow
+                    shelf={child}
+                    isTop={false}
+                    index={childIndex}
+                    lastIndex={top.children.length - 1}
+                    parentOptions={parentOptions}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       ))
     }
-  </ul>
+  </div>
 
   <script>
     for (const form of document.querySelectorAll<HTMLFormElement>('[data-delete-shelf]')) {
       form.addEventListener('submit', (event) => {
         const name = form.dataset.deleteShelf ?? 'this shelf';
-        if (!confirm(`Delete the “${name}” shelf? Listings are not deleted, only unfiled.`)) {
-          event.preventDefault();
-        }
+        const cost = form.dataset.consequences;
+        const detail = cost
+          ? `\n\n${cost[0].toUpperCase()}${cost.slice(1)}. No books are deleted.`
+          : '\n\nNothing else is affected.';
+        if (!confirm(`Delete the “${name}” shelf?${detail}`)) event.preventDefault();
       });
     }
   </script>
