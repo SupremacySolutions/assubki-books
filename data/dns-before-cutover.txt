@@ -1,0 +1,25 @@
+
+# assubkibooks.co.uk - authoritative records from ns1109.ui-dns.de
+# captured 2026-08-28 11:59 UTC BEFORE any nameserver change
+# nameservers
+_dep_ws_mutex.assubkibooks.co.uk. 3600 IN TXT	"1f4deefad86fdced0de4c016d4660936799e8536ac505c848d486083b2405521_1762356733812"
+_dmarc.assubkibooks.co.uk. 3600	IN	CNAME	dmarc.ionos.co.uk.
+_domainconnect.assubkibooks.co.uk. 3600	IN CNAME _domainconnect.ionos.com.
+assubkibooks.co.uk.	3600	IN	A	217.160.0.15
+assubkibooks.co.uk.	3600	IN	AAAA	2001:8d8:100f:f000::200
+assubkibooks.co.uk.	3600	IN	MX	10 mx00.ionos.co.uk.
+assubkibooks.co.uk.	3600	IN	MX	10 mx01.ionos.co.uk.
+assubkibooks.co.uk.	3600	IN	TXT	"v=spf1 include:_spf-eu.ionos.com ~all"
+assubkibooks.co.uk.	86400	IN	NS	ns1029.ui-dns.com.
+assubkibooks.co.uk.	86400	IN	NS	ns1061.ui-dns.org.
+assubkibooks.co.uk.	86400	IN	NS	ns1109.ui-dns.de.
+assubkibooks.co.uk.	86400	IN	NS	ns1125.ui-dns.biz.
+autodiscover.assubkibooks.co.uk. 3600 IN CNAME	adsredir.ionos.info.
+resend._domainkey.assubkibooks.co.uk. 3600 IN TXT "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC/xAMbahUTzGPKZ79w0sj6xjBp+CmbuBm2K91tmqW4GWHacCL5NacCA7iWo0XVETF9JAd6aNY4u6kQ2ozFxI8GALXbyLU86BePKOHbh7NWJb/VFYuXe+BZOtuXKiQwTh5NlKPrFUMjyk92SUrKEGEE8YWipGYKf3bzosB9+kd2PwIDAQAB"
+s1-ionos._domainkey.assubkibooks.co.uk.	3600 IN	CNAME s1.dkim.ionos.com.
+s2-ionos._domainkey.assubkibooks.co.uk.	3600 IN	CNAME s2.dkim.ionos.com.
+s42582890._domainkey.assubkibooks.co.uk. 3600 IN CNAME s42582890.dkim.ionos.com.
+send.assubkibooks.co.uk. 3600	IN	MX	10 feedback-smtp.eu-west-1.amazonses.com.
+send.assubkibooks.co.uk. 3600	IN	TXT	"v=spf1 include:amazonses.com ~all"
+www.assubkibooks.co.uk.	3600	IN	A	217.160.0.15
+www.assubkibooks.co.uk.	3600	IN	AAAA	2001:8d8:100f:f000::200
