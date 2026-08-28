@@ -45,7 +45,10 @@ export function fromAddress(): string | null {
 }
 
 export function ownerAddress(): string {
-  return cfg().OWNER_EMAIL ?? 'support.supremacysolutions@gmail.com';
+  // OWNER_EMAIL is set in wrangler.jsonc, so this fallback should never show.
+  // It is the shop's own address rather than the studio's, so a
+  // misconfiguration cannot quietly point customers at the wrong inbox.
+  return cfg().OWNER_EMAIL ?? 'orders@assubkibooks.co.uk';
 }
 
 /**

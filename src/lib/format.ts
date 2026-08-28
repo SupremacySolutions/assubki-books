@@ -3,7 +3,6 @@ export const SITE = {
   nameAr: 'مكتبة السبكي',
   tagline: 'An affordable Islamic bookshop with a vast catalogue',
   telegram: 'https://t.me/alsubkibooks',
-  email: 'support.supremacysolutions@gmail.com',
 } as const;
 
 export function price(pence: number): string {
