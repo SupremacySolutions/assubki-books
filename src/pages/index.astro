@@ -4,18 +4,22 @@ import BookCard from '../components/BookCard.astro';
 import Rosette from '../components/Rosette.astro';
 import { categoryTree, shelfBooks, catalogueStats } from '../lib/db';
 import { classmark } from '../lib/classmarks';
-import { SITE } from '../lib/format';
+import { SITE, imageUrl } from '../lib/format';
 
-const [tree, shelf, stats] = await Promise.all([categoryTree(), shelfBooks(12), catalogueStats()]);
+const [tree, shelf, stats] = await Promise.all([categoryTree(), shelfBooks(20), catalogueStats()]);
 const top = tree.slice(0, 8);
+
+// The drifting shelf behind the hero uses the same covers as the grid below,
+// so the browser fetches each image once and the second use is a cache hit.
+const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
 ---
 
-<Base wide description={`${stats.titles} Islamic titles — classical texts, Dars Nizami and Maktab syllabus sets, hadith, fiqh and tafsir. ${SITE.tagline}.`}>
+<Base wide description={`${stats.titles} Islamic titles - classical texts, Dars Nizami and Maktab syllabus sets, hadith, fiqh and tafsir. ${SITE.tagline}.`}>
   <!-- The hero is the catalogue, not a slogan. People arrive knowing the text
        they want, so the search field is the first thing they meet. -->
   <section class="bg-[var(--color-navy-deep)] text-white relative overflow-hidden">
     <div
-      class="absolute -right-24 -top-24 text-white/[0.05] pointer-events-none select-none hidden sm:block"
+      class="absolute -right-24 -top-28 text-white/[0.045] pointer-events-none select-none hidden sm:block"
       aria-hidden="true"
     >
       <Rosette size={420} />
@@ -55,10 +59,34 @@ const top = tree.slice(0, 8);
         <a href="/catalogue" class="underline underline-offset-2 hover:text-white">browse everything</a>
       </p>
     </div>
+
+    {
+      drifting.length > 0 && (
+        <div class="shelf-strip relative overflow-hidden select-none pb-9" aria-hidden="true">
+          {/* Decorative and duplicated for a seamless loop, so it is hidden from
+              assistive tech: every one of these books is reachable properly
+              through the catalogue below. */}
+          <div class="shelf-track">
+            {[...drifting, ...drifting].map((book) => (
+              <span class="shelf-book">
+                <img
+                  src={imageUrl(book.image_key)}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  width="84"
+                  height="118"
+                />
+              </span>
+            ))}
+          </div>
+        </div>
+      )
+    }
   </section>
 
   <!-- Subjects as shelf classmarks: how a madrasah student actually navigates. -->
-  <section class="mx-auto max-w-6xl px-5 md:px-8 py-12 md:py-16">
+  <section class="mx-auto max-w-6xl px-5 md:px-8 py-12 md:py-16 reveal">
     <h2 class="eyebrow">Shelves</h2>
     <ul class="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
       {
@@ -84,7 +112,7 @@ const top = tree.slice(0, 8);
     </ul>
   </section>
 
-  <section class="mx-auto max-w-6xl px-5 md:px-8 pb-16">
+  <section class="mx-auto max-w-6xl px-5 md:px-8 pb-16 reveal">
     <div class="flex items-baseline justify-between gap-4 mb-5">
       <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Recently added</h2>
       <a href="/catalogue?sort=newest" class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
@@ -92,13 +120,20 @@ const top = tree.slice(0, 8);
       >
     </div>
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-x-5 gap-y-8">
-      {shelf.map((book, i) => <BookCard book={book} eager={i < 6} />)}
+      {shelf.slice(0, 12).map((book, i) => (
+        <div class="reveal" data-delay={String(Math.min(i % 6, 5))}>
+          <BookCard book={book} eager={i < 6} />
+        </div>
+      ))}
     </div>
   </section>
 
   <!-- Ordering here is unusual enough that it needs saying plainly and early. -->
   <section class="border-t border-[var(--color-rule)] bg-white">
-    <div class="mx-auto max-w-6xl px-5 md:px-8 py-14">
+    <div class="mx-auto max-w-6xl px-5 md:px-8 py-14 reveal">
+      <div class="rosette-rule mb-9">
+        <Rosette size={26} />
+      </div>
       <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">How ordering works</h2>
       <ol class="mt-7 grid gap-7 md:grid-cols-3 md:gap-10">
         <li>

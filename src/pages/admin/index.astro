@@ -18,10 +18,10 @@ const needsAction = (counts.requested ?? 0) + (counts.awaiting_payment ?? 0);
 // A key being present is not the same as email working: an unverified sending
 // domain rejects every message. `emailError` is what the provider last said.
 const warnings = [
-  !emailConfigured() && 'Email is not configured — customers are not being emailed. Add RESEND_API_KEY and ORDER_FROM.',
+  !emailConfigured() && 'Email is not configured - customers are not being emailed. Add RESEND_API_KEY and ORDER_FROM.',
   emailConfigured() && emailError &&
     `Email is failing, so customers are not being reached. Sending as ${fromAddress()} was rejected: “${emailError}”`,
-  !botConfigured() && 'Telegram is not configured — new listings cannot be posted to the channel. Add TELEGRAM_BOT_TOKEN.',
+  !botConfigured() && 'Telegram is not configured - new listings cannot be posted to the channel. Add TELEGRAM_BOT_TOKEN.',
 ].filter(Boolean) as string[];
 ---
 
@@ -125,7 +125,7 @@ const warnings = [
       Catalogue to tidy
     </h2>
     <p class="text-[14.5px] text-[var(--color-ink-soft)] mb-4 max-w-2xl">
-      Carried over from the old site. None of it stops the shop working — it is the
+      Carried over from the old site. None of it stops the shop working - it is the
       polish the import could not do for you.
     </p>
     <ul class="grid gap-3 sm:grid-cols-2">

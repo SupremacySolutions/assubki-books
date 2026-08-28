@@ -16,7 +16,7 @@ interface TelegramEnv {
   TELEGRAM_BOT_USERNAME?: string;
   TELEGRAM_CHANNEL_ID?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
-  /** Set to "1" in .dev.vars — see dryRun() below. */
+  /** Set to "1" in .dev.vars - see dryRun() below. */
   TELEGRAM_DRY_RUN?: string;
 }
 
@@ -43,7 +43,7 @@ export function optInLink(ref: string, token: string): string | null {
 /**
  * Local development shares the production bot token and channel id, because
  * that is the only way to exercise the real flow. That means an ordinary local
- * test can post to the shop's live channel — which has happened. Setting
+ * test can post to the shop's live channel - which has happened. Setting
  * TELEGRAM_DRY_RUN=1 in .dev.vars makes every write a log line instead.
  */
 function dryRun(): boolean {
@@ -57,12 +57,12 @@ async function call<T = unknown>(
 ): Promise<T | null> {
   const token = cfg().TELEGRAM_BOT_TOKEN;
   if (!token) {
-    console.log(`[telegram] ${method} skipped — no bot token`);
+    console.log(`[telegram] ${method} skipped - no bot token`);
     return null;
   }
 
   if (dryRun()) {
-    console.log(`[telegram] DRY RUN — would have called ${method}:`, JSON.stringify(body).slice(0, 300));
+    console.log(`[telegram] DRY RUN - would have called ${method}:`, JSON.stringify(body).slice(0, 300));
     // Deliberately not 0: callers test the returned id for truthiness, so a
     // zero would read as a failed post and the success path would never run.
     return { message_id: 999_999 } as T;
@@ -129,7 +129,7 @@ export function listingCaption(post: ListingPost): string {
 export async function postListing(post: ListingPost): Promise<number | null> {
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) {
-    console.log('[telegram] channel post skipped — no channel id');
+    console.log('[telegram] channel post skipped - no channel id');
     return null;
   }
 
@@ -187,7 +187,7 @@ export async function editListing(messageId: number, post: ListingPost): Promise
 }
 
 /**
- * Removes a channel post. Used when a listing is deleted — otherwise the
+ * Removes a channel post. Used when a listing is deleted - otherwise the
  * channel keeps advertising a book, and the link goes to a dead page.
  *
  * Telegram only allows a bot to delete its own messages, and only within 48

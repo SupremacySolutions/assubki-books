@@ -31,7 +31,7 @@ import Rosette from '../components/Rosette.astro';
       </div>
 
       <p class="mt-4 text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed max-w-lg">
-        Postage is not included above — we confirm the full total when we reply. Nothing is charged
+        Postage is not included above - we confirm the full total when we reply. Nothing is charged
         on this website.
       </p>
     </div>
@@ -96,9 +96,9 @@ import Rosette from '../components/Rosette.astro';
             <p class="price text-[15px] mt-1">${gbp(book.pricePence)}</p>
             ${
               book.available <= 0
-                ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Out of stock — removed from your request</p>`
+                ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Out of stock - removed from your request</p>`
                 : overrun
-                  ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Only ${book.available} available — quantity reduced</p>`
+                  ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Only ${book.available} available - quantity reduced</p>`
                   : ''
             }
           </div>

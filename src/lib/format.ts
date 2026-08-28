@@ -22,7 +22,7 @@ export function imageUrl(key: string | null | undefined): string | null {
   return key ? `/img/${key}` : null;
 }
 
-/** Flattens to a single line — for meta descriptions and Telegram blurbs. */
+/** Flattens to a single line - for meta descriptions and Telegram blurbs. */
 export function stripTags(html: string | null | undefined): string {
   return (html ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }

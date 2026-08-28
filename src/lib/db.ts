@@ -114,7 +114,7 @@ export async function categoryByPath(path: string): Promise<Category | null> {
 // ---------------------------------------------------------------------------
 
 /**
- * User input cannot go into MATCH raw — an unbalanced quote or a bare `OR` is
+ * User input cannot go into MATCH raw - an unbalanced quote or a bare `OR` is
  * a syntax error, and FTS operators would let a visitor write their own query.
  * Each word is stripped to letters/digits (Arabic included), quoted, and the
  * last one gets a prefix wildcard so results narrow as you type.
@@ -256,7 +256,7 @@ export async function bookBySlug(slug: string): Promise<BookDetail | null> {
  * Compared case-insensitively because the two sides disagree on the case of
  * percent-escapes: WordPress stored `%d8%a7`, but the URL parser normalises the
  * incoming path to `%D8%A7`. An exact match silently sends every Arabic-slugged
- * legacy link — which is most of them — to the catalogue instead of the book.
+ * legacy link - which is most of them - to the catalogue instead of the book.
  * LOWER() is ASCII-only in SQLite, which is exactly the range hex escapes use.
  */
 export async function slugForLegacy(legacySlug: string): Promise<string | null> {
@@ -282,7 +282,7 @@ export async function relatedBooks(bookId: number, limit = 6): Promise<BookRow[]
   return results;
 }
 
-/** Books for the home shelf — in stock, with a cover, most recent first. */
+/** Books for the home shelf - in stock, with a cover, most recent first. */
 export async function shelfBooks(limit = 18): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(

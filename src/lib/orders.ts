@@ -10,7 +10,7 @@ import { env } from 'cloudflare:workers';
 
 export const HOLD_HOURS = 48;
 
-/** No 0/O/1/I — these get read aloud and typed back over Telegram. */
+/** No 0/O/1/I - these get read aloud and typed back over Telegram. */
 const REF_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
 export interface RequestedItem {
@@ -115,7 +115,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   const byId = new Map(books.map((b) => [b.id, b]));
 
   // Check first so the customer gets a readable message naming the titles.
-  // Correctness does not rest on this check — see the CHECK constraint below.
+  // Correctness does not rest on this check - see the CHECK constraint below.
   const problems = [];
   for (const item of input.items) {
     const book = byId.get(item.bookId);
@@ -170,8 +170,8 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
            VALUES ((SELECT id FROM orders WHERE ref = ?), ?, ?, ?, ?)`,
         ).bind(ref, item.bookId, item.title, item.pricePence, item.qty),
         // If this pushes reserved past stock the CHECK constraint fails, the
-        // statement errors, and D1 rolls the whole batch back. That — not the
-        // read above — is what makes two simultaneous requests for the last
+        // statement errors, and D1 rolls the whole batch back. That - not the
+        // read above - is what makes two simultaneous requests for the last
         // copy safe.
         env.DB.prepare(`UPDATE books SET reserved = reserved + ? WHERE id = ?`).bind(
           item.qty,

@@ -3,7 +3,7 @@
  *
  * Cloudflare Access sits in front of /admin and puts a signed JWT on every
  * request in `Cf-Access-Jwt-Assertion`. **The presence of that header proves
- * nothing** — anyone can send a header. It has to be verified against the
+ * nothing** - anyone can send a header. It has to be verified against the
  * team's published signing keys, and its audience checked against this
  * application's tag, or the whole thing is decoration.
  *
@@ -159,7 +159,7 @@ async function verifySessionCookie(value: string): Promise<boolean> {
   return diff === 0;
 }
 
-/** True while the interim path is live — i.e. Access is not yet configured. */
+/** True while the interim path is live - i.e. Access is not yet configured. */
 export function passwordFallbackActive(): boolean {
   return !cfg().ACCESS_AUD && Boolean(cfg().ADMIN_PASSWORD);
 }
@@ -214,7 +214,7 @@ export function readCookie(request: Request, name: string): string | null {
   return null;
 }
 
-/** No admin auth of any kind is configured — the portal must stay shut. */
+/** No admin auth of any kind is configured - the portal must stay shut. */
 export function adminLocked(): boolean {
   return !cfg().ACCESS_AUD && !cfg().ADMIN_PASSWORD;
 }

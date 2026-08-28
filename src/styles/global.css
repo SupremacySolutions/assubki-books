@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Spectral for titles: a scholarly serif with the weight range to carry an
-   entry heading without shouting. IBM Plex Sans for interface and body — its
+   entry heading without shouting. IBM Plex Sans for interface and body - its
    reference-work character suits a catalogue, and its numerals are legible at
    small sizes, which matters on a page that is mostly prices and counts.
    Noto Naskh Arabic for Arabic titles: naskh is the appropriate register for
@@ -90,7 +90,7 @@
 }
 
 @layer components {
-  /* Arabic is set a step larger than its Latin neighbour — naskh runs
+  /* Arabic is set a step larger than its Latin neighbour - naskh runs
      optically smaller at the same nominal size, and these titles are the
      form many customers actually recognise. */
   .ar {
@@ -217,5 +217,119 @@
     padding-inline-start: 1em;
     font-family: var(--font-display);
     font-style: italic;
+  }
+}
+
+@layer components {
+  /* ---------------------------------------------------------------------
+     Motion
+     ---------------------------------------------------------------------
+     Everything here is additive: without JavaScript the reveal classes never
+     activate, so content is simply visible rather than stuck invisible. And
+     every animation is switched off wholesale under prefers-reduced-motion,
+     which matters more than usual on a site whose hero is a moving shelf.
+     --------------------------------------------------------------------- */
+
+  .js .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  .js .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /* A row of cards arriving all at once reads as a page repaint; a small
+     stagger reads as the shelf filling up. */
+  .js .reveal[data-delay='1'].is-visible { transition-delay: 0.06s; }
+  .js .reveal[data-delay='2'].is-visible { transition-delay: 0.12s; }
+  .js .reveal[data-delay='3'].is-visible { transition-delay: 0.18s; }
+  .js .reveal[data-delay='4'].is-visible { transition-delay: 0.24s; }
+  .js .reveal[data-delay='5'].is-visible { transition-delay: 0.3s; }
+
+  /* The hero shelf: real covers from the catalogue drifting behind the
+     headline. Stock photography of "a bookshop" would be someone else's shop;
+     these are the actual books for sale. */
+  .shelf-strip {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+  }
+
+  .shelf-track {
+    display: flex;
+    gap: 1.15rem;
+    width: max-content;
+    animation: shelf-drift 90s linear infinite;
+  }
+  .shelf-strip:hover .shelf-track {
+    animation-play-state: paused;
+  }
+
+  @keyframes shelf-drift {
+    from { transform: translateX(0); }
+    /* The track holds the covers twice, so half a turn is a seamless loop. */
+    to { transform: translateX(-50%); }
+  }
+
+  .shelf-book {
+    width: 84px;
+    flex: none;
+    border-radius: 2px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .shelf-book img {
+    width: 100%;
+    height: 118px;
+    object-fit: cover;
+    display: block;
+  }
+  .shelf-strip:hover .shelf-book:hover {
+    transform: translateY(-6px);
+  }
+
+  /* Cards lift rather than just scaling their image. */
+  .book-well {
+    transition:
+      box-shadow 0.3s ease,
+      border-color 0.3s ease,
+      transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .group:hover .book-well {
+    transform: translateY(-3px);
+    border-color: var(--color-wash);
+    box-shadow: 0 10px 26px -12px rgba(16, 24, 40, 0.28);
+  }
+
+  /* A rosette set into a hairline, used to close a section. */
+  .rosette-rule {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    color: var(--color-wash);
+  }
+  .rosette-rule::before,
+  .rosette-rule::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--color-rule);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .js .reveal,
+    .js .reveal.is-visible {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+    .shelf-track { animation: none; }
+    .shelf-book,
+    .book-well { transition: none; }
+    .group:hover .book-well { transform: none; }
   }
 }

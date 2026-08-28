@@ -21,7 +21,7 @@
   ],
 
   // Every 15 minutes. A book whose hold has lapsed should return to the shelf
-  // quickly — an hour of showing "out of stock" when it is free is a lost sale.
+  // quickly - an hour of showing "out of stock" when it is free is a lost sale.
   "triggers": {
     "crons": ["*/15 * * * *"]
   },

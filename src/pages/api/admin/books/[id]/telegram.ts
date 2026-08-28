@@ -5,7 +5,7 @@ export const prerender = false;
 
 /**
  * POST only. This writes to the database and posts publicly, so it must not be
- * reachable by following a URL — see the note in src/lib/publish.ts.
+ * reachable by following a URL - see the note in src/lib/publish.ts.
  */
 export const POST: APIRoute = async ({ params, url }) => {
   const id = Number.parseInt(params.id ?? '', 10);

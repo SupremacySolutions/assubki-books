@@ -18,7 +18,7 @@ const plain = stripTags(book.description_html);
 // This is the description Telegram shows when the owner posts the link, so it
 // has to stand alone: what the book is, then price and availability.
 const shareDescription = truncate(
-  plain || `${book.title}${book.title_ar ? ` — ${book.title_ar}` : ''}`,
+  plain || `${book.title}${book.title_ar ? ` - ${book.title_ar}` : ''}`,
   160,
 );
 
@@ -27,6 +27,8 @@ const jsonLd = {
   '@type': 'Book',
   name: book.title,
   alternateName: book.title_ar ?? undefined,
+  author: book.author ? { '@type': 'Person', name: book.author } : undefined,
+  publisher: book.publisher ? { '@type': 'Organization', name: book.publisher } : undefined,
   description: plain || undefined,
   // Same reasoning as the OG tags in Base.astro: follow the served host.
   image: cover ? new URL(cover, Astro.url.origin).toString() : undefined,
@@ -122,6 +124,16 @@ const jsonLd = {
         </h1>
         {book.title_ar && <p class="ar mt-2 text-[24px] text-[var(--color-ink-soft)]">{book.title_ar}</p>}
 
+        {
+          (book.author || book.publisher) && (
+            <p class="mt-2 text-[15px] text-[var(--color-ink-soft)]">
+              {book.author}
+              {book.author && book.publisher && <span class="text-[var(--color-ink-faint)]"> · </span>}
+              {book.publisher && <span class="text-[var(--color-ink-faint)]">{book.publisher}</span>}
+            </p>
+          )
+        }
+
         <div class="mt-6 flex items-center gap-4 flex-wrap">
           <span class="price text-[30px]">{price(book.price_pence)}</span>
           <span
@@ -176,7 +188,7 @@ const jsonLd = {
           }
           <p class="mt-3 text-[13.5px] text-[var(--color-ink-faint)] max-w-md">
             Adding to the basket reserves nothing yet. You send a request, we confirm, then we send
-            payment details — no card details are taken on this site.
+            payment details - no card details are taken on this site.
           </p>
         </div>
 

@@ -12,7 +12,7 @@ export const prerender = false;
  *
  * The status only advances if at least one channel actually reached them. An
  * order marked "awaiting payment" that the customer never heard about is worse
- * than one still sitting in the queue — it looks handled but isn't.
+ * than one still sitting in the queue - it looks handled but isn't.
  */
 export const POST: APIRoute = async ({ params, request, url }) => {
   const ref = params.ref!;

@@ -7,7 +7,7 @@
  * only `deliver()`.
  *
  * Every send fails soft. By the time an email is attempted the order is already
- * in the database and the stock is already held — a bounced notification must
+ * in the database and the stock is already held - a bounced notification must
  * never look to the customer like a failed order.
  */
 
@@ -29,7 +29,7 @@ export interface Message {
   replyTo?: string;
 }
 
-/** Configured is not the same as working — see lastEmailError(). */
+/** Configured is not the same as working - see lastEmailError(). */
 export function emailConfigured(): boolean {
   return Boolean(cfg().RESEND_API_KEY && cfg().ORDER_FROM);
 }
@@ -54,7 +54,7 @@ export function ownerAddress(): string {
  * Having a key and a From address is not the same as being able to send: a
  * domain that is not verified with the provider rejects every message. Without
  * this, the dashboard reports "email configured" while nothing is reaching
- * anyone — which is exactly what happened.
+ * anyone - which is exactly what happened.
  */
 async function recordFailure(reason: string): Promise<void> {
   try {

@@ -69,7 +69,7 @@ export const POST: APIRoute = async ({ request }) => {
     .bind(ref.toUpperCase())
     .first<{ id: number; ref: string; access_token: string; customer_name: string; status: string }>();
 
-  // The prefix must match the real token — a guessed reference alone is not
+  // The prefix must match the real token - a guessed reference alone is not
   // enough to attach a chat to an order.
   if (!order || !order.access_token.startsWith(tokenPrefix.toLowerCase())) {
     await sendMessage(String(chatId), esc('That order could not be found.'));

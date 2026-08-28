@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 
 /**
- * Generated from the database rather than at build time — the admin publishes
+ * Generated from the database rather than at build time - the admin publishes
  * books without a rebuild, so a static sitemap would go stale the moment the
  * owner adds a title.
  */

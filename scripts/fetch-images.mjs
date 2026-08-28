@@ -8,7 +8,7 @@
  * rather than living in R2: free, edge-cached, and versioned with the code.
  * R2 is for images the owner uploads later through the admin panel.
  *
- * The originals total ~98 MB of full-size JPEGs — far more than a cover
+ * The originals total ~98 MB of full-size JPEGs - far more than a cover
  * thumbnail needs. Capping the long edge at 800px and encoding WebP brings
  * that down by roughly 6x with no visible loss at the sizes actually rendered.
  *
@@ -70,7 +70,7 @@ async function processOne(job) {
   });
 }
 
-// Fixed-size worker pool — 454 parallel fetches would just get us rate-limited.
+// Fixed-size worker pool - 454 parallel fetches would just get us rate-limited.
 async function run() {
   const queue = [...jobs];
   const workers = Array.from({ length: CONCURRENCY }, async () => {

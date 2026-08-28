@@ -51,6 +51,8 @@ export const POST: APIRoute = async ({ request }) => {
 
   const title = String(form.get('title') ?? '').trim();
   const titleAr = String(form.get('title_ar') ?? '').trim() || null;
+  const author = String(form.get('author') ?? '').trim() || null;
+  const publisher = String(form.get('publisher') ?? '').trim() || null;
   const description = toHtml(String(form.get('description') ?? ''));
   const pricePence = Math.max(0, Math.round((Number(form.get('price')) || 0) * 100));
   const stock = Math.max(0, Math.round(Number(form.get('stock')) || 0));
@@ -69,20 +71,22 @@ export const POST: APIRoute = async ({ request }) => {
     // Stock goes through setStock so the change is written to the ledger, and
     // so it cannot be dropped below what open orders have already promised.
     await env.DB.prepare(
-      `UPDATE books SET title = ?, title_ar = ?, description_html = ?, price_pence = ?,
-                        status = ?, updated_at = unixepoch()
+      `UPDATE books SET title = ?, title_ar = ?, author = ?, publisher = ?,
+                        description_html = ?, price_pence = ?, status = ?,
+                        updated_at = unixepoch()
         WHERE id = ?`,
     )
-      .bind(title, titleAr, description, pricePence, status, bookId)
+      .bind(title, titleAr, author, publisher, description, pricePence, status, bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
   } else {
     const slug = await uniqueSlug(slugify(title), null);
     const created = await env.DB.prepare(
-      `INSERT INTO books (slug, title, title_ar, description_html, price_pence, stock, reserved, status)
-       VALUES (?,?,?,?,?,?,0,?) RETURNING id`,
+      `INSERT INTO books (slug, title, title_ar, author, publisher, description_html,
+                          price_pence, stock, reserved, status)
+       VALUES (?,?,?,?,?,?,?,?,0,?) RETURNING id`,
     )
-      .bind(slug, title, titleAr, description, pricePence, stock, status)
+      .bind(slug, title, titleAr, author, publisher, description, pricePence, stock, status)
       .first<{ id: number }>();
     bookId = created!.id;
 

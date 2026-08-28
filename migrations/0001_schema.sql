@@ -1,4 +1,4 @@
--- As-Subkī Books — core schema.
+-- As-Subkī Books - core schema.
 --
 -- Two ideas drive the shape of this file:
 --
@@ -14,7 +14,7 @@
 PRAGMA foreign_keys = ON;
 
 -- ---------------------------------------------------------------------------
--- Categories — WooCommerce's hierarchy, preserved (Syllabus → Dars Nizami etc.)
+-- Categories - WooCommerce's hierarchy, preserved (Syllabus → Dars Nizami etc.)
 -- ---------------------------------------------------------------------------
 CREATE TABLE categories (
   id          INTEGER PRIMARY KEY,
@@ -93,7 +93,7 @@ CREATE TABLE book_images (
 CREATE INDEX idx_bookimages_book ON book_images(book_id, sort);
 
 -- ---------------------------------------------------------------------------
--- Search — FTS5 over both the transliterated and Arabic titles.
+-- Search - FTS5 over both the transliterated and Arabic titles.
 -- ---------------------------------------------------------------------------
 -- The column names must match books' own column names exactly: an external
 -- content table resolves them against `books` on read, so a column called
@@ -127,7 +127,7 @@ CREATE TRIGGER books_fts_update AFTER UPDATE ON books BEGIN
 END;
 
 -- ---------------------------------------------------------------------------
--- Orders — requests, not sales. No money moves through this table.
+-- Orders - requests, not sales. No money moves through this table.
 -- ---------------------------------------------------------------------------
 CREATE TABLE orders (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,7 +185,7 @@ CREATE INDEX idx_orderitems_order ON order_items(order_id);
 CREATE INDEX idx_orderitems_book  ON order_items(book_id);
 
 -- ---------------------------------------------------------------------------
--- Stock ledger — append-only audit of every movement.
+-- Stock ledger - append-only audit of every movement.
 -- ---------------------------------------------------------------------------
 CREATE TABLE stock_ledger (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,

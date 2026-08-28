@@ -3,12 +3,12 @@
  *
  * Two moments matter:
  *
- *   1. **Request placed** — the owner needs everything needed to fulfil it in
+ *   1. **Request placed** - the owner needs everything needed to fulfil it in
  *      one email: who, where, what, how many. The customer gets an
  *      acknowledgement and, prominently, the one-tap link that lets the bot
  *      reach them.
  *
- *   2. **Owner confirms** — the first time a real total exists, because postage
+ *   2. **Owner confirms** - the first time a real total exists, because postage
  *      is only known once someone looks at the address. This is the message
  *      carrying payment instructions, and it goes by Telegram if the customer
  *      linked their chat, by email otherwise.
@@ -60,7 +60,7 @@ function customerPlaced(input: PlacedInput) {
     `Reference ${order.ref}`,
     `<p style="margin:0 0 16px;font-size:15px">Assalamu alaikum ${escapeHtml(name)},</p>
      <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
-       Thank you — we have your request and these books are held for you.
+       Thank you - we have your request and these books are held for you.
        <strong>We will reply with the total including postage and how to pay.</strong>
      </p>
      ${itemRows(order.items, order.subtotalPence)}
@@ -76,13 +76,13 @@ function customerPlaced(input: PlacedInput) {
      ${button(link, 'View your request')}
      <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
        We hold these copies until ${escapeHtml(expires)}. If we have not heard from you by then the
-       hold lapses and the books return to the shelf — nothing is charged and there is nothing to
+       hold lapses and the books return to the shelf - nothing is charged and there is nothing to
        cancel. No payment is taken on our website at any point.
      </p>`,
   );
 
   const text =
-    `Request received — ${order.ref}\n\nAssalamu alaikum ${name},\n\n` +
+    `Request received - ${order.ref}\n\nAssalamu alaikum ${name},\n\n` +
     `We have your request and these books are held for you. We will reply with the total ` +
     `including postage and how to pay.\n\n` +
     order.items
@@ -92,7 +92,7 @@ function customerPlaced(input: PlacedInput) {
     (optIn ? `Get payment details on Telegram: ${optIn}\n\n` : '') +
     `View your request: ${link}\n\nHeld until ${expires}. No payment is taken on our website.\n`;
 
-  return { subject: `Your request ${order.ref} — ${SITE.name}`, html, text };
+  return { subject: `Your request ${order.ref} - ${SITE.name}`, html, text };
 }
 
 function ownerPlaced(input: PlacedInput) {
@@ -134,7 +134,7 @@ function ownerPlaced(input: PlacedInput) {
     (input.notes ? `\nNote: ${input.notes}\n` : '') +
     `\nConfirm: ${origin}/admin/orders/${order.ref}\n`;
 
-  return { subject: `New request ${order.ref} — ${name}`, html, text };
+  return { subject: `New request ${order.ref} - ${name}`, html, text };
 }
 
 export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
@@ -148,7 +148,7 @@ export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Owner confirms — the message that carries payment instructions
+// 2. Owner confirms - the message that carries payment instructions
 // ---------------------------------------------------------------------------
 
 export interface ConfirmedInput {
@@ -209,7 +209,7 @@ function confirmedEmail(input: ConfirmedInput) {
     `How to pay\n${input.paymentInstructions}\n\n` +
     `Please quote ${input.ref} with your payment.\n\n${link}\n`;
 
-  return { subject: `Order ${input.ref} confirmed — ${price(input.totalPence)} to pay`, html, text };
+  return { subject: `Order ${input.ref} confirmed - ${price(input.totalPence)} to pay`, html, text };
 }
 
 function confirmedTelegram(input: ConfirmedInput): string {
@@ -217,7 +217,7 @@ function confirmedTelegram(input: ConfirmedInput): string {
     `*${esc(`Order ${input.ref} confirmed`)}*`,
     '',
     ...input.items.map(
-      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''} — ${esc(price(i.pricePence * i.qty))}`,
+      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''} - ${esc(price(i.pricePence * i.qty))}`,
     ),
     '',
     `${esc('Subtotal')} ${esc(price(input.subtotalPence))}`,
@@ -238,7 +238,7 @@ function confirmedTelegram(input: ConfirmedInput): string {
 
 /**
  * Sends the confirmation. Telegram is preferred when the customer linked their
- * chat — most arrive from the channel, so that is where they actually read —
+ * chat - most arrive from the channel, so that is where they actually read -
  * but the email always goes too, because a single channel is a single point of
  * failure for the one message that carries payment details.
  */
@@ -258,7 +258,7 @@ export async function notifyOrderConfirmed(
   };
 }
 
-/** Plain status nudges — dispatched, cancelled. */
+/** Plain status nudges - dispatched, cancelled. */
 export async function notifyStatusChange(input: {
   ref: string;
   token: string;
@@ -270,11 +270,11 @@ export async function notifyStatusChange(input: {
 }): Promise<void> {
   const COPY: Record<string, { subject: string; line: string }> = {
     paid: {
-      subject: `Payment received — ${input.ref}`,
+      subject: `Payment received - ${input.ref}`,
       line: 'We have received your payment. Your books are being packed.',
     },
     dispatched: {
-      subject: `Your books are on the way — ${input.ref}`,
+      subject: `Your books are on the way - ${input.ref}`,
       line: 'Your order has been posted. Thank you for your custom.',
     },
     cancelled: {

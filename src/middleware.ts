@@ -51,7 +51,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
       try {
         slug = await slugForLegacy(decodeURIComponent(raw));
       } catch {
-        /* malformed escape sequence — fall through to the catalogue */
+        /* malformed escape sequence - fall through to the catalogue */
       }
     }
     return context.redirect(slug ? `/book/${slug}` : '/catalogue', 301);

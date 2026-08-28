@@ -3,7 +3,7 @@
 -- Three things change:
 --
 --   1. An order acquires a *confirmation* step. The owner adds postage, which
---      is the first moment a real total exists — until then the customer has
+--      is the first moment a real total exists - until then the customer has
 --      only ever seen a subtotal.
 --
 --   2. An order can be bound to a Telegram chat. A bot cannot open a
@@ -36,7 +36,7 @@ ALTER TABLE books ADD COLUMN telegram_message_id INTEGER;
 ALTER TABLE books ADD COLUMN telegram_posted_at INTEGER;
 
 -- ---------------------------------------------------------------------------
--- Settings — small key/value store the owner edits from the portal.
+-- Settings - small key/value store the owner edits from the portal.
 -- ---------------------------------------------------------------------------
 CREATE TABLE settings (
   key        TEXT PRIMARY KEY,

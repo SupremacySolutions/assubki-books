@@ -16,7 +16,7 @@ interface UploadEnv {
 
 /**
  * Photos the owner adds go to R2 under `uploads/`. The migrated covers live
- * under `books/` as immutable static assets — the prefix is what decides where
+ * under `books/` as immutable static assets - the prefix is what decides where
  * `/img/<key>` reads from, so the two can never collide.
  */
 export const POST: APIRoute = async ({ request }) => {
@@ -40,7 +40,7 @@ export const POST: APIRoute = async ({ request }) => {
   if (!book) return new Response('No such book', { status: 404 });
 
   // Random suffix so re-uploading never overwrites a cached image at the same
-  // URL — R2 objects are served with a long cache lifetime.
+  // URL - R2 objects are served with a long cache lifetime.
   const rand = crypto.randomUUID().slice(0, 8);
   const key = `uploads/${book.slug}/${Date.now()}-${rand}.${ext}`;
 

@@ -13,7 +13,7 @@ interface UploadEnv {
  * Both prefixes live here now: `books/` for the migrated covers and `uploads/`
  * for anything the owner adds. They were split while R2 was unavailable, which
  * meant deleting a listing removed its database rows but left the files behind
- * forever — and a migrated cover could not really be deleted at all.
+ * forever - and a migrated cover could not really be deleted at all.
  */
 const SERVED_PREFIXES = ['books/', 'uploads/'];
 export const GET: APIRoute = async ({ params, request }) => {

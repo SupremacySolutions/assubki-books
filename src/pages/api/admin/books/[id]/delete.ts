@@ -27,7 +27,7 @@ export const POST: APIRoute = async ({ params, request }) => {
 
   if (!book) return new Response(null, { status: 302, headers: { Location: '/admin/books' } });
 
-  // Copies promised to a live order cannot be deleted out from under it — the
+  // Copies promised to a live order cannot be deleted out from under it - the
   // customer is still waiting on those books.
   if (book.reserved > 0) {
     return new Response(null, {

@@ -1,6 +1,6 @@
 # Turning the connections on
 
-Everything below is optional in the sense that the shop runs without it — orders
+Everything below is optional in the sense that the shop runs without it - orders
 are taken, stock is held, the portal works. What each one unlocks is the ability
 to *reach people*. Until they are set, the site logs what it would have sent.
 
@@ -14,7 +14,7 @@ For local development put the same names in `.dev.vars` (already gitignored).
 
 ---
 
-## 1. Email — Resend (free, 3,000/month)
+## 1. Email - Resend (free, 3,000/month)
 
 Without this, customers get no confirmation and no payment details.
 
@@ -24,10 +24,10 @@ Without this, customers get no confirmation and no payment details.
 | Secret | Example | What it does |
 |---|---|---|
 | `RESEND_API_KEY` | `re_xxx` | Authorises sending |
-| `ORDER_FROM` | `orders@assubkibooks.co.uk` | The From address — must be on the verified domain |
+| `ORDER_FROM` | `orders@assubkibooks.co.uk` | The From address - must be on the verified domain |
 | `OWNER_EMAIL` | the shop's inbox | Where new order emails land |
 
-Until the domain moves to Cloudflare, Resend can verify it at IONOS instead —
+Until the domain moves to Cloudflare, Resend can verify it at IONOS instead -
 it needs its own DNS records either way.
 
 ## 2. Telegram bot
@@ -47,13 +47,13 @@ their payment details.
 | `TELEGRAM_CHANNEL_ID` | `@alsubkibooks` or `-1001234567890` |
 | `TELEGRAM_WEBHOOK_SECRET` | any long random string you invent |
 
-Then point Telegram at the site — once, after deploying:
+Then point Telegram at the site - once, after deploying:
 
 ```bash
 curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<your-domain>/api/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"
 ```
 
-**Why the webhook matters.** A bot cannot start a conversation — Telegram only
+**Why the webhook matters.** A bot cannot start a conversation - Telegram only
 lets it message someone who messaged it first. The customer taps *Connect
 Telegram* on their order page, which opens the bot with their order reference,
 and the webhook binds that chat to the order. Without the webhook registered,
@@ -66,14 +66,14 @@ appears.
 
 Two ways in. The second retires the first automatically.
 
-**Now — shared password.** Works immediately:
+**Now - shared password.** Works immediately:
 
 ```bash
 npx wrangler secret put ADMIN_PASSWORD
 npx wrangler secret put ADMIN_SESSION_SECRET   # any long random string
 ```
 
-**Better — Cloudflare Access.** Email one-time codes, no password to leak, and
+**Better - Cloudflare Access.** Email one-time codes, no password to leak, and
 you can revoke a person rather than rotating a shared secret:
 
 1. Zero Trust dashboard → Access → Applications → **Add a self-hosted
@@ -86,7 +86,7 @@ you can revoke a person rather than rotating a shared secret:
 | `ACCESS_TEAM_DOMAIN` | `supremacy.cloudflareaccess.com` |
 | `ACCESS_AUD` | the AUD tag |
 
-The moment `ACCESS_AUD` is set, the password path stops working — deliberately,
+The moment `ACCESS_AUD` is set, the password path stops working - deliberately,
 so there are never two ways in. Delete `ADMIN_PASSWORD` afterwards.
 
 ---

@@ -12,7 +12,7 @@ const params = Astro.url.searchParams;
 const categoryPath = path ?? null;
 const category = categoryPath ? await categoryByPath(categoryPath) : null;
 
-// An unknown category path is a 404, not an empty grid — otherwise a typo
+// An unknown category path is a 404, not an empty grid - otherwise a typo
 // looks like a shop with nothing in it.
 if (categoryPath && !category) return Astro.rewrite('/404');
 
@@ -36,7 +36,7 @@ const crumbs = category
   : [];
 
 const sortOptions: { value: Sort; label: string }[] = [
-  { value: 'title', label: 'Title A–Z' },
+  { value: 'title', label: 'Title A-Z' },
   { value: 'price-asc', label: 'Price low to high' },
   { value: 'price-desc', label: 'Price high to low' },
   { value: 'newest', label: 'Recently added' },
@@ -48,7 +48,7 @@ const pageUrl = (n: number) =>
 const title = q ? `“${q}”` : heading;
 const description = category
   ? `${result.total} ${category.name} titles at As-Subkī Books.`
-  : `Browse ${result.total} Islamic titles — hadith, fiqh, tafsir, Dars Nizami and Maktab syllabus sets.`;
+  : `Browse ${result.total} Islamic titles - hadith, fiqh, tafsir, Dars Nizami and Maktab syllabus sets.`;
 ---
 
 <Base title={title} description={description} noindex={!!q}>
@@ -113,7 +113,7 @@ const description = category
                       value={`/catalogue/${child.path}${keep}`}
                       selected={categoryPath === child.path}
                     >
-                      &nbsp;&nbsp;— {child.name} ({child.count})
+                      &nbsp;&nbsp;- {child.name} ({child.count})
                     </option>
                   ))}
                 </>
@@ -181,7 +181,7 @@ const description = category
               </div>
               <h2 class="font-[family-name:var(--font-display)] text-[22px]">Nothing matches that yet</h2>
               <p class="mt-2 text-[15px] text-[var(--color-ink-soft)] max-w-sm mx-auto">
-                Try a shorter search, or the Arabic title. If we do not list a text, ask on Telegram —
+                Try a shorter search, or the Arabic title. If we do not list a text, ask on Telegram -
                 we can often source it.
               </p>
               <a href="/catalogue" class="btn btn-ghost mt-6">Browse all titles</a>
@@ -189,7 +189,9 @@ const description = category
           ) : (
             <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-9">
               {result.books.map((book, i) => (
-                <BookCard book={book} eager={i < 4} />
+                <div class="reveal" data-delay={String(Math.min(i % 4, 5))}>
+                  <BookCard book={book} eager={i < 4} />
+                </div>
               ))}
             </div>
           )

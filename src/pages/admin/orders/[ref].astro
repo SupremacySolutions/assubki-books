@@ -54,7 +54,7 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
       <div class="mb-5 p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
         <p class="font-medium">Nothing was sent, so this order is still waiting.</p>
         <p class="mt-1 leading-relaxed">
-          The postage and total have been saved, but no message could be delivered — email is not
+          The postage and total have been saved, but no message could be delivered - email is not
           configured, and this customer has not connected Telegram. Set{' '}
           <code class="text-[13px]">RESEND_API_KEY</code> and{' '}
           <code class="text-[13px]">ORDER_FROM</code>, then confirm again. Until then you can
@@ -66,7 +66,7 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
   {
     problem === 'state' && (
       <p class="mb-5 p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
-        That order had already moved on — nothing was changed.
+        That order had already moved on - nothing was changed.
       </p>
     )
   }
@@ -129,7 +129,7 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
               Set the postage and we will send {order.customer_name.split(' ')[0]} the total and how
               to pay
               {order.telegram_chat_id
-                ? ' — by Telegram and email, since they connected their Telegram.'
+                ? ' - by Telegram and email, since they connected their Telegram.'
                 : ' by email. They have not connected Telegram, so email is the only way to reach them.'}
             </p>
 

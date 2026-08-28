@@ -2,8 +2,8 @@
  * Announcing a listing in the Telegram channel.
  *
  * Lives here rather than in the route so that "save" and "save and post" can
- * share it by calling a function. The alternative — having save redirect to the
- * posting endpoint — turns a POST into a GET, and a GET that posts to a public
+ * share it by calling a function. The alternative - having save redirect to the
+ * posting endpoint - turns a POST into a GET, and a GET that posts to a public
  * channel and writes to the database is reachable by anything that follows a
  * URL: a prefetch, a crawler, or an `<img src>` on a page the signed-in owner
  * happens to visit.

@@ -4,7 +4,7 @@
  * `book_images.image_key`, so every photo lives in one place.
  *
  * They originally shipped as static assets in public/img, which was the right
- * call while R2 was unavailable — but it left two kinds of photo behaving
+ * call while R2 was unavailable - but it left two kinds of photo behaving
  * differently. Deleting a listing removed its database rows while the files
  * stayed in the repo forever, and the owner could not really delete a migrated
  * cover at all. With everything in R2, delete means delete.

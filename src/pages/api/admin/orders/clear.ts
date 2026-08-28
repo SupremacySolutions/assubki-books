@@ -6,7 +6,7 @@ export const prerender = false;
 /**
  * Clears out orders that came to nothing.
  *
- * Only `cancelled` and `expired` — both terminal states where the stock has
+ * Only `cancelled` and `expired` - both terminal states where the stock has
  * already been released and no money was ever involved. Anything from
  * `awaiting_payment` onwards is a business record: someone was quoted a price,
  * or paid, and those do not get swept away by a tidy-up button.

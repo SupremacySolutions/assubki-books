@@ -29,7 +29,7 @@ const STATUS: Record<string, { label: string; blurb: string; tone: 'wait' | 'goo
   cancelled: { label: 'Cancelled', blurb: 'This request was cancelled. Nothing was charged.', tone: 'off' },
   expired: {
     label: 'Hold lapsed',
-    blurb: 'We did not hear back within 48 hours, so the books returned to the shelf. Nothing was charged — you are welcome to request again.',
+    blurb: 'We did not hear back within 48 hours, so the books returned to the shelf. Nothing was charged - you are welcome to request again.',
     tone: 'off',
   },
 };
@@ -158,7 +158,7 @@ const awaitingReply = order.status === 'requested' || order.status === 'awaiting
 
     <div class="mt-10 pt-6 border-t border-[var(--color-rule)]">
       <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-        Keep this page — it updates as we work through your request. Quote{' '}
+        Keep this page - it updates as we work through your request. Quote{' '}
         <strong class="text-[var(--color-ink)]">{order.ref}</strong> if you get in touch.
       </p>
       <div class="mt-4 flex flex-wrap gap-3">

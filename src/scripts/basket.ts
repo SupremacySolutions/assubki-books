@@ -3,7 +3,7 @@
  *
  * Only book ids and quantities are stored. Every price and availability is
  * re-read from the database when the basket page renders and again when the
- * request is submitted, so a stale tab — or an edited localStorage value —
+ * request is submitted, so a stale tab - or an edited localStorage value -
  * cannot fix a price or claim stock that is gone.
  */
 
@@ -66,7 +66,7 @@ function paintCount(): void {
 }
 
 document.addEventListener('basket:change', paintCount);
-// Keep tabs in step — two windows on the same shop should not disagree.
+// Keep tabs in step - two windows on the same shop should not disagree.
 window.addEventListener('storage', (e) => {
   if (e.key === KEY) paintCount();
 });

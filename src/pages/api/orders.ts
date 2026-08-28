@@ -56,7 +56,7 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
       name, email, phone, telegram, fulfilment, address, notes, items: finalItems,
     });
 
-    // Notifications must never cost the customer their order — the books are
+    // Notifications must never cost the customer their order - the books are
     // already held and the confirmation page renders from the database.
     const origin = url.origin;
     const notify = notifyOrderPlaced({ order, name, email, phone, telegram, fulfilment, address, notes, origin }).catch(

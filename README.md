@@ -37,7 +37,7 @@ npx wrangler d1 execute assubki-books --local --file=./migrations/0001_schema.sq
 npx wrangler d1 execute assubki-books --local --file=./migrations/0002_seed.sql
 ```
 
-Do not delete `.wrangler/state` while the dev server is running — miniflare
+Do not delete `.wrangler/state` while the dev server is running - miniflare
 holds the SQLite file open and every request then fails with an internal error.
 Stop the server first.
 
@@ -45,7 +45,7 @@ Stop the server first.
 
 ```
 migrations/0001_schema.sql   Tables, indexes, FTS5, the stock CHECK constraint
-migrations/0002_seed.sql     GENERATED — 226 books, 26 categories, 454 images
+migrations/0002_seed.sql     GENERATED - 226 books, 26 categories, 454 images
 scripts/lib/catalogue.mjs    Shared transform: slugs, title splitting, sanitising
 scripts/migrate-from-woo.mjs Rebuilds the seed from data/raw/
 scripts/fetch-images.mjs     Downloads + re-encodes covers into public/img/
@@ -60,7 +60,7 @@ workers/expire-holds/        Cron Worker that releases lapsed holds
 ## Re-running the migration
 
 Both scripts are idempotent and read from `data/raw/` (captured from the
-WooCommerce Store API — the live WordPress site is never contacted at runtime):
+WooCommerce Store API - the live WordPress site is never contacted at runtime):
 
 ```bash
 node scripts/fetch-images.mjs      # skips covers already present
@@ -71,7 +71,7 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
 
 - **Every book photo is in R2**, under `books/` (migrated covers) and
   `uploads/` (added through the portal). They used to be split, with `books/`
-  as static assets — that made delete half-work, since the files stayed in the
+  as static assets - that made delete half-work, since the files stayed in the
   repo forever. `public/img/books/` is gitignored now; rebuild it locally with
   `scripts/fetch-images.mjs` and push with `scripts/upload-covers.mjs`.
 - **Do not name an R2 binding `IMAGES`.** The Astro Cloudflare adapter treats a
@@ -79,7 +79,7 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   The uploads bucket is `UPLOADS`.
 - **Legacy slugs are matched case-insensitively.** WordPress stored
   `%d8%a7`; the URL parser normalises the incoming path to `%D8%A7`. An exact
-  match sends every Arabic-slugged legacy link — most of them — to the catalogue
+  match sends every Arabic-slugged legacy link - most of them - to the catalogue
   instead of the book.
 - **`/checkout` must not be in the legacy redirect list.** WooCommerce used that
   path too, and redirecting it swallows this site's own checkout route.
@@ -89,7 +89,7 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
 - **Stock quantities are mostly placeholders.** WooCommerce's public API exposes
   a boolean, not a count. 18 books leaked a real number through
   `stock_availability.text` and those were imported; the other 201 in-stock
-  titles were seeded at 3 — enough to read "In stock" without claiming a
+  titles were seeded at 3 - enough to read "In stock" without claiming a
   scarcity the source never asserted. The owner sets real numbers in the admin.
 
 ## The portal
@@ -109,19 +109,19 @@ plainly that nothing went out.
 
 ## Connections
 
-Email (Resend), the Telegram bot, and portal sign-in are all optional — the
+Email (Resend), the Telegram bot, and portal sign-in are all optional - the
 shop takes orders and holds stock without them, logging what it would have
 sent. **SETUP.md** covers turning each one on.
 
 The constraint worth knowing: **a Telegram bot cannot open a conversation.** It
 can only message someone who messaged it first. That is why an order carries a
 `t.me/<bot>?start=<ref>_<token>` deep link and why `/api/telegram/webhook`
-exists — tapping it is the moment permission is granted. Email is the fallback
+exists - tapping it is the moment permission is granted. Email is the fallback
 for anyone who never taps.
 
 ## Not built yet
 
-The domain cutover. See the cutover plan — the domain carries the owner's IONOS
+The domain cutover. See the cutover plan - the domain carries the owner's IONOS
 email, and moving nameservers without recreating the MX records first will
 silently kill their mail.
 
@@ -134,6 +134,6 @@ npx wrangler deploy -c workers/expire-holds/wrangler.jsonc
 
 The site has no `routes` in `wrangler.jsonc`, so it deploys to
 `assubki-books.<subdomain>.workers.dev`. The live domain still points at
-WordPress and is untouched. See the cutover plan before changing that — the
+WordPress and is untouched. See the cutover plan before changing that - the
 domain carries the owner's IONOS email, and moving nameservers without
 recreating the MX records first will silently kill their mail.

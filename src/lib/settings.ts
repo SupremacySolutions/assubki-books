@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 
 /**
- * Small key/value store for things the owner changes without a deploy —
+ * Small key/value store for things the owner changes without a deploy -
  * bank details, default postage, collection address. These are content, not
  * configuration, so they live in the database rather than in secrets.
  */

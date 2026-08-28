@@ -5,7 +5,7 @@ import { classmark } from '../lib/classmarks';
 interface Props {
   tree: CategoryNode[];
   activePath?: string | null;
-  /** Preserved so switching category does not silently drop the search. */
+  /** Preserved so switching shelf does not silently drop the search. */
   query?: string;
 }
 const { tree, activePath = null, query = '' } = Astro.props;
@@ -14,7 +14,7 @@ const isActive = (path: string) => activePath === path;
 const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${path}/`);
 ---
 
-<nav aria-label="Categories" class="text-[14.5px]">
+<nav aria-label="Shelves" class="text-[14.5px]">
   <h2 class="eyebrow mb-3">Browse by subject</h2>
   <ul class="space-y-0.5">
     <li>
@@ -30,48 +30,105 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
     </li>
 
     {
-      tree.map((cat) => (
-        <li>
-          <a
-            href={href(cat.path)}
-            class:list={[
-              'flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm hover:bg-white',
-              isActive(cat.path) || isAncestor(cat.path)
-                ? 'bg-white font-medium text-[var(--color-navy)]'
-                : 'text-[var(--color-ink-soft)]',
-            ]}
-          >
-            <span class="flex items-center gap-2 min-w-0">
-              <span class="classmark shrink-0">{classmark(cat.slug)}</span>
-              <span class="truncate">{cat.name}</span>
-            </span>
-            <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0">{cat.count}</span>
-          </a>
+      tree.map((cat) => {
+        const open = isActive(cat.path) || isAncestor(cat.path);
+        const panelId = `shelf-${cat.slug}`;
+        return (
+          <li>
+            {/* The name navigates and the chevron expands. Making the whole row
+                do both would mean guessing which the visitor intended. */}
+            <div class="flex items-stretch gap-0.5">
+              <a
+                href={href(cat.path)}
+                class:list={[
+                  'flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm hover:bg-white flex-1 min-w-0',
+                  open ? 'bg-white font-medium text-[var(--color-navy)]' : 'text-[var(--color-ink-soft)]',
+                ]}
+              >
+                <span class="flex items-center gap-2 min-w-0">
+                  <span class="classmark shrink-0">{classmark(cat.slug)}</span>
+                  <span class="truncate">{cat.name}</span>
+                </span>
+                <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0">
+                  {cat.count}
+                </span>
+              </a>
 
-          {cat.children.length > 0 && (
-            <ul class="ml-3 mt-0.5 mb-1 space-y-0.5 border-l border-[var(--color-rule)] pl-2">
-              {cat.children.map((child) => (
-                <li>
-                  <a
-                    href={href(child.path)}
-                    class:list={[
-                      'flex items-center justify-between gap-2 px-2 py-1 rounded-sm hover:bg-white',
-                      isActive(child.path)
-                        ? 'bg-white font-medium text-[var(--color-navy)]'
-                        : 'text-[var(--color-ink-soft)]',
-                    ]}
+              {cat.children.length > 0 && (
+                <button
+                  type="button"
+                  class="shelf-toggle px-1.5 rounded-sm text-[var(--color-ink-faint)] hover:bg-white hover:text-[var(--color-navy)] shrink-0"
+                  aria-expanded={open ? 'true' : 'false'}
+                  aria-controls={panelId}
+                >
+                  <span class="sr-only">Show shelves under {cat.name}</span>
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="13"
+                    height="13"
+                    aria-hidden="true"
+                    class="transition-transform duration-200 motion-reduce:transition-none"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
                   >
-                    <span class="truncate">{child.name}</span>
-                    <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0">
-                      {child.count}
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </li>
-      ))
+                    <path d="M4 6l4 4 4-4" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {cat.children.length > 0 && (
+              <ul
+                id={panelId}
+                hidden={!open}
+                class="ml-3 mt-0.5 mb-1 space-y-0.5 border-l border-[var(--color-rule)] pl-2"
+              >
+                {cat.children.map((child) => (
+                  <li>
+                    <a
+                      href={href(child.path)}
+                      class:list={[
+                        'flex items-center justify-between gap-2 px-2 py-1 rounded-sm hover:bg-white',
+                        isActive(child.path)
+                          ? 'bg-white font-medium text-[var(--color-navy)]'
+                          : 'text-[var(--color-ink-soft)]',
+                      ]}
+                    >
+                      <span class="truncate">{child.name}</span>
+                      <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0">
+                        {child.count}
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        );
+      })
     }
   </ul>
 </nav>
+
+<style>
+  .shelf-toggle[aria-expanded='true'] svg {
+    transform: rotate(180deg);
+  }
+</style>
+
+<script>
+  // Without JS every shelf stays open, which is the old behaviour rather than
+  // a broken one: the panels are only hidden once something can reopen them.
+  for (const toggle of document.querySelectorAll<HTMLButtonElement>('.shelf-toggle')) {
+    toggle.addEventListener('click', () => {
+      const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+      if (!panel) return;
+      const open = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+      panel.hidden = open;
+    });
+  }
+</script>

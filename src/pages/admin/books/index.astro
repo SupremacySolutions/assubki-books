@@ -40,7 +40,7 @@ const FILTERS: { key: BookFilter; label: string }[] = [
 
 const SORTS: { key: BookSort; label: string }[] = [
   { key: 'recent', label: 'Recently edited' },
-  { key: 'title', label: 'Title A–Z' },
+  { key: 'title', label: 'Title A-Z' },
   { key: 'stock-asc', label: 'Lowest stock first' },
   { key: 'price-asc', label: 'Price low to high' },
   { key: 'price-desc', label: 'Price high to low' },
@@ -54,7 +54,7 @@ const filterUrl = (f: BookFilter) =>
 const from = result.total === 0 ? 0 : (result.page - 1) * result.perPage + 1;
 const to = Math.min(result.page * result.perPage, result.total);
 
-// A compact window around the current page — 226 listings at 40 a page is only
+// A compact window around the current page - 226 listings at 40 a page is only
 // six, but this keeps the row sane if the catalogue grows.
 const windowed = () => {
   const span = 2;
@@ -74,7 +74,7 @@ const windowed = () => {
 
 <Admin
   title="Listings"
-  sub={result.total === 0 ? 'nothing matches' : `${from}–${to} of ${result.total}`}
+  sub={result.total === 0 ? 'nothing matches' : `${from}-${to} of ${result.total}`}
 >
   {
     saved && (
@@ -93,7 +93,7 @@ const windowed = () => {
   {
     deletedOrphan && (
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
-        Deleted “{deletedOrphan}”, but its Telegram post could not be removed — a bot can only
+        Deleted “{deletedOrphan}”, but its Telegram post could not be removed - a bot can only
         delete its own posts, and only within 48 hours. Remove that one in the channel by hand.
       </p>
     )

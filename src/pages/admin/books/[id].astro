@@ -20,7 +20,7 @@ const posted = Astro.url.searchParams.get('posted');
 const error = Astro.url.searchParams.get('e');
 
 // What the channel post will look like, rendered from the same function that
-// builds the real caption — so the preview cannot drift from what is sent.
+// builds the real caption - so the preview cannot drift from what is sent.
 // The channel post is stale when the listing has been saved since it was
 // announced. That is what decides whether "Update channel post" does anything,
 // so the button can be switched off when there is nothing to send.
@@ -84,7 +84,7 @@ const previewCaption = book
   {
     posted === 'draft' && (
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
-        Not announced — only live listings can be posted to the channel.
+        Not announced - only live listings can be posted to the channel.
       </p>
     )
   }
@@ -111,6 +111,21 @@ const previewCaption = book
             value={book?.title_ar ?? ''}
             class="field ar"
           />
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="author" class="block text-[14.5px] font-medium mb-1.5">
+              Author <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+            </label>
+            <input id="author" name="author" maxlength="160" value={book?.author ?? ''} class="field" />
+          </div>
+          <div>
+            <label for="publisher" class="block text-[14.5px] font-medium mb-1.5">
+              Publisher <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+            </label>
+            <input id="publisher" name="publisher" maxlength="160" value={book?.publisher ?? ''} class="field" />
+          </div>
         </div>
 
         <div>

@@ -7,7 +7,7 @@
  * basket quietly takes the last copy off sale forever.
  *
  * This mirrors expireStaleHolds() in src/lib/orders.ts, which the order API
- * also calls inline — whether a customer can buy the last copy must not depend
+ * also calls inline - whether a customer can buy the last copy must not depend
  * on when this job last fired. This Worker is the safety net that keeps the
  * catalogue's *displayed* availability honest between orders.
  */

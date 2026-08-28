@@ -1,6 +1,6 @@
 ---
 /**
- * The catalogue card — the shop's signature unit.
+ * The catalogue card - the shop's signature unit.
  *
  * It is set as a library entry rather than a product tile: transliterated title
  * as the main entry, the Arabic title beneath it in naskh at a larger optical
@@ -32,7 +32,7 @@ const marks = (book.cat_slugs ?? '')
 <article class="group h-full">
   <a href={`/book/${book.slug}`} class="flex h-full flex-col focus:outline-none">
     <div
-      class="relative overflow-hidden bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] aspect-[3/4] grid place-items-center group-focus-visible:outline group-focus-visible:outline-2 group-focus-visible:outline-[var(--color-navy)]"
+      class="book-well relative overflow-hidden bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] aspect-[3/4] grid place-items-center group-focus-visible:outline group-focus-visible:outline-2 group-focus-visible:outline-[var(--color-navy)]"
     >
       {
         img ? (

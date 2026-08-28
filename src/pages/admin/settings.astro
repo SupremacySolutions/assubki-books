@@ -62,7 +62,7 @@ const saved = Astro.url.searchParams.get('saved');
   <section class="mt-8 max-w-2xl bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
     <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Connections</h2>
     <p class="mt-1.5 mb-4 text-[14.5px] text-[var(--color-ink-soft)]">
-      Set with <code class="text-[13px]">wrangler secret put</code>, not here — they are secrets.
+      Set with <code class="text-[13px]">wrangler secret put</code>, not here - they are secrets.
     </p>
     <dl class="space-y-3 text-[14.5px]">
       <div class="flex justify-between gap-4">
@@ -78,7 +78,7 @@ const saved = Astro.url.searchParams.get('saved');
           {!emailConfigured()
             ? 'Not configured'
             : emailError
-              ? `Failing as ${fromAddress()} — ${emailError}`
+              ? `Failing as ${fromAddress()} - ${emailError}`
               : `Sending · orders go to ${ownerAddress()}`}
         </dd>
       </div>

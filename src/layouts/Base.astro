@@ -21,12 +21,12 @@ const {
   wide = false,
 } = Astro.props;
 
-const pageTitle = title ? `${title} — ${SITE.name}` : `${SITE.name} — ${SITE.tagline}`;
+const pageTitle = title ? `${title} - ${SITE.name}` : `${SITE.name} - ${SITE.tagline}`;
 
 // Absolute URLs follow the host actually being served, not the configured
 // `site`. On production those are the same. On the preview deployment they are
 // not, and using `site` would point every Telegram link preview at
-// assubkibooks.co.uk — still WordPress — so the card would show a broken image.
+// assubkibooks.co.uk - still WordPress - so the card would show a broken image.
 const origin = Astro.url.origin;
 const canonical = new URL(Astro.url.pathname, origin).toString();
 const ogImage = image ? new URL(image, origin).toString() : null;
@@ -55,6 +55,11 @@ const ogImage = image ? new URL(image, origin).toString() : null;
   </head>
 
   <body class="min-h-screen flex flex-col">
+    <script is:inline>
+      // Set before paint so reveal styles only apply where JS can undo them.
+      // Without this, a JS failure would leave the page permanently blank.
+      document.documentElement.classList.add('js');
+    </script>
     <a href="#main" class="skip">Skip to catalogue</a>
     <Header />
     <main id="main" class={wide ? 'flex-1' : 'flex-1 mx-auto w-full max-w-6xl px-5 md:px-8'}>
@@ -64,6 +69,7 @@ const ogImage = image ? new URL(image, origin).toString() : null;
 
     <script>
       import '../scripts/basket.ts';
+      import '../scripts/reveal.ts';
     </script>
 
     <style>

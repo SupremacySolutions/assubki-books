@@ -2,7 +2,7 @@
  * Shared transform layer for the WooCommerce import.
  *
  * Both the SQL seed generator and the image fetcher use this, so that the
- * slugs they derive — and therefore the R2 keys they agree on — cannot drift
+ * slugs they derive - and therefore the R2 keys they agree on - cannot drift
  * apart. Change slug generation here and both stay consistent.
  */
 
@@ -18,9 +18,14 @@ const ARABIC = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
 
 const NAMED_ENTITIES = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
-  hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘',
+  hellip: '…', mdash: '-', ndash: '-', rsquo: '’', lsquo: '‘',
   rdquo: '”', ldquo: '“', middot: '·', times: '×',
 };
+
+/** Long dashes read as an affectation in shop copy; plain hyphens throughout. */
+export function plainDashes(str) {
+  return str.replace(/[\u2014\u2013]/g, '-');
+}
 
 export function decodeEntities(str) {
   if (!str) return '';
@@ -33,10 +38,10 @@ export function decodeEntities(str) {
 /**
  * WooCommerce stores both scripts in one `name` field, e.g.
  * "al Nahw al Wadih النحو الواضح". Split them so each can be rendered with the
- * right font and `dir` — the old WordPress theme ran them together.
+ * right font and `dir` - the old WordPress theme ran them together.
  */
 export function splitTitle(name) {
-  const clean = decodeEntities(name).replace(/\s+/g, ' ').trim();
+  const clean = plainDashes(decodeEntities(name)).replace(/\s+/g, ' ').trim();
   const latin = [];
   const arabic = [];
 
@@ -44,7 +49,7 @@ export function splitTitle(name) {
     (ARABIC.test(token) ? arabic : latin).push(token);
   }
 
-  const title = latin.join(' ').replace(/\s*[-–—:,]\s*$/, '').trim();
+  const title = latin.join(' ').replace(/\s*[---:,]\s*$/, '').trim();
   const titleAr = arabic.join(' ').trim();
 
   // A handful of books are titled only in Arabic. `books.title` is NOT NULL and
@@ -71,7 +76,7 @@ export function slugify(str) {
 /**
  * Keep a small, safe subset of HTML. Everything not on the allowlist is
  * unwrapped rather than dropped, which is what rescues the six descriptions
- * that arrived wrapped in pasted ChatGPT `<div>`/`<section>` scaffolding — the
+ * that arrived wrapped in pasted ChatGPT `<div>`/`<section>` scaffolding - the
  * prose inside them is real copy worth keeping.
  */
 const ALLOWED = new Set(['p', 'br', 'strong', 'b', 'em', 'i', 'ul', 'ol', 'li', 'h3', 'h4', 'blockquote', 'a']);
@@ -91,7 +96,7 @@ export function sanitizeHtml(html) {
     if (tag === 'br') return '<br>';
     if (tag === 'a') {
       const href = /href\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1];
-      // Only http(s) — no javascript: or data: URLs.
+      // Only http(s) - no javascript: or data: URLs.
       if (!href || !/^https?:\/\//i.test(href)) return '';
       return `<a href="${href.replace(/"/g, '&quot;')}" rel="noopener nofollow">`;
     }
@@ -163,7 +168,7 @@ export function buildBooks(products) {
     const pricePence = Number.parseInt(p.prices?.price ?? '0', 10) || 0;
 
     // Woo mostly hides quantities, but 18 products leak a real count through
-    // stock_availability.text ("60 in stock") — worth recovering rather than
+    // stock_availability.text ("60 in stock") - worth recovering rather than
     // flattening everything to a boolean.
     //
     // Where the count is genuinely unknown we seed DEFAULT_STOCK rather than 1.

@@ -4,7 +4,7 @@ import Rosette from '../components/Rosette.astro';
 
 interface Props {
   title: string;
-  /** Shown under the heading — counts, status, context. */
+  /** Shown under the heading - counts, status, context. */
   sub?: string;
   back?: { href: string; label: string };
 }
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/admin', label: 'Dashboard' },
   { href: '/admin/orders', label: 'Orders' },
   { href: '/admin/books', label: 'Listings' },
+  { href: '/admin/shelves', label: 'Shelves' },
   { href: '/admin/settings', label: 'Settings' },
 ];
 
@@ -28,7 +29,7 @@ const active = (href: string) =>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title} — As-Subkī Books portal</title>
+    <title>{title} - As-Subkī Books portal</title>
     <meta name="robots" content="noindex, nofollow" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
