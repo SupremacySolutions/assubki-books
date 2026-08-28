@@ -34,6 +34,8 @@ export interface CreatedOrder {
   token: string;
   subtotalPence: number;
   expiresAt: number;
+  /** Carried over from an earlier order by the same customer, if any. */
+  telegramChatId: string | null;
   items: { bookId: number; title: string; qty: number; pricePence: number }[];
 }
 
@@ -137,6 +139,17 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     return { bookId: book.id, title: book.title, qty: item.qty, pricePence: book.price_pence };
   });
   const subtotalPence = items.reduce((n, i) => n + i.pricePence * i.qty, 0);
+
+  // A customer who has already started the bot stays reachable: Telegram grants
+  // that permission per person, not per order, so making them tap Connect again
+  // for every order would be asking for something they already gave.
+  const priorLink = await env.DB.prepare(
+    `SELECT telegram_chat_id FROM orders
+      WHERE email = ? AND telegram_chat_id IS NOT NULL
+      ORDER BY telegram_linked_at DESC LIMIT 1`,
+  )
+    .bind(input.email)
+    .first<{ telegram_chat_id: string }>();
   const expiresAt = Math.floor(Date.now() / 1000) + HOLD_HOURS * 3600;
   const token = randomToken();
 
@@ -146,8 +159,9 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     const statements = [
       env.DB.prepare(
         `INSERT INTO orders (ref, access_token, customer_name, email, phone, telegram,
-                             fulfilment, address, notes, status, subtotal_pence, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,'requested',?,?)`,
+                             fulfilment, address, notes, status, subtotal_pence, expires_at,
+                             telegram_chat_id, telegram_linked_at)
+         VALUES (?,?,?,?,?,?,?,?,?,'requested',?,?,?,?)`,
       ).bind(
         ref,
         token,
@@ -160,6 +174,8 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
         input.notes ?? null,
         subtotalPence,
         expiresAt,
+        priorLink?.telegram_chat_id ?? null,
+        priorLink ? Math.floor(Date.now() / 1000) : null,
       ),
     ];
 
@@ -186,7 +202,14 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
 
     try {
       await env.DB.batch(statements);
-      return { ref, token, subtotalPence, expiresAt, items };
+      return {
+        ref,
+        token,
+        subtotalPence,
+        expiresAt,
+        telegramChatId: priorLink?.telegram_chat_id ?? null,
+        items,
+      };
     } catch (err) {
       const message = String(err);
       if (message.includes('orders.ref') || message.includes('UNIQUE')) continue; // ref clash, retry
@@ -214,6 +237,7 @@ export interface OrderView {
   subtotal_pence: number;
   created_at: number;
   expires_at: number | null;
+  telegram_chat_id: string | null;
   items: { title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null }[];
 }
 
@@ -221,7 +245,7 @@ export interface OrderView {
 export async function getOrder(ref: string, token: string): Promise<OrderView | null> {
   const order = await env.DB.prepare(
     `SELECT ref, status, customer_name, email, fulfilment, address, notes,
-            subtotal_pence, created_at, expires_at, access_token
+            subtotal_pence, created_at, expires_at, access_token, telegram_chat_id
        FROM orders WHERE ref = ?`,
   )
     .bind(ref)
