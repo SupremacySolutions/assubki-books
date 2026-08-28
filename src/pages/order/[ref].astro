@@ -86,8 +86,9 @@ const awaitingReply = order.status === 'requested' || order.status === 'awaiting
             Get your payment details on Telegram
           </h2>
           <p class="mt-1.5 text-[15px] text-[var(--color-ink-soft)] leading-relaxed max-w-lg">
-            Tap once to connect this order to your Telegram, and we will send the total and how to
-            pay straight to your chat. Otherwise we will email you.
+            We will send your total and how to pay straight to your Telegram chat. Tap below, then
+            press <strong class="text-[var(--color-ink)]">Start</strong> in Telegram - a bot cannot
+            message you until you do. If you would rather not, we will email you instead.
           </p>
           <a
             href={telegramLink}
@@ -96,6 +97,9 @@ const awaitingReply = order.status === 'requested' || order.status === 'awaiting
           >
             Connect Telegram
           </a>
+          <p class="mt-2 text-[13px] text-[var(--color-ink-faint)]">
+            Already connected? Nothing more to do - your details will arrive in that chat.
+          </p>
         </section>
       )
     }

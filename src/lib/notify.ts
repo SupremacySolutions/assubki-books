@@ -48,8 +48,8 @@ function customerPlaced(input: PlacedInput) {
     ? `<div style="margin:22px 0 0;padding:16px;background:#f5f4f0;border:1px solid #ddd9d1;border-radius:3px">
          <p style="margin:0 0 4px;font-size:15px;font-weight:600">Get your payment details on Telegram</p>
          <p style="margin:0 0 12px;font-size:14px;color:#4a5568;line-height:1.55">
-           Tap once to connect this order to your Telegram. We will send the total and how to pay
-           straight to your chat.
+           Tap below, then press <strong>Start</strong> in Telegram - a bot cannot message you
+           until you do. Your total and how to pay then arrive in that chat.
          </p>
          <a href="${escapeHtml(optIn)}" style="background:#229ED9;color:#fff;padding:10px 18px;border-radius:2px;text-decoration:none;font-size:15px;display:inline-block">Connect Telegram</a>
        </div>`
