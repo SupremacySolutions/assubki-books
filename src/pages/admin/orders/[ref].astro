@@ -106,10 +106,12 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
         {
           order.total_pence !== null && (
             <>
-              <div class="mt-1 flex justify-between text-[15px] text-[var(--color-ink-soft)]">
-                <span>Postage</span>
-                <span class="tabular-nums">{price(order.postage_pence ?? 0)}</span>
-              </div>
+              {!isCollection && (
+                <div class="mt-1 flex justify-between text-[15px] text-[var(--color-ink-soft)]">
+                  <span>Postage</span>
+                  <span class="tabular-nums">{price(order.postage_pence ?? 0)}</span>
+                </div>
+              )}
               <div class="mt-2 pt-2 border-t border-[var(--color-rule)] flex justify-between text-[16px] font-semibold">
                 <span>Total quoted</span>
                 <span class="price text-[19px]">{price(order.total_pence)}</span>
@@ -126,8 +128,8 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
               Confirm and send payment details
             </h2>
             <p class="mt-1.5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-              Set the postage and we will send {order.customer_name.split(' ')[0]} the total and how
-              to pay
+              {isCollection ? 'We will send' : 'Set the postage and we will send'}{' '}
+              {order.customer_name.split(' ')[0]} the total and how to pay
               {order.telegram_chat_id
                 ? ' - by Telegram and email, since they connected their Telegram.'
                 : ' by email. They have not connected Telegram, so email is the only way to reach them.'}
@@ -135,7 +137,10 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
 
             <form method="post" action={`/api/admin/orders/${order.ref}/confirm`} class="mt-4">
               <div class="flex flex-wrap items-end gap-4">
-                <div>
+                {/* Nothing is being posted, so there is nothing to charge for
+                    it. Showing a postage box on a collection invites the owner
+                    to add one by habit. */}
+                <div class:list={[isCollection && 'hidden']}>
                   <label for="postage" class="block text-[14px] font-medium mb-1.5">
                     Postage (£)
                   </label>
@@ -150,7 +155,7 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
                   />
                 </div>
                 <p class="text-[14.5px] text-[var(--color-ink-soft)] pb-2.5">
-                  Total becomes{' '}
+                  {isCollection ? 'Total to pay is ' : 'Total becomes '}
                   <strong id="total" class="price text-[17px]">
                     {price(order.subtotal_pence + suggestedPostage)}
                   </strong>
@@ -200,7 +205,7 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
 
     <aside class="space-y-4">
       <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
-        <h2 class="eyebrow mb-3">Send to</h2>
+        <h2 class="eyebrow mb-3">{isCollection ? 'Collecting' : 'Send to'}</h2>
         <p class="text-[15px] font-medium">{order.customer_name}</p>
         <p class="mt-2 text-[14.5px] text-[var(--color-ink-soft)] whitespace-pre-line leading-relaxed">
           {isCollection ? 'Collecting in person.' : order.address}

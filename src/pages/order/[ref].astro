@@ -16,7 +16,7 @@ if (!order) return Astro.rewrite('/404');
 const STATUS: Record<string, { label: string; blurb: string; tone: 'wait' | 'good' | 'done' | 'off' }> = {
   requested: {
     label: 'Request received',
-    blurb: 'Your books are held. We will reply with the total including postage and how to pay.',
+    blurb: 'Your books are held. We will reply with the total and how to pay.',
     tone: 'wait',
   },
   awaiting_payment: {
@@ -137,7 +137,9 @@ const telegramLinked = Boolean(order.telegram_chat_id);
         <span class="price text-[20px]">{price(order.subtotal_pence)}</span>
       </div>
       <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-        Postage is added when we confirm. Nothing has been charged.
+        {order.fulfilment === 'collection'
+          ? 'Nothing has been charged.'
+          : 'Postage is added when we confirm. Nothing has been charged.'}
       </p>
     </section>
 

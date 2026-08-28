@@ -9,8 +9,7 @@ import { HOLD_HOURS } from '../lib/orders';
       Send your request
     </h1>
     <p class="mt-3 text-[16px] text-[var(--color-ink-soft)] leading-relaxed max-w-xl">
-      We will hold your books for {HOLD_HOURS} hours and reply with the total including postage and
-      how to pay. <strong class="text-[var(--color-ink)]">No card details are taken here.</strong>
+      We will hold your books for {HOLD_HOURS} hours and reply with the total and how to pay. <strong class="text-[var(--color-ink)]">No card details are taken here.</strong>
     </p>
 
     <div id="empty" hidden class="py-16 text-center">
@@ -94,7 +93,9 @@ import { HOLD_HOURS } from '../lib/orders';
           <span class="text-[14.5px]">Subtotal</span>
           <span id="subtotal" class="price text-[18px]"></span>
         </div>
-        <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">Postage confirmed when we reply.</p>
+        <p id="postageNote" class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
+          Postage confirmed when we reply.
+        </p>
         <a href="/basket" class="mt-3 inline-block text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2">
           Edit basket
         </a>
@@ -170,6 +171,22 @@ import { HOLD_HOURS } from '../lib/orders';
       });
     }
     addressField.required = true;
+
+    // The postage note is only true if something is being posted.
+    const postageNote = document.querySelector<HTMLElement>('#postageNote');
+    function syncFulfilment() {
+      const delivery =
+        form.querySelector<HTMLInputElement>('input[name="fulfilment"]:checked')?.value === 'delivery';
+      if (postageNote) {
+        postageNote.textContent = delivery
+          ? 'Postage confirmed when we reply.'
+          : 'Collection, so no postage.';
+      }
+    }
+    for (const radio of form.querySelectorAll<HTMLInputElement>('input[name="fulfilment"]')) {
+      radio.addEventListener('change', syncFulfilment);
+    }
+    syncFulfilment();
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
