@@ -14,7 +14,9 @@
     "db:local": "wrangler d1 execute assubki-books --local",
     "db:remote": "wrangler d1 execute assubki-books --remote",
     "migrate:woo": "node scripts/migrate-from-woo.mjs",
-    "images:fetch": "node scripts/fetch-images.mjs"
+    "images:fetch": "node scripts/fetch-images.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:e2e:prod": "node scripts/e2e.mjs --prod"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.2.5",
