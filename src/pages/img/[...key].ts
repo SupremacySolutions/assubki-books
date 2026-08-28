@@ -8,19 +8,20 @@ interface UploadEnv {
 }
 
 /**
- * Serves owner-uploaded photos from R2.
+ * Serves book photos from R2.
  *
- * Only `uploads/` reaches this route. The 454 migrated covers live under
- * `books/` in public/img and are served as static assets, which shadow this
- * route entirely — so the prefix decides the storage without any branching in
- * the pages themselves.
+ * Both prefixes live here now: `books/` for the migrated covers and `uploads/`
+ * for anything the owner adds. They were split while R2 was unavailable, which
+ * meant deleting a listing removed its database rows but left the files behind
+ * forever — and a migrated cover could not really be deleted at all.
  */
+const SERVED_PREFIXES = ['books/', 'uploads/'];
 export const GET: APIRoute = async ({ params, request }) => {
   const key = params.key ?? '';
 
-  // Without this, `/img/../something` or a `books/` key would let this route
-  // be used to probe storage it has no business reading.
-  if (!key.startsWith('uploads/') || key.includes('..')) {
+  // Keep this route to the two prefixes it owns, and refuse traversal, so it
+  // cannot be used to read anything else in the bucket.
+  if (!SERVED_PREFIXES.some((p) => key.startsWith(p)) || key.includes('..')) {
     return new Response('Not found', { status: 404 });
   }
 

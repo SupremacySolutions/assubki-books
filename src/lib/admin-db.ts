@@ -95,20 +95,117 @@ export interface AdminBookRow {
   telegram_message_id: number | null;
 }
 
-export async function listBooksAdmin(q?: string | null, limit = 60): Promise<AdminBookRow[]> {
-  const search = q?.trim();
-  const where = search ? `WHERE b.title LIKE ?1 OR b.title_ar LIKE ?1 OR b.slug LIKE ?1` : '';
-  const stmt = env.DB.prepare(
-    `SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved,
-            (b.stock - b.reserved) AS available, b.status, b.telegram_message_id,
-            (SELECT image_key FROM book_images WHERE book_id = b.id ORDER BY sort LIMIT 1) AS image_key,
-            (CASE WHEN b.description_html IS NULL OR b.description_html = '' THEN 0 ELSE 1 END) AS has_description,
-            (SELECT COUNT(*) FROM book_categories WHERE book_id = b.id) AS cat_count
-       FROM books b ${where}
-      ORDER BY b.updated_at DESC, b.id DESC LIMIT ${limit}`,
+/**
+ * Filters the owner actually needs, phrased as the job rather than the column:
+ * these mirror the backlog counts on the dashboard so clicking through from
+ * there lands on exactly that set of listings.
+ */
+export type BookFilter =
+  | 'all'
+  | 'no-photo'
+  | 'no-description'
+  | 'no-subject'
+  | 'not-announced'
+  | 'out-of-stock'
+  | 'low-stock'
+  | 'draft'
+  | 'archived';
+
+const FILTER_SQL: Record<BookFilter, string> = {
+  all: '',
+  'no-photo': 'NOT EXISTS (SELECT 1 FROM book_images WHERE book_id = b.id)',
+  'no-description': "(b.description_html IS NULL OR b.description_html = '')",
+  'no-subject': 'NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)',
+  'not-announced': 'b.telegram_message_id IS NULL',
+  'out-of-stock': '(b.stock - b.reserved) <= 0',
+  'low-stock': '(b.stock - b.reserved) > 0 AND (b.stock - b.reserved) <= 2',
+  draft: "b.status = 'draft'",
+  archived: "b.status = 'archived'",
+};
+
+export type BookSort = 'recent' | 'title' | 'price-asc' | 'price-desc' | 'stock-asc';
+
+const SORT_SQL: Record<BookSort, string> = {
+  recent: 'b.updated_at DESC, b.id DESC',
+  title: 'b.title COLLATE NOCASE',
+  'price-asc': 'b.price_pence ASC, b.title COLLATE NOCASE',
+  'price-desc': 'b.price_pence DESC, b.title COLLATE NOCASE',
+  'stock-asc': '(b.stock - b.reserved) ASC, b.title COLLATE NOCASE',
+};
+
+export interface BookListResult {
+  books: AdminBookRow[];
+  total: number;
+  page: number;
+  pages: number;
+  perPage: number;
+}
+
+export async function listBooksAdmin(opts: {
+  q?: string | null;
+  filter?: BookFilter;
+  sort?: BookSort;
+  page?: number;
+  perPage?: number;
+} = {}): Promise<BookListResult> {
+  const search = opts.q?.trim();
+  const filter = opts.filter && filter_valid(opts.filter) ? opts.filter : 'all';
+  const sort = opts.sort && sort_valid(opts.sort) ? opts.sort : 'recent';
+  const perPage = Math.min(Math.max(opts.perPage ?? 40, 10), 200);
+  const page = Math.max(1, opts.page ?? 1);
+
+  const clauses: string[] = [];
+  const binds: unknown[] = [];
+
+  if (search) {
+    clauses.push('(b.title LIKE ? OR b.title_ar LIKE ? OR b.slug LIKE ?)');
+    binds.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  if (FILTER_SQL[filter]) clauses.push(FILTER_SQL[filter]);
+
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  const [countRow, listRes] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) AS n FROM books b ${where}`)
+      .bind(...binds)
+      .first<{ n: number }>(),
+    env.DB.prepare(
+      `SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved,
+              (b.stock - b.reserved) AS available, b.status, b.telegram_message_id,
+              (SELECT image_key FROM book_images WHERE book_id = b.id ORDER BY sort LIMIT 1) AS image_key,
+              (CASE WHEN b.description_html IS NULL OR b.description_html = '' THEN 0 ELSE 1 END) AS has_description,
+              (SELECT COUNT(*) FROM book_categories WHERE book_id = b.id) AS cat_count
+         FROM books b ${where}
+        ORDER BY ${SORT_SQL[sort]} LIMIT ? OFFSET ?`,
+    )
+      .bind(...binds, perPage, (page - 1) * perPage)
+      .all<AdminBookRow>(),
+  ]);
+
+  const total = countRow?.n ?? 0;
+  return {
+    books: listRes.results,
+    total,
+    page,
+    pages: Math.max(1, Math.ceil(total / perPage)),
+    perPage,
+  };
+}
+
+const filter_valid = (v: string): v is BookFilter => v in FILTER_SQL;
+const sort_valid = (v: string): v is BookSort => v in SORT_SQL;
+
+/** Counts for each filter, so the chips can show how much work is in each. */
+export async function bookFilterCounts(): Promise<Record<BookFilter, number>> {
+  const parts = (Object.keys(FILTER_SQL) as BookFilter[]).map((key) =>
+    key === 'all'
+      ? 'COUNT(*) AS "all"'
+      : `SUM(CASE WHEN ${FILTER_SQL[key]} THEN 1 ELSE 0 END) AS "${key}"`,
   );
-  const { results } = await (search ? stmt.bind(`%${search}%`) : stmt).all<AdminBookRow>();
-  return results;
+  const row = await env.DB.prepare(`SELECT ${parts.join(', ')} FROM books b`).first<
+    Record<string, number>
+  >();
+  return (row ?? {}) as Record<BookFilter, number>;
 }
 
 export interface AdminBookDetail extends AdminBookRow {

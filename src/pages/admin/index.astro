@@ -130,11 +130,13 @@ const warnings = [
     </p>
     <ul class="grid gap-3 sm:grid-cols-2">
       {
+        // Each links straight into the matching filter, so the count is a way
+        // in to the work rather than just a number.
         [
-          { n: work.noImage, label: 'listings with no photo', href: '/admin/books' },
-          { n: work.noDescription, label: 'listings with no description', href: '/admin/books' },
-          { n: work.noCategory, label: 'listings with no subject', href: '/admin/books' },
-          { n: work.unposted, label: 'never announced on Telegram', href: '/admin/books' },
+          { n: work.noImage, label: 'listings with no photo', href: '/admin/books?filter=no-photo' },
+          { n: work.noDescription, label: 'listings with no description', href: '/admin/books?filter=no-description' },
+          { n: work.noCategory, label: 'listings with no subject', href: '/admin/books?filter=no-subject' },
+          { n: work.unposted, label: 'never announced on Telegram', href: '/admin/books?filter=not-announced' },
         ].map((row) => (
           <li>
             <a

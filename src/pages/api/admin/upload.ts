@@ -77,10 +77,9 @@ export const DELETE: APIRoute = async ({ request }) => {
 
   await env.DB.prepare('DELETE FROM book_images WHERE id = ?').bind(imageId).run();
 
-  // Only uploads live in R2. A `books/` key is a static asset shipped with the
-  // deploy, so removing the row is all that can be done — and all that should
-  // be: the file is version-controlled.
-  if (bucket && image.image_key.startsWith('uploads/')) {
+  // Both prefixes are in R2 now, so removing a single photo reclaims its file
+  // whether it was migrated or uploaded.
+  if (bucket) {
     await bucket.delete(image.image_key).catch((err) => console.error('[upload] R2 delete failed', err));
   }
 

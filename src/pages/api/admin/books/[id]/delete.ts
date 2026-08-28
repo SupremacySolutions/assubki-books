@@ -36,12 +36,12 @@ export const POST: APIRoute = async ({ params, request }) => {
     });
   }
 
-  // Uploaded photos are ours to remove. Migrated covers under books/ are static
-  // assets in the repo, so the database row goes but the file stays.
+  // Every photo lives in R2 now, migrated covers included, so deleting a
+  // listing actually reclaims its files rather than orphaning them.
   const bucket = (env as unknown as UploadEnv).UPLOADS;
   if (bucket) {
     const { results: images } = await env.DB.prepare(
-      `SELECT image_key FROM book_images WHERE book_id = ? AND image_key LIKE 'uploads/%'`,
+      'SELECT image_key FROM book_images WHERE book_id = ?',
     )
       .bind(id)
       .all<{ image_key: string }>();
