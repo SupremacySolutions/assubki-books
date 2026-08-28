@@ -264,6 +264,20 @@ const previewCaption = book
         }
       </section>
 
+      {/* On a new listing there is nothing to announce or delete yet. Saying so
+          beats leaving a gap where the panels will later appear. */}
+      {
+        isNew && (
+          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+            <h2 class="eyebrow mb-2">Telegram channel</h2>
+            <p class="text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed">
+              Create the listing first. Posting to the channel appears here once it exists, along
+              with a preview of exactly what the channel will see.
+            </p>
+          </section>
+        )
+      }
+
       {
         book && (
           <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
