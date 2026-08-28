@@ -49,6 +49,7 @@ migrations/0002_seed.sql     GENERATED — 226 books, 26 categories, 454 images
 scripts/lib/catalogue.mjs    Shared transform: slugs, title splitting, sanitising
 scripts/migrate-from-woo.mjs Rebuilds the seed from data/raw/
 scripts/fetch-images.mjs     Downloads + re-encodes covers into public/img/
+scripts/upload-covers.mjs    Pushes those covers into R2 under their image_key
 src/lib/db.ts                Every catalogue read
 src/lib/orders.ts            Hold, expire, and read orders
 src/lib/notify.ts            Customer + owner email, owner Telegram
@@ -68,6 +69,11 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
 
 ## Things that will bite you
 
+- **Every book photo is in R2**, under `books/` (migrated covers) and
+  `uploads/` (added through the portal). They used to be split, with `books/`
+  as static assets — that made delete half-work, since the files stayed in the
+  repo forever. `public/img/books/` is gitignored now; rebuild it locally with
+  `scripts/fetch-images.mjs` and push with `scripts/upload-covers.mjs`.
 - **Do not name an R2 binding `IMAGES`.** The Astro Cloudflare adapter treats a
   binding of that name as the Cloudflare Images service and wires itself to it.
   The uploads bucket is `UPLOADS`.
