@@ -71,6 +71,17 @@ async function publicCatalogue() {
   const robots = await html('/robots.txt');
   t.ok(robots.includes('Disallow: /admin'), 'robots keeps crawlers out of the portal');
   t.ok(robots.includes('Disallow: /order'), 'robots keeps crawlers off order pages');
+
+  // The emails point at this file by absolute URL. If it stops being served the
+  // letterhead silently turns into a blank square in every inbox, and nothing
+  // else in the system would notice.
+  const mark = await get('/email/mark.png');
+  t.ok(mark.status === 200, 'the email mark is served');
+  t.ok(
+    (mark.headers.get('content-type') ?? '').includes('image/png'),
+    'and is served as a PNG',
+    mark.headers.get('content-type') ?? '(no content-type)',
+  );
 }
 
 // ---------------------------------------------------------------------------

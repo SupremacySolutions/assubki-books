@@ -1,5 +1,7 @@
 export const SITE = {
   name: 'As-Subkī Books',
+  // Absolute, because email has no notion of a relative URL.
+  url: 'https://assubkibooks.co.uk',
   nameAr: 'مكتبة السبكي',
   tagline: 'An affordable Islamic bookshop with a vast catalogue',
   telegram: 'https://t.me/alsubkibooks',

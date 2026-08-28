@@ -12,6 +12,7 @@
  */
 
 import { env } from 'cloudflare:workers';
+import { SITE } from './format';
 
 interface EmailEnv {
   RESEND_API_KEY?: string;
@@ -137,18 +138,49 @@ export const escapeHtml = (s: string) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
   );
 
+/**
+ * The letterhead every email is wrapped in.
+ *
+ * The mark is a hosted PNG rather than the SVG the website uses, because no
+ * mail client renders inline SVG. It sits beside a text wordmark on purpose:
+ * clients that block remote images by default leave a 28px gap, and the shop's
+ * name still has to be the first thing read.
+ *
+ * Tables and `bgcolor` where a plain div would do, because Outlook renders
+ * through Word and drops most block-level styling.
+ */
 export function shell(heading: string, sub: string, inner: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#f5f4f0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#101828">
+  return `<!doctype html><html><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  </head><body style="margin:0;background:#f5f4f0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#101828">
   <div style="max-width:560px;margin:0 auto;padding:28px 22px">
-    <div style="background:#0e2a55;color:#fff;padding:22px 24px;border-radius:3px 3px 0 0">
-      <h1 style="margin:0;font-size:20px;font-weight:600">${escapeHtml(heading)}</h1>
+    <div style="background:#0e2a55;color:#ffffff;padding:20px 24px 22px;border-radius:3px 3px 0 0">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
+        <tr>
+          <td valign="middle" style="padding-right:10px">
+            <img src="${SITE.url}/email/mark.png" width="28" height="28" alt=""
+                 style="display:block;border:0;outline:none;text-decoration:none">
+          </td>
+          <td valign="middle" style="line-height:1.25">
+            <div style="font-size:15px;font-weight:600;color:#ffffff">${escapeHtml(SITE.name)}</div>
+            <div style="font-size:12.5px;color:#8fa3c4;direction:rtl">${escapeHtml(SITE.nameAr)}</div>
+          </td>
+        </tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0 0">
+        <tr><td height="1" bgcolor="#2a4a78" style="height:1px;line-height:1px;font-size:0">&nbsp;</td></tr>
+      </table>
+      <h1 style="margin:16px 0 0;font-size:20px;font-weight:600;color:#ffffff">${escapeHtml(heading)}</h1>
       <p style="margin:6px 0 0;color:#c3ccde;font-size:15px">${escapeHtml(sub)}</p>
     </div>
     <div style="background:#fff;border:1px solid #ddd9d1;border-top:none;padding:24px;border-radius:0 0 3px 3px">
       ${inner}
     </div>
     <p style="margin:16px 0 0;font-size:12.5px;color:#8b93a1;text-align:center">
-      As-Subkī Books · مكتبة السبكي
+      <a href="${SITE.url}" style="color:#8b93a1;text-decoration:none">assubkibooks.co.uk</a>
     </p>
   </div></body></html>`;
 }

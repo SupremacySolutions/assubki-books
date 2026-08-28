@@ -9,3 +9,4 @@ dist/
 # Book covers live in R2, not the repo. Rebuild them locally with
 # `node scripts/fetch-images.mjs`, then push with `node scripts/upload-covers.mjs`.
 public/img/books/
+.scratch/
