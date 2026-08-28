@@ -254,10 +254,10 @@ const previewCaption = book
               >
                 <span class="text-[14px] text-[var(--color-navy)]">Choose a photo</span>
                 <span class="block text-[12.5px] text-[var(--color-ink-faint)] mt-0.5">
-                  JPEG, PNG or WebP, up to 8 MB
+                  Take one now or pick from your photos
                 </span>
               </label>
-              <input id="photo" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" />
+              <input id="photo" type="file" accept="image/*" class="sr-only" />
               <p id="uploadStatus" class="mt-2 text-[13.5px] text-[var(--color-ink-soft)]" hidden />
             </div>
           )
@@ -455,11 +455,44 @@ const previewCaption = book
         const input = document.querySelector('#photo');
         const status = document.querySelector('#uploadStatus');
 
+        /**
+         * Shrinks the photo before it leaves the phone.
+         *
+         * A phone camera produces something like 4000px and several megabytes,
+         * and the shop never displays a cover larger than about 800. Resizing
+         * here also sidesteps HEIC, which iPhones produce and the server does
+         * not accept, because the canvas decodes it and hands back WebP. If any
+         * of it fails the original is uploaded unchanged.
+         */
+        async function shrink(file) {
+          try {
+            const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+            const max = 1200;
+            const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+            const w = Math.round(bitmap.width * scale);
+            const h = Math.round(bitmap.height * scale);
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+            const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.82));
+            return blob ? new File([blob], 'photo.webp', { type: 'image/webp' }) : file;
+          } catch {
+            return file;
+          }
+        }
+
         input?.addEventListener('change', async () => {
-          const file = input.files?.[0];
-          if (!file) return;
+          const original = input.files?.[0];
+          if (!original) return;
           status.hidden = false;
-          status.textContent = 'Uploading…';
+          status.textContent = 'Preparing…';
+
+          const file = await shrink(original);
+          const saved = original.size - file.size;
+          status.textContent = saved > 0
+            ? `Uploading… (${Math.round(original.size / 1024)}KB down to ${Math.round(file.size / 1024)}KB)`
+            : 'Uploading…';
 
           const body = new FormData();
           body.append('bookId', String(bookId));
