@@ -6,6 +6,7 @@ import { price } from '../../../lib/format';
 const status = Astro.url.searchParams.get('status');
 const [orders, counts] = await Promise.all([listOrders(status), orderCounts()]);
 const cleared = Astro.url.searchParams.get('cleared');
+const deleted = Astro.url.searchParams.get('deleted');
 const clearable = (counts.cancelled ?? 0) + (counts.expired ?? 0);
 
 const TABS = [
@@ -42,6 +43,14 @@ const LABEL: Record<string, string> = {
     cleared && (
       <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
         Cleared {cleared} {cleared === '1' ? 'order' : 'orders'}.
+      </p>
+    )
+  }
+
+  {
+    deleted && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Deleted order {deleted}.
       </p>
     )
   }

@@ -13,7 +13,15 @@
 
 import { readFileSync } from 'node:fs';
 
-const SITE = 'http://localhost:4330';
+/**
+ * --prod runs a narrower pass against the live site: the listing lifecycle
+ * only, no orders. Local already proves the order flow, and placing orders
+ * against production would send test notifications to the shop's real inbox.
+ * What local cannot prove is that deleting a listing truly reclaims its R2
+ * photo and removes its channel post, so that is what this mode is for.
+ */
+const PROD = process.argv.includes('--prod');
+const SITE = PROD ? 'https://assubkibooks.co.uk' : 'http://localhost:4330';
 const ORIGIN = { Origin: SITE };
 const CUSTOMER = 'mikailbhanabo3@gmail.com';
 
@@ -45,14 +53,19 @@ const page = async (path) =>
 // ---------------------------------------------------------------------------
 step('1. Sign in to the portal');
 {
+  const password = PROD ? vars.ADMIN_PASSWORD_PROD : vars.ADMIN_PASSWORD;
+  if (!password) {
+    no(`no ${PROD ? 'ADMIN_PASSWORD_PROD' : 'ADMIN_PASSWORD'} in .dev.vars`);
+    process.exit(1);
+  }
   const res = await fetch(`${SITE}/api/admin/login`, {
     method: 'POST',
     headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ password: vars.ADMIN_PASSWORD, next: '/admin' }).toString(),
+    body: new URLSearchParams({ password, next: '/admin' }).toString(),
     redirect: 'manual',
   });
   cookie = (res.headers.get('set-cookie') ?? '').split(';')[0];
-  cookie.startsWith('asb_admin=') ? ok('signed in') : no('could not sign in');
+  cookie.startsWith('asb_admin=') ? ok(`signed in to ${SITE}`) : no('could not sign in - wrong password?');
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +113,22 @@ async function order(fulfilment, extra) {
     }),
   });
   return res.json();
+}
+
+if (PROD) {
+  step('4. Delete the listing (production stops here - no test emails to the shop)');
+  const gone = await admin(`/api/admin/books/${bookId}/delete`, {});
+  gone.location.includes('deleted')
+    ? ok('deleted through the portal endpoint') : no(`delete failed (${gone.location})`);
+  gone.location.includes('deleted-orphan')
+    ? no('the channel post could not be removed - delete it by hand')
+    : ok('its channel post was removed too');
+
+  const shop = await fetch(`${SITE}/book/${bookSlug}`);
+  shop.status === 404 ? ok('gone from the shop') : no(`still on the shop (${shop.status})`);
+
+  console.log(`\n${pass} passed, ${fail} failed\n`);
+  process.exit(fail ? 1 : 0);
 }
 
 step('4. A DELIVERY order');
