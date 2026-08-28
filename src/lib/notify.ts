@@ -21,6 +21,7 @@ import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml } from './email';
 import { sendMessage, optInLink, esc, botConfigured } from './telegram';
+import { getSetting } from './settings';
 
 export interface PlacedInput {
   order: CreatedOrder;
@@ -138,10 +139,31 @@ function ownerPlaced(input: PlacedInput) {
   return { subject: `New request ${order.ref} - ${name}`, html, text };
 }
 
+/*
+ * Customer mail is sent from orders@assubkibooks.co.uk, an address on a domain
+ * whose inbound mail still sits at IONOS. Rather than depend on a mailbox
+ * existing there, every message to a customer replies to the address the shop
+ * actually reads, so a reply cannot fall down a hole nobody is watching.
+ */
 export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
+  const ownerChatId = await getSetting('owner_telegram_chat_id');
+  const telegramOwner = ownerChatId && botConfigured()
+    ? sendMessage(
+        ownerChatId,
+        [
+          `*${esc(`New order ${input.order.ref}`)}*`,
+          '',
+          esc(`${input.name} · ${price(input.order.subtotalPence)}`),
+          esc(input.order.items.map((item) => `${item.title} x${item.qty}`).join('\n')),
+          '',
+          esc(`Open order: ${input.origin}/admin/orders/${input.order.ref}`),
+        ].join('\n'),
+      )
+    : Promise.resolve(false);
   const results = await Promise.allSettled([
-    deliver({ to: input.email, ...customerPlaced(input) }),
+    deliver({ to: input.email, replyTo: ownerAddress(), ...customerPlaced(input) }),
     deliver({ to: ownerAddress(), replyTo: input.email, ...ownerPlaced(input) }),
+    telegramOwner,
   ]);
   for (const r of results) {
     if (r.status === 'rejected') console.error('[notify] placed channel failed', r.reason);
@@ -250,7 +272,7 @@ export async function notifyOrderConfirmed(
   input: ConfirmedInput,
 ): Promise<{ email: boolean; telegram: boolean }> {
   const [emailResult, telegramResult] = await Promise.allSettled([
-    deliver({ to: input.email, ...confirmedEmail(input) }),
+    deliver({ to: input.email, replyTo: ownerAddress(), ...confirmedEmail(input) }),
     input.telegramChatId && botConfigured()
       ? sendMessage(input.telegramChatId, confirmedTelegram(input))
       : Promise.resolve(false),
@@ -298,6 +320,7 @@ export async function notifyStatusChange(input: {
   await Promise.allSettled([
     deliver({
       to: input.email,
+      replyTo: ownerAddress(),
       subject: copy.subject,
       html: shell(
         copy.subject,
