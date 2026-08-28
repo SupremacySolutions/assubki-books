@@ -89,14 +89,35 @@ export function esc(text: string): string {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, (c) => `\\${c}`);
 }
 
+/**
+ * Sends a message, falling back to plain text if the formatting is rejected.
+ *
+ * MarkdownV2 reserves a dozen punctuation characters, and one unescaped
+ * character rejects the entire message rather than degrading. That is an
+ * acceptable way to lose a nicety and a terrible way to lose payment details,
+ * so a parse failure re-sends the same content unformatted instead of the
+ * customer receiving nothing at all.
+ */
 export async function sendMessage(chatId: string, text: string): Promise<boolean> {
-  const result = await call('sendMessage', {
+  let parseFailed = false;
+  const result = await call(
+    'sendMessage',
+    { chat_id: chatId, text, parse_mode: 'MarkdownV2', disable_web_page_preview: true },
+    (description) => {
+      if (description.toLowerCase().includes("can't parse entities")) parseFailed = true;
+    },
+  );
+  if (result !== null) return true;
+  if (!parseFailed) return false;
+
+  console.warn('[telegram] MarkdownV2 rejected, resending as plain text');
+  const plain = text.replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1').replace(/\*/g, '');
+  const retry = await call('sendMessage', {
     chat_id: chatId,
-    text,
-    parse_mode: 'MarkdownV2',
+    text: plain,
     disable_web_page_preview: true,
   });
-  return result !== null;
+  return retry !== null;
 }
 
 export interface ListingPost {

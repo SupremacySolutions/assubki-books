@@ -217,7 +217,10 @@ function confirmedTelegram(input: ConfirmedInput): string {
     `*${esc(`Order ${input.ref} confirmed`)}*`,
     '',
     ...input.items.map(
-      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''} - ${esc(price(i.pricePence * i.qty))}`,
+      // Every literal here goes through esc() too. A bare "-" is reserved in
+      // MarkdownV2 and rejects the whole message, which is how this line
+      // silently stopped delivering payment details once.
+      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(i.pricePence * i.qty))}`,
     ),
     '',
     `${esc('Subtotal')} ${esc(price(input.subtotalPence))}`,
