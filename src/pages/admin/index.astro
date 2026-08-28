@@ -14,15 +14,33 @@ const [counts, pending, work, stats, emailError] = await Promise.all([
   lastEmailError(),
 ]);
 
-const needsAction = (counts.requested ?? 0) + (counts.awaiting_payment ?? 0);
 // A key being present is not the same as email working: an unverified sending
 // domain rejects every message. `emailError` is what the provider last said.
 const warnings = [
-  !emailConfigured() && 'Email is not configured - customers are not being emailed. Add RESEND_API_KEY and ORDER_FROM.',
+  !emailConfigured() && 'Email is not configured, so customers are not being emailed. Add RESEND_API_KEY and ORDER_FROM.',
   emailConfigured() && emailError &&
     `Email is failing, so customers are not being reached. Sending as ${fromAddress()} was rejected: “${emailError}”`,
-  !botConfigured() && 'Telegram is not configured - new listings cannot be posted to the channel. Add TELEGRAM_BOT_TOKEN.',
+  !botConfigured() && 'Telegram is not configured, so new listings cannot be posted to the channel. Add TELEGRAM_BOT_TOKEN.',
 ].filter(Boolean) as string[];
+
+const CARDS = [
+  { key: 'requested', label: 'Needs your reply', href: '/admin/orders?status=requested', urgent: true },
+  { key: 'awaiting_payment', label: 'Awaiting payment', href: '/admin/orders?status=awaiting_payment', urgent: false },
+  { key: 'paid', label: 'Paid, to post', href: '/admin/orders?status=paid', urgent: true },
+];
+
+// Only surface work that exists. A row reading "0 listings with no photo" is
+// not information, it is furniture.
+const jobs = [
+  { n: work.outOfStock, label: 'out of stock', href: '/admin/books?filter=out-of-stock' },
+  { n: work.lowStock, label: 'running low', href: '/admin/books?filter=low-stock' },
+  { n: work.noImage, label: 'without a photo', href: '/admin/books?filter=no-photo' },
+  { n: work.noDescription, label: 'without a description', href: '/admin/books?filter=no-description' },
+  { n: work.noCategory, label: 'not on a shelf', href: '/admin/books?filter=no-subject' },
+  { n: work.unposted, label: 'never announced', href: '/admin/books?filter=not-announced' },
+].filter((j) => j.n > 0);
+
+const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0);
 ---
 
 <Admin title="Dashboard" sub={`${stats.titles} titles · ${stats.inStock} in stock`}>
@@ -38,30 +56,39 @@ const warnings = [
     )
   }
 
+  <div class="flex flex-wrap gap-2 mb-6">
+    <a href="/admin/books/new" class="btn btn-primary">Add a listing</a>
+    <a href="/admin/books" class="btn btn-ghost">All listings</a>
+    <a href="/" class="btn btn-ghost">View the shop</a>
+  </div>
+
   <section class="grid gap-3 sm:grid-cols-3 mb-8">
-    <a
-      href="/admin/orders?status=requested"
-      class="p-4 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
-    >
-      <p class="eyebrow">Needs your reply</p>
-      <p class="mt-1 text-[30px] font-semibold tabular-nums leading-none">{counts.requested ?? 0}</p>
-    </a>
-    <a
-      href="/admin/orders?status=awaiting_payment"
-      class="p-4 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
-    >
-      <p class="eyebrow">Awaiting payment</p>
-      <p class="mt-1 text-[30px] font-semibold tabular-nums leading-none">
-        {counts.awaiting_payment ?? 0}
-      </p>
-    </a>
-    <a
-      href="/admin/orders?status=paid"
-      class="p-4 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
-    >
-      <p class="eyebrow">Paid, to post</p>
-      <p class="mt-1 text-[30px] font-semibold tabular-nums leading-none">{counts.paid ?? 0}</p>
-    </a>
+    {
+      CARDS.map((card) => {
+        const n = counts[card.key] ?? 0;
+        return (
+          <a
+            href={card.href}
+            class:list={[
+              'p-4 rounded-[3px] border transition-colors',
+              n > 0 && card.urgent
+                ? 'bg-white border-[var(--color-navy)] hover:border-[var(--color-navy-hover)]'
+                : 'bg-white border-[var(--color-rule)] hover:border-[var(--color-navy)]',
+            ]}
+          >
+            <p class="eyebrow">{card.label}</p>
+            <p
+              class:list={[
+                'mt-1 text-[30px] font-semibold tabular-nums leading-none',
+                n === 0 && 'text-[var(--color-ink-faint)]',
+              ]}
+            >
+              {n}
+            </p>
+          </a>
+        );
+      })
+    }
   </section>
 
   <section class="mb-10">
@@ -77,7 +104,9 @@ const warnings = [
     {
       pending.length === 0 ? (
         <p class="p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-[15px] text-[var(--color-ink-soft)]">
-          Nothing waiting. New requests appear here and in your inbox.
+          {totalOrders === 0
+            ? 'No orders yet. When someone sends a request it appears here and in your inbox.'
+            : 'Nothing waiting on you. New requests appear here and in your inbox.'}
         </p>
       ) : (
         <ul class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
@@ -95,7 +124,7 @@ const warnings = [
                     </p>
                     <p class="text-[13.5px] text-[var(--color-ink-faint)] truncate">
                       {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment}
-                      {o.telegram_chat_id ? ' · Telegram linked' : ''}
+                      {o.telegram_chat_id ? ' · on Telegram' : ''}
                     </p>
                   </div>
                   <div class="text-right shrink-0">
@@ -124,38 +153,34 @@ const warnings = [
     <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold mb-3">
       Catalogue to tidy
     </h2>
-    <p class="text-[14.5px] text-[var(--color-ink-soft)] mb-4 max-w-2xl">
-      Carried over from the old site. None of it stops the shop working - it is the
-      polish the import could not do for you.
-    </p>
-    <ul class="grid gap-3 sm:grid-cols-2">
-      {
-        // Each links straight into the matching filter, so the count is a way
-        // in to the work rather than just a number.
-        [
-          { n: work.noImage, label: 'listings with no photo', href: '/admin/books?filter=no-photo' },
-          { n: work.noDescription, label: 'listings with no description', href: '/admin/books?filter=no-description' },
-          { n: work.noCategory, label: 'listings with no subject', href: '/admin/books?filter=no-subject' },
-          { n: work.unposted, label: 'never announced on Telegram', href: '/admin/books?filter=not-announced' },
-        ].map((row) => (
-          <li>
-            <a
-              href={row.href}
-              class="flex items-baseline gap-3 p-3.5 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
-            >
-              <span
-                class:list={[
-                  'text-[22px] font-semibold tabular-nums',
-                  row.n === 0 ? 'text-[var(--color-instock)]' : 'text-[var(--color-ink)]',
-                ]}
-              >
-                {row.n}
-              </span>
-              <span class="text-[14.5px] text-[var(--color-ink-soft)]">{row.label}</span>
-            </a>
-          </li>
-        ))
-      }
-    </ul>
+
+    {
+      jobs.length === 0 ? (
+        <p class="p-5 bg-[var(--color-instock)]/8 border border-[var(--color-instock)]/25 rounded-[3px] text-[15px] text-[var(--color-instock)]">
+          Nothing to handle at the moment. Every listing has a photo, a description and a shelf,
+          and all of them have been announced.
+        </p>
+      ) : (
+        <>
+          <p class="text-[14.5px] text-[var(--color-ink-soft)] mb-4 max-w-2xl">
+            Each of these opens the listings already filtered, so you can work through one at a
+            time. They disappear as you clear them.
+          </p>
+          <ul class="grid gap-2.5 sm:grid-cols-2">
+            {jobs.map((job) => (
+              <li>
+                <a
+                  href={job.href}
+                  class="flex items-baseline gap-3 p-3.5 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
+                >
+                  <span class="text-[22px] font-semibold tabular-nums">{job.n}</span>
+                  <span class="text-[14.5px] text-[var(--color-ink-soft)]">{job.label}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
+      )
+    }
   </section>
 </Admin>

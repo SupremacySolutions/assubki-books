@@ -244,8 +244,11 @@ export async function getBookAdmin(id: number): Promise<AdminBookDetail | null> 
   return { ...book, images: images.results, categoryIds: cats.results.map((c) => c.category_id) };
 }
 
-/** The work the WooCommerce import could not do for the owner. */
-export async function backlog(): Promise<{ noImage: number; noDescription: number; noCategory: number; unposted: number }> {
+/** Everything on the dashboard's worklist, counted in one round trip. */
+export async function backlog(): Promise<{
+  noImage: number; noDescription: number; noCategory: number;
+  unposted: number; outOfStock: number; lowStock: number;
+}> {
   const row = await env.DB.prepare(
     `SELECT
        (SELECT COUNT(*) FROM books b WHERE b.status='live'
@@ -254,9 +257,15 @@ export async function backlog(): Promise<{ noImage: number; noDescription: numbe
           AND (description_html IS NULL OR description_html='')) AS noDescription,
        (SELECT COUNT(*) FROM books b WHERE b.status='live'
           AND NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)) AS noCategory,
-       (SELECT COUNT(*) FROM books WHERE status='live' AND telegram_message_id IS NULL) AS unposted`,
-  ).first<{ noImage: number; noDescription: number; noCategory: number; unposted: number }>();
-  return row ?? { noImage: 0, noDescription: 0, noCategory: 0, unposted: 0 };
+       (SELECT COUNT(*) FROM books WHERE status='live' AND telegram_message_id IS NULL) AS unposted,
+       (SELECT COUNT(*) FROM books WHERE status='live' AND (stock - reserved) <= 0) AS outOfStock,
+       (SELECT COUNT(*) FROM books WHERE status='live'
+          AND (stock - reserved) > 0 AND (stock - reserved) <= 2) AS lowStock`,
+  ).first<{
+    noImage: number; noDescription: number; noCategory: number;
+    unposted: number; outOfStock: number; lowStock: number;
+  }>();
+  return row ?? { noImage: 0, noDescription: 0, noCategory: 0, unposted: 0, outOfStock: 0, lowStock: 0 };
 }
 
 /**
