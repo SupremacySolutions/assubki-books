@@ -63,8 +63,9 @@ async function call<T = unknown>(
 
   if (dryRun()) {
     console.log(`[telegram] DRY RUN — would have called ${method}:`, JSON.stringify(body).slice(0, 300));
-    // A plausible message id so the calling code follows its success path.
-    return { message_id: 0 } as T;
+    // Deliberately not 0: callers test the returned id for truthiness, so a
+    // zero would read as a failed post and the success path would never run.
+    return { message_id: 999_999 } as T;
   }
 
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {

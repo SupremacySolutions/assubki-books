@@ -21,6 +21,17 @@ const error = Astro.url.searchParams.get('e');
 
 // What the channel post will look like, rendered from the same function that
 // builds the real caption — so the preview cannot drift from what is sent.
+// The channel post is stale when the listing has been saved since it was
+// announced. That is what decides whether "Update channel post" does anything,
+// so the button can be switched off when there is nothing to send.
+// A missing posted_at counts as stale: we cannot show that the channel is up
+// to date, and wrongly disabling the button would leave the owner unable to
+// push a correction.
+const channelStale = Boolean(
+  book?.telegram_message_id &&
+    (book.telegram_posted_at === null || book.updated_at > book.telegram_posted_at),
+);
+
 const previewCaption = book
   ? listingCaption({
       title: book.title,
@@ -179,9 +190,14 @@ const previewCaption = book
         </div>
       </section>
 
-      <button type="submit" class="btn btn-primary">
-        {isNew ? 'Create listing' : 'Save changes'}
-      </button>
+      <div>
+        <button type="submit" id="saveBtn" class="btn btn-primary">
+          {isNew ? 'Create listing' : 'Save changes'}
+        </button>
+        <p id="saveHint" class="mt-2 text-[13px] text-[var(--color-ink-faint)]">
+          {isNew ? '' : 'No unsaved changes.'}
+        </p>
+      </div>
     </div>
 
     <aside class="space-y-4">
@@ -262,26 +278,64 @@ const previewCaption = book
             </details>
 
             {botConfigured() ? (
-              <button
-                type="submit"
-                form="bookForm"
-                name="publish_telegram"
-                value="1"
-                class="btn btn-primary w-full !py-2"
-                disabled={book.status !== 'live'}
-              >
-                {book.telegram_message_id ? 'Update channel post' : 'Post to channel'}
-              </button>
+              <>
+                <button
+                  type="submit"
+                  form="telegramForm"
+                  id="postBtn"
+                  class="btn btn-primary w-full !py-2"
+                  disabled={book.status !== 'live' || (!!book.telegram_message_id && !channelStale)}
+                  data-blocked={book.status !== 'live' || (!!book.telegram_message_id && !channelStale) ? '1' : '0'}
+                  data-reason={
+                    book.status !== 'live'
+                      ? 'Only live listings can be announced.'
+                      : book.telegram_message_id && !channelStale
+                        ? 'The channel already matches this listing.'
+                        : ''
+                  }
+                >
+                  {book.telegram_message_id ? 'Update channel post' : 'Post to channel'}
+                </button>
+                <p id="postHint" class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
+                  {book.status !== 'live'
+                    ? 'Only live listings can be announced.'
+                    : book.telegram_message_id && !channelStale
+                      ? 'The channel already matches this listing.'
+                      : ''}
+                </p>
+              </>
             ) : (
               <p class="text-[13px] text-[var(--color-ink-faint)]">
                 Add TELEGRAM_BOT_TOKEN to enable posting.
               </p>
             )}
-            {book.status !== 'live' && (
-              <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
-                Only live listings can be announced.
+          </section>
+        )
+      }
+
+      {
+        book && (
+          <section class="border border-[var(--color-outstock)]/30 rounded-[3px] p-5">
+            <h2 class="eyebrow !text-[var(--color-outstock)] mb-2">Delete</h2>
+            <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed">
+              Removes this listing for good, with any photos you uploaded
+              {book.telegram_message_id ? ' and its post in the channel' : ''}. Past orders keep
+              their record of it. To hide it without losing it, set Visibility to Archived.
+            </p>
+            {book.reserved > 0 && (
+              <p class="mt-2 text-[13px] text-[var(--color-outstock)]">
+                {book.reserved} {book.reserved === 1 ? 'copy is' : 'copies are'} held by an open
+                order, so this cannot be deleted yet.
               </p>
             )}
+            <button
+              type="submit"
+              form="deleteForm"
+              class="btn btn-ghost w-full !py-2 mt-3 !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40"
+              disabled={book.reserved > 0}
+            >
+              Delete listing
+            </button>
           </section>
         )
       }
@@ -299,39 +353,76 @@ const previewCaption = book
     </aside>
   </form>
 
+  {/* Outside the main form: forms cannot nest, so the sidebar buttons reach
+      these through their `form` attribute instead. */}
   {
     book && (
-      <section class="mt-8 max-w-md border border-[var(--color-outstock)]/30 rounded-[3px] p-5">
-        <h2 class="text-[16px] font-medium text-[var(--color-outstock)]">Delete this listing</h2>
-        <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
-          Removes it from the shop for good, along with any photos you uploaded
-          {book.telegram_message_id ? ' and its post in the Telegram channel' : ''}. Past orders
-          keep their record of it. To hide a listing without losing it, set its visibility to
-          Archived instead.
-        </p>
-        {book.reserved > 0 && (
-          <p class="mt-2 text-[14px] text-[var(--color-outstock)]">
-            {book.reserved} {book.reserved === 1 ? 'copy is' : 'copies are'} held by an open order,
-            so this cannot be deleted yet.
-          </p>
-        )}
-        <form
-          method="post"
-          action={`/api/admin/books/${book.id}/delete`}
-          class="mt-4"
-          onsubmit="return confirm('Delete this listing for good? Past orders keep their record of it.')"
-        >
-          <button type="submit" class="btn btn-ghost !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40" disabled={book.reserved > 0}>
-            Delete listing
-          </button>
-        </form>
-      </section>
+      <>
+        <form id="telegramForm" method="post" action={`/api/admin/books/${book.id}/telegram`} />
+        <form id="deleteForm" method="post" action={`/api/admin/books/${book.id}/delete`} />
+      </>
     )
   }
 
   {
     book && (
-      <script is:inline define:vars={{ bookId: book.id }}>
+      <script is:inline define:vars={{ bookId: book.id, bookTitle: book.title }}>
+        // ------------------------------------------------------------------
+        // Save and post are ordered, not parallel. Posting sends whatever is
+        // in the database, so offering it while the form has unsaved edits
+        // would announce the old version of a listing the owner has just
+        // changed. Save is offered only when there is something to save;
+        // posting only once there is nothing outstanding.
+        // ------------------------------------------------------------------
+        const bookForm = document.querySelector('#bookForm');
+        const saveBtn = document.querySelector('#saveBtn');
+        const saveHint = document.querySelector('#saveHint');
+        const postBtn = document.querySelector('#postBtn');
+        const postHint = document.querySelector('#postHint');
+
+        const snapshot = () => new URLSearchParams(new FormData(bookForm)).toString();
+        let saved = snapshot();
+
+        function sync() {
+          const dirty = snapshot() !== saved;
+
+          if (saveBtn) {
+            saveBtn.disabled = !dirty;
+            saveHint.textContent = dirty ? 'You have unsaved changes.' : 'No unsaved changes.';
+          }
+
+          if (postBtn) {
+            const blocked = postBtn.dataset.blocked === '1';
+            postBtn.disabled = dirty || blocked;
+            postHint.textContent = dirty
+              ? 'Save your changes first, then post them.'
+              : postBtn.dataset.reason || '';
+          }
+        }
+
+        bookForm?.addEventListener('input', sync);
+        bookForm?.addEventListener('change', sync);
+        sync();
+
+        // A form submission is about to reload the page; leaving the button
+        // enabled invites a second click that posts twice.
+        bookForm?.addEventListener('submit', () => {
+          if (saveBtn) { saveBtn.disabled = true; saveHint.textContent = 'Saving…'; }
+        });
+
+        document.querySelector('#telegramForm')?.addEventListener('submit', () => {
+          if (postBtn) { postBtn.disabled = true; postHint.textContent = 'Posting…'; }
+        });
+
+        // Confirm in JS rather than an inline onsubmit: a title containing an
+        // apostrophe would break the attribute.
+        document.querySelector('#deleteForm')?.addEventListener('submit', (event) => {
+          const ok = confirm(
+            `Delete “${bookTitle}” for good?\n\nIts photos and channel post go too. Past orders keep their record of it.`,
+          );
+          if (!ok) event.preventDefault();
+        });
+
         const input = document.querySelector('#photo');
         const status = document.querySelector('#uploadStatus');
 

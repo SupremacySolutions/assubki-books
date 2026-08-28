@@ -113,6 +113,8 @@ export async function listBooksAdmin(q?: string | null, limit = 60): Promise<Adm
 
 export interface AdminBookDetail extends AdminBookRow {
   description_html: string | null;
+  updated_at: number;
+  telegram_posted_at: number | null;
   author: string | null;
   publisher: string | null;
   legacy_slug: string | null;
