@@ -1,5 +1,6 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
+import { portalLabel } from '../../../lib/order-status';
 import { listOrders, orderCounts } from '../../../lib/admin-db';
 import { price } from '../../../lib/format';
 
@@ -14,7 +15,8 @@ const TABS = [
   { key: 'requested', label: 'Needs reply' },
   { key: 'awaiting_payment', label: 'Awaiting payment' },
   { key: 'paid', label: 'Paid' },
-  { key: 'dispatched', label: 'Dispatched' },
+  { key: 'dispatched', label: 'Posted' },
+  { key: 'completed', label: 'Completed' },
   { key: 'expired', label: 'Lapsed' },
   { key: 'cancelled', label: 'Cancelled' },
 ];
@@ -24,18 +26,12 @@ const TONE: Record<string, string> = {
   awaiting_payment: 'bg-[var(--color-brass)]/15 text-[var(--color-brass)]',
   paid: 'bg-[var(--color-instock)]/12 text-[var(--color-instock)]',
   dispatched: 'bg-[var(--color-instock)]/12 text-[var(--color-instock)]',
+  completed: 'bg-[var(--color-rule)] text-[var(--color-ink-soft)]',
   expired: 'bg-[var(--color-rule)] text-[var(--color-ink-faint)]',
   cancelled: 'bg-[var(--color-rule)] text-[var(--color-ink-faint)]',
 };
 
-const LABEL: Record<string, string> = {
-  requested: 'Needs reply',
-  awaiting_payment: 'Awaiting payment',
-  paid: 'Paid',
-  dispatched: 'Dispatched',
-  expired: 'Lapsed',
-  cancelled: 'Cancelled',
-};
+
 ---
 
 <Admin title="Orders" sub={`${orders.length} shown`}>
@@ -115,7 +111,7 @@ const LABEL: Record<string, string> = {
                 </p>
               </div>
               <span class:list={['px-2 py-1 rounded-sm text-[12px] font-medium shrink-0', TONE[o.status]]}>
-                {LABEL[o.status] ?? o.status}
+                {portalLabel(o.status, o.fulfilment)}
               </span>
               <span class="price text-[15px] shrink-0 w-16 text-right">
                 {price(o.total_pence ?? o.subtotal_pence)}

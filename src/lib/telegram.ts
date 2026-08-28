@@ -14,6 +14,7 @@ import { env } from 'cloudflare:workers';
 interface TelegramEnv {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_BOT_USERNAME?: string;
+  ADMIN_SESSION_SECRET?: string;
   TELEGRAM_CHANNEL_ID?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   /** Set to "1" in .dev.vars - see dryRun() below. */
@@ -38,6 +39,64 @@ export function optInLink(ref: string, token: string): string | null {
   // The ref already fits; the token is trimmed to keep well inside the limit
   // while staying long enough that it cannot be guessed.
   return `https://t.me/${user}?start=${ref}_${token.slice(0, 16)}`;
+}
+
+/**
+ * The deep link the owner taps once to get order alerts by Telegram.
+ *
+ * A bot cannot open a conversation, so the owner has to start it - the same
+ * constraint customers hit. The payload is derived from ADMIN_SESSION_SECRET
+ * rather than being a fixed word, so knowing the bot's name is not enough to
+ * bind your own chat and start receiving customers' names and addresses.
+ */
+const HOUR = 3_600_000;
+
+async function payloadForBucket(bucket: number): Promise<string | null> {
+  const secret = cfg().ADMIN_SESSION_SECRET;
+  if (!secret) return null;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(`owner-telegram-link:${bucket}`),
+  );
+  const hex = [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `owner_${hex.slice(0, 24)}`;
+}
+
+export async function ownerLinkPayload(): Promise<string | null> {
+  return payloadForBucket(Math.floor(Date.now() / HOUR));
+}
+
+export async function ownerOptInLink(): Promise<string | null> {
+  const user = cfg().TELEGRAM_BOT_USERNAME;
+  const payload = await ownerLinkPayload();
+  return user && payload ? `https://t.me/${user}?start=${payload}` : null;
+}
+
+/**
+ * Whether this payload is a currently-valid owner link.
+ *
+ * The payload is bucketed by the hour, so a link is good for an hour or two and
+ * then stops working. It used to be derived from a fixed word, which made it
+ * permanent: anyone who saw the settings page over a shoulder, or in a
+ * screenshot, could bind their own chat at any point afterwards and start
+ * receiving customers' names and addresses. The previous bucket is accepted so
+ * a link tapped a minute after the hour turns over still works.
+ */
+export async function isOwnerLinkPayload(payload: string): Promise<boolean> {
+  const now = Math.floor(Date.now() / HOUR);
+  for (const bucket of [now, now - 1]) {
+    const expected = await payloadForBucket(bucket);
+    if (expected && payload === expected) return true;
+  }
+  return false;
 }
 
 /**
@@ -219,6 +278,31 @@ export async function deleteChannelMessage(messageId: number): Promise<boolean> 
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) return false;
   const result = await call('deleteMessage', { chat_id: channel, message_id: messageId });
+  return result !== null;
+}
+
+/**
+ * Passes a customer's message on to the owner.
+ *
+ * Used for payment screenshots: one of the shop's accounts cannot be checked
+ * directly, so proof of payment arrives as a photo. `copyMessage` rather than
+ * `forwardMessage` because it lets us replace the caption with the order
+ * reference and amount - a screenshot with no idea which order it belongs to
+ * is barely better than none.
+ */
+export async function copyToOwner(
+  ownerChatId: string,
+  fromChatId: string,
+  messageId: number,
+  caption: string,
+): Promise<boolean> {
+  const result = await call('copyMessage', {
+    chat_id: ownerChatId,
+    from_chat_id: fromChatId,
+    message_id: messageId,
+    caption,
+    parse_mode: 'MarkdownV2',
+  });
   return result !== null;
 }
 

@@ -3,6 +3,7 @@ import Admin from '../../../layouts/Admin.astro';
 import { getOrderByRef, getOrderItems } from '../../../lib/admin-db';
 import { price } from '../../../lib/format';
 import { defaultPostagePence, getSetting } from '../../../lib/settings';
+import { nextActions, portalLabel, POSTAGE_PROVIDERS } from '../../../lib/order-status';
 
 const { ref } = Astro.params;
 const order = ref ? await getOrderByRef(ref) : null;
@@ -24,17 +25,9 @@ const hoursLeft = order.expires_at
 const sentVia = Astro.url.searchParams.get('sent');
 const problem = Astro.url.searchParams.get('e');
 
-const NEXT: Record<string, { action: string; label: string; hint: string }[]> = {
-  awaiting_payment: [
-    { action: 'paid', label: 'Mark payment received', hint: 'Emails the customer that payment arrived.' },
-    { action: 'cancelled', label: 'Cancel order', hint: 'Releases the held stock.' },
-  ],
-  paid: [{ action: 'dispatched', label: 'Mark as posted', hint: 'Tells the customer the books are on the way.' }],
-  dispatched: [],
-  expired: [],
-  cancelled: [],
-  requested: [{ action: 'cancelled', label: 'Cancel order', hint: 'Releases the held stock.' }],
-};
+// What can happen next, and what it is called, both come from lib/order-status
+// so a collection order is never offered "Mark as posted".
+const steps = nextActions(order.status, order.fulfilment);
 ---
 
 <Admin
@@ -162,15 +155,27 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
                 </p>
               </div>
 
-              <details class="mt-4">
-                <summary class="text-[14px] text-[var(--color-navy)] cursor-pointer">
-                  Preview the payment instructions they will receive
-                </summary>
-                <pre class="mt-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px] text-[13.5px] whitespace-pre-wrap font-[family-name:var(--font-body)] text-[var(--color-ink-soft)]">{paymentInstructions}</pre>
+              {/* Editable per order, not a fixed template: which account to pay
+                  into depends on the size of the order and what is in it. The
+                  setting is only the starting text. */}
+              <div class="mt-4">
+                <label for="payment_message" class="block text-[14px] font-medium mb-1.5">
+                  How they should pay
+                </label>
+                <textarea
+                  id="payment_message"
+                  name="payment_message"
+                  rows="8"
+                  maxlength="4000"
+                  class="field font-[family-name:var(--font-body)] text-[14px] leading-relaxed"
+                  >{order.payment_message ?? paymentInstructions}</textarea
+                >
                 <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-                  Edit these in <a href="/admin/settings" class="text-[var(--color-navy)] underline underline-offset-2">Settings</a>.
+                  Sent exactly as written, with the order reference added. Change it for this order
+                  only - the starting text lives in{' '}
+                  <a href="/admin/settings" class="text-[var(--color-navy)] underline underline-offset-2">Settings</a>.
                 </p>
-              </details>
+              </div>
 
               <button type="submit" class="btn btn-primary mt-4">
                 Confirm and send
@@ -181,36 +186,83 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
       }
 
       {
-        (NEXT[order.status] ?? []).length > 0 && (
+        steps.length > 0 && (
           <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
             <h2 class="eyebrow mb-3">Next steps</h2>
-            <div class="flex flex-wrap items-end gap-3">
-              {(NEXT[order.status] ?? []).map((step) => (
-                <form method="post" action={`/api/admin/orders/${order.ref}/status`} class="flex items-end gap-2">
+            <div class="space-y-3">
+              {steps.map((step) => (
+                <form
+                  method="post"
+                  action={`/api/admin/orders/${order.ref}/status`}
+                  class:list={[
+                    step.secondary || step.danger
+                      ? 'pt-3 border-t border-[var(--color-rule)]'
+                      : '',
+                  ]}
+                >
                   <input type="hidden" name="status" value={step.action} />
+
                   {/* Captured at the moment of posting, which is the only time
-                      the owner is holding the receipt. */}
-                  {step.action === 'dispatched' && !isCollection && (
-                    <span>
-                      <label for="tracking" class="block text-[13px] font-medium mb-1.5">
-                        Tracking number <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
-                      </label>
-                      <input
-                        id="tracking"
-                        name="tracking"
-                        maxlength="80"
-                        placeholder="e.g. AB123456789GB"
-                        class="field !py-2 !w-52"
-                      />
-                    </span>
+                      the owner is holding the receipt. The carrier matters
+                      because the tracking link differs for each. */}
+                  {step.needsPostage && (
+                    <div class="flex flex-wrap items-end gap-3 mb-3">
+                      <span>
+                        <label for="tracking" class="block text-[13px] font-medium mb-1.5">
+                          Tracking number{' '}
+                          <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+                        </label>
+                        <input
+                          id="tracking"
+                          name="tracking"
+                          maxlength="80"
+                          placeholder="e.g. AB123456789GB"
+                          class="field !py-2 !w-52"
+                        />
+                      </span>
+                      <span>
+                        <label for="postage_provider" class="block text-[13px] font-medium mb-1.5">
+                          Carrier
+                        </label>
+                        <select id="postage_provider" name="postage_provider" class="field !py-2 !w-40">
+                          {POSTAGE_PROVIDERS.map((p) => (
+                            <option value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </span>
+                      <span>
+                        <label for="postage_service" class="block text-[13px] font-medium mb-1.5">
+                          Service{' '}
+                          <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+                        </label>
+                        <input
+                          id="postage_service"
+                          name="postage_service"
+                          maxlength="60"
+                          placeholder="e.g. Tracked 48"
+                          class="field !py-2 !w-44"
+                        />
+                      </span>
+                    </div>
                   )}
+
                   <button
                     type="submit"
-                    class:list={['btn', step.action === 'cancelled' ? 'btn-ghost' : 'btn-primary']}
+                    class:list={[
+                      'btn',
+                      step.danger
+                        ? 'btn-ghost !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40 hover:!border-[var(--color-outstock)]'
+                        : step.secondary
+                          ? 'btn-ghost'
+                          : 'btn-primary',
+                    ]}
                     title={step.hint}
                   >
                     {step.label}
                   </button>
+                  {step.hint && (
+                    <span class="ml-3 text-[13px] text-[var(--color-ink-faint)]">{step.hint}</span>
+                  )}
                 </form>
               ))}
             </div>
@@ -255,7 +307,7 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
       <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 text-[14px] space-y-2">
         <div class="flex justify-between gap-3">
           <span class="text-[var(--color-ink-faint)]">Status</span>
-          <span class="font-medium">{order.status.replace('_', ' ')}</span>
+          <span class="font-medium">{portalLabel(order.status, order.fulfilment)}</span>
         </div>
         <div class="flex justify-between gap-3">
           <span class="text-[var(--color-ink-faint)]">Requested</span>
@@ -273,8 +325,17 @@ const NEXT: Record<string, { action: string; label: string; hint: string }[]> = 
         }
         {order.tracking_number && (
           <div class="flex justify-between gap-3">
-            <span class="text-[var(--color-ink-faint)]">Tracking</span>
-            <span class="tabular-nums select-all">{order.tracking_number}</span>
+            <span class="text-[var(--color-ink-faint)]">
+              {order.postage_provider ?? 'Tracking'}
+            </span>
+            <span class="tabular-nums select-all text-right">
+              {order.tracking_number}
+              {order.postage_service && (
+                <span class="block text-[13px] text-[var(--color-ink-faint)]">
+                  {order.postage_service}
+                </span>
+              )}
+            </span>
           </div>
         )}
         <a

@@ -1,16 +1,14 @@
 ---
 import Admin from '../../layouts/Admin.astro';
 import { orderCounts, listOrders, backlog } from '../../lib/admin-db';
-import { catalogueStats } from '../../lib/db';
 import { price } from '../../lib/format';
 import { botConfigured } from '../../lib/telegram';
 import { emailConfigured, lastEmailError, fromAddress } from '../../lib/email';
 
-const [counts, pending, work, stats, emailError] = await Promise.all([
+const [counts, pending, work, emailError] = await Promise.all([
   orderCounts(),
   listOrders('requested'),
   backlog(),
-  catalogueStats(),
   lastEmailError(),
 ]);
 
@@ -26,7 +24,7 @@ const warnings = [
 const CARDS = [
   { key: 'requested', label: 'Needs your reply', href: '/admin/orders?status=requested', urgent: true },
   { key: 'awaiting_payment', label: 'Awaiting payment', href: '/admin/orders?status=awaiting_payment', urgent: false },
-  { key: 'paid', label: 'Paid, to post', href: '/admin/orders?status=paid', urgent: true },
+  { key: 'paid', label: 'Paid, to fulfil', href: '/admin/orders?status=paid', urgent: true },
 ];
 
 // Only surface work that exists. A row reading "0 listings with no photo" is
@@ -43,7 +41,12 @@ const jobs = [
 const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0);
 ---
 
-<Admin title="Dashboard" sub={`${stats.titles} titles · ${stats.inStock} in stock`}>
+<Admin title="Dashboard" showHeading={false}>
+  <section class="reveal mb-8 border-l-2 border-[var(--color-navy)] pl-4">
+    <p class="eyebrow">Owner dashboard</p>
+    <p class="mt-1 font-[family-name:var(--font-display)] text-[22px] font-semibold">Welcome back.</p>
+    <p class="mt-1 text-[14.5px] text-[var(--color-ink-soft)]">Here is what needs your attention today.</p>
+  </section>
   {
     warnings.length > 0 && (
       <div class="mb-6 space-y-2">
@@ -56,13 +59,13 @@ const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0);
     )
   }
 
-  <div class="flex flex-wrap gap-2 mb-6">
+  <div class="reveal flex flex-wrap gap-2 mb-6" data-delay="1">
     <a href="/admin/books/new" class="btn btn-primary">Add a listing</a>
     <a href="/admin/books" class="btn btn-ghost">All listings</a>
     <a href="/" class="btn btn-ghost">View the shop</a>
   </div>
 
-  <section class="grid gap-3 sm:grid-cols-3 mb-8">
+  <section class="reveal grid gap-3 sm:grid-cols-3 mb-8" data-delay="2">
     {
       CARDS.map((card) => {
         const n = counts[card.key] ?? 0;
@@ -91,7 +94,7 @@ const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0);
     }
   </section>
 
-  <section class="mb-10">
+  <section class="reveal mb-10" data-delay="3">
     <div class="flex items-baseline justify-between mb-3">
       <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold">
         Requests waiting
@@ -149,7 +152,7 @@ const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0);
     }
   </section>
 
-  <section>
+  <section class="reveal" data-delay="4">
     <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold mb-3">
       Catalogue to tidy
     </h2>

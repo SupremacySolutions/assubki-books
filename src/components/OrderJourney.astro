@@ -11,6 +11,7 @@
  * different final steps rather than one wording bent to cover both.
  */
 import type { OrderView } from '../lib/orders';
+import { trackingUrl } from '../lib/order-status';
 
 interface Props {
   order: OrderView;
@@ -26,12 +27,15 @@ const when = (t: number | null) =>
 type Step = { title: string; done: boolean; at: string | null; note?: string };
 
 const reached = {
-  confirmed: Boolean(order.confirmed_at) || ['awaiting_payment', 'paid', 'dispatched'].includes(order.status),
-  paid: Boolean(order.paid_at) || ['paid', 'dispatched'].includes(order.status),
-  done: order.status === 'dispatched',
+  confirmed:
+    Boolean(order.confirmed_at) ||
+    ['awaiting_payment', 'paid', 'dispatched', 'completed'].includes(order.status),
+  paid: Boolean(order.paid_at) || ['paid', 'dispatched', 'completed'].includes(order.status),
+  posted: Boolean(order.dispatched_at) || ['dispatched', 'completed'].includes(order.status),
+  finished: order.status === 'completed',
 };
 
-const steps: Step[] = [
+const opening: Step[] = [
   {
     title: 'Request received',
     done: true,
@@ -46,29 +50,62 @@ const steps: Step[] = [
       ? undefined
       : 'We are checking the books and working out the total.',
   },
-  {
-    title: 'Payment received',
-    done: reached.paid,
-    at: when(order.paid_at),
-    note: reached.paid ? undefined : 'Once your payment reaches us we will confirm here.',
-  },
-  isCollection
-    ? {
-        title: 'Ready to collect',
-        done: reached.done,
-        at: when(order.dispatched_at),
-        note: reached.done ? 'Come and collect whenever suits you.' : undefined,
-      }
-    : {
-        title: 'Posted',
-        done: reached.done,
-        at: when(order.dispatched_at),
-        note: reached.done ? undefined : 'We will post your books and note it here.',
-      },
 ];
+
+/*
+ * The two journeys genuinely differ, so they are written out separately rather
+ * than as one list with the wording bent to cover both. A collection has no
+ * posting step at all - payment received *is* the moment the books are ready -
+ * which is why it is four steps against delivery's five.
+ */
+const steps: Step[] = isCollection
+  ? [
+      ...opening,
+      {
+        title: 'Ready to collect',
+        done: reached.paid,
+        at: when(order.paid_at),
+        note: reached.paid
+          ? 'Come and collect whenever suits you.'
+          : 'Once your payment reaches us your books will be set aside.',
+      },
+      {
+        title: 'Collected',
+        done: reached.finished,
+        at: when(order.completed_at),
+        note: reached.finished ? undefined : 'We will mark this when you pick them up.',
+      },
+    ]
+  : [
+      ...opening,
+      {
+        title: 'Payment received',
+        done: reached.paid,
+        at: when(order.paid_at),
+        note: reached.paid ? undefined : 'Once your payment reaches us we will confirm here.',
+      },
+      {
+        title: 'Posted',
+        done: reached.posted,
+        at: when(order.dispatched_at),
+        note: reached.posted ? undefined : 'We will post your books and note it here.',
+      },
+      {
+        title: 'Delivered',
+        done: reached.finished,
+        at: when(order.completed_at),
+        note: reached.finished ? undefined : 'We will close this off once it reaches you.',
+      },
+    ];
 
 // The first step not yet done is the one being waited on.
 const currentIndex = steps.findIndex((s) => !s.done);
+
+// The link used to be hardcoded to Royal Mail, so an Evri number sent the
+// customer to a page that could not find it.
+const track = order.tracking_number
+  ? trackingUrl(order.postage_provider, order.tracking_number)
+  : null;
 ---
 
 {
@@ -148,16 +185,23 @@ const currentIndex = steps.findIndex((s) => !s.done);
     <div class="mt-4 p-4 bg-white border border-[var(--color-rule)] rounded-[3px]">
       <p class="eyebrow">Tracking number</p>
       <p class="mt-1 text-[17px] font-medium tabular-nums select-all">{order.tracking_number}</p>
+      {order.postage_service && (
+        <p class="mt-1 text-[13.5px] text-[var(--color-ink-soft)]">
+          Sent by {order.postage_provider ?? 'post'}, {order.postage_service}.
+        </p>
+      )}
       <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-        Track it on the{' '}
-        <a
-          href={`https://www.royalmail.com/track-your-item#/tracking-results/${encodeURIComponent(order.tracking_number)}`}
-          rel="noopener"
-          class="text-[var(--color-navy)] underline underline-offset-2"
-        >
-          Royal Mail site
-        </a>
-        . If it was sent another way, use this number with that carrier instead.
+        {track ? (
+          <>
+            Track it on the{' '}
+            <a href={track} rel="noopener" class="text-[var(--color-navy)] underline underline-offset-2">
+              {order.postage_provider} site
+            </a>
+            .
+          </>
+        ) : (
+          <>Use this number with {order.postage_provider ?? 'the carrier'} to track it.</>
+        )}
       </p>
     </div>
   )

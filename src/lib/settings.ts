@@ -9,7 +9,13 @@ import { env } from 'cloudflare:workers';
 export type SettingKey =
   | 'payment_instructions'
   | 'default_postage_pence'
-  | 'collection_address';
+  | 'collection_address'
+  // Bound by the owner tapping the deep link on the settings page - the bot
+  // cannot start a conversation, so this is the only way to obtain it.
+  | 'owner_telegram_chat_id'
+  // Where the bot sends anyone who messages it. Held here rather than in code
+  // so it can be changed without a deploy.
+  | 'contact_telegram';
 
 export async function getSetting(key: SettingKey, fallback = ''): Promise<string> {
   const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?')

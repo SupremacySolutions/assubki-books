@@ -17,7 +17,7 @@
 
 import {
   PROD, SITE, ORIGIN, vars, prodVars, TEST_CHAT, CUSTOMER_EMAIL,
-  suite, report, db, one, signIn, admin, get, html, json,
+  suite, report, db, one, signIn, admin, get, html, json, visibleText,
   created, makeBook, placeOrder, teardown,
 } from './lib/e2e-helpers.mjs';
 
@@ -494,6 +494,199 @@ async function integrity() {
 }
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+async function lifecycle() {
+  const t = suite('13. Lifecycle and collection wording');
+
+  // Words that must never reach a collection customer or the owner's view of
+  // one. This is the failure the owner actually reported.
+  const POSTING = /posted|dispatch|on their way|Send to|Delivery to|tracking/i;
+
+  // --- collection: requested -> awaiting_payment -> paid -> completed -------
+  const cBook = await makeBook();
+  const c = await placeOrder(cBook.id, 'collection');
+  const cUrl = `/order?ref=${c.ref}&t=${c.token}`;
+
+  const seen = [];
+  const sweep = async (stage) => {
+    const page = await html(cUrl);
+    const portal = await html(`/admin/orders/${c.ref}`);
+    // The portal legitimately contains the word "Delete"; only the delivery
+    // vocabulary is forbidden.
+    const bad = [page, portal].map(visibleText).some((h) => POSTING.test(h));
+    seen.push([stage, bad]);
+    return { page, portal };
+  };
+
+  await sweep('requested');
+  await admin(`/api/admin/orders/${c.ref}/confirm`, { payment_message: 'Pay into the shop account.' });
+  await sweep('awaiting_payment');
+
+  const cPaid = await admin(`/api/admin/orders/${c.ref}/status`, { status: 'paid' });
+  t.ok(cPaid.status === 302 && !cPaid.location.includes('e=state'), 'collection: payment can be recorded');
+  const readied = await sweep('paid');
+  t.ok(readied.page.includes('Ready to collect'), 'collection: customer is told the books are ready');
+  t.ok(!readied.page.includes('Total to pay'), 'collection: a paid order stops asking to be paid');
+  t.ok(readied.page.includes('Total paid'), 'collection: and says what was paid instead');
+
+  // The step the owner said was missing: it used to stop dead here.
+  const cDone = await admin(`/api/admin/orders/${c.ref}/status`, { status: 'completed' });
+  t.ok(cDone.status === 302 && !cDone.location.includes('e=state'), 'collection: can be marked collected');
+  const done = await sweep('completed');
+  t.ok(done.page.includes('Collected'), 'collection: final state reads Collected');
+
+  for (const [stage, bad] of seen) {
+    t.ok(!bad, `collection: no posting language at ${stage}`);
+  }
+
+  // --- collection cannot be dispatched, however it is asked -----------------
+  const cb2 = await makeBook();
+  const c2 = await placeOrder(cb2.id, 'collection');
+  await admin(`/api/admin/orders/${c2.ref}/confirm`, { payment_message: 'x' });
+  const forced = await admin(`/api/admin/orders/${c2.ref}/status`, {
+    status: 'dispatched',
+    tracking: 'SNEAKY123',
+  });
+  const c2row = await one(`SELECT status, tracking_number AS tn FROM orders WHERE ref='${c2.ref}'`);
+  t.ok(forced.location.includes('e=state'), 'collection: a dispatch posted by hand is refused');
+  t.ok(c2row.status === 'awaiting_payment' && c2row.tn === null,
+    'collection: and no tracking number is stored');
+
+  // --- delivery: the combined payment-and-posted action ---------------------
+  const dBook = await makeBook();
+  const d = await placeOrder(dBook.id, 'delivery');
+  await admin(`/api/admin/orders/${d.ref}/confirm`, { postage: '3.95', payment_message: 'Bank transfer.' });
+
+  const held = await one(`SELECT reserved r, stock s FROM books WHERE id=${dBook.id}`);
+  const combined = await admin(`/api/admin/orders/${d.ref}/status`, {
+    status: 'dispatched',
+    tracking: 'H00123456789',
+    postage_provider: 'Evri',
+    postage_service: 'Next day',
+  });
+  t.ok(combined.status === 302 && !combined.location.includes('e=state'),
+    'delivery: payment and posting in one action');
+
+  const dRow = await one(
+    `SELECT status, paid_at pa, dispatched_at da, postage_provider pp FROM orders WHERE ref='${d.ref}'`,
+  );
+  t.ok(Boolean(dRow.pa) && Boolean(dRow.da), 'delivery: both timestamps are stamped together');
+  t.ok(dRow.pp === 'Evri', 'delivery: the carrier is recorded');
+
+  // The combined action must still take the copies off the shelf - skipping
+  // 'paid' cannot mean skipping the sale.
+  const sold = await one(`SELECT reserved r, stock s FROM books WHERE id=${dBook.id}`);
+  t.ok(sold.s === held.s - 1 && sold.r === held.r - 1,
+    'delivery: the combined action still converts the hold into a sale');
+
+  const dPage = await html(`/order?ref=${d.ref}&t=${d.token}`);
+  t.ok(dPage.includes('H00123456789'), 'delivery: the tracking number reaches the customer');
+  t.ok(dPage.includes('evri.com'), 'delivery: and links to the right carrier, not Royal Mail');
+  t.ok(!dPage.includes('Total to pay'), 'delivery: a paid order stops asking to be paid');
+
+  const dDone = await admin(`/api/admin/orders/${d.ref}/status`, { status: 'completed' });
+  t.ok(dDone.status === 302 && !dDone.location.includes('e=state'), 'delivery: can be marked delivered');
+  t.ok((await html(`/order?ref=${d.ref}&t=${d.token}`)).includes('Delivered'),
+    'delivery: final state reads Delivered');
+}
+
+// ---------------------------------------------------------------------------
+async function botAndOptIn() {
+  const t = suite('14. Telegram opt-in and the bot');
+
+  // --- the Connect button only for people who asked -------------------------
+  const book = await makeBook();
+  const fresh = () => `e2e-${Math.random().toString(36).slice(2, 8)}@example.com`;
+
+  const withOut = await placeOrder(book.id, 'delivery', { telegram: '', email: fresh() });
+  t.ok(!(await html(`/order?ref=${withOut.ref}&t=${withOut.token}`)).includes('Connect Telegram'),
+    'no username given, so no Telegram invitation');
+
+  const withOne = await placeOrder(book.id, 'delivery', { email: fresh() });
+  t.ok((await html(`/order?ref=${withOne.ref}&t=${withOne.token}`)).includes('Connect Telegram'),
+    'a username given, so the invitation appears');
+
+  const junk = await json('/api/orders', {
+    name: 'Junk Handle', email: CUSTOMER_EMAIL, fulfilment: 'collection',
+    telegram: 'no thanks', items: [{ bookId: book.id, qty: 1 }],
+  });
+  t.ok(junk.status === 400 && /Telegram/i.test(junk.body.error ?? ''),
+    'a username that is not one is refused');
+
+  // --- confirming twice sends once ------------------------------------------
+  const race = await placeOrder(book.id, 'collection', { email: fresh() });
+  const [a, b] = await Promise.all([
+    admin(`/api/admin/orders/${race.ref}/confirm`, { payment_message: 'once' }),
+    admin(`/api/admin/orders/${race.ref}/confirm`, { payment_message: 'once' }),
+  ]);
+  const wins = [a, b].filter((r) => r.location.includes('sent=')).length;
+  const states = [a, b].filter((r) => r.location.includes('e=state')).length;
+  t.ok(wins === 1 && states === 1, `confirming twice sends once (${wins} sent, ${states} refused)`);
+
+  // --- what the owner actually typed is what gets stored --------------------
+  const typed = await one(`SELECT payment_message AS m FROM orders WHERE ref='${race.ref}'`);
+  t.ok(typed.m === 'once', 'the per-order payment message is kept on the order');
+
+  // --- the bot ---------------------------------------------------------------
+  const secret = vars.TELEGRAM_WEBHOOK_SECRET;
+  const hook = (body) =>
+    fetch(`${SITE}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': secret },
+      body: JSON.stringify(body),
+    });
+
+  await admin('/api/admin/settings', { contact_telegram: '@alsubkibooks' });
+
+  // The webhook always returns 200 so Telegram stops retrying, so status tells
+  // us nothing. What matters is whether anything was forwarded, which the proof
+  // counter records.
+  const proofsBefore = (await one('SELECT COALESCE(SUM(payment_proofs),0) AS n FROM orders')).n;
+
+  await hook({ message: { message_id: 1, chat: { id: 999111222 }, text: 'hello?' } });
+  await hook({ message: { message_id: 2, chat: { id: 999111222 }, photo: [{ file_id: 'x' }] } });
+
+  const proofsAfterStranger = (await one('SELECT COALESCE(SUM(payment_proofs),0) AS n FROM orders')).n;
+  t.ok(proofsAfterStranger === proofsBefore,
+    'a stranger cannot pipe photos through the bot to the owner');
+
+  // Bind a chat, then send a screenshot as a paying customer would.
+  const shot = await placeOrder(book.id, 'collection', { email: fresh() });
+  await hook({
+    message: { message_id: 3, chat: { id: Number(TEST_CHAT) }, text: `/start ${shot.ref}_${shot.token.slice(0, 16)}` },
+  });
+  await admin('/api/admin/settings', { contact_telegram: '@alsubkibooks' });
+  await db(`INSERT INTO settings (key, value, updated_at)
+            VALUES ('owner_telegram_chat_id', '${TEST_CHAT}', unixepoch())
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value`);
+
+  await hook({
+    message: {
+      message_id: 4,
+      chat: { id: Number(TEST_CHAT) },
+      photo: [{ file_id: 'proof' }],
+      caption: 'paid this morning',
+    },
+  });
+  const proofs = await one(`SELECT COALESCE(payment_proofs,0) AS p FROM orders WHERE ref='${shot.ref}'`);
+  t.ok(proofs.p === 1, 'a screenshot from a linked chat is passed to the owner');
+
+  // A chat whose only order is finished has nothing live to attach a payment
+  // to, so the bot must not forward for it either.
+  await db(`UPDATE orders SET status='completed', completed_at=unixepoch() WHERE ref='${shot.ref}'`);
+  await db(`UPDATE orders SET telegram_chat_id = NULL
+             WHERE telegram_chat_id = '${TEST_CHAT}' AND ref <> '${shot.ref}'`);
+  const beforeFinished = (await one('SELECT COALESCE(SUM(payment_proofs),0) AS n FROM orders')).n;
+  await hook({
+    message: { message_id: 5, chat: { id: Number(TEST_CHAT) }, photo: [{ file_id: 'late' }] },
+  });
+  const afterFinished = (await one('SELECT COALESCE(SUM(payment_proofs),0) AS n FROM orders')).n;
+  t.ok(afterFinished === beforeFinished, 'a finished order takes no further screenshots');
+
+  await db(`DELETE FROM settings WHERE key='owner_telegram_chat_id'`);
+}
+
 // The third field says whether the suite needs a signed-in portal session.
 // Everything that builds a fixture listing does; the public pages and the
 // checks that admin routes stay shut do not.
@@ -503,7 +696,8 @@ const SUITES = [
   ['fulfilment', fulfilment, true], ['lookup', orderPageAndLookup, true],
   ['auth', adminAuth, false], ['listings', listings, true],
   ['shelves', shelves, true], ['orders', portalOrders, true],
-  ['notifications', notifications, true], ['integrity', integrity, false],
+  ['notifications', notifications, true], ['lifecycle', lifecycle, true],
+  ['bot', botAndOptIn, true], ['integrity', integrity, false],
 ];
 
 console.log(`\nRunning against ${PROD ? `\x1b[33m${SITE} (REAL)\x1b[0m` : SITE}`);

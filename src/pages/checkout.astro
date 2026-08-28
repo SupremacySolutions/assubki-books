@@ -230,7 +230,7 @@ import { HOLD_HOURS } from '../lib/orders';
         }
 
         clear();
-        window.location.href = `/order/${result.ref}?t=${result.token}`;
+        window.location.href = `/order?ref=${result.ref}&t=${result.token}`;
       } catch {
         showError('We could not reach the shop. Check your connection and try again.');
         submit.disabled = false;

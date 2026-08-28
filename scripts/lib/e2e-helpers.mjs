@@ -133,6 +133,20 @@ export async function get(path, opts = {}) {
 
 export const html = async (path) => (await get(path, { redirect: 'follow' })).text();
 
+/**
+ * Just the words a person would read.
+ *
+ * Sweeping raw HTML for forbidden wording matches the stylesheet - Tailwind
+ * ships a `--tracking-tight` custom property, so a search for "tracking" hits
+ * every page ever served. Style and script blocks go first, then the tags.
+ */
+export const visibleText = (markup) =>
+  markup
+    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ');
+
 export async function json(path, body) {
   const res = await fetch(`${SITE}${path}`, {
     method: body ? 'POST' : 'GET',

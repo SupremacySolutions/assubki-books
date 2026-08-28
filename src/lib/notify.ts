@@ -21,6 +21,7 @@ import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml } from './email';
 import { sendMessage, optInLink, esc, botConfigured } from './telegram';
+import { statusMessage } from './order-status';
 import { getSetting } from './settings';
 
 export interface PlacedInput {
@@ -45,8 +46,11 @@ function customerPlaced(input: PlacedInput) {
   const optIn = optInLink(order.ref, order.token);
   const expires = new Date(order.expiresAt * 1000).toUTCString();
 
-  // Someone already reachable does not need asking again.
-  const telegramBlock = optIn && !order.telegramChatId
+  // Someone already reachable does not need asking again - and neither does
+  // someone who never gave a Telegram username, who is being invited to connect
+  // an account they may not have.
+  const wantsTelegram = Boolean(input.telegram);
+  const telegramBlock = optIn && !order.telegramChatId && wantsTelegram
     ? `<div style="margin:22px 0 0;padding:16px;background:#f5f4f0;border:1px solid #ddd9d1;border-radius:3px">
          <p style="margin:0 0 4px;font-size:15px;font-weight:600">Get your payment details on Telegram</p>
          <p style="margin:0 0 12px;font-size:14px;color:#4a5568;line-height:1.55">
@@ -91,7 +95,9 @@ function customerPlaced(input: PlacedInput) {
       .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
       .join('\n') +
     `\n  Subtotal: ${price(order.subtotalPence)}\n\n` +
-    (optIn && !order.telegramChatId ? `Get payment details on Telegram: ${optIn}\n\n` : '') +
+    (optIn && !order.telegramChatId && wantsTelegram
+      ? `Get payment details on Telegram: ${optIn}\n\n`
+      : '') +
     `View your request: ${link}\n\nHeld until ${expires}. No payment is taken on our website.\n`;
 
   return { subject: `Your request ${order.ref} - ${SITE.name}`, html, text };
@@ -292,27 +298,22 @@ export async function notifyStatusChange(input: {
   email: string;
   telegramChatId?: string | null;
   status: string;
+  /** Required: without it a collection customer is told their books were posted. */
+  fulfilment: string;
   origin: string;
   tracking?: string | null;
+  provider?: string | null;
+  collectionAddress?: string;
 }): Promise<void> {
-  const COPY: Record<string, { subject: string; line: string }> = {
-    paid: {
-      subject: `Payment received - ${input.ref}`,
-      line: 'We have received your payment. Your books are being packed.',
-    },
-    dispatched: {
-      subject: `Your books are on the way - ${input.ref}`,
-      line: input.tracking
-        ? `Your order has been posted. Your tracking number is ${input.tracking}.`
-        : 'Your order has been posted. Thank you for your custom.',
-    },
-    cancelled: {
-      subject: `Order ${input.ref} cancelled`,
-      line: 'This request has been cancelled and nothing was charged.',
-    },
-  };
-
-  const copy = COPY[input.status];
+  // The words come from lib/order-status so that email, the customer page, the
+  // timeline and the portal cannot drift apart - which is exactly how collection
+  // orders ended up being described as posted in three of those four places.
+  const copy = statusMessage(input.status, input.fulfilment, {
+    ref: input.ref,
+    tracking: input.tracking,
+    provider: input.provider,
+    collectionAddress: input.collectionAddress,
+  });
   if (!copy) return;
 
   const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;

@@ -2,21 +2,10 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getOrderByRef } from '../../../../../lib/admin-db';
 import { notifyStatusChange } from '../../../../../lib/notify';
+import { canTransition } from '../../../../../lib/order-status';
+import { getSetting } from '../../../../../lib/settings';
 
 export const prerender = false;
-
-/**
- * Only these transitions exist. A free-text status from a form post could
- * otherwise put an order into a state nothing else knows how to handle.
- */
-const ALLOWED: Record<string, string[]> = {
-  requested: ['cancelled'],
-  awaiting_payment: ['paid', 'cancelled'],
-  paid: ['dispatched', 'cancelled'],
-  dispatched: [],
-  cancelled: [],
-  expired: [],
-};
 
 /** Statuses where the customer no longer gets the goods, so the hold must go. */
 const RELEASES_STOCK = new Set(['cancelled']);
@@ -29,24 +18,50 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   const form = await request.formData();
   const next = String(form.get('status') ?? '');
   const tracking = String(form.get('tracking') ?? '').trim().slice(0, 80) || null;
+  const provider = String(form.get('postage_provider') ?? '').trim().slice(0, 40) || null;
+  const service = String(form.get('postage_service') ?? '').trim().slice(0, 60) || null;
 
-  if (!(ALLOWED[order.status] ?? []).includes(next)) {
+  // The permitted moves come from the same table that draws the buttons, so the
+  // endpoint cannot accept something the portal never offered. This is also what
+  // refuses 'dispatched' on a collection order - there is nothing to post, and
+  // previously a hand-crafted POST could set a tracking number on one.
+  if (!canTransition(order.status, next, order.fulfilment)) {
     return new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}?e=state` } });
   }
 
-  // Stamp when each step happened, so the customer's page can show the story
-  // rather than just where the order stands now.
-  const stamp =
-    next === 'paid' ? ', paid_at = unixepoch()'
-    : next === 'dispatched' ? ', dispatched_at = unixepoch()'
-    : '';
+  /*
+   * The owner records payment and posting in one action, so 'paid' is not
+   * always a status the order passes through - a delivery usually goes straight
+   * from awaiting_payment to dispatched. Payment is therefore recognised by the
+   * move *out of* awaiting_payment, not by the destination, or the combined
+   * action would post the books without ever taking them off the shelf.
+   */
+  const recordsPayment =
+    order.status === 'awaiting_payment' && (next === 'paid' || next === 'dispatched');
+
+  const sets = ['status = ?', 'updated_at = unixepoch()'];
+  const binds: unknown[] = [next];
+
+  // The hold has done its job; clearing the expiry stops the cron re-releasing
+  // stock that has already been sold.
+  if (recordsPayment) sets.push('paid_at = unixepoch()', 'expires_at = NULL');
+
+  if (next === 'dispatched') {
+    sets.push(
+      'dispatched_at = unixepoch()',
+      'tracking_number = ?',
+      'postage_provider = ?',
+      'postage_service = ?',
+    );
+    binds.push(tracking, provider, service);
+  }
+
+  if (next === 'completed') sets.push('completed_at = unixepoch()');
+
+  binds.push(order.id);
 
   const statements = [
-    env.DB.prepare(
-      `UPDATE orders SET status = ?, updated_at = unixepoch()${stamp}` +
-        (next === 'dispatched' ? ', tracking_number = ?' : '') +
-        ' WHERE id = ?',
-    ).bind(...(next === 'dispatched' ? [next, tracking, order.id] : [next, order.id])),
+    env.DB.prepare(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`).bind(...binds),
   ];
 
   if (RELEASES_STOCK.has(next) && ['requested', 'awaiting_payment'].includes(order.status)) {
@@ -66,7 +81,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
 
   // Payment received converts the hold into a real reduction in stock: the
   // copies are leaving the shop, so they come off both counters.
-  if (next === 'paid') {
+  if (recordsPayment) {
     statements.push(
       env.DB.prepare(
         `UPDATE books
@@ -87,12 +102,16 @@ export const POST: APIRoute = async ({ params, request, url }) => {
          SELECT book_id, -SUM(qty), 'reserved', 'hold converted to sale', ?1
            FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL GROUP BY book_id`,
       ).bind(order.id),
-      // The hold has done its job; clearing it stops the cron re-releasing it.
-      env.DB.prepare('UPDATE orders SET expires_at = NULL WHERE id = ?').bind(order.id),
     );
   }
 
   await env.DB.batch(statements);
+
+  // A collection customer who has just paid needs to know where to come.
+  const collectionAddress =
+    next === 'paid' && order.fulfilment === 'collection'
+      ? await getSetting('collection_address')
+      : '';
 
   await notifyStatusChange({
     ref: order.ref,
@@ -101,8 +120,11 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     email: order.email,
     telegramChatId: order.telegram_chat_id,
     status: next,
+    fulfilment: order.fulfilment,
     origin: url.origin,
     tracking,
+    provider,
+    collectionAddress,
   }).catch((err) => console.error('[admin] status notification failed', ref, err));
 
   return new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}` } });

@@ -1,10 +1,11 @@
 ---
 import Admin from '../../layouts/Admin.astro';
 import { getSettings } from '../../lib/settings';
-import { botConfigured, botUsername } from '../../lib/telegram';
+import { botConfigured, botUsername, ownerOptInLink } from '../../lib/telegram';
 import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
 
 const [settings, emailError] = await Promise.all([getSettings(), lastEmailError()]);
+const ownerTelegramLink = await ownerOptInLink();
 const saved = Astro.url.searchParams.get('saved');
 ---
 
@@ -23,8 +24,9 @@ const saved = Astro.url.searchParams.get('saved');
         How customers pay
       </h2>
       <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-        Sent to the customer when you confirm an order, by Telegram and email. Their order
-        reference is added automatically.
+        The starting text when you confirm an order. You can change it for each order before it
+        goes - useful when a different account suits a different order. The reference is added
+        automatically.
       </p>
       <label for="payment_instructions" class="sr-only">Payment instructions</label>
       <textarea
@@ -55,6 +57,44 @@ const saved = Astro.url.searchParams.get('saved');
       />
     </section>
 
+    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Collection</h2>
+      <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        Where collection customers should come. Sent to them once you mark their payment received,
+        and shown on their order page.
+      </p>
+      <label for="collection_address" class="sr-only">Collection address</label>
+      <textarea
+        id="collection_address"
+        name="collection_address"
+        rows="3"
+        maxlength="300"
+        placeholder="e.g. 12 Evington Road, Leicester LE2 1HN - Saturdays 10am to 4pm"
+        class="field font-[family-name:var(--font-body)]">{settings.collection_address ?? ''}</textarea
+      >
+    </section>
+
+    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+        Who the bot points people to
+      </h2>
+      <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        The bot does not answer general questions. Anyone who messages it is sent here instead.
+        Leave blank and it will just say the shop will be in touch.
+      </p>
+      <label for="contact_telegram" class="block text-[14.5px] font-medium mb-1.5">
+        Telegram handle
+      </label>
+      <input
+        id="contact_telegram"
+        name="contact_telegram"
+        maxlength="80"
+        placeholder="@alsubkibooks"
+        value={settings.contact_telegram ?? ''}
+        class="field !w-64"
+      />
+    </section>
+
     <button type="submit" class="btn btn-primary">Save settings</button>
   </form>
 
@@ -77,6 +117,30 @@ const saved = Astro.url.searchParams.get('saved');
             : emailError
               ? `Failing as ${fromAddress()} - ${emailError}`
               : `Sending · orders go to ${ownerAddress()}`}
+        </dd>
+      </div>
+      <div class="flex justify-between gap-4">
+        <dt class="text-[var(--color-ink-soft)]">Owner Telegram alerts</dt>
+        <dd class="text-right max-w-[60%]">
+          {settings.owner_telegram_chat_id ? (
+            <>
+              <span class="text-[var(--color-instock)]">Connected</span>
+              {/* Without this, recovering from a wrong chat being bound needed
+                  direct database access. */}
+              <form method="post" action="/api/admin/settings/unbind-telegram" class="inline">
+                <button
+                  type="submit"
+                  class="ml-3 text-[13.5px] text-[var(--color-outstock)] underline underline-offset-2"
+                >
+                  Disconnect
+                </button>
+              </form>
+            </>
+          ) : ownerTelegramLink ? (
+            <a href={ownerTelegramLink} class="text-[var(--color-navy)] underline">Connect this chat</a>
+          ) : (
+            'Set ADMIN_SESSION_SECRET first'
+          )}
         </dd>
       </div>
       <div class="flex justify-between gap-4">

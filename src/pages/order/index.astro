@@ -13,6 +13,8 @@ import OrderJourney from '../../components/OrderJourney.astro';
 import { getOrder } from '../../lib/orders';
 import { optInLink } from '../../lib/telegram';
 import { price, SITE } from '../../lib/format';
+import { statusLabel, isSettled } from '../../lib/order-status';
+import { getSetting } from '../../lib/settings';
 
 const params = Astro.url.searchParams;
 const ref = params.get('ref')?.trim() ?? '';
@@ -23,35 +25,29 @@ const failedLookup = params.get('e') === '1';
 // and only has to add their email to reach it.
 const order = ref && token ? await getOrder(ref, token) : null;
 
-const STATUS: Record<string, { label: string; blurb: string; tone: 'wait' | 'good' | 'done' | 'off' }> = {
-  requested: {
-    label: 'Request received',
-    blurb: 'Your books are held. We will reply with the total and how to pay.',
-    tone: 'wait',
-  },
-  awaiting_payment: {
-    label: 'Awaiting payment',
-    blurb: 'We have sent you payment details. Your books stay held until payment reaches us.',
-    tone: 'wait',
-  },
-  paid: { label: 'Payment received', blurb: 'Thank you. Your order is being packed.', tone: 'good' },
-  dispatched: { label: 'Dispatched', blurb: 'Your books are on their way.', tone: 'done' },
-  cancelled: { label: 'Cancelled', blurb: 'This request was cancelled. Nothing was charged.', tone: 'off' },
-  expired: {
-    label: 'Hold lapsed',
-    blurb: 'We did not hear back within 48 hours, so the books returned to the shelf. Nothing was charged - you are welcome to request again.',
-    tone: 'off',
-  },
-};
+// A collection order that is ready needs to say where to come, so the address
+// is only fetched when it is about to be used.
+const collectionAddress =
+  order?.fulfilment === 'collection' && order.status === 'paid'
+    ? await getSetting('collection_address')
+    : '';
 
-const status = order ? (STATUS[order.status] ?? STATUS.requested) : null;
+const status = order ? statusLabel(order.status, order.fulfilment, collectionAddress) : null;
 const placed = order ? new Date(order.created_at * 1000) : null;
 const expires = order?.expires_at ? new Date(order.expires_at * 1000) : null;
 const stillHeld = order?.status === 'requested' && expires && expires.getTime() > Date.now();
 
+// Once they have paid, the page states what the order came to rather than
+// continuing to ask for it - "Total to pay £16.45" under a heading saying
+// "Payment received" is the shop contradicting itself.
+const settled = order ? isSettled(order.status) : false;
+
 const telegramLink = order ? optInLink(order.ref, token) : null;
 const awaitingReply = order?.status === 'requested' || order?.status === 'awaiting_payment';
 const telegramLinked = Boolean(order?.telegram_chat_id);
+// Only offered to customers who actually gave a Telegram username. Asking
+// someone who left the field blank to connect an account is noise.
+const wantsTelegram = Boolean(order?.telegram);
 ---
 
 <Base
@@ -61,8 +57,8 @@ const telegramLinked = Boolean(order?.telegram_chat_id);
 >
   {
     order && status ? (
-      <div class="py-10 md:py-14 max-w-2xl">
-        <div class="flex items-start gap-4">
+      <div class="mx-auto max-w-2xl py-10 md:py-14">
+        <div class="flex items-start justify-center gap-4 text-center">
           <div class="text-[var(--color-navy)] shrink-0 mt-1">
             <Rosette size={40} />
           </div>
@@ -92,8 +88,8 @@ const telegramLinked = Boolean(order?.telegram_chat_id);
           </p>
         )}
 
-        {telegramLink && awaitingReply && !telegramLinked && (
-          <section class="mt-6 p-5 bg-white border border-[var(--color-rule)] rounded-[3px]">
+        {telegramLink && awaitingReply && !telegramLinked && wantsTelegram && (
+          <section class="mt-6 p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-center">
             <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
               Get your payment details on Telegram
             </h2>
@@ -114,12 +110,12 @@ const telegramLinked = Boolean(order?.telegram_chat_id);
         )}
 
         <section class="mt-8">
-          <h2 class="eyebrow mb-4">Progress</h2>
+          <h2 class="eyebrow mb-4 text-center">Progress</h2>
           <OrderJourney order={order} />
         </section>
 
         <section class="mt-9">
-          <h2 class="eyebrow mb-3">What you asked for</h2>
+          <h2 class="eyebrow mb-3 text-center">What you asked for</h2>
           <ul class="border-y border-[var(--color-rule)] divide-y divide-[var(--color-rule)]">
             {order.items.map((item) => (
               <li class="py-3 flex justify-between gap-4 text-[15px]">
@@ -151,21 +147,23 @@ const telegramLinked = Boolean(order?.telegram_chat_id);
                 </div>
               )}
               <div class="mt-2 pt-2 border-t border-[var(--color-rule)] flex justify-between items-baseline">
-                <span class="text-[15px] font-medium">Total to pay</span>
+                <span class="text-[15px] font-medium">{settled ? 'Total paid' : 'Total to pay'}</span>
                 <span class="price text-[20px]">{price(order.total_pence)}</span>
               </div>
             </>
           )}
           <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-            {order.total_pence !== null
-              ? 'Nothing is charged through this website.'
-              : order.fulfilment === 'collection'
-                ? 'Nothing has been charged.'
-                : 'Postage is added when we confirm. Nothing has been charged.'}
+            {settled
+              ? 'Paid in full. Nothing further is owed.'
+              : order.total_pence !== null
+                ? 'Nothing is charged through this website.'
+                : order.fulfilment === 'collection'
+                  ? 'Nothing has been charged.'
+                  : 'Postage is added when we confirm. Nothing has been charged.'}
           </p>
         </section>
 
-        <section class="mt-9 grid gap-4 sm:grid-cols-2 text-[14.5px]">
+        <section class="mt-9 grid gap-4 sm:grid-cols-2 text-center text-[14.5px]">
           <div>
             <h2 class="eyebrow mb-1.5">Requested</h2>
             <p class="text-[var(--color-ink-soft)]">
@@ -183,13 +181,13 @@ const telegramLinked = Boolean(order?.telegram_chat_id);
         </section>
 
         {order.notes && (
-          <section class="mt-6">
+          <section class="mt-6 text-center">
             <h2 class="eyebrow mb-1.5">Your note</h2>
             <p class="text-[14.5px] text-[var(--color-ink-soft)] whitespace-pre-line">{order.notes}</p>
           </section>
         )}
 
-        <div class="mt-10 pt-6 border-t border-[var(--color-rule)]">
+        <div class="mt-10 border-t border-[var(--color-rule)] pt-6 text-center">
           <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
             Keep this page - it updates as we work through your request. Quote{' '}
             <strong class="text-[var(--color-ink)]">{order.ref}</strong> if you get in touch.
@@ -201,8 +199,8 @@ const telegramLinked = Boolean(order?.telegram_chat_id);
         </div>
       </div>
     ) : (
-      <div class="py-12 md:py-16 max-w-md">
-        <div class="text-[var(--color-wash)] mb-5">
+      <div class="mx-auto max-w-md py-12 text-center md:py-16">
+        <div class="mb-5 flex justify-center text-[var(--color-wash)]">
           <Rosette size={40} />
         </div>
 
@@ -214,7 +212,7 @@ const telegramLinked = Boolean(order?.telegram_chat_id);
           the email you ordered with will find it.
         </p>
 
-        <form method="post" action="/api/orders/lookup" class="mt-7 space-y-4">
+        <form method="post" action="/api/orders/lookup" class="mt-7 space-y-4 text-left">
           <div>
             <label for="ref" class="block text-[14.5px] font-medium mb-1.5">Order reference</label>
             <input

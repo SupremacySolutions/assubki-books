@@ -260,7 +260,12 @@ export interface OrderView {
   confirmed_at: number | null;
   paid_at: number | null;
   dispatched_at: number | null;
+  completed_at: number | null;
   tracking_number: string | null;
+  postage_provider: string | null;
+  postage_service: string | null;
+  /** Whether they asked to be reached on Telegram, not the chat itself. */
+  telegram: string | null;
   items: { title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null }[];
 }
 
@@ -269,7 +274,8 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
   const order = await env.DB.prepare(
     `SELECT ref, status, customer_name, email, fulfilment, address, notes,
             subtotal_pence, postage_pence, total_pence, created_at, expires_at,
-            confirmed_at, paid_at, dispatched_at, tracking_number,
+            confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
+            postage_provider, postage_service, telegram,
             access_token, telegram_chat_id
        FROM orders WHERE ref = ?`,
   )
