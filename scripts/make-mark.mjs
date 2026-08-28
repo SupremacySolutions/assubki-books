@@ -36,28 +36,7 @@ await sharp(Buffer.from(svg(PALE)), { density: 600 })
 
 writeFileSync('public/favicon.svg', svg(PALE, NAVY));
 
-/**
- * The BIMI logo - the circle beside the sender in an inbox.
- *
- * BIMI will not accept ordinary SVG. It demands the SVG Tiny Portable/Secure
- * profile: a square viewBox, a <title>, no scripts, no animation, no external
- * references, and no raster image inside. So this is written by hand rather
- * than reusing the favicon, which has none of that.
- *
- * The background fills the whole square because the mail client does the
- * circular crop itself, and the mark is scaled to 92% so that crop cannot bite
- * into the outer ring of leaves.
- */
-const bimi = [
-  '<svg version="1.2" baseProfile="tiny-ps" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">',
-  '<title>As-Subki Books</title>',
-  `<rect width="200" height="200" fill="${NAVY}"/>`,
-  `<g transform="translate(100,100) scale(0.92) translate(-100,-100)"><path d="${path}" fill="${PALE}"/></g>`,
-  '</svg>',
-].join('');
-writeFileSync('public/email/bimi.svg', bimi);
 
 const { size } = statSync("public/email/mark.png");
 console.log(`  public/email/mark.png   84×84, ${size} bytes`);
 console.log('  public/favicon.svg      regenerated from the same path');
-console.log(`  public/email/bimi.svg   ${statSync('public/email/bimi.svg').size} bytes (SVG Tiny PS)`);
