@@ -151,6 +151,61 @@
     cursor: pointer;
     transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
+  .btn:active {
+    transform: translateY(1px) scale(0.985);
+  }
+
+  .page-transition {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    background: var(--color-navy-deep);
+    color: var(--color-wash);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .page-transition.is-active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .page-transition.is-loading {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .skip-splash .page-transition.is-loading {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+  .page-transition-mark {
+    display: grid;
+    justify-items: center;
+    gap: 0.7rem;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    letter-spacing: 0.02em;
+  }
+  .page-transition-mark::after {
+    content: '';
+    width: 2.5rem;
+    height: 1px;
+    background: var(--color-wash);
+    transform-origin: left;
+    animation: transition-line 0.8s ease-in-out infinite alternate;
+  }
+  .page-enter {
+    animation: page-enter 0.45s ease-out both;
+  }
+  @keyframes page-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes transition-line {
+    from { transform: scaleX(0.35); opacity: 0.4; }
+    to { transform: scaleX(1); opacity: 1; }
+  }
 
   .btn-primary {
     background: var(--color-navy);
@@ -330,6 +385,10 @@
     .shelf-track { animation: none; }
     .shelf-book,
     .book-well { transition: none; }
+    .btn:active { transform: none; }
+    .page-transition { transition: none; }
+    .page-transition-mark::after { animation: none; }
+    .page-enter { animation: none; }
     .group:hover .book-well { transform: none; }
   }
 }

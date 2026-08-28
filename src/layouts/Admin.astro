@@ -7,8 +7,9 @@ interface Props {
   /** Shown under the heading - counts, status, context. */
   sub?: string;
   back?: { href: string; label: string };
+  showHeading?: boolean;
 }
-const { title, sub, back } = Astro.props;
+const { title, sub, back, showHeading = true } = Astro.props;
 const admin = Astro.locals.admin;
 const path = Astro.url.pathname;
 
@@ -32,9 +33,23 @@ const active = (href: string) =>
     <title>{title} - As-Subkī Books portal</title>
     <meta name="robots" content="noindex, nofollow" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script is:inline>
+      try {
+        if (sessionStorage.getItem('asb-internal-navigation') === '1') {
+          document.documentElement.classList.add('skip-splash');
+          sessionStorage.removeItem('asb-internal-navigation');
+        }
+      } catch { /* Private browsing can disable session storage. */ }
+    </script>
   </head>
 
   <body class="min-h-screen bg-[var(--color-paper)]">
+    <script is:inline>
+      document.documentElement.classList.add('js');
+    </script>
+    <div id="pageTransition" class="page-transition is-loading" aria-hidden="true">
+      <div class="page-transition-mark"><Rosette size={34} />As-Subki Books</div>
+    </div>
     <header class="bg-[var(--color-navy-deep)] text-white">
       <div class="mx-auto max-w-5xl px-5 md:px-8">
         <div class="flex items-center gap-3 py-3">
@@ -43,7 +58,7 @@ const active = (href: string) =>
             Shop portal
           </span>
           <span class="ml-auto text-[13px] text-[var(--color-wash)]/70 truncate max-w-[45%]">
-            {admin?.email}
+            {admin?.via === 'password' ? 'Owner workspace' : admin?.email}
           </span>
           <a href="/" class="text-[13px] text-[var(--color-wash)] hover:text-white underline underline-offset-2">
             View shop
@@ -69,7 +84,7 @@ const active = (href: string) =>
       </div>
     </header>
 
-    <main class="mx-auto max-w-5xl px-5 md:px-8 py-8">
+    <main class="page-enter mx-auto max-w-5xl px-5 md:px-8 py-8">
       {
         back && (
           <a
@@ -80,14 +95,22 @@ const active = (href: string) =>
           </a>
         )
       }
-      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-6">
-        <h1 class="font-[family-name:var(--font-display)] text-[28px] md:text-[32px] font-semibold">
-          {title}
-        </h1>
-        {sub && <p class="text-[15px] text-[var(--color-ink-faint)]">{sub}</p>}
-      </div>
+      {
+        showHeading && (
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-6">
+            <h1 class="font-[family-name:var(--font-display)] text-[28px] md:text-[32px] font-semibold">
+              {title}
+            </h1>
+            {sub && <p class="text-[15px] text-[var(--color-ink-faint)]">{sub}</p>}
+          </div>
+        )
+      }
 
       <slot />
     </main>
+    <script>
+      import '../scripts/reveal.ts';
+      import '../scripts/page-transition.ts';
+    </script>
   </body>
 </html>

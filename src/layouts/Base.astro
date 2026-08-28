@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import Rosette from '../components/Rosette.astro';
 import { SITE } from '../lib/format';
 
 interface Props {
@@ -52,6 +53,14 @@ const ogImage = image ? new URL(image, origin).toString() : null;
 
     <meta name="theme-color" content="#184485" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script is:inline>
+      try {
+        if (sessionStorage.getItem('asb-internal-navigation') === '1') {
+          document.documentElement.classList.add('skip-splash');
+          sessionStorage.removeItem('asb-internal-navigation');
+        }
+      } catch { /* Private browsing can disable session storage. */ }
+    </script>
   </head>
 
   <body class="min-h-screen flex flex-col">
@@ -61,8 +70,11 @@ const ogImage = image ? new URL(image, origin).toString() : null;
       document.documentElement.classList.add('js');
     </script>
     <a href="#main" class="skip">Skip to catalogue</a>
+    <div id="pageTransition" class="page-transition is-loading" aria-hidden="true">
+      <div class="page-transition-mark"><Rosette size={34} />As-Subki Books</div>
+    </div>
     <Header />
-    <main id="main" class={wide ? 'flex-1' : 'flex-1 mx-auto w-full max-w-6xl px-5 md:px-8'}>
+    <main id="main" class:list={[wide ? 'flex-1' : 'flex-1 mx-auto w-full max-w-6xl px-5 md:px-8', 'page-enter']}>
       <slot />
     </main>
     <Footer />
@@ -70,6 +82,7 @@ const ogImage = image ? new URL(image, origin).toString() : null;
     <script>
       import '../scripts/basket.ts';
       import '../scripts/reveal.ts';
+      import '../scripts/page-transition.ts';
     </script>
 
     <style>
