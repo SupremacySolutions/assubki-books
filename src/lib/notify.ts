@@ -43,7 +43,7 @@ function customerPlaced(input: PlacedInput) {
   const { order, name, origin } = input;
   const link = `${origin}/order?ref=${order.ref}&t=${order.token}`;
   const optIn = optInLink(order.ref, order.token);
-  const expires = new Date(order.expiresAt * 1000).toUTCString();
+  const expires = new Date(order.expiresAt * 1000).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
   // Offered to everyone, as on the order page: checkout no longer asks for a
   // username, and the deep link is the only way the bot is allowed to open a
@@ -62,7 +62,7 @@ function customerPlaced(input: PlacedInput) {
   const html = shell(
     'Request received',
     `Reference ${order.ref}`,
-    `<p style="margin:0 0 16px;font-size:15px">Assalamu alaikum ${escapeHtml(name)},</p>
+    `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(name)},</p>
      <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
        Thank you - we have your request and these books are held for you.
        <strong>We will reply with the total including postage and how to pay.</strong>
@@ -84,7 +84,7 @@ function customerPlaced(input: PlacedInput) {
   );
 
   const text =
-    `Request received - ${order.ref}\n\nAssalamu alaikum ${name},\n\n` +
+    `Request received - ${order.ref}\n\nالسلام عليكم ${name},\n\n` +
     `We have your request and these books are held for you. We will reply with the total ` +
     `including postage and how to pay.\n\n` +
     order.items
@@ -209,7 +209,7 @@ function confirmedEmail(input: ConfirmedInput) {
   const html = shell(
     'Your order is confirmed',
     `Reference ${input.ref} · ${price(input.totalPence)}${cash ? '' : ' to pay'}`,
-    `<p style="margin:0 0 16px;font-size:15px">Assalamu alaikum ${escapeHtml(input.name)},</p>
+    `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(input.name)},</p>
      <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
        ${
          cash
@@ -246,7 +246,7 @@ function confirmedEmail(input: ConfirmedInput) {
   );
 
   const text =
-    `Your order ${input.ref} is confirmed\n\nAssalamu alaikum ${input.name},\n\n` +
+    `Your order ${input.ref} is confirmed\n\nالسلام عليكم ${input.name},\n\n` +
     input.items
       .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
       .join('\n') +
@@ -334,7 +334,7 @@ export async function notifyGroupStarted(input: {
   const html = shell(
     'Your group basket',
     `Reference ${input.code}`,
-    `<p style="margin:0 0 16px;font-size:15px">Assalamu alaikum ${escapeHtml(input.name)},</p>
+    `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(input.name)},</p>
      <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
        Your group basket is open. Send the first link to everyone adding to it; keep the second for
        yourself - it is the one that sends the order to us when the list is complete.
@@ -351,7 +351,7 @@ export async function notifyGroupStarted(input: {
   );
 
   const text =
-    `Your group basket ${input.code}\n\nAssalamu alaikum ${input.name},\n\n` +
+    `Your group basket ${input.code}\n\nالسلام عليكم ${input.name},\n\n` +
     `Share this link with everyone adding to it:\n${input.shareLink}\n\n` +
     `Keep this one for yourself - it sends the order when the list is complete:\n${input.organiserLink}\n\n` +
     `Nothing is held or charged while a group basket is being filled. It lasts a week.\n`;
@@ -404,14 +404,22 @@ export async function notifyStatusChange(input: {
       html: shell(
         copy.subject,
         `Reference ${input.ref}`,
-        `<p style="margin:0 0 16px;font-size:15px">Assalamu alaikum ${escapeHtml(input.name)},</p>
+        `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(input.name)},</p>
          <p style="margin:0;font-size:15px;line-height:1.6">${escapeHtml(copy.line)}</p>
+         ${copy.trackingLink ? button(copy.trackingLink, 'Track this parcel') : ''}
          ${button(link, 'View your order')}`,
       ),
-      text: `${copy.subject}\n\nAssalamu alaikum ${input.name},\n\n${copy.line}\n\n${link}\n`,
+      text:
+        `${copy.subject}\n\nالسلام عليكم ${input.name},\n\n${copy.line}\n\n` +
+        (copy.trackingLink ? `Track it here: ${copy.trackingLink}\n\n` : '') +
+        `${link}\n`,
     }),
     input.telegramChatId && botConfigured()
-      ? sendMessage(input.telegramChatId, `*${esc(copy.subject)}*\n\n${esc(copy.line)}`)
+      ? sendMessage(
+          input.telegramChatId,
+          `*${esc(copy.subject)}*\n\n${esc(copy.line)}` +
+            (copy.trackingLink ? `\n\n${esc(`Track it here: ${copy.trackingLink}`)}` : ''),
+        )
       : Promise.resolve(false),
   ]);
 }

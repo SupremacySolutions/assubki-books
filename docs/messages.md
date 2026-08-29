@@ -40,7 +40,7 @@ connected a chat yet.)*
 **Big heading:** Request received
 **Underneath it:** Reference **ASB-4F7K**
 
-> Assalamu alaikum **Ali**,
+> السلام عليكم **Ali**,
 >
 > Thank you - we have your request and these books are held for you. **We will
 > reply with the total including postage and how to pay.**
@@ -71,13 +71,12 @@ Then, unless they have already connected Telegram, a box offering it:
 
 Then a button — `[ View your request ]` — and last:
 
-> We hold these copies until **Fri, 29 Aug 2026 14:03:00 GMT**. If we have not
+> We hold these copies until **29 Aug 2026, 14:03**. If we have not
 > heard from you by then the hold lapses and the books return to the shelf -
 > nothing is charged and there is nothing to cancel. No payment is taken on our
 > website at any point.
 
-> ⚠️ **Worth changing:** that date is written the awkward computer way. Every
-> other date on the site reads like *29 Aug 2026, 14:03*.
+✅ **Changed:** the date now reads the same friendly way as the rest of the site.
 
 ---
 
@@ -125,14 +124,14 @@ saved draft from Settings — one for posted orders, one for collections.
 **Big heading:** Your order is confirmed
 **Underneath it:** Reference **ASB-4F7K** · **£28.45** to pay
 
-> Assalamu alaikum **Ali**,
+> السلام عليكم **Ali**,
 >
 > Your books are reserved. Here is the total and how to pay.
 
 > al-Nahw al-Wadih ×2 — £12.00
 > Riyad al-Salihin — £12.50
 > Subtotal £24.50
-> Postage £3.95  *(posted orders only)*
+> Postage £3.95 — only shown on posted orders
 > **Total to pay £28.45**
 
 Then a grey box:
@@ -181,7 +180,7 @@ And the payment text is this fixed line rather than your draft:
 | **Collecting, already paid** — no address | Ready to collect - **ASB-4F7K** | We have received your payment. Your books are set aside, ready whenever suits you. |
 | **Being posted** | Payment received - **ASB-4F7K** | We have received your payment. Your books are being packed. |
 
-Every one of these opens with *Assalamu alaikum **Ali**,* and ends with a
+Every one of these opens with *السلام عليكم **Ali**,* and ends with a
 `[ View your order ]` button.
 
 ---
@@ -196,11 +195,11 @@ Every one of these opens with *Assalamu alaikum **Ali**,* and ends with a
 |---|---|
 | With a tracking number and carrier | Your order has been posted with **DHL**. Your tracking number is **JD0140000012345678**. |
 | With a number but no carrier chosen | Your order has been posted. Your tracking number is **JD0140000012345678**. |
-| No tracking number | Your order has been posted. Thank you for your custom. |
+| No tracking number | Your order has been posted. جزاكم الله خيرا. |
 
-> ⚠️ **Worth changing:** this gives them the number but no link. They have to go
-> and find the carrier's website themselves. Their order page has a "Track this
-> parcel" button — the message could point at it.
+✅ **Changed:** when the carrier is one we can link to, the message now also
+includes a "Track this parcel" button (email) or a line reading
+*Track it here: [link]* (Telegram).
 
 ---
 
@@ -212,8 +211,8 @@ Every one of these opens with *Assalamu alaikum **Ali**,* and ends with a
 
 | | The message |
 |---|---|
-| They collected | Thank you for collecting your books, and for your custom. |
-| It was posted | Your order is complete. Thank you for your custom. |
+| They collected | Thank you for collecting your books. جزاكم الله خيرا. |
+| It was posted | Your order is complete. جزاكم الله خيرا. |
 
 ---
 
@@ -234,9 +233,7 @@ shelf. If the customer happens to open their link again, the page says:
 > **Hold lapsed** — We did not hear back within 48 hours, so the books returned
 > to the shelf. Nothing was charged - you are welcome to request again.
 
-> ⚠️ **A decision for you:** should we warn them before it lapses — say, six
-> hours before? At the moment the first they know is finding the page changed,
-> and the books gone.
+*(Settled: no warning before it lapses. It stays silent, as it is now.)*
 
 ---
 
@@ -248,7 +245,7 @@ Email only. Nothing goes by Telegram.
 **Big heading:** Your group basket
 **Underneath it:** Reference **GRP-8ZFMJ**
 
-> Assalamu alaikum **Ali**,
+> السلام عليكم **Ali**,
 >
 > Your group basket is open. Send the first link to everyone adding to it; keep
 > the second for yourself - it is the one that sends the order to us when the
@@ -322,9 +319,9 @@ sends:
 
 | When | What it replies |
 |---|---|
-| A customer opens the connect link from their order | Assalamu alaikum **Ali**.<br><br>This chat is now connected to order **ASB-4F7K**.<br>We will send your total and how to pay here as soon as the shop confirms it.<br>Once you have paid you can send a screenshot here and it will reach the shop. |
+| A customer opens the connect link from their order | السلام عليكم **Ali**.<br><br>This chat is now connected to order **ASB-4F7K**.<br>We will send your total and how to pay here as soon as the shop confirms it.<br>Once you have paid you can send a screenshot here and it will reach the shop. |
 | You open your own connect link | Connected. New orders and payment screenshots will be sent here. |
-| Someone messages the bot with no link | Assalamu alaikum. Open the link in your order confirmation and I will connect this chat to your order. |
+| Someone messages the bot with no link | السلام عليكم. Open the link in your order confirmation and I will connect this chat to your order. |
 | The link is broken or mistyped | That link was not recognised. |
 | The order behind the link cannot be found | That order could not be found. |
 | They send a payment screenshot and it reaches you | Thank you. That has reached the shop and will be checked against **ASB-4F7K**. |
@@ -377,8 +374,8 @@ and the page tell them slightly different things.
 | Ready, paying cash | Ready to collect | Your books are ready at **12 Evington Road…**. Contact us to arrange a collection time. Payment can be made when you collect. |
 | Paid, being posted | Payment received | Thank you. Your order is being packed. |
 | Posted | Posted | Your books are on their way. |
-| Delivered | Delivered | Your order is complete. Thank you for your custom. |
-| Collected | Collected | Your order is complete. Thank you for your custom. |
+| Delivered | Delivered | Your order is complete. جزاكم الله خيرا. |
+| Collected | Collected | Your order is complete. جزاكم الله خيرا. |
 | Cancelled | Cancelled | This request was cancelled. Nothing was charged. |
 | Hold lapsed | Hold lapsed | We did not hear back within 48 hours, so the books returned to the shelf. Nothing was charged - you are welcome to request again. |
 

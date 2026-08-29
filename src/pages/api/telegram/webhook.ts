@@ -136,7 +136,7 @@ export const POST: APIRoute = async ({ request }) => {
     await sendMessage(
       chat,
       [
-        esc(`Assalamu alaikum ${name}.`),
+        esc(`السلام عليكم ${name}.`),
         '',
         esc(`This chat is now connected to order ${order.ref}.`),
         esc('We will send your total and how to pay here as soon as the shop confirms it.'),
@@ -150,7 +150,7 @@ export const POST: APIRoute = async ({ request }) => {
     await sendMessage(
       chat,
       esc(
-        'Assalamu alaikum. Open the link in your order confirmation and I will connect this chat to your order.',
+        'السلام عليكم. Open the link in your order confirmation and I will connect this chat to your order.',
       ),
     );
     return new Response('ok');

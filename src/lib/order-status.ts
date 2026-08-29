@@ -107,7 +107,7 @@ export function statusLabel(
       return collecting
         ? {
             label: 'Collected',
-            blurb: 'Your order is complete. Thank you for your custom.',
+            blurb: 'Your order is complete. جزاكم الله خيرا.',
             tone: 'done',
           }
         : { label: 'Posted', blurb: 'Your books are on their way.', tone: 'done' };
@@ -116,12 +116,12 @@ export function statusLabel(
       return collecting
         ? {
             label: 'Collected',
-            blurb: 'Your order is complete. Thank you for your custom.',
+            blurb: 'Your order is complete. جزاكم الله خيرا.',
             tone: 'done',
           }
         : {
             label: 'Delivered',
-            blurb: 'Your order is complete. Thank you for your custom.',
+            blurb: 'Your order is complete. جزاكم الله خيرا.',
             tone: 'done',
           };
 
@@ -321,6 +321,8 @@ export function canTransition(
 export interface StatusMessage {
   subject: string;
   line: string;
+  /** Set only on 'dispatched', and only when the carrier is one we can link to. */
+  trackingLink?: string | null;
 }
 
 /**
@@ -369,19 +371,23 @@ export function statusMessage(
           };
 
     case 'dispatched':
+      // A tracking number with nowhere to take it was making the customer go
+      // and find the carrier's site themselves - the order page already has a
+      // working link, this is that same link, reused.
       return {
         subject: `Your books are on the way - ${ref}`,
         line: tracking
           ? `Your order has been posted${provider ? ` with ${provider}` : ''}. Your tracking number is ${tracking}.`
-          : 'Your order has been posted. Thank you for your custom.',
+          : 'Your order has been posted. جزاكم الله خيرا.',
+        trackingLink: tracking ? trackingUrl(provider, tracking) : null,
       };
 
     case 'completed':
       return {
         subject: `Order complete - ${ref}`,
         line: collecting
-          ? 'Thank you for collecting your books, and for your custom.'
-          : 'Your order is complete. Thank you for your custom.',
+          ? 'Thank you for collecting your books. جزاكم الله خيرا.'
+          : 'Your order is complete. جزاكم الله خيرا.',
       };
 
     case 'cancelled':
