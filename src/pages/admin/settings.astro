@@ -1,12 +1,31 @@
 ---
 import Admin from '../../layouts/Admin.astro';
-import { getSettings, CASH_COLLECTION_DRAFT } from '../../lib/settings';
+import {
+  getSettings,
+  PAYMENT_DRAFTS,
+  draftBodyKey,
+  draftLabelKey,
+  CASH_COLLECTION_DRAFT,
+} from '../../lib/settings';
 import { botConfigured, botUsername, ownerOptInLink } from '../../lib/telegram';
 import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
 
 const [settings, emailError] = await Promise.all([getSettings(), lastEmailError()]);
 const ownerTelegramLink = await ownerOptInLink();
 const saved = Astro.url.searchParams.get('saved');
+
+const draftGroups = [
+  {
+    heading: 'Posted orders',
+    note: 'Pick one of these when you confirm an order being posted. Leave a box empty and it simply will not be offered.',
+    slots: PAYMENT_DRAFTS.filter((d) => d.fulfilment === 'delivery'),
+  },
+  {
+    heading: 'Collection orders',
+    note: 'The same, for orders being collected. The last one is used automatically when you tick "paying in cash on collection" - you do not pick it by hand.',
+    slots: PAYMENT_DRAFTS.filter((d) => d.fulfilment === 'collection'),
+  },
+];
 ---
 
 <Admin title="Settings">
@@ -19,44 +38,54 @@ const saved = Astro.url.searchParams.get('saved');
   }
 
   <form method="post" action="/api/admin/settings" class="space-y-5 max-w-2xl">
-    {/* Two drafts, in the order they come up: most orders are posted. A
-        collection being paid in cash uses a standard line instead - there are
-        no details to give, so there is nothing to keep up to date. */}
+    {/* Several per journey, each named by the owner. The list lives in
+        lib/settings, so this renders whatever is defined there rather than
+        hard-coding six boxes. */}
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
         Payment drafts
       </h2>
-      <p class="mt-1.5 mb-4 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-        The starting text when you confirm an order, chosen by how it is coming to them. You can
-        change it on the order before it goes - useful when a different account suits a different
-        order. The reference is added automatically.
+      <p class="mt-1.5 mb-1 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        The wording you send when you confirm an order. Give each one a short name so you can tell
+        them apart, then pick the one you want on the order itself - you can still edit it there
+        before it goes. The reference is added automatically.
       </p>
 
-      <label for="payment_draft_delivery" class="block text-[14.5px] font-medium mb-1.5">
-        Posted orders
-      </label>
-      <textarea
-        id="payment_draft_delivery"
-        name="payment_draft_delivery"
-        rows="9"
-        maxlength="4000"
-        class="field font-[family-name:var(--font-body)]">{settings.payment_draft_delivery ?? ''}</textarea
-      >
+      {draftGroups.map((group) => (
+        <div class="mt-5 pt-4 border-t border-[var(--color-rule)]">
+          <h3 class="text-[15px] font-semibold">{group.heading}</h3>
+          <p class="mt-1 mb-3 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+            {group.note}
+          </p>
 
-      <label for="payment_draft_collection" class="block mt-4 text-[14.5px] font-medium mb-1.5">
-        Collection orders
-      </label>
-      <textarea
-        id="payment_draft_collection"
-        name="payment_draft_collection"
-        rows="6"
-        maxlength="4000"
-        class="field font-[family-name:var(--font-body)]">{settings.payment_draft_collection ?? ''}</textarea
-      >
-      <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-        Tick "paying in cash on collection" on an order and it uses a standard line instead:
-        <span class="italic">{CASH_COLLECTION_DRAFT}</span>
-      </p>
+          {group.slots.map((slot) => (
+            <div class="mt-4">
+              <label for={draftLabelKey(slot.slot)} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">
+                Name for this one
+              </label>
+              <input
+                id={draftLabelKey(slot.slot)}
+                name={draftLabelKey(slot.slot)}
+                maxlength="40"
+                placeholder={slot.label}
+                value={settings[draftLabelKey(slot.slot)] ?? ''}
+                class="field !py-1.5 !text-[14px] !w-64"
+              />
+              <label for={draftBodyKey(slot.slot)} class="sr-only">
+                {slot.label} wording
+              </label>
+              <textarea
+                id={draftBodyKey(slot.slot)}
+                name={draftBodyKey(slot.slot)}
+                rows="6"
+                maxlength="4000"
+                placeholder={'cash' in slot && slot.cash ? CASH_COLLECTION_DRAFT : 'Leave empty if you do not use this one.'}
+                class="field mt-2 font-[family-name:var(--font-body)]">{settings[draftBodyKey(slot.slot)] ?? ''}</textarea
+              >
+            </div>
+          ))}
+        </div>
+      ))}
     </section>
 
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">

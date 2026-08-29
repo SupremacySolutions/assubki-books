@@ -2,7 +2,7 @@
 import Admin from '../../../layouts/Admin.astro';
 import { getOrderByRef, getOrderItems, lastPostagePence } from '../../../lib/admin-db';
 import { price } from '../../../lib/format';
-import { paymentDraft, CASH_COLLECTION_DRAFT } from '../../../lib/settings';
+import { paymentDrafts, defaultDraft } from '../../../lib/settings';
 import { nextActions, portalLabel, POSTAGE_PROVIDERS } from '../../../lib/order-status';
 
 const { ref } = Astro.params;
@@ -12,15 +12,20 @@ if (!order) return Astro.rewrite('/404');
 const isCollection = order.fulfilment === 'collection';
 const isCash = isCollection && Boolean(order.cash_payment);
 
-// Both drafts are fetched, not just the one in force: ticking "paying in cash"
-// swaps the box without a page load, and the other text has to be there to
-// swap to.
-const [items, postageDefault, draft, prepaidDraft] = await Promise.all([
+// Every draft for this journey is fetched, not just the one in force: picking
+// another, or ticking "paying in cash", swaps the box without a page load, so
+// the other wordings have to be here to swap to.
+const [items, postageDefault, drafts, draft] = await Promise.all([
   getOrderItems(order.id),
   lastPostagePence(),
-  paymentDraft(order.fulfilment, isCash),
-  paymentDraft(order.fulfilment, false),
+  paymentDrafts(order.fulfilment),
+  defaultDraft(order.fulfilment, isCash),
 ]);
+
+// A choice of one is not a choice. The cash draft is applied by the tick rather
+// than picked, so it is not offered as a button either.
+const choosable = drafts.filter((d) => !d.cash);
+const showPicker = choosable.length > 1;
 const suggestedPostage = order.postage_pence ?? (isCollection ? 0 : postageDefault);
 const canConfirm = order.status === 'requested';
 const hoursLeft = order.expires_at
@@ -196,24 +201,42 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
 
               {/* Editable per order, not a fixed template: which account to pay
                   into depends on the size of the order and what is in it. The
-                  setting is only the starting text. */}
+                  drafts are only the starting text. */}
               <div class="mt-4">
                 <label for="payment_message" class="block text-[14px] font-medium mb-1.5">
                   {isCash ? 'What they should do next' : 'How they should pay'}
                 </label>
+
+                {/* Hidden on a cash order: that wording is applied by the tick,
+                    not chosen, so offering a picker beside it would suggest the
+                    choice is still open. */}
+                {showPicker && !isCash && (
+                  <div class="mb-2 flex flex-wrap gap-2" data-draft-picker>
+                    {choosable.map((d, i) => (
+                      <button
+                        type="button"
+                        data-draft-pick={d.slot}
+                        aria-pressed={i === 0 ? 'true' : 'false'}
+                        class="px-2.5 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:bg-[var(--color-navy)] aria-pressed:text-white"
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <textarea
                   id="payment_message"
                   name="payment_message"
                   rows="8"
                   maxlength="4000"
                   class="field font-[family-name:var(--font-body)] text-[14px] leading-relaxed"
-                  data-draft-prepaid={prepaidDraft}
-                  data-draft-cash={CASH_COLLECTION_DRAFT}
+                  data-drafts={JSON.stringify(drafts)}
                   >{order.payment_message ?? draft}</textarea
                 >
                 <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
                   Sent exactly as written, with the order reference added. Change it for this order
-                  only - the {isCollection ? 'collection' : 'postage'} draft lives in{' '}
+                  only - the drafts themselves live in{' '}
                   <a href="/admin/settings" class="text-[var(--color-navy)] underline underline-offset-2">Settings</a>.
                 </p>
               </div>
@@ -497,19 +520,53 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
     // Plain JS on purpose - this block carries define:vars, so Astro ships it
     // to the browser exactly as written. A TypeScript generic here parses as a
     // pair of comparisons, and the listener silently never binds.
+    const message = document.querySelector('#payment_message');
+    const drafts = message ? JSON.parse(message.dataset.drafts ?? '[]') : [];
+
+    // Untouched means the box still holds one of the wordings we put there.
+    // Anything else is the owner's own writing.
+    const boxIsUntouched = () => {
+      if (!message) return false;
+      const current = message.value.trim();
+      return drafts.some((d) => d.body.trim() === current);
+    };
+
+    const markPicked = (slot) => {
+      for (const button of document.querySelectorAll('[data-draft-pick]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.draftPick === slot));
+      }
+    };
+
+    // Clicking a draft is an explicit request to load it, so unlike the cash
+    // tick it does not silently refuse when the box has been edited - it asks.
+    // A button that appears to do nothing is worse than a question.
+    for (const button of document.querySelectorAll('[data-draft-pick]')) {
+      button.addEventListener('click', () => {
+        const chosen = drafts.find((d) => d.slot === button.dataset.draftPick);
+        if (!chosen || !message) return;
+        if (
+          !boxIsUntouched() &&
+          !confirm('Replace what you have written with this draft?')
+        ) {
+          return;
+        }
+        message.value = chosen.body;
+        markPicked(chosen.slot);
+      });
+    }
+
     const cashCheckbox = document.querySelector('.toggle-cash-payment');
     if (cashCheckbox) {
-      const message = document.querySelector('#payment_message');
-
       // Swap the draft only while it is still a draft. Once the owner has
       // typed, their words win - a tick must never quietly discard them.
       const swapDraft = (wanted) => {
-        if (!message) return;
-        const cash = message.dataset.draftCash ?? '';
-        const prepaid = message.dataset.draftPrepaid ?? '';
-        const current = message.value.trim();
-        if (current !== cash.trim() && current !== prepaid.trim()) return;
-        message.value = wanted ? cash : prepaid;
+        if (!message || !boxIsUntouched()) return;
+        const cash = drafts.find((d) => d.cash);
+        const plain = drafts.find((d) => !d.cash);
+        const next = wanted ? cash : plain;
+        if (!next) return;
+        message.value = next.body;
+        markPicked(next.slot);
       };
 
       cashCheckbox.addEventListener('change', async () => {

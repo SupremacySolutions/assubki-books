@@ -661,35 +661,58 @@ async function ownerSettings() {
 
   // --- the confirm box starts from the right draft --------------------------
   //
-  // One draft used to serve both journeys, so a collection order opened with
-  // bank details in the box and the owner rewrote them by hand every time.
+  // One draft used to serve each journey, so the owner rewrote the box by hand
+  // whenever an order did not suit the single saved text.
   await admin('/api/admin/settings', {
-    payment_draft_delivery: 'POSTED-DRAFT bank transfer please.',
-    payment_draft_collection: 'COLLECTION-DRAFT pay on the day or in advance.',
+    payment_draft_delivery_1: 'POSTED-ONE bank transfer please.',
+    payment_draft_delivery_1_label: 'Main account',
+    payment_draft_delivery_2: 'POSTED-TWO the other account.',
+    payment_draft_delivery_2_label: 'Second account',
+    // Deliberately left empty: an unused slot must not be offered.
+    payment_draft_delivery_3: '',
+    payment_draft_delivery_3_label: 'Never used',
+    payment_draft_collection_1: 'COLLECT-ONE pay in advance.',
+    payment_draft_collection_1_label: 'In advance',
+    payment_draft_collection_2: '',
+    payment_draft_collection_cash: 'CASH-DRAFT nothing to pay now.',
     collection_address: '12 Evington Road, Leicester LE2 1HN - Saturdays 10am to 4pm',
     contact_telegram: '@alsubkibooks',
   });
 
-  // What is *in the box*, not merely somewhere on the page: the other draft is
-  // deliberately carried in a data attribute so ticking cash can swap to it.
+  // What is *in the box*, not merely somewhere on the page: every draft is
+  // carried in a data attribute so the picker can swap between them without a
+  // page load, so "on the page" would prove nothing.
   const draftInBox = (markup) =>
     markup.match(/<textarea[^>]*id="payment_message"[^>]*>([\s\S]*?)<\/textarea>/)?.[1] ?? '';
 
   const dBook = await makeBook();
   const d = await placeOrder(dBook.id, 'delivery');
-  t.ok(draftInBox(await html(`/admin/orders/${d.ref}`)).includes('POSTED-DRAFT'),
-    'a posted order opens with the posted draft');
+  const dPortal = await html(`/admin/orders/${d.ref}`);
+  t.ok(draftInBox(dPortal).includes('POSTED-ONE'),
+    'a posted order opens with the first posted draft');
+  t.ok(dPortal.includes('Main account') && dPortal.includes('Second account'),
+    'and offers the drafts by the names the owner gave them');
+  t.ok(!dPortal.includes('Never used'),
+    'a draft with nothing written in it is not offered');
+  t.ok(!dPortal.includes('In advance'),
+    'and a posted order is not offered the collection drafts');
 
   const cBook = await makeBook();
   const c = await placeOrder(cBook.id, 'collection');
   const cPortal = draftInBox(await html(`/admin/orders/${c.ref}`));
-  t.ok(cPortal.includes('COLLECTION-DRAFT') && !cPortal.includes('POSTED-DRAFT'),
+  t.ok(cPortal.includes('COLLECT-ONE') && !cPortal.includes('POSTED-ONE'),
     'a collection opens with the collection draft, not the posted one');
 
   await admin(`/api/admin/orders/${c.ref}/cash-payment`, { cash_payment: '1' });
   const cashPortal = draftInBox(await html(`/admin/orders/${c.ref}`));
-  t.ok(cashPortal.includes('No payment is needed now') && !cashPortal.includes('COLLECTION-DRAFT'),
-    'and a cash collection opens with the standard cash line instead');
+  t.ok(cashPortal.includes('CASH-DRAFT') && !cashPortal.includes('COLLECT-ONE'),
+    'and a cash collection opens with the cash draft instead');
+
+  // The cash wording used to be fixed in the source; it is a draft now.
+  await admin('/api/admin/settings', { payment_draft_collection_cash: 'CASH-REWRITTEN.' });
+  t.ok(draftInBox(await html(`/admin/orders/${c.ref}`)).includes('CASH-REWRITTEN'),
+    'the cash wording is the owner\'s to change');
+  await admin('/api/admin/settings', { payment_draft_collection_cash: 'CASH-DRAFT nothing to pay now.' });
 
   // --- postage remembers rather than being maintained -----------------------
   //
@@ -717,7 +740,9 @@ async function ownerSettings() {
   // --- the settings page itself ---------------------------------------------
   const page = visibleText(await html('/admin/settings'));
   t.ok(page.includes('Posted orders') && page.includes('Collection orders'),
-    'settings offers a draft for each kind of order');
+    'settings offers drafts for each kind of order');
+  t.ok(page.includes('Name for this one'),
+    'and each one can be named');
   t.ok(!page.includes('Usual postage'),
     'and no longer asks for a postage default the owner types over anyway');
 
