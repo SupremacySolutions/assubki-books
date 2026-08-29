@@ -378,6 +378,25 @@
     box-shadow: 0 10px 26px -12px rgba(16, 24, 40, 0.28);
   }
 
+  /* The tick that marks a Telegram chat being connected. Drawn once on load,
+     then left alone - it is a confirmation, not a decoration to replay on
+     every visit. */
+  .tick-ring {
+    stroke: var(--color-instock);
+    opacity: 0.35;
+  }
+  .tick-mark {
+    stroke: var(--color-instock);
+    stroke-dasharray: 22;
+    stroke-dashoffset: 22;
+    animation: tick-draw 0.45s 0.1s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  }
+  @keyframes tick-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
   /* A rosette set into a hairline, used to close a section. */
   .rosette-rule {
     display: flex;
@@ -399,6 +418,11 @@
       opacity: 1;
       transform: none;
       transition: none;
+    }
+    /* Already drawn, rather than drawing itself. */
+    .tick-mark {
+      animation: none;
+      stroke-dashoffset: 0;
     }
     /* No self-propelled drift. The strip still scrolls, so every cover is
        reachable - it used to freeze at zero with half of them clipped off. */

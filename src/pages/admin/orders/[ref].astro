@@ -28,6 +28,7 @@ const hoursLeft = order.expires_at
   : null;
 
 const sentVia = Astro.url.searchParams.get('sent');
+const saved = Astro.url.searchParams.get('saved');
 const problem = Astro.url.searchParams.get('e');
 
 // What can happen next, and what it is called, both come from lib/order-status
@@ -40,6 +41,14 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
   sub={order.ref}
   back={{ href: '/admin/orders', label: 'All orders' }}
 >
+  {
+    saved === 'tracking' && (
+      <p class="mb-5 p-3.5 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Tracking updated. Nothing was sent to the customer.
+      </p>
+    )
+  }
+
   {
     sentVia && (
       <p class="mb-5 p-3.5 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
@@ -220,80 +229,78 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
       {
         steps.length > 0 && (
           <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
-            <h2 class="eyebrow mb-3">Next steps</h2>
-            <div class="space-y-3">
-              {steps.map((step) => (
+            <h2 class="eyebrow mb-4">Next steps</h2>
+            <div class="space-y-4">
+              {steps.map((step, i) => (
                 <form
                   method="post"
                   action={`/api/admin/orders/${order.ref}/status`}
+                  data-confirm={step.action === 'cancelled' ? 'cancel' : undefined}
                   class:list={[
+                    // One rule, before the first of the quieter actions - not
+                    // one above each of them, which drew two lines in a row.
                     step.secondary || step.danger
-                      ? 'pt-3 border-t border-[var(--color-rule)]'
+                      ? !steps[i - 1]?.secondary && !steps[i - 1]?.danger
+                        ? 'pt-4 border-t border-[var(--color-rule)]'
+                        : ''
                       : '',
                   ]}
                 >
                   <input type="hidden" name="status" value={step.action} />
 
                   {/* Captured at the moment of posting, which is the only time
-                      the owner is holding the receipt. The carrier matters
-                      because the tracking link differs for each. */}
+                      the owner is holding the receipt. Grouped and labelled,
+                      because three bare boxes above a row of buttons read as
+                      belonging to all of them. */}
                   {step.needsPostage && (
-                    <div class="flex flex-wrap items-end gap-3 mb-3">
-                      <span>
-                        <label for="tracking" class="block text-[13px] font-medium mb-1.5">
-                          Tracking number{' '}
-                          <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
-                        </label>
-                        <input
-                          id="tracking"
-                          name="tracking"
-                          maxlength="80"
-                          placeholder="e.g. AB123456789GB"
-                          class="field !py-2 !w-52"
-                        />
-                      </span>
-                      <span>
-                        <label for="postage_provider" class="block text-[13px] font-medium mb-1.5">
-                          Carrier
-                        </label>
-                        <select id="postage_provider" name="postage_provider" class="field !py-2 !w-40">
-                          {POSTAGE_PROVIDERS.map((p) => (
-                            <option value={p}>{p}</option>
-                          ))}
-                        </select>
-                      </span>
-                      <span>
-                        <label for="postage_service" class="block text-[13px] font-medium mb-1.5">
-                          Service{' '}
-                          <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
-                        </label>
-                        <input
-                          id="postage_service"
-                          name="postage_service"
-                          maxlength="60"
-                          placeholder="e.g. Tracked 48"
-                          class="field !py-2 !w-44"
-                        />
-                      </span>
+                    <div class="mb-4 p-3.5 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]">
+                      <p class="text-[13px] font-medium mb-2.5">Posting details</p>
+                      <div class="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label for="tracking" class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                            Tracking number (optional)
+                          </label>
+                          <input id="tracking" name="tracking" maxlength="80"
+                            placeholder="e.g. AB123456789GB" class="field !py-2 !text-[14px] w-full" />
+                        </div>
+                        <div>
+                          <label for="postage_provider" class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                            Carrier
+                          </label>
+                          {/* A placeholder, so a carrier is a choice. Without
+                              one, Royal Mail was submitted on every posting
+                              whether or not anyone meant it. */}
+                          <select id="postage_provider" name="postage_provider"
+                            class="field !py-2 !text-[14px] w-full">
+                            <option value="">Not recorded</option>
+                            {POSTAGE_PROVIDERS.map((p) => (
+                              <option value={p}>{p}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div class="sm:col-span-2">
+                          <label for="postage_service" class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                            Service (optional)
+                          </label>
+                          <input id="postage_service" name="postage_service" maxlength="60"
+                            placeholder="e.g. Tracked 48" class="field !py-2 !text-[14px] w-full sm:!w-64" />
+                        </div>
+                      </div>
                     </div>
                   )}
 
                   <button
                     type="submit"
-                    class:list={[
-                      'btn',
-                      step.danger
-                        ? 'btn-ghost !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40 hover:!border-[var(--color-outstock)]'
-                        : step.secondary
-                          ? 'btn-ghost'
-                          : 'btn-primary',
-                    ]}
-                    title={step.hint}
+                    class:list={['btn', step.danger || step.secondary ? 'btn-ghost' : 'btn-primary']}
                   >
                     {step.label}
                   </button>
+                  {/* Under the button, not beside it: the sentence to the right
+                      of each one is what made this card look crowded. */}
                   {step.hint && (
-                    <span class="ml-3 text-[13px] text-[var(--color-ink-faint)]">{step.hint}</span>
+                    <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                      {step.hint}
+                    </p>
                   )}
                 </form>
               ))}
@@ -394,6 +401,33 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
             </span>
           </div>
         )}
+
+        {/* The fields that captured this vanish with the "mark as posted"
+            action, so a wrong digit used to be permanent. Correcting it does
+            not email the customer again - it was not a new event. */}
+        {!isCollection && order.status === 'dispatched' && (
+          <details class="pt-2 border-t border-[var(--color-rule)]">
+            <summary class="text-[13.5px] text-[var(--color-navy)] cursor-pointer">
+              {order.tracking_number ? 'Correct the tracking' : 'Add a tracking number'}
+            </summary>
+            <form method="post" action={`/api/admin/orders/${order.ref}/tracking`} class="mt-3 space-y-2">
+              <input name="tracking" maxlength="80" value={order.tracking_number ?? ''}
+                placeholder="Tracking number" class="field !py-1.5 !text-[13.5px] w-full" />
+              <select name="postage_provider" class="field !py-1.5 !text-[13.5px] w-full">
+                <option value="">Not recorded</option>
+                {POSTAGE_PROVIDERS.map((p) => (
+                  <option value={p} selected={p === order.postage_provider}>{p}</option>
+                ))}
+              </select>
+              <input name="postage_service" maxlength="60" value={order.postage_service ?? ''}
+                placeholder="Service (optional)" class="field !py-1.5 !text-[13.5px] w-full" />
+              <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px] w-full">Save</button>
+              <p class="text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                Updates their order page. No email is sent.
+              </p>
+            </form>
+          </details>
+        )}
         <a
           href={`/order?ref=${order.ref}&t=${order.access_token}`}
           class="block pt-2 text-[var(--color-navy)] hover:underline underline-offset-2"
@@ -434,6 +468,19 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
         event.preventDefault();
       }
     });
+
+    /*
+     * Cancelling emails the customer and changes what their order page says, and
+     * it had no confirmation at all - while deleting, which only affects the
+     * shop's own records, did. The guard was on the wrong one.
+     */
+    for (const form of document.querySelectorAll('[data-confirm="cancel"]')) {
+      form.addEventListener('submit', (event) => {
+        if (!confirm(`Cancel order ${orderRef}?\n\nThe customer is told, and the books go back on the shelf.`)) {
+          event.preventDefault();
+        }
+      });
+    }
 
     const postage = document.querySelector('#postage');
     const total = document.querySelector('#total');

@@ -14,6 +14,7 @@
  * stop drifting apart.
  */
 import QRCode from 'qrcode';
+import Dialog from './Dialog.astro';
 import { contactHandle, contactLink } from '../lib/telegram';
 import { ownerAddress } from '../lib/email';
 import { SITE } from '../lib/format';
@@ -57,6 +58,10 @@ if (qr && link) {
 }
 
 const href = link ?? SITE.telegram;
+
+// Unique per instance: a page may carry more than one of these, and two
+// dialogs sharing an id would both answer to the first trigger.
+const dialogId = `contact-${Math.random().toString(36).slice(2, 9)}`;
 ---
 
 <div class:list={['contact-us', extraClass]} data-contact>
@@ -64,7 +69,7 @@ const href = link ?? SITE.telegram;
     variant === 'card' ? (
       <button
         type="button"
-        data-contact-open
+        data-dialog-open={dialogId}
         class="block w-full text-left p-5 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] hover:border-[var(--color-navy)] transition-colors cursor-pointer"
       >
         <h2 class="text-[18px]">Telegram</h2>
@@ -76,39 +81,34 @@ const href = link ?? SITE.telegram;
     ) : variant === 'inline' ? (
       <button
         type="button"
-        data-contact-open
+        data-dialog-open={dialogId}
         class="text-[var(--color-navy)] underline underline-offset-2 cursor-pointer"
       >
         {label}
       </button>
     ) : (
-      <button type="button" data-contact-open class="btn btn-ghost">
+      <button type="button" data-dialog-open={dialogId} class="btn btn-ghost">
         {label}
       </button>
     )
   }
 
-  {/* Hidden until asked for, so the ordinary path stays one tap. */}
-  <div
-    data-contact-panel
-    hidden
-    class="mt-3 p-4 bg-white border border-[var(--color-rule)] rounded-[3px] text-left"
-  >
-    <p class="text-[14.5px] font-medium">Ways to reach us</p>
-
-    <a href={href} rel="noopener" target="_blank" class="btn btn-primary mt-3 !py-2">
+  {/* A dialog rather than a panel that pushes the page around: every route is
+      offered in one place, over the page, and Esc puts it away. */}
+  <Dialog id={dialogId} title="Ways to reach us">
+    <a href={href} rel="noopener" target="_blank" class="btn btn-primary !py-2">
       Open Telegram
     </a>
 
     {qrDataUrl && (
-      <>
+      <Fragment>
         <p class="mt-4 text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
           No Telegram on this device? Scan this with your phone's camera:
         </p>
         <div class="mt-3 flex justify-center">
           <img src={qrDataUrl} alt="QR code to message the shop on Telegram" class="w-40 h-40" />
         </div>
-      </>
+      </Fragment>
     )}
 
     <p class="mt-4 text-[14px] text-[var(--color-ink-soft)]">
@@ -116,30 +116,14 @@ const href = link ?? SITE.telegram;
     </p>
 
     <p class="mt-3 pt-3 border-t border-[var(--color-rule)] text-[14px] text-[var(--color-ink-soft)]">
-      Not on Telegram at all? Email
-      <a href={mailto} class="text-[var(--color-navy)] underline underline-offset-2 break-all">
+      {/* Explicit spacers: the compiler strips the whitespace either side of an
+          element, so without these it reads "Emailsubkibooks@gmail.com— we read
+          both." */}
+      Not on Telegram at all? Email{' '}
+      <a href={mailto} class="text-[var(--color-navy)] underline underline-offset-2 break-words">
         {email}
-      </a>
+      </a>{' '}
       — we read both.
     </p>
-  </div>
+  </Dialog>
 </div>
-
-<script>
-  /*
-   * Scoped per instance rather than by a page-wide selector: the order page
-   * carries one of these *and* the Connect panel, and the original single
-   * `querySelector` would have found only the first of them.
-   */
-  for (const root of document.querySelectorAll<HTMLElement>('[data-contact]')) {
-    const open = root.querySelector<HTMLButtonElement>('[data-contact-open]');
-    const panel = root.querySelector<HTMLElement>('[data-contact-panel]');
-    if (!open || !panel) continue;
-
-    open.addEventListener('click', () => {
-      panel.hidden = !panel.hidden;
-      open.setAttribute('aria-expanded', String(!panel.hidden));
-    });
-    open.setAttribute('aria-expanded', 'false');
-  }
-</script>

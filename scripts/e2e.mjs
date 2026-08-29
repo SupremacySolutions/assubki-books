@@ -977,6 +977,36 @@ async function lifecycle() {
   });
   const dhlPage = await html(`/order?ref=${dhl.ref}&t=${dhl.token}`);
   t.ok(dhlPage.includes('dhl.com'), 'delivery: DHL is trackable, not just a name');
+  // Above the timeline, where somebody comes back to look for it - it used to
+  // sit in the quietest card on the page, below five steps.
+  t.ok(dhlPage.indexOf('Track this parcel') < dhlPage.indexOf('>Progress<'),
+    'delivery: tracking sits above the progress steps');
+
+  // A wrong digit used to be permanent: the fields that capture it vanish with
+  // the "mark as posted" action. Correcting it must not re-announce the parcel.
+  const before = await one(`SELECT dispatched_at AS d FROM orders WHERE ref='${dhl.ref}'`);
+  const fixed = await admin(`/api/admin/orders/${dhl.ref}/tracking`, {
+    tracking: 'JD9999999999999999', postage_provider: 'DHL', postage_service: 'Express',
+  });
+  const after = await one(
+    `SELECT tracking_number AS t, dispatched_at AS d FROM orders WHERE ref='${dhl.ref}'`,
+  );
+  t.ok(fixed.location.includes('saved=tracking'), 'a tracking number can be corrected afterwards');
+  t.ok(after.t === 'JD9999999999999999' && after.d === before.d,
+    'and the order is not dispatched a second time');
+
+  /*
+   * Cancelled orders kept advertising a tracking number they no longer had a
+   * parcel for. The state is set directly because the portal will not take a
+   * dispatched order to cancelled - it is reachable only on rows that predate
+   * that rule, which is exactly why the page has to cope with it.
+   */
+  await db(`UPDATE orders SET status='cancelled' WHERE ref='${dhl.ref}'`);
+  const cancelledPage = await html(`/order?ref=${dhl.ref}&t=${dhl.token}`);
+  t.ok(!cancelledPage.includes('Track this parcel'),
+    'a cancelled order stops showing tracking');
+  t.ok(!cancelledPage.includes('Tracking number'),
+    'in the timeline as well as at the top');
 
   // The picker and the tracking table have to stay in step, so anything not on
   // the list is refused rather than stored as an untrackable string.
@@ -988,6 +1018,17 @@ async function lifecycle() {
   });
   const stored = await one(`SELECT postage_provider AS p FROM orders WHERE ref='${bogus.ref}'`);
   t.ok(stored.p === null, 'a carrier that is not on the list is not stored');
+
+  // The picker had no placeholder, so Royal Mail was submitted on every posting
+  // whether anyone chose it or not.
+  const noCarrierBook = await makeBook();
+  const noCarrier = await placeOrder(noCarrierBook.id, 'delivery');
+  await admin(`/api/admin/orders/${noCarrier.ref}/confirm`, { postage: '3.95', payment_message: 'x' });
+  await admin(`/api/admin/orders/${noCarrier.ref}/status`, {
+    status: 'dispatched', tracking: 'NOCARRIER1', postage_provider: '',
+  });
+  const blank = await one(`SELECT postage_provider AS p FROM orders WHERE ref='${noCarrier.ref}'`);
+  t.ok(blank.p === null, 'leaving the carrier unset records no carrier, not Royal Mail');
   t.ok(!dPage.includes('Total to pay'), 'delivery: a paid order stops asking to be paid');
 
   const dDone = await admin(`/api/admin/orders/${d.ref}/status`, { status: 'completed' });
@@ -1030,8 +1071,11 @@ async function botAndOptIn() {
   // Following the link in place lost the order page for anyone without
   // Telegram on that device, which on a laptop is most people.
   t.ok(/target="_blank"/.test(beforeRaw), 'the Telegram link opens away from the order page');
-  t.ok(/data-connect-waiting hidden/.test(beforeRaw),
-    'and a note is ready for when nothing opens, hidden until they try');
+  // The fallback is a dialog now: closed until they tap Connect, and carrying
+  // the QR for anyone whose device did nothing when they did.
+  t.ok(/<dialog[^>]*id="connect-telegram"/.test(beforeRaw) && !/id="connect-telegram"[^>]*open/.test(beforeRaw),
+    'and a dialog is ready for when nothing opens, closed until they try');
+  t.ok(beforeRaw.includes('data:image/png;base64'), 'with a QR code inside it');
 
   const status = await (await get(`/api/orders/link-status?ref=${link.ref}&t=${link.token}`)).json();
   t.ok(status.linked === false, 'and the page can ask whether it has been connected');

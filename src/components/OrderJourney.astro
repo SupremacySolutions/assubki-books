@@ -120,6 +120,13 @@ const currentIndex = steps.findIndex((s) => !s.done);
 const track = order.tracking_number
   ? trackingUrl(order.postage_provider, order.tracking_number)
   : null;
+
+// "Other" is a value on the owner's carrier list, not something to say to a
+// customer - "Use this number with Other to track it" is nonsense to read.
+const carrier =
+  order.postage_provider && order.postage_provider !== 'Other'
+    ? order.postage_provider
+    : 'the carrier';
 ---
 
 {
@@ -195,13 +202,16 @@ const track = order.tracking_number
 }
 
 {
-  order.tracking_number && !isCollection && (
+  /* Cancelled orders kept showing this: the branch above replaces the timeline
+     but never touched the card below it, so a cancelled order that had once
+     been posted still advertised its tracking number. */
+  order.tracking_number && !isCollection && !cancelled && (
     <div class="mt-4 p-4 bg-white border border-[var(--color-rule)] rounded-[3px]">
       <p class="eyebrow">Tracking number</p>
       <p class="mt-1 text-[17px] font-medium tabular-nums select-all">{order.tracking_number}</p>
       {order.postage_service && (
         <p class="mt-1 text-[13.5px] text-[var(--color-ink-soft)]">
-          Sent by {order.postage_provider ?? 'post'}, {order.postage_service}.
+          Sent by {carrier}, {order.postage_service}.
         </p>
       )}
       <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
@@ -209,12 +219,12 @@ const track = order.tracking_number
           <>
             Track it on the{' '}
             <a href={track} rel="noopener" class="text-[var(--color-navy)] underline underline-offset-2">
-              {order.postage_provider} site
+              {carrier} site
             </a>
             .
           </>
         ) : (
-          <>Use this number with {order.postage_provider ?? 'the carrier'} to track it.</>
+          <>Use this number with {carrier} to track it.</>
         )}
       </p>
     </div>
