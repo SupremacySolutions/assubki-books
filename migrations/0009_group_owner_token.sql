@@ -16,7 +16,10 @@
 ALTER TABLE group_baskets ADD COLUMN owner_token TEXT NOT NULL DEFAULT '';
 ALTER TABLE group_baskets ADD COLUMN organiser_email TEXT;
 
--- Any basket made before this had one token doing both jobs. Give it a
--- distinct owner token rather than leaving a blank one that an empty string
--- would satisfy.
-UPDATE group_baskets SET owner_token = lower(hex(randomblob(16))) WHERE owner_token = '';
+-- Any basket made before this had one token doing both jobs, so whoever held
+-- that link was the organiser. Say so, rather than inventing an owner token
+-- nobody has ever seen: that silently locked the only existing basket, whose
+-- organiser was then a member of their own group with no way to send it and no
+-- email to recover from. These rows keep the old, weaker arrangement until they
+-- expire; every basket made from here on gets two real keys.
+UPDATE group_baskets SET owner_token = token WHERE owner_token = '';
