@@ -22,7 +22,6 @@ export interface OrderInput {
   name: string;
   email: string;
   phone?: string | null;
-  telegram?: string | null;
   fulfilment: 'delivery' | 'collection';
   address?: string | null;
   notes?: string | null;
@@ -158,17 +157,16 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     const ref = randomRef();
     const statements = [
       env.DB.prepare(
-        `INSERT INTO orders (ref, access_token, customer_name, email, phone, telegram,
+        `INSERT INTO orders (ref, access_token, customer_name, email, phone,
                              fulfilment, address, notes, status, subtotal_pence, expires_at,
                              telegram_chat_id, telegram_linked_at)
-         VALUES (?,?,?,?,?,?,?,?,?,'requested',?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?)`,
       ).bind(
         ref,
         token,
         input.name,
         input.email,
         input.phone ?? null,
-        input.telegram ?? null,
         input.fulfilment,
         input.address ?? null,
         input.notes ?? null,
@@ -264,8 +262,14 @@ export interface OrderView {
   tracking_number: string | null;
   postage_provider: string | null;
   postage_service: string | null;
-  /** Whether they asked to be reached on Telegram, not the chat itself. */
+  /**
+   * The handle typed at checkout. No longer asked for - Telegram is now offered
+   * to everyone through the deep link - but orders placed before that still
+   * carry one, and the portal shows it as a way to reach them.
+   */
   telegram: string | null;
+  /** For collection orders: whether payment will be made in cash on pickup. */
+  cash_payment: number;
   items: { title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null }[];
 }
 
@@ -276,7 +280,7 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
             subtotal_pence, postage_pence, total_pence, created_at, expires_at,
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
             postage_provider, postage_service, telegram,
-            access_token, telegram_chat_id
+            access_token, telegram_chat_id, COALESCE(cash_payment, 0) as cash_payment
        FROM orders WHERE ref = ?`,
   )
     .bind(ref)

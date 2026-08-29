@@ -125,6 +125,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     tracking,
     provider,
     collectionAddress,
+    cashPayment: Boolean(order.cash_payment),
   }).catch((err) => console.error('[admin] status notification failed', ref, err));
 
   return new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}` } });

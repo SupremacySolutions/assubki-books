@@ -30,11 +30,19 @@ npm install
 npm run dev
 ```
 
-The local D1 needs seeding once:
+The local D1 needs seeding once. Every migration, in order - the schema and the
+seed alone leave out the portal and everything the order lifecycle added, and
+the first page that reads a missing column just fails:
 
 ```bash
-npx wrangler d1 execute assubki-books --local --file=./migrations/0001_schema.sql
-npx wrangler d1 execute assubki-books --local --file=./migrations/0002_seed.sql
+for f in ./migrations/*.sql; do npx wrangler d1 execute assubki-books --local --file="$f"; done
+```
+
+A new migration is applied the same way, to local and then to production:
+
+```bash
+npx wrangler d1 execute assubki-books --local --file=./migrations/0006_cash_payment.sql
+npx wrangler d1 execute assubki-books --remote --file=./migrations/0006_cash_payment.sql
 ```
 
 Do not delete `.wrangler/state` while the dev server is running - miniflare

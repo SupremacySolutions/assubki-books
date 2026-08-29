@@ -23,7 +23,6 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
   const name = String(data.name ?? '').trim();
   const email = String(data.email ?? '').trim();
   const phone = String(data.phone ?? '').trim() || null;
-  const telegramRaw = String(data.telegram ?? '').trim();
   const fulfilment = data.fulfilment === 'collection' ? 'collection' : 'delivery';
   const address = String(data.address ?? '').trim() || null;
   const notes = String(data.notes ?? '').trim() || null;
@@ -34,21 +33,6 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     return bad('Enter the address the books should be posted to.');
   }
   if ((notes?.length ?? 0) > 2000) return bad('That note is too long.');
-
-  /*
-   * The username decides whether the customer is offered a Telegram link at
-   * all, so it has to be a username rather than anything they typed. Stored
-   * unvalidated, "no thanks" counted as one and the shop invited them to
-   * connect an account they had not mentioned having.
-   */
-  let telegram: string | null = null;
-  if (telegramRaw) {
-    const handle = telegramRaw.replace(/^@/, '');
-    if (!/^[A-Za-z0-9_]{5,32}$/.test(handle)) {
-      return bad('That Telegram username does not look right. Use the @name form, or leave it blank.');
-    }
-    telegram = `@${handle}`;
-  }
 
   const rawItems = Array.isArray(data.items) ? data.items : [];
   const items: RequestedItem[] = [];
@@ -68,13 +52,13 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
 
   try {
     const order = await createOrder({
-      name, email, phone, telegram, fulfilment, address, notes, items: finalItems,
+      name, email, phone, fulfilment, address, notes, items: finalItems,
     });
 
     // Notifications must never cost the customer their order - the books are
     // already held and the confirmation page renders from the database.
     const origin = url.origin;
-    const notify = notifyOrderPlaced({ order, name, email, phone, telegram, fulfilment, address, notes, origin }).catch(
+    const notify = notifyOrderPlaced({ order, name, email, phone, fulfilment, address, notes, origin }).catch(
       (err) => console.error('order notification failed', order.ref, err),
     );
     // `locals.runtime.ctx` was removed in Astro v6; `cfContext` is the

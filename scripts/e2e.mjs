@@ -540,6 +540,32 @@ async function lifecycle() {
     t.ok(!bad, `collection: no posting language at ${stage}`);
   }
 
+  // --- cash on collection changes what the customer is told -----------------
+  //
+  // The owner ticks this on orders being paid in cash at the door. Nothing
+  // about the money moves through the site either way; what changes is that the
+  // customer is not told to go and pay something first.
+  const cashBook = await makeBook();
+  const cash = await placeOrder(cashBook.id, 'collection');
+  const marked = await admin(`/api/admin/orders/${cash.ref}/cash-payment`, { cash_payment: '1' });
+  t.ok(marked.status === 200, 'cash: a collection order can be marked as paying in cash');
+
+  await admin(`/api/admin/orders/${cash.ref}/confirm`, { payment_message: 'Pay when you collect.' });
+  const arranging = await html(`/order?ref=${cash.ref}&t=${cash.token}`);
+  t.ok(arranging.includes('Ready to arrange collection'),
+    'cash: the customer is asked to arrange a time, not to pay');
+
+  await admin(`/api/admin/orders/${cash.ref}/status`, { status: 'paid' });
+  const ready = await html(`/order?ref=${cash.ref}&t=${cash.token}`);
+  t.ok(/pay(ment can be made)? when you collect/i.test(visibleText(ready)),
+    'cash: and told they can pay on collection');
+
+  // Nothing to pay in cash on something being posted.
+  const postBook = await makeBook();
+  const posted = await placeOrder(postBook.id, 'delivery');
+  const refused = await admin(`/api/admin/orders/${posted.ref}/cash-payment`, { cash_payment: '1' });
+  t.ok(refused.status === 404, 'cash: a delivery order cannot be marked as cash on collection');
+
   // --- collection cannot be dispatched, however it is asked -----------------
   const cb2 = await makeBook();
   const c2 = await placeOrder(cb2.id, 'collection');
@@ -595,24 +621,18 @@ async function lifecycle() {
 async function botAndOptIn() {
   const t = suite('14. Telegram opt-in and the bot');
 
-  // --- the Connect button only for people who asked -------------------------
+  // --- the Connect button, offered to everyone ------------------------------
+  //
+  // Checkout no longer asks for a username. It could not be trusted to decide
+  // anything - a handle typed as "no thanks" counted as one - and the deep link
+  // is the only way the bot may open a chat at all, so the invitation is now
+  // shown to whoever has an order still waiting on a reply.
   const book = await makeBook();
   const fresh = () => `e2e-${Math.random().toString(36).slice(2, 8)}@example.com`;
 
-  const withOut = await placeOrder(book.id, 'delivery', { telegram: '', email: fresh() });
-  t.ok(!(await html(`/order?ref=${withOut.ref}&t=${withOut.token}`)).includes('Connect Telegram'),
-    'no username given, so no Telegram invitation');
-
-  const withOne = await placeOrder(book.id, 'delivery', { email: fresh() });
-  t.ok((await html(`/order?ref=${withOne.ref}&t=${withOne.token}`)).includes('Connect Telegram'),
-    'a username given, so the invitation appears');
-
-  const junk = await json('/api/orders', {
-    name: 'Junk Handle', email: CUSTOMER_EMAIL, fulfilment: 'collection',
-    telegram: 'no thanks', items: [{ bookId: book.id, qty: 1 }],
-  });
-  t.ok(junk.status === 400 && /Telegram/i.test(junk.body.error ?? ''),
-    'a username that is not one is refused');
+  const invited = await placeOrder(book.id, 'delivery', { email: fresh() });
+  t.ok((await html(`/order?ref=${invited.ref}&t=${invited.token}`)).includes('Connect Telegram'),
+    'an unanswered order is invited to connect Telegram');
 
   // --- the invitation gives way to a confirmation ---------------------------
   //

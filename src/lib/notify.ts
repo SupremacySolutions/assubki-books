@@ -29,7 +29,6 @@ export interface PlacedInput {
   name: string;
   email: string;
   phone?: string | null;
-  telegram?: string | null;
   fulfilment: 'delivery' | 'collection';
   address?: string | null;
   notes?: string | null;
@@ -46,11 +45,10 @@ function customerPlaced(input: PlacedInput) {
   const optIn = optInLink(order.ref, order.token);
   const expires = new Date(order.expiresAt * 1000).toUTCString();
 
-  // Someone already reachable does not need asking again - and neither does
-  // someone who never gave a Telegram username, who is being invited to connect
-  // an account they may not have.
-  const wantsTelegram = Boolean(input.telegram);
-  const telegramBlock = optIn && !order.telegramChatId && wantsTelegram
+  // Offered to everyone, as on the order page: checkout no longer asks for a
+  // username, and the deep link is the only way the bot is allowed to open a
+  // chat at all. Someone already reachable does not need asking again.
+  const telegramBlock = optIn && !order.telegramChatId
     ? `<div style="margin:22px 0 0;padding:16px;background:#f5f4f0;border:1px solid #ddd9d1;border-radius:3px">
          <p style="margin:0 0 4px;font-size:15px;font-weight:600">Get your payment details on Telegram</p>
          <p style="margin:0 0 12px;font-size:14px;color:#4a5568;line-height:1.55">
@@ -95,9 +93,7 @@ function customerPlaced(input: PlacedInput) {
       .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
       .join('\n') +
     `\n  Subtotal: ${price(order.subtotalPence)}\n\n` +
-    (optIn && !order.telegramChatId && wantsTelegram
-      ? `Get payment details on Telegram: ${optIn}\n\n`
-      : '') +
+    (optIn && !order.telegramChatId ? `Get payment details on Telegram: ${optIn}\n\n` : '') +
     `View your request: ${link}\n\nHeld until ${expires}. No payment is taken on our website.\n`;
 
   return { subject: `Your request ${order.ref} - ${SITE.name}`, html, text };
@@ -109,7 +105,6 @@ function ownerPlaced(input: PlacedInput) {
   const contact = [
     `Email: ${escapeHtml(email)}`,
     input.phone ? `Phone: ${escapeHtml(input.phone)}` : null,
-    input.telegram ? `Telegram: ${escapeHtml(input.telegram)}` : null,
   ]
     .filter(Boolean)
     .join('<br>');
@@ -134,7 +129,6 @@ function ownerPlaced(input: PlacedInput) {
   const text =
     `New request ${order.ref}\n${name}\n${email}` +
     (input.phone ? ` · ${input.phone}` : '') +
-    (input.telegram ? ` · ${input.telegram}` : '') +
     `\n\n` +
     order.items.map((i) => `  ${i.title} x${i.qty}  ${price(i.pricePence * i.qty)}`).join('\n') +
     `\n  Subtotal: ${price(order.subtotalPence)}\n\n` +
@@ -304,6 +298,8 @@ export async function notifyStatusChange(input: {
   tracking?: string | null;
   provider?: string | null;
   collectionAddress?: string;
+  /** Collection orders only: they are paying cash when they arrive. */
+  cashPayment?: boolean;
 }): Promise<void> {
   // The words come from lib/order-status so that email, the customer page, the
   // timeline and the portal cannot drift apart - which is exactly how collection
@@ -313,6 +309,7 @@ export async function notifyStatusChange(input: {
     tracking: input.tracking,
     provider: input.provider,
     collectionAddress: input.collectionAddress,
+    cashPayment: input.cashPayment,
   });
   if (!copy) return;
 

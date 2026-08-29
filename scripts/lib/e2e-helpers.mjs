@@ -190,7 +190,6 @@ export async function placeOrder(bookId, fulfilment = 'delivery', extra = {}) {
     name: 'Mikail Bhana',
     email: CUSTOMER_EMAIL,
     phone: '07700 900321',
-    telegram: '@Mikail7908',
     fulfilment,
     ...(fulfilment === 'delivery' ? { address: '12 Evington Road\nLeicester\nLE2 1HN' } : {}),
     items: [{ bookId, qty: 1 }],

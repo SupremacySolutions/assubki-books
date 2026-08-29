@@ -32,19 +32,11 @@ import { HOLD_HOURS } from '../lib/orders';
           </p>
         </div>
 
-        <div class="grid gap-5 sm:grid-cols-2">
-          <div>
-            <label for="phone" class="block text-[14.5px] font-medium mb-1.5">
-              Phone <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
-            </label>
-            <input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="40" class="field" />
-          </div>
-          <div>
-            <label for="telegram" class="block text-[14.5px] font-medium mb-1.5">
-              Telegram <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
-            </label>
-            <input id="telegram" name="telegram" placeholder="@username" maxlength="80" class="field" />
-          </div>
+        <div>
+          <label for="phone" class="block text-[14.5px] font-medium mb-1.5">
+            Phone <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
+          </label>
+          <input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="40" class="field" />
         </div>
 
         <fieldset>
@@ -206,7 +198,6 @@ import { HOLD_HOURS } from '../lib/orders';
             name: data.get('name'),
             email: data.get('email'),
             phone: data.get('phone'),
-            telegram: data.get('telegram'),
             fulfilment: data.get('fulfilment'),
             address: data.get('address'),
             notes: data.get('notes'),

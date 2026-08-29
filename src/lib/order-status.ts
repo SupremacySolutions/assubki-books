@@ -44,11 +44,15 @@ export interface CustomerStatus {
  *
  * `collectionAddress` is only consulted for a collection order that is ready,
  * because that is the one moment the customer needs to know where to go.
+ * 
+ * `cashPayment` is true when a collection order will be paid in cash on pickup,
+ * which changes the wording to reflect a time agreed with the owner.
  */
 export function statusLabel(
   status: string,
   fulfilment: string,
   collectionAddress = '',
+  cashPayment = false,
 ): CustomerStatus {
   const collecting = isCollection(fulfilment);
 
@@ -61,20 +65,31 @@ export function statusLabel(
       };
 
     case 'awaiting_payment':
-      return {
-        label: 'Awaiting payment',
-        blurb:
-          'We have sent you payment details. Your books stay held until payment reaches us.',
-        tone: 'wait',
-      };
+      return collecting && cashPayment
+        ? {
+            label: 'Ready to arrange collection',
+            blurb:
+              'We will contact you to arrange a time for collection. Your books are being set aside.',
+            tone: 'wait',
+          }
+        : {
+            label: 'Awaiting payment',
+            blurb:
+              'We have sent you payment details. Your books stay held until payment reaches us.',
+            tone: 'wait',
+          };
 
     case 'paid':
       return collecting
         ? {
             label: 'Ready to collect',
             blurb: collectionAddress
-              ? `Thank you. Your books are set aside for you at ${collectionAddress}.`
-              : 'Thank you. Your books are set aside and ready whenever suits you.',
+              ? cashPayment
+                ? `Your books are ready at ${collectionAddress}. Contact us to arrange a collection time. Payment can be made when you collect.`
+                : `Thank you. Your books are set aside for you at ${collectionAddress}.`
+              : cashPayment
+                ? 'Your books are ready for collection. Contact us to arrange a time. Payment can be made when you collect.'
+                : 'Thank you. Your books are set aside and ready whenever suits you.',
             tone: 'good',
           }
         : {
@@ -277,15 +292,30 @@ export interface StatusMessage {
 export function statusMessage(
   status: string,
   fulfilment: string,
-  opts: { ref: string; tracking?: string | null; provider?: string | null; collectionAddress?: string } = {
+  opts: {
+    ref: string;
+    tracking?: string | null;
+    provider?: string | null;
+    collectionAddress?: string;
+    /** See statusLabel: a cash collection is not paid for until they arrive. */
+    cashPayment?: boolean;
+  } = {
     ref: '',
   },
 ): StatusMessage | null {
   const collecting = isCollection(fulfilment);
-  const { ref, tracking, provider, collectionAddress } = opts;
+  const { ref, tracking, provider, collectionAddress, cashPayment } = opts;
 
   switch (status) {
     case 'paid':
+      if (collecting && cashPayment) {
+        return {
+          subject: `Ready to collect - ${ref}`,
+          line: collectionAddress
+            ? `Your books are set aside for you at ${collectionAddress}. Get in touch to arrange a time - you can pay when you collect.`
+            : 'Your books are set aside for you. Get in touch to arrange a time - you can pay when you collect.',
+        };
+      }
       return collecting
         ? {
             subject: `Ready to collect - ${ref}`,

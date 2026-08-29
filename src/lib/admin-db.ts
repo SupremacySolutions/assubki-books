@@ -25,6 +25,8 @@ export interface AdminOrderRow {
   confirmed_at: number | null;
   telegram_chat_id: string | null;
   tracking_number: string | null;
+  /** Collection orders only: the customer is paying cash when they collect. */
+  cash_payment: number;
   item_count: number;
 }
 
