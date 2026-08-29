@@ -97,14 +97,35 @@ const wantsTelegram = Boolean(order?.telegram);
               Tap once to connect this order to your Telegram, and we will send the total and how to
               pay straight to your chat. Otherwise we will email you.
             </p>
+            {/* Opens away from this page. Following it in place meant that a
+                customer without Telegram on this device - most laptops - lost
+                the order they were looking at and got a Telegram sign-in page
+                instead. */}
             <a
               href={telegramLink}
-              rel="noopener"
+              target="_blank"
+              rel="noopener noreferrer"
               data-connect-telegram
               class="btn mt-4 !bg-[#229ED9] !text-white hover:!bg-[#1d8ec2]"
             >
               Connect Telegram
             </a>
+
+            {/* Nothing visible happens if Telegram is not installed, so the
+                page has to account for itself rather than leave them waiting
+                on a button that appears broken. */}
+            <div data-connect-waiting hidden class="mt-4 pt-4 border-t border-[var(--color-rule)] text-left">
+              <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+                Waiting for Telegram. This page will update by itself once the chat is connected.
+              </p>
+              <p class="mt-2 text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                If nothing opened, you probably do not have Telegram on this device. Open this order
+                on your phone and tap again, or simply ignore it - we will email you either way.
+              </p>
+              <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] break-all select-all">
+                {telegramLink}
+              </p>
+            </div>
           </section>
         )}
 
@@ -299,21 +320,41 @@ const wantsTelegram = Boolean(order?.telegram);
     (() => {
       const button = document.querySelector('[data-connect-telegram]');
       if (!button) return;
+      const waiting = document.querySelector('[data-connect-waiting]');
 
-      let leftForTelegram = false;
-      button.addEventListener('click', () => {
-        leftForTelegram = true;
-      });
+      let started = false;
+      let timer = null;
 
-      document.addEventListener('visibilitychange', async () => {
-        if (document.visibilityState !== 'visible' || !leftForTelegram) return;
+      const check = async () => {
         try {
           const res = await fetch('/api/orders/link-status' + location.search);
           const data = await res.json();
-          if (data.linked) location.reload();
+          if (data.linked) {
+            clearInterval(timer);
+            location.reload();
+          }
         } catch {
           /* offline or blocked: leave the page exactly as it is */
         }
+      };
+
+      button.addEventListener('click', () => {
+        if (started) return;
+        started = true;
+        if (waiting) waiting.hidden = false;
+
+        // The link opens in its own tab, so this one may never lose focus and
+        // visibilitychange alone would not fire. Poll instead, briefly: long
+        // enough to cover finding the app and pressing Start, short enough that
+        // an abandoned attempt is not still calling the server ten minutes on.
+        timer = setInterval(check, 3000);
+        setTimeout(() => clearInterval(timer), 180000);
+      });
+
+      // Still worth checking on return, for the phone case where the Telegram
+      // app takes over the screen entirely.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && started) check();
       });
     })();
   </script>

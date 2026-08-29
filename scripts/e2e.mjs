@@ -624,8 +624,15 @@ async function botAndOptIn() {
   const linkBook = await makeBook();
   const link = await placeOrder(linkBook.id, 'collection', { email: fresh() });
   const linkUrl = `/order?ref=${link.ref}&t=${link.token}`;
-  const beforeLink = visibleText(await html(linkUrl));
+  const beforeRaw = await html(linkUrl);
+  const beforeLink = visibleText(beforeRaw);
   t.ok(beforeLink.includes('Get your payment details on Telegram'), 'before connecting, the invitation is shown');
+
+  // Following the link in place lost the order page for anyone without
+  // Telegram on that device, which on a laptop is most people.
+  t.ok(/target="_blank"/.test(beforeRaw), 'the Telegram link opens away from the order page');
+  t.ok(/data-connect-waiting hidden/.test(beforeRaw),
+    'and a note is ready for when nothing opens, hidden until they try');
 
   const status = await (await get(`/api/orders/link-status?ref=${link.ref}&t=${link.token}`)).json();
   t.ok(status.linked === false, 'and the page can ask whether it has been connected');
