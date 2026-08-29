@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { createOrder, StockConflict, type RequestedItem } from '../../lib/orders';
 import { notifyOrderPlaced } from '../../lib/notify';
+import { groupForOrder, markGroupSent } from '../../lib/group';
 
 export const prerender = false;
 
@@ -34,6 +35,24 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
   }
   if ((notes?.length ?? 0) > 2000) return bad('That note is too long.');
 
+  /*
+   * A group order's contents come from the database, not from the browser
+   * sending it. The organiser's page cannot see what everyone else added any
+   * more recently than its last poll, and the whole point is that the shop
+   * receives one request holding all of it.
+   */
+  const groupCode = String(data.groupCode ?? '').trim();
+  const groupToken = String(data.groupToken ?? '').trim();
+  let group: Awaited<ReturnType<typeof groupForOrder>> = null;
+
+  if (groupCode && groupToken) {
+    group = await groupForOrder(groupCode, groupToken);
+    if (!group) {
+      return bad('That group basket has expired, or its order has already been sent.', 409);
+    }
+    if (!group.items.length) return bad('That group basket is empty.');
+  }
+
   const rawItems = Array.isArray(data.items) ? data.items : [];
   const items: RequestedItem[] = [];
   for (const raw of rawItems.slice(0, 100)) {
@@ -43,22 +62,36 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     if (!Number.isInteger(qty) || qty <= 0 || qty > 99) continue;
     items.push({ bookId, qty });
   }
-  if (!items.length) return bad('Your basket is empty.');
+  if (!group && !items.length) return bad('Your basket is empty.');
 
   // Merge duplicates so two entries for one book cannot slip past the check.
   const merged = new Map<number, number>();
-  for (const item of items) merged.set(item.bookId, (merged.get(item.bookId) ?? 0) + item.qty);
+  for (const item of group ? group.items : items) {
+    merged.set(item.bookId, (merged.get(item.bookId) ?? 0) + item.qty);
+  }
   const finalItems = [...merged].map(([bookId, qty]) => ({ bookId, qty }));
+
+  // Who wanted what, kept with the order: the shop packs one parcel either way,
+  // but the organiser has to hand the books out at the other end.
+  const finalNotes = group
+    ? [notes, `Group order collected by ${group.organiser}:`, group.breakdown]
+        .filter(Boolean)
+        .join('\n\n')
+        .slice(0, 4000)
+    : notes;
 
   try {
     const order = await createOrder({
-      name, email, phone, fulfilment, address, notes, items: finalItems,
+      name, email, phone, fulfilment, address, notes: finalNotes, items: finalItems,
     });
+
+    // Closes the group so nobody keeps adding to a basket already sent.
+    if (group) await markGroupSent(groupCode, order.ref);
 
     // Notifications must never cost the customer their order - the books are
     // already held and the confirmation page renders from the database.
     const origin = url.origin;
-    const notify = notifyOrderPlaced({ order, name, email, phone, fulfilment, address, notes, origin }).catch(
+    const notify = notifyOrderPlaced({ order, name, email, phone, fulfilment, address, notes: finalNotes, origin }).catch(
       (err) => console.error('order notification failed', order.ref, err),
     );
     // `locals.runtime.ctx` was removed in Astro v6; `cfContext` is the

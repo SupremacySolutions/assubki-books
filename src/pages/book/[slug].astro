@@ -242,6 +242,8 @@ const jsonLd = {
   <script is:inline set:html={JSON.stringify(jsonLd)} type="application/ld+json" />
 
   <script>
+    import { readGroup } from '../../scripts/group.ts';
+
     const addBtn = document.querySelector<HTMLButtonElement>('#add');
     const qtyInput = document.querySelector<HTMLInputElement>('#qty');
     const toBasket = document.querySelector<HTMLAnchorElement>('#tobasket');
@@ -272,26 +274,104 @@ const jsonLd = {
       }
     };
 
+    /**
+     * Adding while part of a group puts the books in the group's basket, not
+     * this browser's own - otherwise someone who joined a class order would add
+     * to a private list nobody else can see, and find out at the end that none
+     * of it was in the request.
+     */
+    const addToGroup = async (
+      member: NonNullable<ReturnType<typeof readGroup>>,
+      bookId: number,
+      wanted: number,
+      available: number,
+    ) => {
+      const res = await fetch(`/api/group?g=${encodeURIComponent(member.code)}&k=${encodeURIComponent(member.token)}`);
+      const data = await res.json();
+      if (!res.ok || !data.ok) return null;
+
+      const lines = data.group.lines as { bookId: number; qty: number; addedBy: string }[];
+      const held = lines.find((l) => l.bookId === bookId && l.addedBy === member.name)?.qty ?? 0;
+
+      // The shelf is shared with everyone else in the group, not just with the
+      // rest of the shop: two people each taking the last three copies is five
+      // copies, and the order would be refused at the end for a reason neither
+      // of them could see.
+      const others = lines
+        .filter((l) => l.bookId === bookId && l.addedBy !== member.name)
+        .reduce((n, l) => n + l.qty, 0);
+      const ceiling = Math.max(0, available - others);
+      const total = Math.min(held + wanted, ceiling);
+
+      if (total > held) {
+        const put = await fetch('/api/group/line', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: member.code, token: member.token, name: member.name, bookId, qty: total }),
+        });
+        if (!put.ok) return null;
+      }
+
+      // Their own contribution, so the header badge means something while they
+      // are filling someone else's basket.
+      const mine = lines
+        .filter((l) => l.addedBy === member.name && l.bookId !== bookId)
+        .reduce((n, l) => n + l.qty, 0);
+      window.asbBasket.setBadge(mine + total);
+
+      return {
+        added: total - held,
+        requested: wanted,
+        total,
+        capped: total - held < wanted,
+        ceiling,
+      };
+    };
+
     addBtn?.addEventListener('click', async () => {
       const id = addBtn.dataset.bookId;
       if (!id) return;
       const wanted = Math.max(1, Number(qtyInput?.value ?? '1') || 1);
+      const member = readGroup();
 
       addBtn.disabled = true;
       const available = await availableNow(id, Number(addBtn.dataset.max ?? '1'));
-      const result = window.asbBasket.addChecked(id, wanted, available);
+      const result = member
+        ? await addToGroup(member, Number(id), wanted, available)
+        : window.asbBasket.addChecked(id, wanted, available);
+
+      if (!result) {
+        say('That group basket is no longer taking books. Open your basket to check.');
+        addBtn.disabled = false;
+        return;
+      }
 
       // The same words the basket page uses, so one event is not described two
       // different ways depending on where the customer happened to be.
+      // How many this reader could still take: in a group that is what is left
+      // after everyone else's lines, which is why the group wording talks about
+      // the group rather than about them.
+      const left = 'ceiling' in result ? (result.ceiling as number) : available;
+
       if (available <= 0) say('Out of stock - nothing added');
-      else if (result.added === 0) say(`All ${available} we have are already in your basket`);
-      else if (result.capped) say(`Only ${available} available - quantity reduced`);
-      else say('');
+      else if (result.added === 0) {
+        say(
+          member
+            ? `The group has already asked for all ${available} we have`
+            : `All ${available} we have are already in your basket`,
+        );
+      } else if (result.capped) {
+        say(
+          member
+            ? `Only ${left} left after the rest of the group - quantity reduced`
+            : `Only ${available} available - quantity reduced`,
+        );
+      } else say('');
 
       // Confirm in place. A redirect to the basket costs the customer their
       // position in a 226-title catalogue.
       if (result.added > 0) {
-        addBtn.textContent = 'Added';
+        addBtn.textContent = member ? 'Added to the group' : 'Added';
         toBasket?.classList.remove('hidden');
       }
       setTimeout(() => {

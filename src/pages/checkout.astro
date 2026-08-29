@@ -97,6 +97,7 @@ import { HOLD_HOURS } from '../lib/orders';
 
   <script>
     import { read, clear, setQty } from '../scripts/basket.ts';
+    import { readGroup, leaveGroup } from '../scripts/group.ts';
 
     const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
     const form = document.querySelector<HTMLFormElement>('#form')!;
@@ -109,7 +110,51 @@ import { HOLD_HOURS } from '../lib/orders';
       errorBox.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
 
+    /*
+     * A group order checks out from the shared basket, not this browser's own.
+     * Only the organiser reaches here - the basket page hides the button for
+     * everyone else - and the contents are re-read on the server when the
+     * request is sent, so this summary is a courtesy rather than the source.
+     */
+    async function loadGroupSummary(member: NonNullable<ReturnType<typeof readGroup>>) {
+      const res = await fetch(
+        `/api/group?g=${encodeURIComponent(member.code)}&k=${encodeURIComponent(member.token)}`,
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok) return false;
+
+      const group = data.group as {
+        lines: { title: string; qty: number; pricePence: number; addedBy: string }[];
+        subtotalPence: number;
+        people: string[];
+      };
+      if (!group.lines.length) return false;
+
+      const list = document.querySelector<HTMLUListElement>('#summary')!;
+      list.innerHTML = '';
+      for (const line of group.lines) {
+        const li = document.createElement('li');
+        li.className = 'flex justify-between gap-3';
+        li.innerHTML =
+          `<span class="min-w-0">${line.title}${line.qty > 1 ? ` <span class="text-[var(--color-ink-faint)]">× ${line.qty}</span>` : ''}` +
+          ` <span class="text-[var(--color-ink-faint)]">· ${line.addedBy}</span></span>` +
+          `<span class="shrink-0 tabular-nums">${gbp(line.pricePence * line.qty)}</span>`;
+        list.appendChild(li);
+      }
+
+      document.querySelector<HTMLElement>('#subtotal')!.textContent = gbp(group.subtotalPence);
+      form.hidden = false;
+      return true;
+    }
+
     async function loadSummary() {
+      const member = readGroup();
+      if (member?.organiser) {
+        if (await loadGroupSummary(member)) return true;
+        // Expired or emptied while they were filling the form in.
+        document.querySelector<HTMLElement>('#empty')!.hidden = true;
+      }
+
       const basket = read();
       const ids = Object.keys(basket);
       if (!ids.length) {
@@ -188,6 +233,7 @@ import { HOLD_HOURS } from '../lib/orders';
 
       const basket = read();
       const items = Object.entries(basket).map(([bookId, qty]) => ({ bookId: Number(bookId), qty }));
+      const group = readGroup();
       const data = new FormData(form);
 
       try {
@@ -202,6 +248,10 @@ import { HOLD_HOURS } from '../lib/orders';
             address: data.get('address'),
             notes: data.get('notes'),
             items,
+            // The shop reads the group's contents from its own copy; sending
+            // them from here would be sending one member's stale view of them.
+            groupCode: group?.organiser ? group.code : undefined,
+            groupToken: group?.organiser ? group.token : undefined,
           }),
         });
         const result = (await res.json()) as {
@@ -236,7 +286,10 @@ import { HOLD_HOURS } from '../lib/orders';
           return;
         }
 
-        clear();
+        // The group is closed at the other end; forgetting it here stops the
+        // organiser's next basket opening as a group already sent.
+        if (group?.organiser) leaveGroup();
+        else clear();
         window.location.href = `/order?ref=${result.ref}&t=${result.token}`;
       } catch {
         showError('We could not reach the shop. Check your connection and try again.');

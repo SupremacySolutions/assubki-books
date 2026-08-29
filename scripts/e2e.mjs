@@ -496,6 +496,94 @@ async function notifications() {
 }
 
 // ---------------------------------------------------------------------------
+async function groupOrders() {
+  const t = suite('16. Group orders');
+
+  const post = async (path, body) => {
+    const res = await fetch(`${SITE}${path}`, {
+      method: 'POST',
+      headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  };
+  const readGroup = async (g, k) =>
+    (await (await get(`/api/group?g=${encodeURIComponent(g)}&k=${encodeURIComponent(k)}`)).json());
+
+  // --- a basket two people fill -------------------------------------------
+  const bookA = await makeBook();
+  const bookB = await makeBook();
+
+  const made = await post('/api/group', { name: 'Yusuf' });
+  t.ok(made.status === 200 && made.body.code?.startsWith('GRP-'), 'a group basket can be started');
+  const { code, token } = made.body;
+  created.groups.push(code);
+
+  t.ok((await post('/api/group', { name: 'A' })).status === 400,
+    'and not without a name to put beside the books');
+
+  await post('/api/group/line', { code, token, name: 'Yusuf', bookId: bookA.id, qty: 2 });
+  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookB.id, qty: 1 });
+
+  const shared = await readGroup(code, token);
+  t.ok(shared.group.lines.length === 2, 'both people see both lines');
+  t.ok(shared.group.people.includes('Yusuf') && shared.group.people.includes('Aisha'),
+    'and each line says whose it is');
+  t.ok(shared.group.subtotalPence === 3 * 1250, 'the subtotal covers everyone');
+
+  // Two people wanting the same title is six copies and two names, not a
+  // disagreement about the number three.
+  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookA.id, qty: 1 });
+  const shared2 = await readGroup(code, token);
+  t.ok(shared2.group.lines.filter((l) => l.bookId === bookA.id).length === 2,
+    'the same title wanted by two people stays two lines');
+
+  // Their own line, not everyone's: zero removes only theirs.
+  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookA.id, qty: 0 });
+  const shared3 = await readGroup(code, token);
+  t.ok(shared3.group.lines.filter((l) => l.bookId === bookA.id).length === 1,
+    'and removing one person\'s line leaves the other alone');
+
+  // --- the link is the permission ------------------------------------------
+  const guessed = await (await get(`/api/group?g=${code}&k=${'0'.repeat(32)}`)).json();
+  t.ok(guessed.ok === false, 'a guessed token opens nothing');
+
+  // --- one basket becomes one order ----------------------------------------
+  const sent = await json('/api/orders', {
+    name: 'Yusuf Patel',
+    email: CUSTOMER_EMAIL,
+    fulfilment: 'delivery',
+    address: '12 Evington Road\nLeicester\nLE2 1HN',
+    items: [],
+    groupCode: code,
+    groupToken: token,
+  });
+  t.ok(sent.status === 200 && sent.body.ref, 'the organiser sends it as one order');
+  if (sent.body.ref) created.orders.push(sent.body.ref);
+
+  const lines = await db(
+    `SELECT oi.qty, oi.title_snapshot AS title FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id WHERE o.ref = '${sent.body.ref}'`,
+  );
+  const totalCopies = lines.reduce((n, l) => n + l.qty, 0);
+  t.ok(lines.length === 2 && totalCopies === 3, 'holding everything the group asked for');
+
+  const order = await one(`SELECT notes FROM orders WHERE ref='${sent.body.ref}'`);
+  t.ok((order.notes ?? '').includes('Yusuf') && (order.notes ?? '').includes('Aisha'),
+    'with a breakdown of whose books are whose');
+
+  // --- and closes behind itself --------------------------------------------
+  const afterSend = await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookB.id, qty: 5 });
+  t.ok(afterSend.status === 409, 'nobody can add to a group order already sent');
+
+  const again = await json('/api/orders', {
+    name: 'Yusuf Patel', email: CUSTOMER_EMAIL, fulfilment: 'collection',
+    items: [], groupCode: code, groupToken: token,
+  });
+  t.ok(again.status === 409, 'and it cannot be sent twice');
+}
+
+// ---------------------------------------------------------------------------
 async function ownerSettings() {
   const t = suite('15. Settings, drafts and contact');
 
@@ -933,7 +1021,8 @@ const SUITES = [
   ['auth', adminAuth, false], ['listings', listings, true],
   ['shelves', shelves, true], ['orders', portalOrders, true],
   ['notifications', notifications, true], ['lifecycle', lifecycle, true],
-  ['bot', botAndOptIn, true], ['settings', ownerSettings, true],
+  ['bot', botAndOptIn, true], ['group', groupOrders, true],
+  ['settings', ownerSettings, true],
   ['integrity', integrity, false],
 ];
 

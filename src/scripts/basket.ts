@@ -85,8 +85,19 @@ export function clear(): void {
   document.dispatchEvent(new CustomEvent('basket:change', { detail: {} }));
 }
 
+/**
+ * What the header badge shows when this browser is filling a group basket
+ * rather than its own. Null means "count my own basket", the ordinary case.
+ */
+let badgeOverride: number | null = null;
+
+export function setBadge(n: number | null): void {
+  badgeOverride = n;
+  paintCount();
+}
+
 function paintCount(): void {
-  const n = count();
+  const n = badgeOverride ?? count();
   for (const el of document.querySelectorAll<HTMLElement>('[data-basket-count]')) {
     el.textContent = String(n);
     el.hidden = n === 0;
@@ -105,8 +116,8 @@ declare global {
     asbBasket: {
       read: typeof read; add: typeof add; addChecked: typeof addChecked;
       setQty: typeof setQty; remove: typeof remove; clear: typeof clear;
-      count: typeof count;
+      count: typeof count; setBadge: typeof setBadge;
     };
   }
 }
-window.asbBasket = { read, add, addChecked, setQty, remove, clear, count };
+window.asbBasket = { read, add, addChecked, setQty, remove, clear, count, setBadge };

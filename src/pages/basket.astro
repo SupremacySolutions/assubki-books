@@ -20,6 +20,61 @@ import Rosette from '../components/Rosette.astro';
       <a href="/catalogue" class="btn btn-primary mt-6">Browse the catalogue</a>
     </div>
 
+    {/* Group orders: a madrasah or a class filling one basket between them, so
+        the shop receives one request for one address instead of a dozen
+        messages asking to be posted together. */}
+    <section id="grouppanel" hidden class="mt-6 mb-8 p-5 bg-white border border-[var(--color-rule)] rounded-[3px]">
+      <label class="flex items-start gap-2.5 cursor-pointer">
+        <input type="checkbox" id="groupon" class="w-4 h-4 mt-0.5 accent-[var(--color-navy)]" />
+        <span>
+          <span class="block text-[15px] font-medium">Group order</span>
+          <span class="block mt-0.5 text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">
+            Several people adding to one basket, sent as a single request to one address.
+          </span>
+        </span>
+      </label>
+
+      <div id="groupchoice" hidden class="mt-4 pt-4 border-t border-[var(--color-rule)]">
+        <label for="groupname" class="block text-[14px] font-medium mb-1.5">Your name</label>
+        <input id="groupname" maxlength="40" placeholder="e.g. Yusuf" class="field !w-56" />
+        <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+          Shown beside the books you add, so the organiser knows whose is whose.
+        </p>
+        <div class="mt-4 flex flex-wrap gap-3">
+          <button type="button" id="groupcreate" class="btn btn-primary">Create a group</button>
+          <button type="button" id="groupjoinopen" class="btn btn-ghost">Join with a link</button>
+        </div>
+
+        <div id="groupjoin" hidden class="mt-4">
+          <label for="grouplink" class="block text-[14px] font-medium mb-1.5">Paste the link</label>
+          <div class="flex gap-2">
+            <input id="grouplink" class="field flex-1 min-w-0" placeholder="https://…/basket?g=GRP-…" />
+            <button type="button" id="groupgo" class="btn btn-ghost !px-4 shrink-0" aria-label="Open that group basket">→</button>
+          </div>
+        </div>
+
+        <p id="grouperror" role="alert" hidden class="mt-3 text-[13.5px] text-[var(--color-outstock)]"></p>
+      </div>
+
+      <div id="groupactive" hidden class="mt-4 pt-4 border-t border-[var(--color-rule)]">
+        <p class="text-[14.5px]">
+          <span id="grouprole" class="font-medium"></span>
+          <span id="groupcode" class="text-[var(--color-ink-faint)] tabular-nums"></span>
+        </p>
+        <label for="groupshare" class="block mt-3 text-[14px] font-medium mb-1.5">Share this link</label>
+        <div class="flex gap-2">
+          <input id="groupshare" readonly class="field flex-1 min-w-0 text-[13.5px]" />
+          <button type="button" id="groupcopy" class="btn btn-ghost !px-4 shrink-0" aria-label="Copy the link">Copy</button>
+        </div>
+        <p class="mt-3 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+          Anyone with this link can add to the basket. It lasts a week.
+        </p>
+        <button type="button" id="groupleave" class="mt-3 text-[13.5px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] underline underline-offset-2">
+          Leave this group
+        </button>
+      </div>
+    </section>
+
     <div id="basket" hidden>
       <ul id="rows" class="divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)]"></ul>
 
@@ -27,7 +82,12 @@ import Rosette from '../components/Rosette.astro';
         <p class="text-[15px] text-[var(--color-ink-soft)]">
           Subtotal <span id="subtotal" class="price text-[22px] ml-2"></span>
         </p>
-        <a href="/checkout" class="btn btn-primary">Continue to request</a>
+        <a href="/checkout" id="tocheckout" class="btn btn-primary">Continue to request</a>
+        {/* One person owns the address and the conversation with the shop, so
+            only they can send it. */}
+        <p id="organiserwill" hidden class="text-[14px] text-[var(--color-ink-soft)] max-w-xs">
+          <span id="organisername"></span> will send this to the shop once everyone has added.
+        </p>
       </div>
 
       <p class="mt-4 text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed max-w-lg">
@@ -38,11 +98,169 @@ import Rosette from '../components/Rosette.astro';
   </div>
 
   <script>
-    import { read, setQty, remove } from '../scripts/basket.ts';
+    import { read, setQty, remove, setBadge, count } from '../scripts/basket.ts';
+    import { readGroup, joinGroup, leaveGroup, shareLink, parseShare } from '../scripts/group.ts';
 
     const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
+    const el = <T extends HTMLElement>(id: string) => document.querySelector<T>(id)!;
+
+    // ------------------------------------------------------------------
+    // The group basket
+    // ------------------------------------------------------------------
+
+    type GroupLine = {
+      bookId: number; slug: string; title: string; titleAr: string | null;
+      pricePence: number; available: number; imageKey: string | null;
+      qty: number; addedBy: string;
+    };
+    type GroupView = {
+      code: string; organiser: string; expiresAt: number; orderRef: string | null;
+      lines: GroupLine[]; subtotalPence: number; people: string[];
+    };
+
+    let member = readGroup();
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    const groupError = (words: string) => {
+      const box = el<HTMLParagraphElement>('#grouperror');
+      box.textContent = words;
+      box.hidden = !words;
+    };
+
+    function paintGroupPanel() {
+      el('#grouppanel').hidden = false;
+      const on = el<HTMLInputElement>('#groupon');
+      on.checked = Boolean(member);
+      el('#groupchoice').hidden = Boolean(member) || !on.checked;
+      el('#groupactive').hidden = !member;
+
+      if (member) {
+        el('#grouprole').textContent = member.organiser
+          ? 'You started this group.'
+          : `You are adding to ${member.name === '' ? 'a' : 'this'} group basket.`;
+        el('#groupcode').textContent = ` ${member.code}`;
+        el<HTMLInputElement>('#groupshare').value = shareLink(member);
+      }
+    }
+
+    async function fetchGroup(): Promise<GroupView | null> {
+      if (!member) return null;
+      try {
+        const res = await fetch(
+          `/api/group?g=${encodeURIComponent(member.code)}&k=${encodeURIComponent(member.token)}`,
+        );
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          // Expired or sent: stop pretending this is still a shared basket.
+          leaveGroup();
+          member = null;
+          groupError(data?.error ?? 'That group basket is no longer available.');
+          return null;
+        }
+        return data.group as GroupView;
+      } catch {
+        return null; // offline: leave the page exactly as it is
+      }
+    }
+
+    /** One person's line, editable only by them - everyone else's is read-only. */
+    function groupRow(line: GroupLine, mine: boolean, wantedByAll: number): string {
+      // Short against what the *group* asked for, not against this one line: two
+      // people each wanting the last two copies is a shortfall neither line
+      // shows on its own.
+      const overrun = wantedByAll > line.available;
+      return `
+        <li class="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-4 gap-y-3 py-4 items-start sm:flex sm:gap-4">
+          <a href="/book/${line.slug}" class="shrink-0 w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[3px] grid place-items-center overflow-hidden">
+            ${line.imageKey ? `<img src="/img/${line.imageKey}" alt="" class="max-h-full max-w-full object-contain p-1">` : ''}
+          </a>
+          <div class="flex-1 min-w-0">
+            <a href="/book/${line.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${line.title}</a>
+            <p class="price text-[15px] mt-1">${gbp(line.pricePence)}</p>
+            <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">Added by ${line.addedBy}${mine ? ' (you)' : ''}</p>
+            ${
+              line.available <= 0
+                ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Out of stock - it will not be included</p>`
+                : overrun
+                  ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Only ${line.available} available, and the group has asked for ${wantedByAll}</p>`
+                  : ''
+            }
+          </div>
+          <div class="col-start-2 flex items-center justify-between gap-3 sm:ml-auto sm:shrink-0">
+            ${
+              mine
+                ? `<label class="sr-only" for="g${line.bookId}">Quantity for ${line.title}</label>
+                   <input id="g${line.bookId}" type="number" min="0" max="${Math.max(line.available, 0)}" value="${line.qty}"
+                          class="field !w-16 !py-1.5 tabular-nums" data-group-id="${line.bookId}">`
+                : `<span class="text-[15px] tabular-nums text-[var(--color-ink-soft)]">×${line.qty}</span>`
+            }
+          </div>
+        </li>`;
+    }
+
+    async function setGroupQty(bookId: number, qty: number) {
+      if (!member) return;
+      const res = await fetch('/api/group/line', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: member.code, token: member.token, name: member.name, bookId, qty }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        groupError(data?.error ?? 'That did not save.');
+      }
+      await render();
+    }
+
+    async function renderGroup(): Promise<boolean> {
+      const view = await fetchGroup();
+      if (!view) return false;
+
+      const wantedByAll = new Map<number, number>();
+      for (const line of view.lines) {
+        wantedByAll.set(line.bookId, (wantedByAll.get(line.bookId) ?? 0) + line.qty);
+      }
+
+      const rows = el<HTMLUListElement>('#rows');
+      rows.innerHTML = view.lines.length
+        ? view.lines
+            .map((line) =>
+              groupRow(line, line.addedBy === member!.name, wantedByAll.get(line.bookId) ?? line.qty),
+            )
+            .join('')
+        : `<li class="py-8 text-center text-[14.5px] text-[var(--color-ink-faint)]">
+             Nothing in the group basket yet. Add books from the catalogue and they will appear here for everyone.
+           </li>`;
+
+      // The badge counts what this reader put in, not the whole group's pile.
+      setBadge(view.lines.filter((l) => l.addedBy === member!.name).reduce((n, l) => n + l.qty, 0));
+
+      el('#subtotal').textContent = gbp(view.subtotalPence);
+      el('#basket').hidden = false;
+      el('#empty').hidden = true;
+      el('#loading').hidden = true;
+
+      // Only the organiser can send it: they own the address and the
+      // conversation with the shop.
+      el('#tocheckout').hidden = !member!.organiser;
+      el('#organiserwill').hidden = member!.organiser;
+      el('#organisername').textContent = view.organiser;
+
+      for (const input of rows.querySelectorAll<HTMLInputElement>('input[data-group-id]')) {
+        input.addEventListener('change', () => {
+          setGroupQty(Number(input.dataset.groupId), Math.max(0, Number(input.value) || 0));
+        });
+      }
+      return true;
+    }
+
+    // ------------------------------------------------------------------
 
     async function render() {
+      paintGroupPanel();
+      if (member && (await renderGroup())) return;
+
+      setBadge(null); // back to counting this browser's own basket
       const basket = read();
       const ids = Object.keys(basket);
       const loading = document.querySelector<HTMLElement>('#loading')!;
@@ -131,6 +349,116 @@ import Rosette from '../components/Rosette.astro';
       }
     }
 
-    render();
+    // ------------------------------------------------------------------
+    // Wiring
+    // ------------------------------------------------------------------
+
+    el('#groupon').addEventListener('change', () => {
+      const on = el<HTMLInputElement>('#groupon').checked;
+      if (!on && member) {
+        leaveGroup();
+        member = null;
+      }
+      groupError('');
+      render();
+    });
+
+    el('#groupjoinopen').addEventListener('click', () => {
+      el('#groupjoin').hidden = !el('#groupjoin').hidden;
+    });
+
+    el('#groupcreate').addEventListener('click', async () => {
+      const name = el<HTMLInputElement>('#groupname').value.trim();
+      if (name.length < 2) return groupError('Add your name first, so the others know whose list it is.');
+
+      const res = await fetch('/api/group', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) return groupError(data?.error ?? 'Could not start a group just now.');
+
+      member = { code: data.code, token: data.token, name, organiser: true };
+      joinGroup(member);
+
+      // Whatever they had already chosen becomes their share of the group.
+      const existing = read();
+      for (const [id, qty] of Object.entries(existing)) {
+        await setGroupQty(Number(id), qty);
+      }
+      groupError('');
+      render();
+    });
+
+    const join = async (raw: string, name: string) => {
+      const parsed = parseShare(raw);
+      if (!parsed) return groupError('That does not look like a group link.');
+      if (name.length < 2) return groupError('Add your name first, so the others know whose books are whose.');
+
+      member = { ...parsed, name, organiser: false };
+      const view = await fetchGroup();
+      if (!view) return;
+
+      joinGroup(member);
+      groupError('');
+      render();
+    };
+
+    el('#groupgo').addEventListener('click', () => {
+      join(el<HTMLInputElement>('#grouplink').value, el<HTMLInputElement>('#groupname').value.trim());
+    });
+
+    el('#groupcopy').addEventListener('click', async () => {
+      const field = el<HTMLInputElement>('#groupshare');
+      try {
+        await navigator.clipboard.writeText(field.value);
+      } catch {
+        field.select(); // clipboard blocked: at least hand them the selection
+      }
+      const button = el('#groupcopy');
+      button.textContent = 'Copied';
+      setTimeout(() => (button.textContent = 'Copy'), 1600);
+    });
+
+    el('#groupleave').addEventListener('click', () => {
+      leaveGroup();
+      member = null;
+      render();
+    });
+
+    /*
+     * Someone else's addition only exists on the server, so the page has to ask.
+     * Modestly: five seconds while the tab is being looked at, nothing at all
+     * while it is not - a basket left open on a laptop overnight should not
+     * spend the night talking to the shop.
+     */
+    const startPolling = () => {
+      if (poll || !member) return;
+      poll = setInterval(() => {
+        if (document.visibilityState === 'visible' && member) render();
+      }, 5000);
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') render();
+    });
+
+    // A shared link puts you straight into the group, once you say who you are.
+    const params = new URLSearchParams(location.search);
+    const invitedCode = params.get('g');
+    const invitedToken = params.get('k');
+
+    (async () => {
+      await render();
+      if (invitedCode && invitedToken && (!member || member.code !== invitedCode)) {
+        el('#grouppanel').hidden = false;
+        el<HTMLInputElement>('#groupon').checked = true;
+        el('#groupchoice').hidden = false;
+        el('#groupjoin').hidden = false;
+        el<HTMLInputElement>('#grouplink').value = shareLink({ code: invitedCode, token: invitedToken });
+        groupError('Add your name, then press the arrow to join this basket.');
+      }
+      startPolling();
+    })();
   </script>
 </Base>

@@ -163,7 +163,7 @@ export async function json(path, body) {
 // tracked so it can be removed again, including on failure.
 // ---------------------------------------------------------------------------
 
-export const created = { books: [], orders: [], shelves: [] };
+export const created = { books: [], orders: [], shelves: [], groups: [] };
 
 export async function makeBook(overrides = {}) {
   const fields = {
@@ -212,6 +212,16 @@ export async function teardown() {
 
   for (const ref of created.orders) {
     await admin(`/api/admin/orders/${ref}/delete`).catch(() => {});
+  }
+
+  // Group baskets hold no stock, so they only have to stop existing - but they
+  // point at books, and a fixture cannot be deleted while a line still refers
+  // to it. Hence before the books, not after.
+  for (const code of created.groups) {
+    await db(
+      `DELETE FROM group_basket_items WHERE group_id IN (SELECT id FROM group_baskets WHERE code = '${code}');
+       DELETE FROM group_baskets WHERE code = '${code}';`,
+    ).catch(() => {});
   }
 
   for (const id of created.books) {
