@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getOrderByRef } from '../../../../../lib/admin-db';
 import { notifyStatusChange } from '../../../../../lib/notify';
-import { canTransition } from '../../../../../lib/order-status';
+import { canTransition, isPostageProvider } from '../../../../../lib/order-status';
 import { getSetting } from '../../../../../lib/settings';
 
 export const prerender = false;
@@ -18,7 +18,10 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   const form = await request.formData();
   const next = String(form.get('status') ?? '');
   const tracking = String(form.get('tracking') ?? '').trim().slice(0, 80) || null;
-  const provider = String(form.get('postage_provider') ?? '').trim().slice(0, 40) || null;
+  // Checked against the list that draws the picker, so a stored carrier always
+  // has a tracking link to go with it - or is deliberately "Other".
+  const submitted = String(form.get('postage_provider') ?? '').trim();
+  const provider = isPostageProvider(submitted) ? submitted : null;
   const service = String(form.get('postage_service') ?? '').trim().slice(0, 60) || null;
 
   // The permitted moves come from the same table that draws the buttons, so the

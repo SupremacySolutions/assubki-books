@@ -2,13 +2,24 @@ import type { APIRoute } from 'astro';
 import { createOrder, StockConflict, type RequestedItem } from '../../lib/orders';
 import { notifyOrderPlaced } from '../../lib/notify';
 import { groupForOrder, markGroupSent } from '../../lib/group';
+import { checkOrder, clean, type Field } from '../../lib/validate';
+import { formatAddress } from '../../lib/address';
 
 export const prerender = false;
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
 function bad(message: string, status = 400, extra: Record<string, unknown> = {}) {
   return Response.json({ ok: false, error: message, ...extra }, { status });
+}
+
+/**
+ * A refusal the page can put under the field it belongs to.
+ *
+ * One shared error box at the foot of a form makes the customer hunt for what
+ * they got wrong; naming the field lets the page mark it and put the cursor
+ * there.
+ */
+function badField(field: Field, message: string) {
+  return Response.json({ ok: false, error: message, field }, { status: 400 });
 }
 
 export const POST: APIRoute = async ({ request, url, locals }) => {
@@ -21,19 +32,29 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
 
   const data = body as Record<string, unknown>;
 
-  const name = String(data.name ?? '').trim();
-  const email = String(data.email ?? '').trim();
-  const phone = String(data.phone ?? '').trim() || null;
-  const fulfilment = data.fulfilment === 'collection' ? 'collection' : 'delivery';
-  const address = String(data.address ?? '').trim() || null;
-  const notes = String(data.notes ?? '').trim() || null;
+  const name = clean(data.name);
+  const email = clean(data.email);
+  const phone = clean(data.phone);
+  // Not coerced. An unrecognised value used to become a delivery silently,
+  // which is a stranger's books posted to nowhere rather than an error.
+  const fulfilment = clean(data.fulfilment);
+  const notes = clean(data.notes);
 
-  if (name.length < 2 || name.length > 120) return bad('Enter your name.');
-  if (!EMAIL_RE.test(email) || email.length > 254) return bad('Enter a valid email address.');
-  if (fulfilment === 'delivery' && (!address || address.length < 8)) {
-    return bad('Enter the address the books should be posted to.');
-  }
-  if ((notes?.length ?? 0) > 2000) return bad('That note is too long.');
+  const parts = {
+    line1: clean(data.line1),
+    line2: clean(data.line2),
+    city: clean(data.city),
+    region: clean(data.region),
+    postcode: clean(data.postcode),
+    country: clean(data.country),
+  };
+
+  // The same rules the page just applied - it is the server that decides.
+  const problems = checkOrder({ name, email, phone, fulfilment, notes, address: parts });
+  if (problems.length) return badField(problems[0].field, problems[0].message);
+
+  // The block every page and email already reads, written from the parts.
+  const address = fulfilment === 'delivery' ? formatAddress(parts) : null;
 
   /*
    * A group order's contents come from the database, not from the browser
@@ -88,7 +109,14 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
 
   try {
     const order = await createOrder({
-      name, email, phone, fulfilment, address, notes: finalNotes, items: finalItems,
+      name,
+      email,
+      phone: phone || null,
+      fulfilment: fulfilment as 'delivery' | 'collection',
+      address,
+      addressParts: fulfilment === 'delivery' ? parts : null,
+      notes: finalNotes,
+      items: finalItems,
     });
 
     // Closes the group so nobody keeps adding to a basket already sent.
@@ -97,7 +125,11 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     // Notifications must never cost the customer their order - the books are
     // already held and the confirmation page renders from the database.
     const origin = url.origin;
-    const notify = notifyOrderPlaced({ order, name, email, phone, fulfilment, address, notes: finalNotes, origin }).catch(
+    const notify = notifyOrderPlaced({
+      order, name, email, phone: phone || null,
+      fulfilment: fulfilment as 'delivery' | 'collection',
+      address, notes: finalNotes, origin,
+    }).catch(
       (err) => console.error('order notification failed', order.ref, err),
     );
     // `locals.runtime.ctx` was removed in Astro v6; `cfContext` is the

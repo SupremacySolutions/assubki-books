@@ -238,6 +238,16 @@
     border-radius: 2px;
     color: var(--color-ink);
   }
+  /* A message about one field, under that field. */
+  .field-error {
+    margin-top: 0.35rem;
+    font-size: 13px;
+    color: var(--color-outstock);
+  }
+  .field[aria-invalid='true'] {
+    border-color: var(--color-outstock);
+  }
+
   .field:focus { border-color: var(--color-navy); outline-offset: 0; }
 
   /* Prose for the imported book descriptions. Only the tags the sanitiser

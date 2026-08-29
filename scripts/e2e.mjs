@@ -64,6 +64,17 @@ async function publicCatalogue() {
   // ninety-second loop no one could skip.
   t.ok(/<a class="shelf-book" href="\/book\//.test(home),
     'the hero shelf covers link to their books');
+
+  /*
+   * A t.me link does nothing for someone without Telegram and the page cannot
+   * tell, so every route is offered at once behind one tap.
+   */
+  const contact = await html('/contact');
+  t.ok(contact.includes('data-contact-panel'), 'the contact page offers a way through, not just a link');
+  t.ok(contact.includes('data:image/png;base64'), 'including a QR code to scan from a phone');
+  t.ok(/Not on Telegram at all\?/.test(contact), 'and an email address for anyone who has none');
+  // The footer is on every page; a QR on all of them is weight nobody asked for.
+  t.ok(!home.includes('data:image/png;base64'), 'the footer offers the same without the QR');
   t.ok(!home.includes('shelf-strip relative overflow-hidden'),
     'and the strip is scrollable rather than clipped');
   t.ok((await get('/catalogue?stock=in')).status === 200, 'in-stock filter responds');
@@ -139,22 +150,56 @@ async function validation() {
   t.ok(basket.body.books.length === 1, 'basket resolves real ids and ignores nonsense');
 
   const book = await makeBook({ stock: '2' });
+  const phone = '07700 900321';
+  const uk = { line1: '12 Evington Road', city: 'Leicester', postcode: 'LE2 1HN', country: 'GB' };
+
+  /*
+   * Every rule the checkout applies, applied again here - the page checks first
+   * so the customer is not made to wait on a round trip, but a direct POST goes
+   * nowhere near the page.
+   */
   const cases = [
-    [{ name: '', email: CUSTOMER_EMAIL, fulfilment: 'collection' }, 'a missing name'],
-    [{ name: 'A B', email: 'not-an-email', fulfilment: 'collection' }, 'an invalid email'],
-    [{ name: 'A B', email: CUSTOMER_EMAIL, fulfilment: 'delivery' }, 'delivery without an address'],
+    [{ name: '', email: CUSTOMER_EMAIL, phone, fulfilment: 'collection' }, 'a missing name'],
+    [{ name: 'A B', email: 'not-an-email', phone, fulfilment: 'collection' }, 'an invalid email'],
+    [{ name: 'A B', email: CUSTOMER_EMAIL, fulfilment: 'collection' }, 'no phone number'],
+    [{ name: 'A B', email: CUSTOMER_EMAIL, phone: 'ring me', fulfilment: 'collection' }, 'a phone number that is not one'],
+    [{ name: 'A B', email: CUSTOMER_EMAIL, phone: '123', fulfilment: 'collection' }, 'too few digits to be a phone'],
+    // Coerced silently before: anything that was not 'collection' became a
+    // delivery, so a typo posted books to nowhere.
+    [{ name: 'A B', email: CUSTOMER_EMAIL, phone, fulfilment: 'banana' }, 'a fulfilment that is neither'],
+    [{ name: 'A B', email: CUSTOMER_EMAIL, phone, fulfilment: 'delivery' }, 'delivery without an address'],
+    [{ name: 'A B', email: CUSTOMER_EMAIL, phone, fulfilment: 'delivery', ...uk, country: '' }, 'delivery without a country'],
+    [{ name: 'A B', email: CUSTOMER_EMAIL, phone, fulfilment: 'delivery', ...uk, city: '' }, 'delivery without a town'],
+    [{ name: 'A B', email: CUSTOMER_EMAIL, phone, fulfilment: 'delivery', ...uk, postcode: '' }, 'a UK address with no postcode'],
+    [{ name: 'A B', email: CUSTOMER_EMAIL, phone, fulfilment: 'delivery', ...uk, postcode: 'NOPE' }, 'a postcode that is not one'],
   ];
   for (const [payload, label] of cases) {
     const r = await json('/api/orders', { ...payload, items: [{ bookId: book.id, qty: 1 }] });
     t.ok(r.status === 400, `refuses ${label}`);
+    t.ok(Boolean(r.body.field), `and says which field is wrong for ${label}`);
+  }
+
+  // Hong Kong has no postcodes. A required box with no possible answer is how
+  // an order from abroad ends.
+  const abroad = await json('/api/orders', {
+    name: 'A B', email: CUSTOMER_EMAIL, phone: '+852 9123 4567', fulfilment: 'delivery',
+    line1: '12 Nathan Road', city: 'Kowloon', country: 'HK',
+    items: [{ bookId: book.id, qty: 1 }],
+  });
+  t.ok(abroad.status === 200, 'accepts an address from a country with no postcodes');
+  if (abroad.body.ref) {
+    created.orders.push(abroad.body.ref);
+    const stored = await one(`SELECT address, address_country AS c FROM orders WHERE ref='${abroad.body.ref}'`);
+    t.ok(stored.c === 'HK' && stored.address.includes('Hong Kong'),
+      'and names the country on the block that goes on the parcel');
   }
   const empty = await json('/api/orders', {
-    name: 'A B', email: CUSTOMER_EMAIL, fulfilment: 'collection', items: [],
+    name: 'A B', email: CUSTOMER_EMAIL, phone, fulfilment: 'collection', items: [],
   });
   t.ok(empty.status === 400, 'refuses an empty basket');
 
   const tooMany = await json('/api/orders', {
-    name: 'A B', email: CUSTOMER_EMAIL, fulfilment: 'collection',
+    name: 'A B', email: CUSTOMER_EMAIL, phone, fulfilment: 'collection',
     items: [{ bookId: book.id, qty: 99 }],
   });
   t.ok(tooMany.status === 409, 'refuses more copies than exist');
@@ -176,7 +221,7 @@ async function stockAndHolds() {
   const racers = await Promise.all(
     [1, 2, 3, 4].map(() =>
       json('/api/orders', {
-        name: 'Racer', email: CUSTOMER_EMAIL, fulfilment: 'collection',
+        name: 'Racer', email: CUSTOMER_EMAIL, phone: '07700 900321', fulfilment: 'collection',
         items: [{ bookId: book.id, qty: 1 }],
       }),
     ),
@@ -566,7 +611,7 @@ async function groupOrders() {
    * owns the address the parcel goes to.
    */
   const asImposter = await json('/api/orders', {
-    name: 'Aisha Patel', email: CUSTOMER_EMAIL, fulfilment: 'collection',
+    name: 'Aisha Patel', email: CUSTOMER_EMAIL, phone: '07700 900321', fulfilment: 'collection',
     items: [], groupCode: code, groupToken: token, groupOwnerToken: token,
   });
   t.ok(asImposter.status === 409, 'somebody holding only the share link cannot send the order');
@@ -575,8 +620,12 @@ async function groupOrders() {
   const sent = await json('/api/orders', {
     name: 'Yusuf Patel',
     email: CUSTOMER_EMAIL,
+    phone: '07700 900321',
     fulfilment: 'delivery',
-    address: '12 Evington Road\nLeicester\nLE2 1HN',
+    line1: '12 Evington Road',
+    city: 'Leicester',
+    postcode: 'LE2 1HN',
+    country: 'GB',
     items: [],
     groupCode: code,
     groupOwnerToken: ownerToken,
@@ -600,7 +649,7 @@ async function groupOrders() {
   t.ok(afterSend.status === 409, 'nobody can add to a group order already sent');
 
   const again = await json('/api/orders', {
-    name: 'Yusuf Patel', email: CUSTOMER_EMAIL, fulfilment: 'collection',
+    name: 'Yusuf Patel', email: CUSTOMER_EMAIL, phone: '07700 900321', fulfilment: 'collection',
     items: [], groupCode: code, groupOwnerToken: ownerToken,
   });
   t.ok(again.status === 409, 'and it cannot be sent twice');
@@ -918,6 +967,27 @@ async function lifecycle() {
   const dPage = await html(`/order?ref=${d.ref}&t=${d.token}`);
   t.ok(dPage.includes('H00123456789'), 'delivery: the tracking number reaches the customer');
   t.ok(dPage.includes('evri.com'), 'delivery: and links to the right carrier, not Royal Mail');
+
+  // DHL, for the orders going abroad.
+  const dhlBook = await makeBook();
+  const dhl = await placeOrder(dhlBook.id, 'delivery');
+  await admin(`/api/admin/orders/${dhl.ref}/confirm`, { postage: '12.50', payment_message: 'x' });
+  await admin(`/api/admin/orders/${dhl.ref}/status`, {
+    status: 'dispatched', tracking: 'JD0140000012345678', postage_provider: 'DHL',
+  });
+  const dhlPage = await html(`/order?ref=${dhl.ref}&t=${dhl.token}`);
+  t.ok(dhlPage.includes('dhl.com'), 'delivery: DHL is trackable, not just a name');
+
+  // The picker and the tracking table have to stay in step, so anything not on
+  // the list is refused rather than stored as an untrackable string.
+  const madeUp = await makeBook();
+  const bogus = await placeOrder(madeUp.id, 'delivery');
+  await admin(`/api/admin/orders/${bogus.ref}/confirm`, { postage: '3.95', payment_message: 'x' });
+  await admin(`/api/admin/orders/${bogus.ref}/status`, {
+    status: 'dispatched', tracking: 'X1', postage_provider: 'Pigeon Post',
+  });
+  const stored = await one(`SELECT postage_provider AS p FROM orders WHERE ref='${bogus.ref}'`);
+  t.ok(stored.p === null, 'a carrier that is not on the list is not stored');
   t.ok(!dPage.includes('Total to pay'), 'delivery: a paid order stops asking to be paid');
 
   const dDone = await admin(`/api/admin/orders/${d.ref}/status`, { status: 'completed' });

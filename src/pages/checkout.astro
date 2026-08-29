@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import { HOLD_HOURS } from '../lib/orders';
+import { COUNTRIES } from '../lib/address';
 ---
 
 <Base title="Send your request" noindex>
@@ -17,26 +18,47 @@ import { HOLD_HOURS } from '../lib/orders';
       <a href="/catalogue" class="btn btn-primary mt-5">Browse the catalogue</a>
     </div>
 
-    <form id="form" hidden class="mt-8 grid gap-8 md:grid-cols-[1fr_280px] md:gap-10 items-start">
+    {/* novalidate, but the `required` attributes stay: screen readers still
+        announce which fields are needed, while the browser's own bubbles get
+        out of the way. Otherwise the customer meets two different kinds of
+        error message - a native popup on the name, an inline note on the
+        postcode - depending on which field they got wrong. */}
+    <form id="form" novalidate hidden class="mt-8 grid gap-8 md:grid-cols-[1fr_280px] md:gap-10 items-start">
       <div class="grid gap-5">
         <div>
           <label for="name" class="block text-[14.5px] font-medium mb-1.5">Your name</label>
-          <input id="name" name="name" required autocomplete="name" maxlength="120" class="field" />
+          <input id="name" name="name" required autocomplete="name" maxlength="120" class="field"
+            aria-describedby="name-error" />
+          <p id="name-error" data-error-for="name" hidden class="field-error"></p>
         </div>
 
         <div>
           <label for="email" class="block text-[14.5px] font-medium mb-1.5">Email</label>
-          <input id="email" name="email" type="email" required autocomplete="email" maxlength="254" class="field" />
+          <input id="email" name="email" type="email" required autocomplete="email" maxlength="254"
+            class="field" aria-describedby="email-error" />
           <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
             Your confirmation and payment details come here.
           </p>
+          <p id="email-error" data-error-for="email" hidden class="field-error"></p>
         </div>
 
         <div>
-          <label for="phone" class="block text-[14.5px] font-medium mb-1.5">
-            Phone <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
-          </label>
-          <input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="40" class="field" />
+          <label for="phone" class="block text-[14.5px] font-medium mb-1.5">Phone</label>
+          <input
+            id="phone"
+            name="phone"
+            type="tel"
+            inputmode="tel"
+            required
+            autocomplete="tel"
+            maxlength="40"
+            class="field"
+            aria-describedby="phone-error"
+          />
+          <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+            In case we need to reach you about the books or a collection time.
+          </p>
+          <p id="phone-error" data-error-for="phone" hidden class="field-error"></p>
         </div>
 
         <fieldset>
@@ -53,9 +75,61 @@ import { HOLD_HOURS } from '../lib/orders';
           </div>
         </fieldset>
 
-        <div id="addressWrap">
-          <label for="address" class="block text-[14.5px] font-medium mb-1.5">Delivery address</label>
-          <textarea id="address" name="address" rows="4" autocomplete="street-address" maxlength="500" class="field"></textarea>
+        {/* The parts, not a paragraph: a courier's label needs fields, and a
+            form can only say which bit is missing if it asked for it. Country
+            first, because it decides what the rest are called and whether a
+            postcode exists at all. */}
+        <div id="addressWrap" class="grid gap-4">
+          <p class="text-[14.5px] font-medium">Delivery address</p>
+
+          <div>
+            <label for="country" class="block text-[14px] mb-1.5">Country</label>
+            <select id="country" name="country" class="field" autocomplete="country"
+              aria-describedby="country-error">
+              {COUNTRIES.map((c) => (
+                <option value={c.code} selected={c.code === 'GB'}>{c.name}</option>
+              ))}
+            </select>
+            <p id="country-error" data-error-for="country" hidden class="field-error"></p>
+          </div>
+
+          <div>
+            <label for="line1" class="block text-[14px] mb-1.5">Street address</label>
+            <input id="line1" name="line1" maxlength="120" autocomplete="address-line1"
+              class="field" aria-describedby="line1-error" />
+            <p id="line1-error" data-error-for="line1" hidden class="field-error"></p>
+          </div>
+
+          <div>
+            <label for="line2" class="block text-[14px] mb-1.5">
+              Flat, building or company <span class="text-[var(--color-ink-faint)]">(optional)</span>
+            </label>
+            <input id="line2" name="line2" maxlength="120" autocomplete="address-line2" class="field" />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="city" class="block text-[14px] mb-1.5" data-label="city">Town or city</label>
+              <input id="city" name="city" maxlength="80" autocomplete="address-level2"
+                class="field" aria-describedby="city-error" />
+              <p id="city-error" data-error-for="city" hidden class="field-error"></p>
+            </div>
+            <div>
+              <label for="region" class="block text-[14px] mb-1.5" data-label="region">
+                County <span class="text-[var(--color-ink-faint)]">(optional)</span>
+              </label>
+              <input id="region" name="region" maxlength="80" autocomplete="address-level1"
+                class="field" aria-describedby="region-error" />
+              <p id="region-error" data-error-for="region" hidden class="field-error"></p>
+            </div>
+          </div>
+
+          <div id="postcodeWrap" class="max-w-[12rem]">
+            <label for="postcode" class="block text-[14px] mb-1.5" data-label="postcode">Postcode</label>
+            <input id="postcode" name="postcode" maxlength="24" autocomplete="postal-code"
+              class="field" aria-describedby="postcode-error" />
+            <p id="postcode-error" data-error-for="postcode" hidden class="field-error"></p>
+          </div>
         </div>
 
         <div>
@@ -98,11 +172,101 @@ import { HOLD_HOURS } from '../lib/orders';
   <script>
     import { read, clear, setQty } from '../scripts/basket.ts';
     import { readGroup, leaveGroup } from '../scripts/group.ts';
+    // The same rules the server applies, so the two cannot drift apart.
+    import { checkOrder, type Field } from '../lib/validate.ts';
+    import { addressLabels, postcodeRequired } from '../lib/address.ts';
 
     const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
     const form = document.querySelector<HTMLFormElement>('#form')!;
     const errorBox = document.querySelector<HTMLElement>('#error')!;
     const submit = document.querySelector<HTMLButtonElement>('#submit')!;
+
+    // ------------------------------------------------------------------
+    // Field-level errors
+    // ------------------------------------------------------------------
+
+    const fieldEl = (name: string) =>
+      document.querySelector<HTMLInputElement | HTMLSelectElement>(`#${name}`);
+    const errorEl = (name: string) =>
+      document.querySelector<HTMLElement>(`[data-error-for="${name}"]`);
+
+    function markField(name: string, message: string | null) {
+      const input = fieldEl(name);
+      const slot = errorEl(name);
+      if (slot) {
+        slot.textContent = message ?? '';
+        slot.hidden = !message;
+      }
+      if (input) {
+        if (message) input.setAttribute('aria-invalid', 'true');
+        else input.removeAttribute('aria-invalid');
+      }
+    }
+
+    const FIELDS = ['name', 'email', 'phone', 'line1', 'city', 'region', 'postcode', 'country'];
+    const clearFields = () => FIELDS.forEach((f) => markField(f, null));
+
+    /** Read the form as the API will receive it. */
+    function currentValues() {
+      const data = new FormData(form);
+      const value = (k: string) => String(data.get(k) ?? '').trim();
+      return {
+        name: value('name'),
+        email: value('email'),
+        phone: value('phone'),
+        fulfilment: value('fulfilment'),
+        notes: value('notes'),
+        address: {
+          line1: value('line1'),
+          line2: value('line2'),
+          city: value('city'),
+          region: value('region'),
+          postcode: value('postcode'),
+          country: value('country'),
+        },
+      };
+    }
+
+    /**
+     * Mark everything wrong at once and put the cursor in the first.
+     *
+     * Being told about one missing field at a time, submit after submit, is how
+     * a checkout gets abandoned.
+     */
+    function showProblems(problems: { field: Field; message: string }[]): boolean {
+      clearFields();
+      for (const p of problems) markField(p.field, p.message);
+      const first = problems[0] && fieldEl(problems[0].field);
+      if (first) {
+        first.focus();
+        first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+      return problems.length === 0;
+    }
+
+    /**
+     * What the fields are called where they live, and whether a postcode
+     * exists there at all - Hong Kong and the Emirates have none, and a
+     * required box with no possible answer ends the order.
+     */
+    function paintCountry() {
+      const country = String(new FormData(form).get('country') ?? 'GB');
+      const labels = addressLabels(country);
+      const optional = ' <span class="text-[var(--color-ink-faint)]">(optional)</span>';
+
+      const set = (name: keyof typeof labels, extra = '') => {
+        const label = document.querySelector<HTMLElement>(`[data-label="${name}"]`);
+        if (label) label.innerHTML = labels[name] + extra;
+      };
+      set('city');
+      set('region', optional);
+      set('postcode');
+
+      const wrap = document.querySelector<HTMLElement>('#postcodeWrap');
+      const needed = postcodeRequired(country);
+      if (wrap) wrap.hidden = !needed;
+      if (!needed) markField('postcode', null);
+    }
 
     function showError(message: string) {
       errorBox.textContent = message;
@@ -196,18 +360,31 @@ import { HOLD_HOURS } from '../lib/orders';
       return true;
     }
 
-    // The address field only applies to delivery, so it is removed rather than
-    // greyed out when collecting.
+    // The address only applies to delivery, so it is removed rather than greyed
+    // out when collecting - and its errors go with it, or a hidden field would
+    // be blocking a collection order for a postcode nobody can see.
     const addressWrap = document.querySelector<HTMLElement>('#addressWrap')!;
-    const addressField = document.querySelector<HTMLTextAreaElement>('#address')!;
     for (const radio of form.querySelectorAll<HTMLInputElement>('input[name="fulfilment"]')) {
       radio.addEventListener('change', () => {
-        const delivery = form.querySelector<HTMLInputElement>('input[name="fulfilment"]:checked')?.value === 'delivery';
+        const delivery =
+          form.querySelector<HTMLInputElement>('input[name="fulfilment"]:checked')?.value === 'delivery';
         addressWrap.hidden = !delivery;
-        addressField.required = delivery;
+        if (!delivery) ['line1', 'city', 'region', 'postcode', 'country'].forEach((f) => markField(f, null));
       });
     }
-    addressField.required = true;
+
+    document.querySelector('#country')?.addEventListener('change', paintCountry);
+    paintCountry();
+
+    // Checked as they leave a field, not as they type it: telling someone their
+    // email is wrong while they are still typing it is nagging, not helping.
+    for (const name of FIELDS) {
+      fieldEl(name)?.addEventListener('blur', () => {
+        const values = currentValues();
+        const problems = checkOrder(values).filter((p) => p.field === name);
+        markField(name, problems[0]?.message ?? null);
+      });
+    }
 
     // The postage note is only true if something is being posted.
     const postageNote = document.querySelector<HTMLElement>('#postageNote');
@@ -228,6 +405,12 @@ import { HOLD_HOURS } from '../lib/orders';
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       errorBox.hidden = true;
+
+      // The page checks first so the customer is not made to wait on a round
+      // trip to be told their postcode is missing. The server checks again,
+      // and it is the one that decides.
+      if (!showProblems(checkOrder(currentValues()))) return;
+
       submit.disabled = true;
       submit.textContent = 'Sending…';
 
@@ -245,7 +428,12 @@ import { HOLD_HOURS } from '../lib/orders';
             email: data.get('email'),
             phone: data.get('phone'),
             fulfilment: data.get('fulfilment'),
-            address: data.get('address'),
+            line1: data.get('line1'),
+            line2: data.get('line2'),
+            city: data.get('city'),
+            region: data.get('region'),
+            postcode: data.get('postcode'),
+            country: data.get('country'),
             notes: data.get('notes'),
             items,
             // The shop reads the group's contents from its own copy; sending
@@ -255,12 +443,21 @@ import { HOLD_HOURS } from '../lib/orders';
           }),
         });
         const result = (await res.json()) as {
-          ok: boolean; ref?: string; token?: string; error?: string;
+          ok: boolean; ref?: string; token?: string; error?: string; field?: Field;
           problems?: { bookId: number; title?: string; wanted?: number; available: number }[];
         };
 
         if (!res.ok || !result.ok) {
           let message = result.error ?? 'Something went wrong. Please try again.';
+
+          // A refusal that names a field belongs under that field, not in the
+          // box at the bottom of the form.
+          if (result.field && result.error) {
+            showProblems([{ field: result.field, message: result.error }]);
+            submit.disabled = false;
+            submit.textContent = 'Send request';
+            return;
+          }
 
           if (res.status === 409 && result.problems) {
             /*

@@ -191,7 +191,9 @@ export async function placeOrder(bookId, fulfilment = 'delivery', extra = {}) {
     email: CUSTOMER_EMAIL,
     phone: '07700 900321',
     fulfilment,
-    ...(fulfilment === 'delivery' ? { address: '12 Evington Road\nLeicester\nLE2 1HN' } : {}),
+    ...(fulfilment === 'delivery'
+      ? { line1: '12 Evington Road', city: 'Leicester', postcode: 'LE2 1HN', country: 'GB' }
+      : {}),
     items: [{ bookId, qty: 1 }],
     ...extra,
   });

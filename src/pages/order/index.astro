@@ -11,21 +11,12 @@ import Base from '../../layouts/Base.astro';
 import Rosette from '../../components/Rosette.astro';
 import OrderJourney from '../../components/OrderJourney.astro';
 import { getOrder } from '../../lib/orders';
-import { optInLink, contactHandle, contactLink } from '../../lib/telegram';
-import { ownerAddress } from '../../lib/email';
-import { price, SITE } from '../../lib/format';
+import { optInLink } from '../../lib/telegram';
+import MessageUs from '../../components/MessageUs.astro';
+import { price } from '../../lib/format';
 import { statusLabel, isSettled, moneyReceived } from '../../lib/order-status';
 import { getSetting } from '../../lib/settings';
 import QRCode from 'qrcode';
-
-// Who to message, from the portal rather than the channel constant - and the
-// handle and email in plain sight beside it, because a t.me link does nothing
-// at all for someone without the app.
-const [contactHandleText, contactTelegramLink] = await Promise.all([
-  contactHandle(),
-  contactLink(),
-]);
-const shopEmail = ownerAddress();
 
 const params = Astro.url.searchParams;
 const ref = params.get('ref')?.trim() ?? '';
@@ -273,20 +264,10 @@ if (offerTelegram && telegramLink) {
             Keep this page - it updates as we work through your request. Quote{' '}
             <strong class="text-[var(--color-ink)]">{order.ref}</strong> if you get in touch.
           </p>
-          <div class="mt-4 flex flex-wrap gap-3">
-            <a href={contactTelegramLink ?? SITE.telegram} rel="noopener" class="btn btn-ghost">
-              Message us on Telegram
-            </a>
-            <a href={`mailto:${shopEmail}?subject=Order ${order.ref}`} class="btn btn-ghost">
-              Email us
-            </a>
+          <div class="mt-4 flex flex-wrap items-start gap-3">
+            <MessageUs subject={`Order ${order.ref}`} />
             <a href="/catalogue" class="btn btn-ghost">Keep browsing</a>
           </div>
-          <p class="mt-3 text-[13px] text-[var(--color-ink-faint)]">
-            {contactHandleText && <span class="select-all">{contactHandleText}</span>}
-            {contactHandleText && ' · '}
-            <span class="select-all">{shopEmail}</span>
-          </p>
         </div>
       </div>
     ) : (
@@ -367,16 +348,8 @@ if (offerTelegram && telegramLink) {
         </form>
 
         <p class="mt-8 pt-6 border-t border-[var(--color-rule)] text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-          Cannot find it?{' '}
-          <a href={contactTelegramLink ?? SITE.telegram} rel="noopener" class="text-[var(--color-navy)] underline underline-offset-2">
-            Message us on Telegram
-          </a>{' '}
-          {contactHandleText && <span class="text-[var(--color-ink-faint)] select-all">({contactHandleText})</span>}{' '}
-          or{' '}
-          <a href={`mailto:${shopEmail}`} class="text-[var(--color-navy)] underline underline-offset-2">
-            email us
-          </a>{' '}
-          and we will find it for you.
+          Cannot find it? <MessageUs variant="inline" label="Get in touch" /> and we will find it
+          for you.
         </p>
       </div>
     )

@@ -1,0 +1,145 @@
+---
+/**
+ * Getting hold of the shop, without assuming Telegram.
+ *
+ * A `t.me` link does nothing visible for someone who has not installed
+ * Telegram - the tap appears to fail, and the page has no way to know. **There
+ * is no API that reports whether an app is installed**, so the fix cannot be
+ * detection; it has to be offering every route at once. Tapping opens a panel
+ * with the link, a QR code to scan from a phone, the handle as text, and an
+ * email address.
+ *
+ * The same reasoning produced the QR on the order page's Connect button. This
+ * is that idea, made reusable, so the five hand-written copies of "message us"
+ * stop drifting apart.
+ */
+import QRCode from 'qrcode';
+import { contactHandle, contactLink } from '../lib/telegram';
+import { ownerAddress } from '../lib/email';
+import { SITE } from '../lib/format';
+
+interface Props {
+  /** button: a real button. inline: mid-sentence. card: the contact page. */
+  variant?: 'button' | 'inline' | 'card';
+  /** Added to the mailto, so an order's email arrives with its reference. */
+  subject?: string;
+  /** The footer renders on every page; 2KB of QR on all of them is not worth it. */
+  qr?: boolean;
+  label?: string;
+  class?: string;
+}
+
+const {
+  variant = 'button',
+  subject,
+  qr = true,
+  label = 'Message us on Telegram',
+  class: extraClass = '',
+} = Astro.props;
+
+const [handle, link] = await Promise.all([contactHandle(), contactLink()]);
+const email = ownerAddress();
+const mailto = `mailto:${email}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`;
+
+// Server-side, like the Connect panel's: the link is only known in frontmatter.
+// A failure here must not take the page down over a fallback.
+let qrDataUrl = '';
+if (qr && link) {
+  try {
+    qrDataUrl = await QRCode.toDataURL(link, {
+      width: 200,
+      margin: 1,
+      color: { dark: '#0e2a55', light: '#f5f4f0' },
+    });
+  } catch (err) {
+    console.error('MessageUs: QR code generation failed', err);
+  }
+}
+
+const href = link ?? SITE.telegram;
+---
+
+<div class:list={['contact-us', extraClass]} data-contact>
+  {
+    variant === 'card' ? (
+      <button
+        type="button"
+        data-contact-open
+        class="block w-full text-left p-5 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] hover:border-[var(--color-navy)] transition-colors cursor-pointer"
+      >
+        <h2 class="text-[18px]">Telegram</h2>
+        <p class="mt-1.5 text-[15px] text-[var(--color-ink-soft)]">
+          New arrivals, availability and the quickest replies.
+        </p>
+        <p class="mt-3 text-[15px] text-[var(--color-navy)]">{handle} →</p>
+      </button>
+    ) : variant === 'inline' ? (
+      <button
+        type="button"
+        data-contact-open
+        class="text-[var(--color-navy)] underline underline-offset-2 cursor-pointer"
+      >
+        {label}
+      </button>
+    ) : (
+      <button type="button" data-contact-open class="btn btn-ghost">
+        {label}
+      </button>
+    )
+  }
+
+  {/* Hidden until asked for, so the ordinary path stays one tap. */}
+  <div
+    data-contact-panel
+    hidden
+    class="mt-3 p-4 bg-white border border-[var(--color-rule)] rounded-[3px] text-left"
+  >
+    <p class="text-[14.5px] font-medium">Ways to reach us</p>
+
+    <a href={href} rel="noopener" target="_blank" class="btn btn-primary mt-3 !py-2">
+      Open Telegram
+    </a>
+
+    {qrDataUrl && (
+      <>
+        <p class="mt-4 text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+          No Telegram on this device? Scan this with your phone's camera:
+        </p>
+        <div class="mt-3 flex justify-center">
+          <img src={qrDataUrl} alt="QR code to message the shop on Telegram" class="w-40 h-40" />
+        </div>
+      </>
+    )}
+
+    <p class="mt-4 text-[14px] text-[var(--color-ink-soft)]">
+      Or find us on Telegram at <span class="select-all font-medium">{handle}</span>
+    </p>
+
+    <p class="mt-3 pt-3 border-t border-[var(--color-rule)] text-[14px] text-[var(--color-ink-soft)]">
+      Not on Telegram at all? Email
+      <a href={mailto} class="text-[var(--color-navy)] underline underline-offset-2 break-all">
+        {email}
+      </a>
+      — we read both.
+    </p>
+  </div>
+</div>
+
+<script>
+  /*
+   * Scoped per instance rather than by a page-wide selector: the order page
+   * carries one of these *and* the Connect panel, and the original single
+   * `querySelector` would have found only the first of them.
+   */
+  for (const root of document.querySelectorAll<HTMLElement>('[data-contact]')) {
+    const open = root.querySelector<HTMLButtonElement>('[data-contact-open]');
+    const panel = root.querySelector<HTMLElement>('[data-contact-panel]');
+    if (!open || !panel) continue;
+
+    open.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
+      open.setAttribute('aria-expanded', String(!panel.hidden));
+    });
+    open.setAttribute('aria-expanded', 'false');
+  }
+</script>

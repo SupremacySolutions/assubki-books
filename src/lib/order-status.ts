@@ -410,21 +410,31 @@ export const POSTAGE_PROVIDERS = [
   'Royal Mail',
   'Evri',
   'DPD',
+  'DHL',
   'Parcelforce',
   'Yodel',
   'Other',
 ] as const;
 
-const TRACKING: Record<string, (n: string) => string> = {
+export type PostageProvider = (typeof POSTAGE_PROVIDERS)[number];
+
+export const isPostageProvider = (value: string): value is PostageProvider =>
+  (POSTAGE_PROVIDERS as readonly string[]).includes(value);
+
+// Typed against the list, so a carrier added to one and mistyped in the other
+// fails the build instead of quietly behaving like "Other". The number arrives
+// already encoded - do not encode it again.
+const TRACKING: Partial<Record<PostageProvider, (n: string) => string>> = {
   'Royal Mail': (n) => `https://www.royalmail.com/track-your-item#/tracking-results/${n}`,
   Evri: (n) => `https://www.evri.com/track/parcel/${n}`,
   DPD: (n) => `https://track.dpd.co.uk/search?reference=${n}`,
+  DHL: (n) => `https://www.dhl.com/gb-en/home/tracking/tracking-express.html?submit=1&tracking-id=${n}`,
   Parcelforce: (n) => `https://www.parcelforce.com/track-trace?trackNumber=${n}`,
   Yodel: (n) => `https://www.yodel.co.uk/track/${n}`,
 };
 
 /** Null when the carrier is unknown - the number is still worth showing. */
 export function trackingUrl(provider: string | null | undefined, number: string): string | null {
-  const build = provider ? TRACKING[provider] : undefined;
+  const build = provider && isPostageProvider(provider) ? TRACKING[provider] : undefined;
   return build ? build(encodeURIComponent(number)) : null;
 }

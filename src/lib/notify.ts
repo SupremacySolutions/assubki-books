@@ -68,13 +68,11 @@ function customerPlaced(input: PlacedInput) {
        <strong>We will reply with the total including postage and how to pay.</strong>
      </p>
      ${itemRows(order.items, order.subtotalPence)}
-     <p style="margin:18px 0 0;font-size:14px;color:#4a5568;line-height:1.6">
-       ${
-         input.fulfilment === 'collection'
-           ? 'For collection.'
-           : `To be posted to:<br>${escapeHtml(input.address ?? '')}`
-       }
-     </p>
+     <p style="margin:18px 0 0;font-size:14px;color:#4a5568;line-height:1.6;white-space:pre-line">${
+       input.fulfilment === 'collection'
+         ? 'For collection.'
+         : `To be posted to:\n${escapeHtml(input.address ?? '')}`
+     }</p>
      ${input.notes ? `<p style="margin:12px 0 0;font-size:14px;color:#4a5568">Your note: ${escapeHtml(input.notes)}</p>` : ''}
      ${telegramBlock}
      ${button(link, 'View your request')}
@@ -93,6 +91,9 @@ function customerPlaced(input: PlacedInput) {
       .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
       .join('\n') +
     `\n  Subtotal: ${price(order.subtotalPence)}\n\n` +
+    (input.fulfilment === 'collection'
+      ? 'For collection.\n\n'
+      : `To be posted to:\n${input.address ?? ''}\n\n`) +
     (optIn && !order.telegramChatId ? `Get payment details on Telegram: ${optIn}\n\n` : '') +
     `View your request: ${link}\n\nHeld until ${expires}. No payment is taken on our website.\n`;
 
@@ -115,10 +116,13 @@ function ownerPlaced(input: PlacedInput) {
     `<p style="margin:0 0 6px;font-size:16px;font-weight:600">${escapeHtml(name)}</p>
      <p style="margin:0 0 18px;font-size:14px;color:#4a5568;line-height:1.6">${contact}</p>
      ${itemRows(order.items, order.subtotalPence)}
-     <p style="margin:18px 0 0;font-size:14px;color:#4a5568;line-height:1.6">
-       <strong style="color:#101828">${input.fulfilment === 'collection' ? 'Collection' : 'Deliver to'}</strong><br>
-       ${input.fulfilment === 'collection' ? 'Customer is collecting in person.' : escapeHtml(input.address ?? '')}
-     </p>
+     <p style="margin:18px 0 0;font-size:14px;color:#4a5568;line-height:1.6;white-space:pre-line"><strong style="color:#101828">${
+       input.fulfilment === 'collection' ? 'Collection' : 'Deliver to'
+     }</strong>\n${
+       input.fulfilment === 'collection'
+         ? 'Customer is collecting in person.'
+         : escapeHtml(input.address ?? '')
+     }</p>
      ${input.notes ? `<p style="margin:12px 0 0;font-size:14px"><strong>Note:</strong> ${escapeHtml(input.notes)}</p>` : ''}
      ${button(`${origin}/admin/orders/${order.ref}`, 'Confirm and send payment details')}
      <p style="margin:18px 0 0;font-size:13.5px;color:#8b93a1">
@@ -132,7 +136,7 @@ function ownerPlaced(input: PlacedInput) {
     `\n\n` +
     order.items.map((i) => `  ${i.title} x${i.qty}  ${price(i.pricePence * i.qty)}`).join('\n') +
     `\n  Subtotal: ${price(order.subtotalPence)}\n\n` +
-    (input.fulfilment === 'collection' ? 'Collection\n' : `Deliver to:\n${input.address}\n`) +
+    (input.fulfilment === 'collection' ? 'Collection\n' : `Deliver to:\n${input.address ?? ''}\n`) +
     (input.notes ? `\nNote: ${input.notes}\n` : '') +
     `\nConfirm: ${origin}/admin/orders/${order.ref}\n`;
 

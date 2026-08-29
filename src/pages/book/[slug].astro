@@ -5,19 +5,13 @@ import Rosette from '../../components/Rosette.astro';
 import { bookBySlug, relatedBooks } from '../../lib/db';
 import { price, availability, imageUrl, stripTags, truncate, SITE } from '../../lib/format';
 import { classmark } from '../../lib/classmarks';
-import { contactHandle, contactLink } from '../../lib/telegram';
-import { ownerAddress } from '../../lib/email';
+import MessageUs from '../../components/MessageUs.astro';
 
 const { slug } = Astro.params;
 const book = slug ? await bookBySlug(slug) : null;
 if (!book) return Astro.rewrite('/404');
 
 const related = await relatedBooks(book.id, 6);
-// Out of stock is the one place on this page someone needs to reach a person,
-// and a t.me link is no use to them if they have no Telegram - so the handle
-// and an email address are offered alongside it.
-const [handle, telegram] = await Promise.all([contactHandle(), contactLink()]);
-const contactEmail = ownerAddress();
 const avail = availability(book.available);
 const cover = imageUrl(book.images[0]?.image_key);
 const plain = stripTags(book.description_html);
@@ -193,14 +187,8 @@ const jsonLd = {
             ) : (
               <div class="p-4 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)]">
                 <p class="text-[15px] text-[var(--color-ink-soft)]">
-                  This title is out of stock. Ask on
-                  <a href={telegram ?? SITE.telegram} rel="noopener" class="text-[var(--color-navy)] underline underline-offset-2">
-                    Telegram
-                  </a>
-                  {handle && <span class="text-[var(--color-ink-faint)]">({handle})</span>} or by
-                  <a href={`mailto:${contactEmail}`} class="text-[var(--color-navy)] underline underline-offset-2">
-                    email
-                  </a>
+                  This title is out of stock.{' '}
+                  <MessageUs variant="inline" label="Ask us" subject={`Back in stock: ${book.title}`} />{' '}
                   and we will tell you when it is back.
                 </p>
               </div>

@@ -7,6 +7,7 @@
  */
 
 import { env } from 'cloudflare:workers';
+import type { AddressParts } from './address';
 
 export const HOLD_HOURS = 48;
 
@@ -23,7 +24,10 @@ export interface OrderInput {
   email: string;
   phone?: string | null;
   fulfilment: 'delivery' | 'collection';
+  /** The formatted block, which is what every page and email reads. */
   address?: string | null;
+  /** The same address in parts, for labels and customs forms. */
+  addressParts?: AddressParts | null;
   notes?: string | null;
   items: RequestedItem[];
 }
@@ -159,8 +163,10 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
       env.DB.prepare(
         `INSERT INTO orders (ref, access_token, customer_name, email, phone,
                              fulfilment, address, notes, status, subtotal_pence, expires_at,
-                             telegram_chat_id, telegram_linked_at)
-         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?)`,
+                             telegram_chat_id, telegram_linked_at,
+                             address_line1, address_line2, address_city,
+                             address_region, address_postcode, address_country)
+         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         ref,
         token,
@@ -174,6 +180,12 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
         expiresAt,
         priorLink?.telegram_chat_id ?? null,
         priorLink ? Math.floor(Date.now() / 1000) : null,
+        input.addressParts?.line1 ?? null,
+        input.addressParts?.line2 ?? null,
+        input.addressParts?.city ?? null,
+        input.addressParts?.region ?? null,
+        input.addressParts?.postcode ?? null,
+        input.addressParts?.country ?? null,
       ),
     ];
 
