@@ -32,7 +32,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
 
   const cashPayment = Boolean(order.cash_payment);
   const typed = String(form.get('payment_message') ?? '').trim().slice(0, 4000);
-  const paymentInstructions = typed || (await defaultDraft(order.fulfilment, cashPayment));
+  const paymentInstructions = typed || (await defaultDraft(order.fulfilment));
 
   /*
    * Claim the order before sending anything.

@@ -19,13 +19,19 @@ const [items, postageDefault, drafts, draft] = await Promise.all([
   getOrderItems(order.id),
   lastPostagePence(),
   paymentDrafts(order.fulfilment),
-  defaultDraft(order.fulfilment, isCash),
+  defaultDraft(order.fulfilment),
 ]);
 
-// A choice of one is not a choice. The cash draft is applied by the tick rather
-// than picked, so it is not offered as a button either.
-const choosable = drafts.filter((d) => !d.cash);
-const showPicker = choosable.length > 1;
+// Shown whenever there is anything to show, including on a cash order. Hiding
+// it when there was only one draft, and again whenever cash was ticked, is what
+// made the feature look broken - the owner pressed the tick and saw nothing to
+// choose from.
+const showPicker = drafts.length > 0;
+
+// Which button starts marked: the one whose wording is actually in the box.
+// None of them, if the owner has already written something of their own.
+const openText = (order.payment_message ?? draft).trim();
+const activeSlot = drafts.find((d) => d.body.trim() === openText)?.slot ?? null;
 const suggestedPostage = order.postage_pence ?? (isCollection ? 0 : postageDefault);
 const canConfirm = order.status === 'requested';
 const hoursLeft = order.expires_at
@@ -207,21 +213,38 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   {isCash ? 'What they should do next' : 'How they should pay'}
                 </label>
 
-                {/* Hidden on a cash order: that wording is applied by the tick,
-                    not chosen, so offering a picker beside it would suggest the
-                    choice is still open. */}
-                {showPicker && !isCash && (
-                  <div class="mb-2 flex flex-wrap gap-2" data-draft-picker>
-                    {choosable.map((d, i) => (
-                      <button
-                        type="button"
-                        data-draft-pick={d.slot}
-                        aria-pressed={i === 0 ? 'true' : 'false'}
-                        class="px-2.5 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:bg-[var(--color-navy)] aria-pressed:text-white"
-                      >
-                        {d.label}
-                      </button>
-                    ))}
+                {showPicker && (
+                  <div class="mb-2">
+                    <div class="flex flex-wrap items-center gap-2" data-draft-picker>
+                      {drafts.map((d) => (
+                        <button
+                          type="button"
+                          data-draft-pick={d.slot}
+                          aria-pressed={d.slot === activeSlot ? 'true' : 'false'}
+                          class="px-2.5 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:bg-[var(--color-navy)] aria-pressed:text-white"
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                      {drafts.length === 1 && (
+                        <a href="/admin/settings" class="text-[13px] text-[var(--color-ink-faint)] hover:text-[var(--color-navy)] underline underline-offset-2">
+                          Add another
+                        </a>
+                      )}
+                    </div>
+
+                    {/* There is no separate cash wording any more, so ticking
+                        the box cannot pick one for them - it asks instead. The
+                        note stays up while cash is ticked, because sending
+                        "pay by bank transfer" to someone paying at the door is
+                        the mistake worth being loud about. */}
+                    <p
+                      data-cash-prompt
+                      hidden={!isCash}
+                      class="mt-2 text-[13px] text-[var(--color-outstock)] leading-relaxed"
+                    >
+                      This one is paying in cash on collection - check the wording below says so.
+                    </p>
                   </div>
                 )}
 
@@ -557,16 +580,13 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
 
     const cashCheckbox = document.querySelector('.toggle-cash-payment');
     if (cashCheckbox) {
-      // Swap the draft only while it is still a draft. Once the owner has
-      // typed, their words win - a tick must never quietly discard them.
-      const swapDraft = (wanted) => {
-        if (!message || !boxIsUntouched()) return;
-        const cash = drafts.find((d) => d.cash);
-        const plain = drafts.find((d) => !d.cash);
-        const next = wanted ? cash : plain;
-        if (!next) return;
-        message.value = next.body;
-        markPicked(next.slot);
+      const cashPrompt = document.querySelector('[data-cash-prompt]');
+
+      // There is no cash-specific draft to swap in any more. Ticking the box
+      // therefore asks rather than chooses: the owner picks which of their own
+      // wordings suits somebody paying at the door.
+      const showCashPrompt = (wanted) => {
+        if (cashPrompt) cashPrompt.hidden = !wanted;
       };
 
       cashCheckbox.addEventListener('change', async () => {
@@ -580,7 +600,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
             body,
           });
           if (!res.ok) throw new Error(`save failed: ${res.status}`);
-          swapDraft(wanted);
+          showCashPrompt(wanted);
         } catch (err) {
           console.error('cash payment save failed', err);
           cashCheckbox.checked = !wanted;

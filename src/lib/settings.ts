@@ -18,10 +18,10 @@ import { env } from 'cloudflare:workers';
  * type union, the Settings form and the picker on the order all derive from it,
  * so a fourth slot is a line here and a line of migration.
  *
- * `cash` marks the one applied automatically when "paying in cash on
- * collection" is ticked. It is not chosen by hand, but it is editable like the
- * rest: every word a customer can receive should live in Settings rather than
- * half of it in the source.
+ * There is deliberately no special draft for cash on collection. One used to
+ * be applied automatically, which meant a slot the owner had to maintain for a
+ * case the picker already covers - ticking "paying in cash" now asks them which
+ * of their own wordings to send.
  */
 export const PAYMENT_DRAFTS = [
   { slot: 'delivery_1', fulfilment: 'delivery', label: 'Bank transfer' },
@@ -29,7 +29,6 @@ export const PAYMENT_DRAFTS = [
   { slot: 'delivery_3', fulfilment: 'delivery', label: 'Other' },
   { slot: 'collection_1', fulfilment: 'collection', label: 'Paying in advance' },
   { slot: 'collection_2', fulfilment: 'collection', label: 'Paying on the day' },
-  { slot: 'collection_cash', fulfilment: 'collection', label: 'Cash on collection', cash: true },
 ] as const;
 
 export type DraftSlot = (typeof PAYMENT_DRAFTS)[number]['slot'];
@@ -74,22 +73,11 @@ export async function setSetting(key: SettingKey, value: string): Promise<void> 
     .run();
 }
 
-/**
- * What a cash collection is told when the owner has not written their own.
- *
- * Seeded into the cash slot by the migration, and kept here as the fallback if
- * that slot is ever emptied: a cash order opening with bank details in the box
- * is the one mistake this must not make.
- */
-export const CASH_COLLECTION_DRAFT =
-  'No payment is needed now. Your books are set aside - message us to agree a time, and you can pay in cash when you collect.';
-
 export interface PaymentDraft {
   slot: DraftSlot;
   /** The owner's own name for it, shown on the picker. */
   label: string;
   body: string;
-  cash: boolean;
 }
 
 /**
@@ -103,32 +91,18 @@ export async function paymentDrafts(fulfilment: string): Promise<PaymentDraft[]>
   const all = await getSettings();
 
   return PAYMENT_DRAFTS.filter((d) => d.fulfilment === wanted)
-    .map((d) => {
-      const body = (all[draftBodyKey(d.slot)] ?? '').trim();
-      return {
-        slot: d.slot,
-        label: (all[draftLabelKey(d.slot)] ?? '').trim() || d.label,
-        // The cash slot falls back to the wording above rather than to nothing.
-        body: body || ('cash' in d && d.cash ? CASH_COLLECTION_DRAFT : ''),
-        cash: 'cash' in d && Boolean(d.cash),
-      };
-    })
+    .map((d) => ({
+      slot: d.slot,
+      label: (all[draftLabelKey(d.slot)] ?? '').trim() || d.label,
+      body: (all[draftBodyKey(d.slot)] ?? '').trim(),
+    }))
     .filter((d) => d.body !== '');
 }
 
-/**
- * The one the box opens on: the cash draft when that is ticked, otherwise the
- * first the owner has filled in.
- */
-export async function defaultDraft(fulfilment: string, cashPayment = false): Promise<string> {
+/** The one the box opens on: the first the owner has filled in. */
+export async function defaultDraft(fulfilment: string): Promise<string> {
   const drafts = await paymentDrafts(fulfilment);
-  if (fulfilment === 'collection' && cashPayment) {
-    const cash = drafts.find((d) => d.cash);
-    if (cash) return cash.body;
-    return CASH_COLLECTION_DRAFT;
-  }
-  // A cash draft is never the default for an order not marked as cash.
-  return drafts.find((d) => !d.cash)?.body ?? '';
+  return drafts[0]?.body ?? '';
 }
 
 /**

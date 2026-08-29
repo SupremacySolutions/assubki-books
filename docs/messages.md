@@ -116,10 +116,9 @@ queue and nothing is sent, so an order can never look handled when the customer
 was never told.
 
 The payment wording comes from your saved drafts in Settings — **three for
-posted orders, three for collections** (the last collection one being the cash
-line below). When you confirm an order you pick which one to use by its name,
-and you can still edit it on the order before it goes. A draft you have left
-empty is not offered.
+posted orders, two for collections**. When you confirm an order you pick which
+one to use by its name, and you can still edit it on the order before it goes. A
+draft you have left empty is not offered.
 
 ### If they are paying now
 
@@ -164,14 +163,13 @@ Same email, five things worded differently:
 | **Under the box** | Quote **ASB-4F7K** when you collect. |
 | **Last line** | No payment is taken on our website. Message us to agree a time and the books will be waiting. |
 
-And the payment text is your **cash on collection** draft rather than one you
-pick. Ticking "paying in cash" selects it automatically. It starts as:
+Ticking "paying in cash on collection" does not pick the wording for you — it
+asks. A note appears telling you to check the wording suits somebody paying at
+the door, and you choose whichever of your two collection drafts fits.
 
-> No payment is needed now. Your books are set aside - message us to agree a
-> time, and you can pay in cash when you collect.
-
-✅ **Changed:** that wording used to be fixed in the code. It is a draft in
-Settings now, so you can reword it like any other.
+✅ **Changed:** there used to be a separate, fixed cash wording. It was a third
+draft to maintain for a case the picker already covers, so it is gone — its
+wording became your second collection draft.
 
 ---
 

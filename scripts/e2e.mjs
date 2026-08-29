@@ -673,8 +673,8 @@ async function ownerSettings() {
     payment_draft_delivery_3_label: 'Never used',
     payment_draft_collection_1: 'COLLECT-ONE pay in advance.',
     payment_draft_collection_1_label: 'In advance',
-    payment_draft_collection_2: '',
-    payment_draft_collection_cash: 'CASH-DRAFT nothing to pay now.',
+    payment_draft_collection_2: 'COLLECT-TWO pay when you collect.',
+    payment_draft_collection_2_label: 'On the day',
     collection_address: '12 Evington Road, Leicester LE2 1HN - Saturdays 10am to 4pm',
     contact_telegram: '@alsubkibooks',
   });
@@ -697,22 +697,34 @@ async function ownerSettings() {
   t.ok(!dPortal.includes('In advance'),
     'and a posted order is not offered the collection drafts');
 
+  // Hiding the picker whenever there was only one draft is what made this look
+  // broken: the owner ticked cash and had nothing to choose from.
+  await admin('/api/admin/settings', { payment_draft_delivery_2: '' });
+  const oneDraft = await html(`/admin/orders/${d.ref}`);
+  t.ok(oneDraft.includes('data-draft-picker'), 'the picker shows even with a single draft');
+  t.ok(oneDraft.includes('Add another'), 'and points at Settings to add more');
+  await admin('/api/admin/settings', { payment_draft_delivery_2: 'POSTED-TWO the other account.' });
+
   const cBook = await makeBook();
   const c = await placeOrder(cBook.id, 'collection');
   const cPortal = draftInBox(await html(`/admin/orders/${c.ref}`));
   t.ok(cPortal.includes('COLLECT-ONE') && !cPortal.includes('POSTED-ONE'),
     'a collection opens with the collection draft, not the posted one');
 
+  /*
+   * There is no separate cash draft any more - it was a slot to maintain for a
+   * case the picker already covers. Ticking cash asks the owner which of their
+   * own wordings to send, so the page must carry that prompt and still offer
+   * every draft to choose from.
+   */
   await admin(`/api/admin/orders/${c.ref}/cash-payment`, { cash_payment: '1' });
-  const cashPortal = draftInBox(await html(`/admin/orders/${c.ref}`));
-  t.ok(cashPortal.includes('CASH-DRAFT') && !cashPortal.includes('COLLECT-ONE'),
-    'and a cash collection opens with the cash draft instead');
-
-  // The cash wording used to be fixed in the source; it is a draft now.
-  await admin('/api/admin/settings', { payment_draft_collection_cash: 'CASH-REWRITTEN.' });
-  t.ok(draftInBox(await html(`/admin/orders/${c.ref}`)).includes('CASH-REWRITTEN'),
-    'the cash wording is the owner\'s to change');
-  await admin('/api/admin/settings', { payment_draft_collection_cash: 'CASH-DRAFT nothing to pay now.' });
+  const cashPage = await html(`/admin/orders/${c.ref}`);
+  t.ok(cashPage.includes('paying in cash on collection - check the wording'),
+    'a cash order asks the owner to check the wording');
+  t.ok(cashPage.includes('data-draft-picker'),
+    'and still offers the drafts to choose between');
+  t.ok(cashPage.includes('In advance') && cashPage.includes('On the day'),
+    'both collection drafts among them');
 
   // --- postage remembers rather than being maintained -----------------------
   //

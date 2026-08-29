@@ -1,12 +1,6 @@
 ---
 import Admin from '../../layouts/Admin.astro';
-import {
-  getSettings,
-  PAYMENT_DRAFTS,
-  draftBodyKey,
-  draftLabelKey,
-  CASH_COLLECTION_DRAFT,
-} from '../../lib/settings';
+import { getSettings, PAYMENT_DRAFTS, draftBodyKey, draftLabelKey } from '../../lib/settings';
 import { botConfigured, botUsername, ownerOptInLink } from '../../lib/telegram';
 import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
 
@@ -22,7 +16,7 @@ const draftGroups = [
   },
   {
     heading: 'Collection orders',
-    note: 'The same, for orders being collected. The last one is used automatically when you tick "paying in cash on collection" - you do not pick it by hand.',
+    note: 'The same, for orders being collected. When you tick "paying in cash on collection" you are asked which of these to send.',
     slots: PAYMENT_DRAFTS.filter((d) => d.fulfilment === 'collection'),
   },
 ];
@@ -52,14 +46,30 @@ const draftGroups = [
       </p>
 
       {draftGroups.map((group) => (
-        <div class="mt-5 pt-4 border-t border-[var(--color-rule)]">
+        <div class="mt-5 pt-4 border-t border-[var(--color-rule)]" data-draft-group>
           <h3 class="text-[15px] font-semibold">{group.heading}</h3>
           <p class="mt-1 mb-3 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
             {group.note}
           </p>
 
-          {group.slots.map((slot) => (
-            <div class="mt-4">
+          {/* One at a time, switched by these. Stacked, the six boxes were a
+              wall of text with no sense of which was which. */}
+          <div class="flex flex-wrap gap-2" role="tablist">
+            {group.slots.map((slot, i) => (
+              <button
+                type="button"
+                role="tab"
+                data-draft-tab={slot.slot}
+                aria-selected={i === 0 ? 'true' : 'false'}
+                class="px-3 py-1.5 text-[13.5px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-selected:border-[var(--color-navy)] aria-selected:bg-[var(--color-navy)] aria-selected:text-white"
+              >
+                {settings[draftLabelKey(slot.slot)]?.trim() || slot.label}
+              </button>
+            ))}
+          </div>
+
+          {group.slots.map((slot, i) => (
+            <div class="mt-3" data-draft-panel={slot.slot} hidden={i !== 0}>
               <label for={draftLabelKey(slot.slot)} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">
                 Name for this one
               </label>
@@ -69,23 +79,25 @@ const draftGroups = [
                 maxlength="40"
                 placeholder={slot.label}
                 value={settings[draftLabelKey(slot.slot)] ?? ''}
+                data-draft-name={slot.slot}
                 class="field !py-1.5 !text-[14px] !w-64"
               />
-              <label for={draftBodyKey(slot.slot)} class="sr-only">
-                {slot.label} wording
+              <label for={draftBodyKey(slot.slot)} class="block mt-3 text-[13px] text-[var(--color-ink-faint)] mb-1">
+                What it says
               </label>
               <textarea
                 id={draftBodyKey(slot.slot)}
                 name={draftBodyKey(slot.slot)}
-                rows="6"
+                rows="8"
                 maxlength="4000"
-                placeholder={'cash' in slot && slot.cash ? CASH_COLLECTION_DRAFT : 'Leave empty if you do not use this one.'}
-                class="field mt-2 font-[family-name:var(--font-body)]">{settings[draftBodyKey(slot.slot)] ?? ''}</textarea
+                placeholder="Leave empty if you do not use this one - it will not be offered on an order."
+                class="field font-[family-name:var(--font-body)]">{settings[draftBodyKey(slot.slot)] ?? ''}</textarea
               >
             </div>
           ))}
         </div>
       ))}
+
     </section>
 
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
@@ -184,3 +196,33 @@ const draftGroups = [
     </dl>
   </section>
 </Admin>
+<script>
+  /*
+   * The drafts are switched rather than stacked, so only one is in front of the
+   * owner at a time. Every box stays in the form while hidden - a hidden field
+   * still submits - so switching never costs an edit, and Save writes them all.
+   */
+  for (const group of document.querySelectorAll<HTMLElement>('[data-draft-group]')) {
+    const tabs = [...group.querySelectorAll<HTMLButtonElement>('[data-draft-tab]')];
+    const panels = [...group.querySelectorAll<HTMLElement>('[data-draft-panel]')];
+
+    const show = (slot: string) => {
+      for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.draftTab === slot));
+      for (const panel of panels) panel.hidden = panel.dataset.draftPanel !== slot;
+    };
+
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => show(tab.dataset.draftTab ?? ''));
+    }
+
+    // Renaming one should rename its tab as you type, or the tabs and the names
+    // disagree until the page is saved and reloaded.
+    for (const input of group.querySelectorAll<HTMLInputElement>('[data-draft-name]')) {
+      input.addEventListener('input', () => {
+        const tab = tabs.find((b) => b.dataset.draftTab === input.dataset.draftName);
+        if (tab) tab.textContent = input.value.trim() || (input.placeholder ?? '');
+      });
+    }
+  }
+</script>
+
