@@ -614,6 +614,39 @@ async function botAndOptIn() {
   t.ok(junk.status === 400 && /Telegram/i.test(junk.body.error ?? ''),
     'a username that is not one is refused');
 
+  // --- the invitation gives way to a confirmation ---------------------------
+  //
+  // Connecting happens inside the Telegram app, so the page has to be able to
+  // tell it has happened; the owner reported still being asked to connect after
+  // they had.
+  // Its own listing: the shared one only stocks four copies and this suite
+  // now places five orders.
+  const linkBook = await makeBook();
+  const link = await placeOrder(linkBook.id, 'collection', { email: fresh() });
+  const linkUrl = `/order?ref=${link.ref}&t=${link.token}`;
+  const beforeLink = visibleText(await html(linkUrl));
+  t.ok(beforeLink.includes('Get your payment details on Telegram'), 'before connecting, the invitation is shown');
+
+  const status = await (await get(`/api/orders/link-status?ref=${link.ref}&t=${link.token}`)).json();
+  t.ok(status.linked === false, 'and the page can ask whether it has been connected');
+
+  await fetch(`${SITE}/api/telegram/webhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': vars.TELEGRAM_WEBHOOK_SECRET },
+    body: JSON.stringify({
+      message: { message_id: 9, chat: { id: Number(TEST_CHAT) }, text: `/start ${link.ref}_${link.token.slice(0, 16)}` },
+    }),
+  });
+
+  const afterLink = visibleText(await html(linkUrl));
+  t.ok(!afterLink.includes('Get your payment details on Telegram'), 'after connecting, the invitation is gone');
+  t.ok(afterLink.includes('Connected to Telegram'), 'and it says the chat is connected');
+  const after = await (await get(`/api/orders/link-status?ref=${link.ref}&t=${link.token}`)).json();
+  t.ok(after.linked === true, 'and the page would know to refresh');
+
+  const guessed = await (await get(`/api/orders/link-status?ref=${link.ref}&t=deadbeefdeadbeef`)).json();
+  t.ok(guessed.linked === false, 'a guessed token learns nothing from that check');
+
   // --- confirming twice sends once ------------------------------------------
   const race = await placeOrder(book.id, 'collection', { email: fresh() });
   const [a, b] = await Promise.all([

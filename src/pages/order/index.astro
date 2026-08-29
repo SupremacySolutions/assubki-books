@@ -97,7 +97,12 @@ const wantsTelegram = Boolean(order?.telegram);
               Tap once to connect this order to your Telegram, and we will send the total and how to
               pay straight to your chat. Otherwise we will email you.
             </p>
-            <a href={telegramLink} rel="noopener" class="btn mt-4 !bg-[#229ED9] !text-white hover:!bg-[#1d8ec2]">
+            <a
+              href={telegramLink}
+              rel="noopener"
+              data-connect-telegram
+              class="btn mt-4 !bg-[#229ED9] !text-white hover:!bg-[#1d8ec2]"
+            >
               Connect Telegram
             </a>
           </section>
@@ -282,4 +287,34 @@ const wantsTelegram = Boolean(order?.telegram);
       </div>
     )
   }
+
+  {/* Connecting happens inside the Telegram app, so this page never learns of
+      it on its own: the customer taps Connect, presses Start, comes back, and
+      is looking at the HTML from before they linked - still being asked to do
+      the thing they just did. On return, ask once and refresh if it took.
+
+      The reference and token are read from the address bar rather than passed
+      in, so this stays a plain script with nothing interpolated into it. */}
+  <script is:inline>
+    (() => {
+      const button = document.querySelector('[data-connect-telegram]');
+      if (!button) return;
+
+      let leftForTelegram = false;
+      button.addEventListener('click', () => {
+        leftForTelegram = true;
+      });
+
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState !== 'visible' || !leftForTelegram) return;
+        try {
+          const res = await fetch('/api/orders/link-status' + location.search);
+          const data = await res.json();
+          if (data.linked) location.reload();
+        } catch {
+          /* offline or blocked: leave the page exactly as it is */
+        }
+      });
+    })();
+  </script>
 </Base>
