@@ -156,6 +156,7 @@ const jsonLd = {
         <div class="mt-6">
           {
             book.available > 0 ? (
+              <>
               <div class="flex flex-wrap items-center gap-3">
                 <label for="qty" class="sr-only">
                   Quantity
@@ -181,6 +182,14 @@ const jsonLd = {
                   View basket →
                 </a>
               </div>
+
+              {/* The basket page says when it could not take what was asked
+                  for; adding from here used to cut the quantity down and
+                  confirm as though nothing had happened. Customers who need ten
+                  and are quietly given three abandon the order later, or worse,
+                  do not notice until the parcel arrives. */}
+              <p id="addnote" role="status" class="mt-2 text-[13.5px] text-[var(--color-outstock)]" hidden />
+              </>
             ) : (
               <div class="p-4 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)]">
                 <p class="text-[15px] text-[var(--color-ink-soft)]">
@@ -237,22 +246,58 @@ const jsonLd = {
     const qtyInput = document.querySelector<HTMLInputElement>('#qty');
     const toBasket = document.querySelector<HTMLAnchorElement>('#tobasket');
 
-    addBtn?.addEventListener('click', () => {
+    const note = document.querySelector<HTMLParagraphElement>('#addnote');
+
+    const say = (words: string) => {
+      if (!note) return;
+      note.textContent = words;
+      note.hidden = !words;
+    };
+
+    /**
+     * What the shop has right now, not what it had when this page rendered.
+     *
+     * `data-max` is baked in at render time, so a tab left open all afternoon
+     * clamps against a ceiling that has since moved. If the check cannot be
+     * made, fall back to that stale number rather than refusing the add.
+     */
+    const availableNow = async (id: string, fallback: number) => {
+      try {
+        const res = await fetch(`/api/basket?ids=${encodeURIComponent(id)}`);
+        const data = await res.json();
+        const book = data?.books?.[0];
+        return typeof book?.available === 'number' ? book.available : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+
+    addBtn?.addEventListener('click', async () => {
       const id = addBtn.dataset.bookId;
-      const max = Number(addBtn.dataset.max ?? '1');
-      const qty = Math.max(1, Math.min(Number(qtyInput?.value ?? '1') || 1, max));
       if (!id) return;
-      window.asbBasket.add(id, qty);
+      const wanted = Math.max(1, Number(qtyInput?.value ?? '1') || 1);
+
+      addBtn.disabled = true;
+      const available = await availableNow(id, Number(addBtn.dataset.max ?? '1'));
+      const result = window.asbBasket.addChecked(id, wanted, available);
+
+      // The same words the basket page uses, so one event is not described two
+      // different ways depending on where the customer happened to be.
+      if (available <= 0) say('Out of stock - nothing added');
+      else if (result.added === 0) say(`All ${available} we have are already in your basket`);
+      else if (result.capped) say(`Only ${available} available - quantity reduced`);
+      else say('');
 
       // Confirm in place. A redirect to the basket costs the customer their
       // position in a 226-title catalogue.
-      addBtn.textContent = 'Added';
-      addBtn.disabled = true;
-      toBasket?.classList.remove('hidden');
+      if (result.added > 0) {
+        addBtn.textContent = 'Added';
+        toBasket?.classList.remove('hidden');
+      }
       setTimeout(() => {
         addBtn.textContent = 'Add to basket';
         addBtn.disabled = false;
-      }, 1800);
+      }, result.added > 0 ? 1800 : 0);
     });
 
     const cover = document.querySelector<HTMLImageElement>('#cover');

@@ -51,6 +51,21 @@ async function publicCatalogue() {
   const cat = await html('/catalogue');
   t.ok(/\d+ titles/.test(cat), 'catalogue reports a count');
   t.ok((await get('/catalogue?page=2')).status === 200, 'pagination serves page two');
+
+  // Both buttons the same width with the label between them, short enough to
+  // sit across a phone. The long form stays as the accessible name.
+  const paged = await html('/catalogue?page=2');
+  t.ok(paged.includes('aria-label="Page 2 of 10"') && />\s*2 of 10\s*</.test(paged),
+    'pagination reads "2 of 10" and still announces the long form');
+  t.ok((paged.match(/max-w-\[8\.5rem\]/g) ?? []).length === 2,
+    'and its two buttons are given the same width');
+
+  // The hero strip used to be decorative only: covers no one could click, on a
+  // ninety-second loop no one could skip.
+  t.ok(/<a class="shelf-book" href="\/book\//.test(home),
+    'the hero shelf covers link to their books');
+  t.ok(!home.includes('shelf-strip relative overflow-hidden'),
+    'and the strip is scrollable rather than clipped');
   t.ok((await get('/catalogue?stock=in')).status === 200, 'in-stock filter responds');
   for (const s of ['title', 'price-asc', 'price-desc', 'newest']) {
     t.ok((await get(`/catalogue?sort=${s}`)).status === 200, `sort by ${s}`);
@@ -582,6 +597,25 @@ async function integrity() {
     }
   }
   t.ok(inlineTs.length === 0, `no is:inline script carries TypeScript${inlineTs.length ? ` (${inlineTs.join(', ')})` : ''}`);
+
+  /*
+   * The hero strip's drift cannot be watched from here - requestAnimationFrame
+   * does not run in a headless tab, which reports itself hidden - so the part
+   * that would show as a visible jump is checked directly instead: the strip
+   * holds every cover twice, and the wrap has to land exactly one copy back.
+   */
+  const { nextOffset } = await import('../src/scripts/shelf.ts');
+  t.ok(nextOffset(0, 1000, 1000) === 14, 'the shelf drifts 14px a second');
+  t.ok(nextOffset(995, 1000, 1000) === 9, 'and wraps by exactly one copy of the covers');
+  t.ok(nextOffset(10, 1000, 0) === 24, 'an unmeasured track still moves rather than sticking');
+
+  // The book page has to say when it could not take what was asked for; the
+  // basket page always did, and the two disagreeing is the actual complaint.
+  const bookSource = readFileSync('src/pages/book/[slug].astro', 'utf8');
+  t.ok(bookSource.includes('addChecked') && bookSource.includes('id="addnote"'),
+    'the book page adds against live stock and has somewhere to say so');
+  t.ok(!readFileSync('src/pages/checkout.astro', 'utf8').includes('Math.max(0, p.available)'),
+    'checkout no longer reads "availability unknown" as "none left"');
 
   const orphans = await one(
     `SELECT COUNT(*) AS n FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)`,

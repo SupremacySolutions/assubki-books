@@ -307,28 +307,29 @@
   /* The hero shelf: real covers from the catalogue drifting behind the
      headline. Stock photography of "a bookshop" would be someone else's shop;
      these are the actual books for sale. */
+  /* A scroll container rather than a translated track. The drift is driven in
+     scripts/shelf.ts by moving scrollLeft, which leaves native swiping,
+     flicking and trackpad scrolling working - a transform would have fought
+     all three, and `overflow: hidden` made them impossible. */
   .shelf-strip {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
     -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
     mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+  }
+  .shelf-strip::-webkit-scrollbar {
+    display: none;
   }
 
   .shelf-track {
     display: flex;
     gap: 1.15rem;
     width: max-content;
-    animation: shelf-drift 90s linear infinite;
-  }
-  .shelf-strip:hover .shelf-track {
-    animation-play-state: paused;
-  }
-
-  @keyframes shelf-drift {
-    from { transform: translateX(0); }
-    /* The track holds the covers twice, so half a turn is a seamless loop. */
-    to { transform: translateX(-50%); }
   }
 
   .shelf-book {
+    display: block;
     width: 84px;
     flex: none;
     border-radius: 2px;
@@ -343,8 +344,15 @@
     object-fit: cover;
     display: block;
   }
-  .shelf-strip:hover .shelf-book:hover {
+  .shelf-book:hover,
+  .shelf-book:focus-visible {
     transform: translateY(-6px);
+  }
+  /* The edge fade would eat a focus ring near either end, so the ring sits
+     inside the cover rather than around it. */
+  .shelf-book:focus-visible {
+    outline: 2px solid var(--color-wash);
+    outline-offset: -2px;
   }
 
   /* Cards lift rather than just scaling their image. */
@@ -382,7 +390,8 @@
       transform: none;
       transition: none;
     }
-    .shelf-track { animation: none; }
+    /* No self-propelled drift. The strip still scrolls, so every cover is
+       reachable - it used to freeze at zero with half of them clipped off. */
     .shelf-book,
     .book-well { transition: none; }
     .btn:active { transform: none; }

@@ -305,7 +305,13 @@ if (offerTelegram && telegramLink) {
 
         <form method="post" action="/api/orders/lookup" class="mt-7 space-y-4 text-left">
           <div>
-            <label for="ref" class="block text-[14.5px] font-medium mb-1.5">Order reference</label>
+            <label for="ref" class="block text-[14.5px] font-medium mb-1">Order reference</label>
+            {/* Above the box, not under it: it tells you where to find what the
+                box is asking for, which is no use once you have already
+                guessed. */}
+            <p class="mb-1.5 text-[13px] text-[var(--color-ink-faint)]">
+              On your confirmation, and in any message we have sent you.
+            </p>
             <input
               id="ref"
               name="ref"
@@ -317,9 +323,6 @@ if (offerTelegram && telegramLink) {
               spellcheck="false"
               class="field tracking-wide"
             />
-            <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-              On your confirmation, and in any message we have sent you.
-            </p>
           </div>
 
           <div>

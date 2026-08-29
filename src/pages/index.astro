@@ -33,8 +33,8 @@ const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
         The books on your syllabus, in stock and priced plainly.
       </h1>
       <p class="mt-4 text-[17px] leading-relaxed text-[var(--color-wash)] max-w-xl">
-        Browse hadith, fiqh, tafsir and the Dars Nizami and Maktab courses.
-        Request what you need and we will send payment details directly.
+        Browse hadith, fiqh and tafsir as well as the Dars Nizami and Maktab syllabus.
+        Request whatever you require and we will communicate with you directly.
       </p>
 
       <form action="/catalogue" method="get" class="mt-8 max-w-xl" role="search">
@@ -62,13 +62,30 @@ const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
 
     {
       drifting.length > 0 && (
-        <div class="shelf-strip relative overflow-hidden select-none pb-9" aria-hidden="true">
-          {/* Decorative and duplicated for a seamless loop, so it is hidden from
-              assistive tech: every one of these books is reachable properly
-              through the catalogue below. */}
+        // Real covers, and now real links: someone who spots a book here can go
+        // straight to it instead of hunting for it again below. The strip
+        // scrolls natively, so it can be swiped or flicked past rather than
+        // waited on.
+        <div class="shelf-strip relative pb-9" data-shelf aria-label="A few of the books in stock">
           <div class="shelf-track">
-            {[...drifting, ...drifting].map((book) => (
-              <span class="shelf-book">
+            {drifting.map((book) => (
+              <a class="shelf-book" href={`/book/${book.slug}`}>
+                <img
+                  src={imageUrl(book.image_key)}
+                  alt={book.title}
+                  loading="lazy"
+                  decoding="async"
+                  width="84"
+                  height="118"
+                />
+              </a>
+            ))}
+            {/* The same covers again, so the drift can wrap without a visible
+                jump. A second copy of every link would be noise to a screen
+                reader and a second stop for the keyboard, so this half is
+                neither. */}
+            {drifting.map((book) => (
+              <span class="shelf-book" aria-hidden="true">
                 <img
                   src={imageUrl(book.image_key)}
                   alt=""

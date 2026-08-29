@@ -206,15 +206,31 @@ import { HOLD_HOURS } from '../lib/orders';
         });
         const result = (await res.json()) as {
           ok: boolean; ref?: string; token?: string; error?: string;
-          problems?: { bookId: number; available: number }[];
+          problems?: { bookId: number; title?: string; wanted?: number; available: number }[];
         };
 
         if (!res.ok || !result.ok) {
+          let message = result.error ?? 'Something went wrong. Please try again.';
+
           if (res.status === 409 && result.problems) {
-            for (const p of result.problems) setQty(p.bookId, Math.max(0, p.available));
+            /*
+             * A negative availability means "unknown", not "none". Losing the
+             * race for the last copy reports every item in the order that way,
+             * so treating it as a quantity emptied the whole basket - including
+             * the titles that were perfectly fine - and left the customer
+             * reading "your basket has been updated" over an empty page.
+             */
+            const known = result.problems.filter((p) => p.available >= 0);
+            for (const p of known) setQty(p.bookId, p.available);
             await loadSummary();
+
+            const named = known.filter((p) => p.title).map((p) => p.title);
+            if (named.length) {
+              message = `${named.join(', ')} ${named.length === 1 ? 'is' : 'are'} no longer available in the quantity you asked for. Your basket has been updated.`;
+            }
           }
-          showError(result.error ?? 'Something went wrong. Please try again.');
+
+          showError(message);
           submit.disabled = false;
           submit.textContent = 'Send request';
           return;

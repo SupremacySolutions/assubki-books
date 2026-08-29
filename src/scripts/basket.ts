@@ -41,6 +41,34 @@ export function add(id: number | string, qty = 1): void {
   write(basket);
 }
 
+/**
+ * Add, but never past what the shop actually has.
+ *
+ * `add` accumulates, so two clicks of "add 3" with three copies in stock used to
+ * put six in the basket - each click passed its own clamp and nothing ever
+ * checked the total. The book page could not see it either, because it never
+ * read the existing basket. This caps the *total* and reports what it did, so
+ * the page can say so rather than confirming a request it quietly cut down.
+ */
+export function addChecked(
+  id: number | string,
+  wanted: number,
+  available: number,
+): { added: number; requested: number; total: number; capped: boolean } {
+  const key = String(id);
+  const basket = read();
+  const held = basket[key] ?? 0;
+  const ceiling = Math.max(0, Math.min(available, 99));
+  const total = Math.min(held + Math.max(0, wanted), ceiling);
+  const added = total - held;
+
+  if (added > 0) {
+    basket[key] = total;
+    write(basket);
+  }
+  return { added, requested: wanted, total, capped: added < wanted };
+}
+
 export function setQty(id: number | string, qty: number): void {
   const basket = read();
   if (qty <= 0) delete basket[String(id)];
@@ -75,9 +103,10 @@ paintCount();
 declare global {
   interface Window {
     asbBasket: {
-      read: typeof read; add: typeof add; setQty: typeof setQty;
-      remove: typeof remove; clear: typeof clear; count: typeof count;
+      read: typeof read; add: typeof add; addChecked: typeof addChecked;
+      setQty: typeof setQty; remove: typeof remove; clear: typeof clear;
+      count: typeof count;
     };
   }
 }
-window.asbBasket = { read, add, setQty, remove, clear, count };
+window.asbBasket = { read, add, addChecked, setQty, remove, clear, count };
