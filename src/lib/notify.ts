@@ -20,7 +20,7 @@
 import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml } from './email';
-import { sendMessage, optInLink, esc, botConfigured } from './telegram';
+import { sendMessage, optInLink, esc, botConfigured, mdLink } from './telegram';
 import { statusMessage } from './order-status';
 import { getSetting } from './settings';
 
@@ -160,7 +160,7 @@ export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
           esc(`${input.name} · ${price(input.order.subtotalPence)}`),
           esc(input.order.items.map((item) => `${item.title} x${item.qty}`).join('\n')),
           '',
-          esc(`Open order: ${input.origin}/admin/orders/${input.order.ref}`),
+          mdLink(`Open order ${input.order.ref}`, `${input.origin}/admin/orders/${input.order.ref}`),
         ].join('\n'),
       )
     : Promise.resolve(false);
@@ -418,7 +418,7 @@ export async function notifyStatusChange(input: {
       ? sendMessage(
           input.telegramChatId,
           `*${esc(copy.subject)}*\n\n${esc(copy.line)}` +
-            (copy.trackingLink ? `\n\n${esc(`Track it here: ${copy.trackingLink}`)}` : ''),
+            (copy.trackingLink ? `\n\n${mdLink('Track it here', copy.trackingLink)}` : ''),
         )
       : Promise.resolve(false),
   ]);

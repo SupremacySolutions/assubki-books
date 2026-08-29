@@ -198,8 +198,8 @@ Every one of these opens with *السلام عليكم **Ali**,* and ends with a
 | No tracking number | Your order has been posted. جزاكم الله خيرا. |
 
 ✅ **Changed:** when the carrier is one we can link to, the message now also
-includes a "Track this parcel" button (email) or a line reading
-*Track it here: [link]* (Telegram).
+includes a "Track this parcel" button (email) or a tap-to-open **Track it
+here** link (Telegram) — not the address spelled out.
 
 ---
 
@@ -280,7 +280,7 @@ Only if you have connected your own chat to the bot.
 > al-Nahw al-Wadih x2
 > Riyad al-Salihin
 >
-> Open order: **assubkibooks.co.uk/admin/orders/ASB-4F7K**
+> Open order ASB-4F7K  *(this is a tap-to-open link, not a written-out address)*
 
 ## B. You confirm the order → to the customer
 
@@ -351,8 +351,7 @@ Posted when you publish a book. Editing the book edits the same post.
 > **£6.00**
 > **4 available**
 >
-> Order here:
-> **assubkibooks.co.uk/book/al-nahw-al-wadih**
+> Order here  *(a tap-to-open link)*
 
 If it is out of stock, that line reads **out of stock** instead.
 

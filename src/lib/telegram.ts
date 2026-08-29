@@ -179,6 +179,20 @@ export function esc(text: string): string {
 }
 
 /**
+ * A short clickable word, instead of a raw URL taking over the message.
+ *
+ * A link used to be sent as plain escaped text, so the message *was* the URL -
+ * "Order here:" followed by a line wider than the phone showing it. The label
+ * is escaped exactly like any other text; the address inside the parentheses
+ * has a much smaller rule of its own - only `\` and `)` need escaping there,
+ * and escaping it like text would mangle it.
+ */
+export function mdLink(label: string, url: string): string {
+  const safeUrl = url.replace(/\\/g, '\\\\').replace(/\)/g, '\\)');
+  return `[${esc(label)}](${safeUrl})`;
+}
+
+/**
  * Sends a message, falling back to plain text if the formatting is rejected.
  *
  * MarkdownV2 reserves a dozen punctuation characters, and one unescaped
@@ -228,7 +242,7 @@ export function listingCaption(post: ListingPost): string {
   if (post.blurb) lines.push(esc(post.blurb), '');
   lines.push(`*${esc(price)}*`);
   lines.push(post.available > 0 ? esc(`${post.available} available`) : esc('out of stock'));
-  lines.push('', esc('Order here:'), esc(post.url));
+  lines.push('', mdLink('Order here', post.url));
   return lines.join('\n');
 }
 
