@@ -25,7 +25,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   // endpoint cannot accept something the portal never offered. This is also what
   // refuses 'dispatched' on a collection order - there is nothing to post, and
   // previously a hand-crafted POST could set a tracking number on one.
-  if (!canTransition(order.status, next, order.fulfilment)) {
+  if (!canTransition(order.status, next, order.fulfilment, Boolean(order.cash_payment))) {
     return new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}?e=state` } });
   }
 

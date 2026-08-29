@@ -1,21 +1,26 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
-import { getOrderByRef, getOrderItems } from '../../../lib/admin-db';
+import { getOrderByRef, getOrderItems, lastPostagePence } from '../../../lib/admin-db';
 import { price } from '../../../lib/format';
-import { defaultPostagePence, getSetting } from '../../../lib/settings';
+import { paymentDraft, CASH_COLLECTION_DRAFT } from '../../../lib/settings';
 import { nextActions, portalLabel, POSTAGE_PROVIDERS } from '../../../lib/order-status';
 
 const { ref } = Astro.params;
 const order = ref ? await getOrderByRef(ref) : null;
 if (!order) return Astro.rewrite('/404');
 
-const [items, postageDefault, paymentInstructions] = await Promise.all([
-  getOrderItems(order.id),
-  defaultPostagePence(),
-  getSetting('payment_instructions'),
-]);
-
 const isCollection = order.fulfilment === 'collection';
+const isCash = isCollection && Boolean(order.cash_payment);
+
+// Both drafts are fetched, not just the one in force: ticking "paying in cash"
+// swaps the box without a page load, and the other text has to be there to
+// swap to.
+const [items, postageDefault, draft, prepaidDraft] = await Promise.all([
+  getOrderItems(order.id),
+  lastPostagePence(),
+  paymentDraft(order.fulfilment, isCash),
+  paymentDraft(order.fulfilment, false),
+]);
 const suggestedPostage = order.postage_pence ?? (isCollection ? 0 : postageDefault);
 const canConfirm = order.status === 'requested';
 const hoursLeft = order.expires_at
@@ -27,7 +32,7 @@ const problem = Astro.url.searchParams.get('e');
 
 // What can happen next, and what it is called, both come from lib/order-status
 // so a collection order is never offered "Mark as posted".
-const steps = nextActions(order.status, order.fulfilment);
+const steps = nextActions(order.status, order.fulfilment, isCash);
 ---
 
 <Admin
@@ -122,7 +127,8 @@ const steps = nextActions(order.status, order.fulfilment);
             </h2>
             <p class="mt-1.5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
               {isCollection ? 'We will send' : 'Set the postage and we will send'}{' '}
-              {order.customer_name.split(' ')[0]} the total and how to pay
+              {order.customer_name.split(' ')[0]}{' '}
+              {isCash ? 'the total and a time to collect' : 'the total and how to pay'}
               {order.telegram_chat_id
                 ? ' - by Telegram and email, since they connected their Telegram.'
                 : ' by email. They have not connected Telegram, so email is the only way to reach them.'}
@@ -148,19 +154,43 @@ const steps = nextActions(order.status, order.fulfilment);
                   />
                 </div>
                 <p class="text-[14.5px] text-[var(--color-ink-soft)] pb-2.5">
-                  {isCollection ? 'Total to pay is ' : 'Total becomes '}
+                  {isCash ? 'To pay on collection: ' : isCollection ? 'Total to pay is ' : 'Total becomes '}
                   <strong id="total" class="price text-[17px]">
                     {price(order.subtotal_pence + suggestedPostage)}
                   </strong>
                 </p>
               </div>
 
+              {/* The tick belongs beside the message it rewrites. Left in the
+                  aside it was two feet from the box it changes, and the owner
+                  could send bank details to someone paying cash without ever
+                  seeing the contradiction. */}
+              {isCollection && (
+              <label class="mt-4 flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="cash_payment"
+                  value="1"
+                  checked={Boolean(order.cash_payment)}
+                  class="w-4 h-4 mt-0.5 accent-[var(--color-navy)] toggle-cash-payment"
+                  data-ref={order.ref}
+                />
+                <span>
+                  <span class="block text-[14px] font-medium">Paying in cash on collection</span>
+                  <span class="block mt-0.5 text-[13px] text-[var(--color-ink-faint)]">
+                    Nothing is owed until they arrive. Their order page, this message and the
+                    emails all say so.
+                  </span>
+                </span>
+              </label>
+              )}
+
               {/* Editable per order, not a fixed template: which account to pay
                   into depends on the size of the order and what is in it. The
                   setting is only the starting text. */}
               <div class="mt-4">
                 <label for="payment_message" class="block text-[14px] font-medium mb-1.5">
-                  How they should pay
+                  {isCash ? 'What they should do next' : 'How they should pay'}
                 </label>
                 <textarea
                   id="payment_message"
@@ -168,11 +198,13 @@ const steps = nextActions(order.status, order.fulfilment);
                   rows="8"
                   maxlength="4000"
                   class="field font-[family-name:var(--font-body)] text-[14px] leading-relaxed"
-                  >{order.payment_message ?? paymentInstructions}</textarea
+                  data-draft-prepaid={prepaidDraft}
+                  data-draft-cash={CASH_COLLECTION_DRAFT}
+                  >{order.payment_message ?? draft}</textarea
                 >
                 <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
                   Sent exactly as written, with the order reference added. Change it for this order
-                  only - the starting text lives in{' '}
+                  only - the {isCollection ? 'collection' : 'postage'} draft lives in{' '}
                   <a href="/admin/settings" class="text-[var(--color-navy)] underline underline-offset-2">Settings</a>.
                 </p>
               </div>
@@ -281,8 +313,10 @@ const steps = nextActions(order.status, order.fulfilment);
           {isCollection ? 'Collecting in person.' : order.address}
         </p>
 
+        {/* Only here once the order is past confirming - before that it sits
+            in the confirm card, next to the message it changes. */}
         {
-          isCollection && (
+          isCollection && !canConfirm && (
             <div class="mt-3 pt-3 border-t border-[var(--color-rule)]">
               <label class="flex items-center gap-2.5 cursor-pointer">
                 <input
@@ -296,7 +330,7 @@ const steps = nextActions(order.status, order.fulfilment);
                 <span class="text-[14px] font-medium">Paying in cash</span>
               </label>
               <p class="mt-2 text-[13px] text-[var(--color-ink-faint)]">
-                Check if they'll pay cash on collection. The message on their order page will reflect this.
+                Nothing is owed until they collect. Their order page says so.
               </p>
             </div>
           )
@@ -329,7 +363,7 @@ const steps = nextActions(order.status, order.fulfilment);
       <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 text-[14px] space-y-2">
         <div class="flex justify-between gap-3">
           <span class="text-[var(--color-ink-faint)]">Status</span>
-          <span class="font-medium">{portalLabel(order.status, order.fulfilment)}</span>
+          <span class="font-medium">{portalLabel(order.status, order.fulfilment, isCash)}</span>
         </div>
         <div class="flex justify-between gap-3">
           <span class="text-[var(--color-ink-faint)]">Requested</span>
@@ -412,8 +446,25 @@ const steps = nextActions(order.status, order.fulfilment);
     // so a failed save must put the box back: a checkbox showing a state the
     // order does not have is worse than no checkbox, because the customer's
     // page would be saying the opposite.
-    const cashCheckbox = document.querySelector<HTMLInputElement>('.toggle-cash-payment');
+    //
+    // Plain JS on purpose - this block carries define:vars, so Astro ships it
+    // to the browser exactly as written. A TypeScript generic here parses as a
+    // pair of comparisons, and the listener silently never binds.
+    const cashCheckbox = document.querySelector('.toggle-cash-payment');
     if (cashCheckbox) {
+      const message = document.querySelector('#payment_message');
+
+      // Swap the draft only while it is still a draft. Once the owner has
+      // typed, their words win - a tick must never quietly discard them.
+      const swapDraft = (wanted) => {
+        if (!message) return;
+        const cash = message.dataset.draftCash ?? '';
+        const prepaid = message.dataset.draftPrepaid ?? '';
+        const current = message.value.trim();
+        if (current !== cash.trim() && current !== prepaid.trim()) return;
+        message.value = wanted ? cash : prepaid;
+      };
+
       cashCheckbox.addEventListener('change', async () => {
         const wanted = cashCheckbox.checked;
         const body = new FormData();
@@ -425,6 +476,7 @@ const steps = nextActions(order.status, order.fulfilment);
             body,
           });
           if (!res.ok) throw new Error(`save failed: ${res.status}`);
+          swapDraft(wanted);
         } catch (err) {
           console.error('cash payment save failed', err);
           cashCheckbox.checked = !wanted;

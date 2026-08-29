@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { setSetting } from '../../../lib/settings';
+import { setSetting, forgetContactTelegram } from '../../../lib/settings';
 
 export const prerender = false;
 
@@ -22,19 +22,15 @@ const text = async (
 export const POST: APIRoute = async ({ request }) => {
   const form = await request.formData();
 
-  await text(form, 'payment_instructions', 'payment_instructions', 4000);
+  await text(form, 'payment_draft_delivery', 'payment_draft_delivery', 4000);
+  await text(form, 'payment_draft_collection', 'payment_draft_collection', 4000);
   await text(form, 'collection_address', 'collection_address', 300);
   await text(form, 'contact_telegram', 'contact_telegram', 80);
 
-  // An empty box is not a request to charge nothing: Number('') is 0, so the
-  // old check quietly set postage to zero whenever the field was cleared.
-  const raw = String(form.get('default_postage') ?? '').trim();
-  if (raw) {
-    const postage = Number(raw);
-    if (Number.isFinite(postage) && postage >= 0) {
-      await setSetting('default_postage_pence', String(Math.round(postage * 100)));
-    }
-  }
+  // The handle is cached for a minute so the footer is not a query per page
+  // view. The owner who just changed it should not have to wait that minute to
+  // see whether it took.
+  forgetContactTelegram();
 
   return new Response(null, { status: 302, headers: { Location: '/admin/settings?saved=1' } });
 };

@@ -111,7 +111,7 @@ const TONE: Record<string, string> = {
                 </p>
               </div>
               <span class:list={['px-2 py-1 rounded-sm text-[12px] font-medium shrink-0', TONE[o.status]]}>
-                {portalLabel(o.status, o.fulfilment)}
+                {portalLabel(o.status, o.fulfilment, Boolean(o.cash_payment))}
               </span>
               <span class="price text-[15px] shrink-0 w-16 text-right">
                 {price(o.total_pence ?? o.subtotal_pence)}

@@ -1,6 +1,6 @@
 ---
 import Admin from '../../layouts/Admin.astro';
-import { getSettings } from '../../lib/settings';
+import { getSettings, CASH_COLLECTION_DRAFT } from '../../lib/settings';
 import { botConfigured, botUsername, ownerOptInLink } from '../../lib/telegram';
 import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
 
@@ -19,49 +19,51 @@ const saved = Astro.url.searchParams.get('saved');
   }
 
   <form method="post" action="/api/admin/settings" class="space-y-5 max-w-2xl">
+    {/* Two drafts, in the order they come up: most orders are posted. A
+        collection being paid in cash uses a standard line instead - there are
+        no details to give, so there is nothing to keep up to date. */}
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
-        How customers pay
+        Payment drafts
       </h2>
-      <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-        The starting text when you confirm an order. You can change it for each order before it
-        goes - useful when a different account suits a different order. The reference is added
-        automatically.
+      <p class="mt-1.5 mb-4 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        The starting text when you confirm an order, chosen by how it is coming to them. You can
+        change it on the order before it goes - useful when a different account suits a different
+        order. The reference is added automatically.
       </p>
-      <label for="payment_instructions" class="sr-only">Payment instructions</label>
-      <textarea
-        id="payment_instructions"
-        name="payment_instructions"
-        rows="10"
-        maxlength="4000"
-        class="field font-[family-name:var(--font-body)]">{settings.payment_instructions ?? ''}</textarea
-      >
-    </section>
 
-    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
-      <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Postage</h2>
-      <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)]">
-        Filled in for you when confirming an order. You can change it per order.
-      </p>
-      <label for="default_postage" class="block text-[14.5px] font-medium mb-1.5">
-        Usual postage (£)
+      <label for="payment_draft_delivery" class="block text-[14.5px] font-medium mb-1.5">
+        Posted orders
       </label>
-      <input
-        id="default_postage"
-        name="default_postage"
-        type="number"
-        step="0.01"
-        min="0"
-        value={((Number(settings.default_postage_pence ?? '0') || 0) / 100).toFixed(2)}
-        class="field !w-32 tabular-nums"
-      />
+      <textarea
+        id="payment_draft_delivery"
+        name="payment_draft_delivery"
+        rows="9"
+        maxlength="4000"
+        class="field font-[family-name:var(--font-body)]">{settings.payment_draft_delivery ?? ''}</textarea
+      >
+
+      <label for="payment_draft_collection" class="block mt-4 text-[14.5px] font-medium mb-1.5">
+        Collection orders
+      </label>
+      <textarea
+        id="payment_draft_collection"
+        name="payment_draft_collection"
+        rows="6"
+        maxlength="4000"
+        class="field font-[family-name:var(--font-body)]">{settings.payment_draft_collection ?? ''}</textarea
+      >
+      <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+        Tick "paying in cash on collection" on an order and it uses a standard line instead:
+        <span class="italic">{CASH_COLLECTION_DRAFT}</span>
+      </p>
     </section>
 
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Collection</h2>
       <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-        Where collection customers should come. Sent to them once you mark their payment received,
-        and shown on their order page.
+        Where collection customers should come. Sent once you confirm their order, and shown on
+        their order page.
       </p>
       <label for="collection_address" class="sr-only">Collection address</label>
       <textarea
@@ -76,11 +78,12 @@ const saved = Astro.url.searchParams.get('saved');
 
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
-        Who the bot points people to
+        Where people reach you
       </h2>
       <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-        The bot does not answer general questions. Anyone who messages it is sent here instead.
-        Leave blank and it will just say the shop will be in touch.
+        Every "Message us on Telegram" link on the site points here, and the bot sends anyone
+        asking about anything other than an order here too. Leave it blank and the site falls back
+        to the channel.
       </p>
       <label for="contact_telegram" class="block text-[14.5px] font-medium mb-1.5">
         Telegram handle

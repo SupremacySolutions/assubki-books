@@ -19,6 +19,10 @@ interface Props {
 const { order } = Astro.props;
 
 const isCollection = order.fulfilment === 'collection';
+// Paying in cash on the day changes what the middle of the journey is waiting
+// on - a time, not a transfer - and the step is read directly under a heading
+// that already says so.
+const cash = isCollection && Boolean(order.cash_payment);
 const cancelled = order.status === 'cancelled' || order.status === 'expired';
 
 const when = (t: number | null) =>
@@ -32,7 +36,11 @@ const reached = {
     ['awaiting_payment', 'paid', 'dispatched', 'completed'].includes(order.status),
   paid: Boolean(order.paid_at) || ['paid', 'dispatched', 'completed'].includes(order.status),
   posted: Boolean(order.dispatched_at) || ['dispatched', 'completed'].includes(order.status),
-  finished: order.status === 'completed',
+  // A collection order cannot be posted, so orders predating that rule which
+  // were marked dispatched are finished - the page calls them Collected and the
+  // timeline used to show that same step as still to come.
+  finished:
+    order.status === 'completed' || (isCollection && order.status === 'dispatched'),
 };
 
 const opening: Step[] = [
@@ -43,7 +51,7 @@ const opening: Step[] = [
     note: 'Your books were set aside for you.',
   },
   {
-    title: 'Confirmed, payment details sent',
+    title: cash ? 'Confirmed, collection to arrange' : 'Confirmed, payment details sent',
     done: reached.confirmed,
     at: when(order.confirmed_at),
     note: reached.confirmed
@@ -65,9 +73,15 @@ const steps: Step[] = isCollection
         title: 'Ready to collect',
         done: reached.paid,
         at: when(order.paid_at),
-        note: reached.paid
-          ? 'Come and collect whenever suits you.'
-          : 'Once your payment reaches us your books will be set aside.',
+        note: reached.finished
+          ? undefined // they have been; standing advice about collecting is stale
+          : reached.paid
+            ? cash
+              ? 'Come and collect - you can pay when you arrive.'
+              : 'Come and collect whenever suits you.'
+            : cash
+              ? 'We will set them aside and agree a time with you.'
+              : 'Once your payment reaches us your books will be set aside.',
       },
       {
         title: 'Collected',

@@ -186,38 +186,58 @@ export interface ConfirmedInput {
   totalPence: number;
   fulfilment: string;
   paymentInstructions: string;
+  /** Collection orders only: the money is handed over at the door. */
+  cashPayment?: boolean;
   origin: string;
 }
 
 function confirmedEmail(input: ConfirmedInput) {
   const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
+  // Nothing is owed yet on a cash collection, so the message stops asking for
+  // money and asks for a time instead. The figures still go, because the
+  // customer wants to know what they are bringing.
+  const cash = Boolean(input.cashPayment);
+  const totalLabel = cash ? 'Total, payable on collection' : 'Total to pay';
+  const quote = cash
+    ? `Quote ${input.ref} when you collect.`
+    : `Please quote ${input.ref} with your payment.`;
 
   const html = shell(
     'Your order is confirmed',
-    `Reference ${input.ref} · ${price(input.totalPence)} to pay`,
+    `Reference ${input.ref} · ${price(input.totalPence)}${cash ? '' : ' to pay'}`,
     `<p style="margin:0 0 16px;font-size:15px">Assalamu alaikum ${escapeHtml(input.name)},</p>
      <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
-       Your books are reserved. Here is the total and how to pay.
+       ${
+         cash
+           ? 'Your books are set aside. Here is what they come to - you can pay in cash when you collect.'
+           : 'Your books are reserved. Here is the total and how to pay.'
+       }
      </p>
      ${itemRows(
        input.items,
        input.subtotalPence,
        input.fulfilment === 'collection' ? [] : [{ label: 'Postage', pence: input.postagePence }],
-       'Total to pay',
+       totalLabel,
        input.totalPence,
      )}
      <div style="margin:22px 0 0;padding:16px;background:#f5f4f0;border:1px solid #ddd9d1;border-radius:3px">
-       <p style="margin:0 0 8px;font-size:15px;font-weight:600">How to pay</p>
+       <p style="margin:0 0 8px;font-size:15px;font-weight:600">${cash ? 'Collecting your books' : 'How to pay'}</p>
        <p style="margin:0;font-size:14.5px;color:#4a5568;line-height:1.65;white-space:pre-line">${escapeHtml(
          input.paymentInstructions,
        )}</p>
-       <p style="margin:12px 0 0;font-size:14.5px">
-         Please quote <strong>${escapeHtml(input.ref)}</strong> with your payment.
-       </p>
+       <p style="margin:12px 0 0;font-size:14.5px">${
+         cash
+           ? `Quote <strong>${escapeHtml(input.ref)}</strong> when you collect.`
+           : `Please quote <strong>${escapeHtml(input.ref)}</strong> with your payment.`
+       }</p>
      </div>
      ${button(link, 'View your order')}
      <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
-       Once your payment reaches us we will confirm and post your books.
+       ${
+         cash
+           ? 'No payment is taken on our website. Message us to agree a time and the books will be waiting.'
+           : 'Once your payment reaches us we will confirm and post your books.'
+       }
      </p>`,
   );
 
@@ -228,14 +248,18 @@ function confirmedEmail(input: ConfirmedInput) {
       .join('\n') +
     `\n  Subtotal: ${price(input.subtotalPence)}` +
     (input.fulfilment === 'collection' ? '' : `\n  Postage: ${price(input.postagePence)}`) +
-    `\n  TOTAL TO PAY: ${price(input.totalPence)}\n\n` +
-    `How to pay\n${input.paymentInstructions}\n\n` +
-    `Please quote ${input.ref} with your payment.\n\n${link}\n`;
+    `\n  ${totalLabel.toUpperCase()}: ${price(input.totalPence)}\n\n` +
+    `${cash ? 'Collecting your books' : 'How to pay'}\n${input.paymentInstructions}\n\n` +
+    `${quote}\n\n${link}\n`;
 
-  return { subject: `Order ${input.ref} confirmed - ${price(input.totalPence)} to pay`, html, text };
+  const subject = cash
+    ? `Order ${input.ref} confirmed - ${price(input.totalPence)} on collection`
+    : `Order ${input.ref} confirmed - ${price(input.totalPence)} to pay`;
+  return { subject, html, text };
 }
 
 function confirmedTelegram(input: ConfirmedInput): string {
+  const cash = Boolean(input.cashPayment);
   const lines = [
     `*${esc(`Order ${input.ref} confirmed`)}*`,
     '',
@@ -252,12 +276,16 @@ function confirmedTelegram(input: ConfirmedInput): string {
     lines.push(`${esc('Postage')} ${esc(price(input.postagePence))}`);
   }
   lines.push(
-    `*${esc(`Total to pay ${price(input.totalPence)}`)}*`,
+    `*${esc(
+      cash
+        ? `Total ${price(input.totalPence)}, payable on collection`
+        : `Total to pay ${price(input.totalPence)}`,
+    )}*`,
     '',
-    `*${esc('How to pay')}*`,
+    `*${esc(cash ? 'Collecting your books' : 'How to pay')}*`,
     esc(input.paymentInstructions),
     '',
-    esc(`Please quote ${input.ref} with your payment.`),
+    esc(cash ? `Quote ${input.ref} when you collect.` : `Please quote ${input.ref} with your payment.`),
   );
   return lines.join('\n');
 }

@@ -68,8 +68,9 @@ export function statusLabel(
       return collecting && cashPayment
         ? {
             label: 'Ready to arrange collection',
-            blurb:
-              'We will contact you to arrange a time for collection. Your books are being set aside.',
+            blurb: collectionAddress
+              ? `Your books are being set aside at ${collectionAddress}. Get in touch and we will agree a time - you can pay in cash when you collect.`
+              : 'Your books are being set aside. Get in touch and we will agree a time - you can pay in cash when you collect.',
             tone: 'wait',
           }
         : {
@@ -140,28 +141,44 @@ export function statusLabel(
       };
 
     default:
-      return statusLabel('requested', fulfilment);
+      return statusLabel('requested', fulfilment, collectionAddress, cashPayment);
   }
 }
 
-/** True once the customer has paid, so the page stops asking them to. */
+/** True once the order has moved past waiting on the customer. */
 export const isSettled = (status: string): boolean =>
   status === 'paid' || status === 'dispatched' || status === 'completed';
+
+/**
+ * Whether the shop actually has the money.
+ *
+ * Not the same question as `isSettled`. A cash collection reaches 'paid' when
+ * the books are set aside, which is *before* anyone has paid for them - so the
+ * page said "Total paid - paid in full, nothing further is owed" directly under
+ * a blurb inviting them to pay when they arrive. The money is only real once
+ * they have been and gone.
+ */
+export const moneyReceived = (status: string, cashPayment = false): boolean =>
+  cashPayment ? status === 'completed' : isSettled(status);
 
 // ---------------------------------------------------------------------------
 // What the owner sees
 // ---------------------------------------------------------------------------
 
 /** The short label in the portal list and the status chip. */
-export function portalLabel(status: string, fulfilment: string): string {
+export function portalLabel(status: string, fulfilment: string, cashPayment = false): string {
   const collecting = isCollection(fulfilment);
+  const cash = collecting && cashPayment;
 
   switch (status) {
     case 'requested':
       return 'Needs reply';
     case 'awaiting_payment':
-      return 'Awaiting payment';
+      // Nothing is owed yet on a cash order, so "Awaiting payment" would have
+      // the owner chasing money that is not late.
+      return cash ? 'To arrange' : 'Awaiting payment';
     case 'paid':
+      if (cash) return 'Ready to collect · cash';
       return collecting ? 'Ready to collect' : 'Paid, to post';
     case 'dispatched':
       return collecting ? 'Collected' : 'Posted';
@@ -198,8 +215,13 @@ export interface NextAction {
  * underneath for the occasional order paid on a Friday and posted on Monday,
  * where telling the customer it was posted would be a lie.
  */
-export function nextActions(status: string, fulfilment: string): NextAction[] {
+export function nextActions(
+  status: string,
+  fulfilment: string,
+  cashPayment = false,
+): NextAction[] {
   const collecting = isCollection(fulfilment);
+  const cash = collecting && cashPayment;
   const cancel: NextAction = {
     action: 'cancelled',
     label: 'Cancel order',
@@ -214,11 +236,20 @@ export function nextActions(status: string, fulfilment: string): NextAction[] {
     case 'awaiting_payment':
       return collecting
         ? [
-            {
-              action: 'paid',
-              label: 'Payment received',
-              hint: 'Tells them their books are set aside and ready to collect.',
-            },
+            // Same transition either way. Only the words change: on a cash
+            // order the owner would be clicking "Payment received" before any
+            // money existed, purely to tell the customer the books are ready.
+            cash
+              ? {
+                  action: 'paid',
+                  label: 'Set aside for collection',
+                  hint: 'Tells them the books are ready and to agree a time. The money comes when they collect.',
+                }
+              : {
+                  action: 'paid',
+                  label: 'Payment received',
+                  hint: 'Tells them their books are set aside and ready to collect.',
+                },
             cancel,
           ]
         : [
@@ -240,7 +271,11 @@ export function nextActions(status: string, fulfilment: string): NextAction[] {
     case 'paid':
       return collecting
         ? [
-            { action: 'completed', label: 'Mark as collected', hint: 'Closes the order.' },
+            {
+              action: 'completed',
+              label: 'Mark as collected',
+              hint: cash ? 'Closes the order - take the cash when they arrive.' : 'Closes the order.',
+            },
             cancel,
           ]
         : [
@@ -270,8 +305,13 @@ export function nextActions(status: string, fulfilment: string): NextAction[] {
  * collection order has no route to `dispatched` - there is nothing to post -
  * and this is what refuses a request crafted by hand.
  */
-export function canTransition(from: string, to: string, fulfilment: string): boolean {
-  return nextActions(from, fulfilment).some((a) => a.action === to);
+export function canTransition(
+  from: string,
+  to: string,
+  fulfilment: string,
+  cashPayment = false,
+): boolean {
+  return nextActions(from, fulfilment, cashPayment).some((a) => a.action === to);
 }
 
 // ---------------------------------------------------------------------------

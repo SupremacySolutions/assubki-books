@@ -51,6 +51,22 @@ export async function listOrders(status?: string | null): Promise<AdminOrderRow[
   return results;
 }
 
+/**
+ * The postage on the most recent posted order that carried any.
+ *
+ * This replaced a "usual postage" setting. The owner typed over it on most
+ * orders anyway, so it was a number to maintain that rarely applied; what they
+ * charged last time needs no maintaining and is right more often.
+ */
+export async function lastPostagePence(): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT postage_pence FROM orders
+      WHERE fulfilment <> 'collection' AND postage_pence IS NOT NULL AND postage_pence > 0
+      ORDER BY confirmed_at DESC, id DESC LIMIT 1`,
+  ).first<{ postage_pence: number }>();
+  return row?.postage_pence ?? 0;
+}
+
 export async function getOrderByRef(ref: string): Promise<AdminOrderRow | null> {
   return env.DB.prepare(
     `SELECT o.*, (SELECT COALESCE(SUM(qty),0) FROM order_items WHERE order_id = o.id) AS item_count

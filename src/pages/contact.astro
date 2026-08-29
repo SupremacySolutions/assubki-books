@@ -2,6 +2,12 @@
 import Base from '../layouts/Base.astro';
 import { SITE } from '../lib/format';
 import { ownerAddress } from '../lib/email';
+import { contactHandle, contactLink } from '../lib/telegram';
+
+// The handle the owner set in the portal. Shown as text as well as linked:
+// a t.me link does nothing useful for someone without the app, and this page
+// is the one place they have come specifically to find a way through.
+const [handle, telegram] = await Promise.all([contactHandle(), contactLink()]);
 
 // Read from OWNER_EMAIL rather than hardcoded, so the address customers are
 // given is the same one order notifications go to, and only ever set in one
@@ -19,7 +25,7 @@ const contactEmail = ownerAddress();
 
     <div class="mt-8 grid gap-4 sm:grid-cols-2">
       <a
-        href={SITE.telegram}
+        href={telegram ?? SITE.telegram}
         rel="noopener"
         class="block p-5 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] hover:border-[var(--color-navy)] transition-colors"
       >
@@ -27,7 +33,7 @@ const contactEmail = ownerAddress();
         <p class="mt-1.5 text-[15px] text-[var(--color-ink-soft)]">
           New arrivals, availability and the quickest replies.
         </p>
-        <p class="mt-3 text-[15px] text-[var(--color-navy)]">@alsubkibooks →</p>
+        <p class="mt-3 text-[15px] text-[var(--color-navy)] select-all">{handle} →</p>
       </a>
 
       <a

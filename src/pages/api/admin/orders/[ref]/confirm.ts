@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getOrderByRef, getOrderItems } from '../../../../../lib/admin-db';
-import { getSetting } from '../../../../../lib/settings';
+import { paymentDraft } from '../../../../../lib/settings';
 import { notifyOrderConfirmed } from '../../../../../lib/notify';
 
 export const prerender = false;
@@ -30,8 +30,9 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     order.fulfilment === 'collection' ? 0 : Math.max(0, Math.round((pounds || 0) * 100));
   const totalPence = order.subtotal_pence + postagePence;
 
+  const cashPayment = Boolean(order.cash_payment);
   const typed = String(form.get('payment_message') ?? '').trim().slice(0, 4000);
-  const paymentInstructions = typed || (await getSetting('payment_instructions'));
+  const paymentInstructions = typed || (await paymentDraft(order.fulfilment, cashPayment));
 
   /*
    * Claim the order before sending anything.
@@ -74,6 +75,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     totalPence,
     fulfilment: order.fulfilment,
     paymentInstructions,
+    cashPayment,
     origin: url.origin,
   });
 

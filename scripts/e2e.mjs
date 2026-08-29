@@ -21,6 +21,18 @@ import {
   created, makeBook, placeOrder, teardown,
 } from './lib/e2e-helpers.mjs';
 
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+/** Every file under a directory, recursively. */
+function* walk(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* walk(full);
+    else yield full;
+  }
+}
+
 const only = process.argv.find((a) => a.startsWith('--only='))?.split('=')[1];
 const wanted = (n) => !only || n.toLowerCase().includes(only.toLowerCase());
 const money = (p) => `£${(p / 100).toFixed(2)}`;
@@ -469,6 +481,75 @@ async function notifications() {
 }
 
 // ---------------------------------------------------------------------------
+async function ownerSettings() {
+  const t = suite('15. Settings, drafts and contact');
+
+  // --- the confirm box starts from the right draft --------------------------
+  //
+  // One draft used to serve both journeys, so a collection order opened with
+  // bank details in the box and the owner rewrote them by hand every time.
+  await admin('/api/admin/settings', {
+    payment_draft_delivery: 'POSTED-DRAFT bank transfer please.',
+    payment_draft_collection: 'COLLECTION-DRAFT pay on the day or in advance.',
+    collection_address: '12 Evington Road, Leicester LE2 1HN - Saturdays 10am to 4pm',
+    contact_telegram: '@alsubkibooks',
+  });
+
+  // What is *in the box*, not merely somewhere on the page: the other draft is
+  // deliberately carried in a data attribute so ticking cash can swap to it.
+  const draftInBox = (markup) =>
+    markup.match(/<textarea[^>]*id="payment_message"[^>]*>([\s\S]*?)<\/textarea>/)?.[1] ?? '';
+
+  const dBook = await makeBook();
+  const d = await placeOrder(dBook.id, 'delivery');
+  t.ok(draftInBox(await html(`/admin/orders/${d.ref}`)).includes('POSTED-DRAFT'),
+    'a posted order opens with the posted draft');
+
+  const cBook = await makeBook();
+  const c = await placeOrder(cBook.id, 'collection');
+  const cPortal = draftInBox(await html(`/admin/orders/${c.ref}`));
+  t.ok(cPortal.includes('COLLECTION-DRAFT') && !cPortal.includes('POSTED-DRAFT'),
+    'a collection opens with the collection draft, not the posted one');
+
+  await admin(`/api/admin/orders/${c.ref}/cash-payment`, { cash_payment: '1' });
+  const cashPortal = draftInBox(await html(`/admin/orders/${c.ref}`));
+  t.ok(cashPortal.includes('No payment is needed now') && !cashPortal.includes('COLLECTION-DRAFT'),
+    'and a cash collection opens with the standard cash line instead');
+
+  // --- postage remembers rather than being maintained -----------------------
+  //
+  // This replaced a "usual postage" setting the owner typed over anyway.
+  await admin(`/api/admin/orders/${d.ref}/confirm`, { postage: '4.75', payment_message: 'x' });
+  const nextBook = await makeBook();
+  const next = await placeOrder(nextBook.id, 'delivery');
+  t.ok((await html(`/admin/orders/${next.ref}`)).includes('value="4.75"'),
+    'the postage box offers what the last posted order used');
+
+  // --- one handle, set in one place -----------------------------------------
+  await admin('/api/admin/settings', { contact_telegram: '@e2econtact' });
+  const [home, contact, order] = await Promise.all([
+    html('/'),
+    html('/contact'),
+    html(`/order?ref=${next.ref}&t=${next.token}`),
+  ]);
+  t.ok(home.includes('t.me/e2econtact'), 'the footer follows the handle in settings');
+  t.ok(contact.includes('t.me/e2econtact') && contact.includes('@e2econtact'),
+    'the contact page links it and shows it as text');
+  t.ok(order.includes('t.me/e2econtact'), 'and the order page points at a person, not the channel');
+  t.ok(visibleText(order).includes(vars.OWNER_EMAIL ?? 'subkibooks'),
+    'with an address beside it for anyone without Telegram');
+
+  // --- the settings page itself ---------------------------------------------
+  const page = visibleText(await html('/admin/settings'));
+  t.ok(page.includes('Posted orders') && page.includes('Collection orders'),
+    'settings offers a draft for each kind of order');
+  t.ok(!page.includes('Usual postage'),
+    'and no longer asks for a postage default the owner types over anyway');
+
+  await admin('/api/admin/settings', { contact_telegram: '@alsubkibooks' });
+}
+
+// ---------------------------------------------------------------------------
 async function integrity() {
   const t = suite('12. Data integrity');
   const bad = await db(
@@ -478,6 +559,29 @@ async function integrity() {
 
   const dupes = await db(`SELECT slug FROM books GROUP BY slug HAVING COUNT(*) > 1`);
   t.ok(dupes.length === 0, 'no duplicate slugs');
+
+  /*
+   * Astro compiles an ordinary <script>, but ships an `is:inline` one to the
+   * browser exactly as written - and `define:vars` forces inline. A TypeScript
+   * generic in such a block parses as a pair of comparisons: no error, no
+   * warning, the listener simply never binds. That is how the cash-on-collection
+   * checkbox reached production doing nothing at all.
+   */
+  const inlineTs = [];
+  for (const file of walk(new URL('../src/', import.meta.url).pathname)) {
+    if (!file.endsWith('.astro')) continue;
+    const source = readFileSync(file, 'utf8');
+    // `(?![^>]*\/>)` skips self-closing tags - the JSON-LD block is one, and
+    // without this the match ran past it and captured the next script's body.
+    for (const block of source.matchAll(
+      /<script(?![^>]*\/>)[^>]*\bis:inline\b[^>]*>([\s\S]*?)<\/script>/g,
+    )) {
+      if (/querySelector\s*<|\bas\s+HTML|\)\s*:\s*(string|number|boolean|void)\b/.test(block[1])) {
+        inlineTs.push(file.split('/src/')[1]);
+      }
+    }
+  }
+  t.ok(inlineTs.length === 0, `no is:inline script carries TypeScript${inlineTs.length ? ` (${inlineTs.join(', ')})` : ''}`);
 
   const orphans = await one(
     `SELECT COUNT(*) AS n FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)`,
@@ -550,15 +654,53 @@ async function lifecycle() {
   const marked = await admin(`/api/admin/orders/${cash.ref}/cash-payment`, { cash_payment: '1' });
   t.ok(marked.status === 200, 'cash: a collection order can be marked as paying in cash');
 
+  // The tick has to survive a page load, or the owner cannot tell whether it
+  // took. It reached the database once while the checkbox that sets it was
+  // dead in the browser, so the portal page is checked, not just the endpoint.
+  const portalAfter = await html(`/admin/orders/${cash.ref}`);
+  t.ok(/toggle-cash-payment[^>]*checked|checked[^>]*toggle-cash-payment/.test(portalAfter),
+    'cash: the portal shows the tick after saving it');
+
   await admin(`/api/admin/orders/${cash.ref}/confirm`, { payment_message: 'Pay when you collect.' });
-  const arranging = await html(`/order?ref=${cash.ref}&t=${cash.token}`);
+
+  // Every status is read as a whole page. The defect this guards against was
+  // not a wrong string but two right ones contradicting each other: a heading
+  // saying pay on collection above a total saying paid in full.
+  const OWES = /Total to pay|Payable in cash when you collect/;
+  const PAID_UP = /Total paid|Paid in full/;
+
+  const arranging = visibleText(await html(`/order?ref=${cash.ref}&t=${cash.token}`));
   t.ok(arranging.includes('Ready to arrange collection'),
     'cash: the customer is asked to arrange a time, not to pay');
+  t.ok(arranging.includes('We will set them aside and agree a time with you.'),
+    'cash: and the timeline agrees, rather than waiting on a payment');
+  t.ok(OWES.test(arranging) && !PAID_UP.test(arranging),
+    'cash: nothing claims to be paid before they have been');
 
   await admin(`/api/admin/orders/${cash.ref}/status`, { status: 'paid' });
-  const ready = await html(`/order?ref=${cash.ref}&t=${cash.token}`);
-  t.ok(/pay(ment can be made)? when you collect/i.test(visibleText(ready)),
+  const ready = visibleText(await html(`/order?ref=${cash.ref}&t=${cash.token}`));
+  t.ok(/pay(ment can be made)? when you collect/i.test(ready),
     'cash: and told they can pay on collection');
+  t.ok(ready.includes('Come and collect - you can pay when you arrive.'),
+    'cash: the ready step says the money comes at the door');
+  t.ok(!PAID_UP.test(ready),
+    'cash: books ready is not the same as money received');
+
+  await admin(`/api/admin/orders/${cash.ref}/status`, { status: 'completed' });
+  const collected = visibleText(await html(`/order?ref=${cash.ref}&t=${cash.token}`));
+  t.ok(collected.includes('Collected') && PAID_UP.test(collected),
+    'cash: once collected, the money is real and the page says so');
+
+  // The owner's own view must not chase money that is not late.
+  const waitingBook = await makeBook();
+  const waiting = await placeOrder(waitingBook.id, 'collection');
+  await admin(`/api/admin/orders/${waiting.ref}/cash-payment`, { cash_payment: '1' });
+  await admin(`/api/admin/orders/${waiting.ref}/confirm`, { payment_message: 'Cash on the day.' });
+  const waitingPortal = visibleText(await html(`/admin/orders/${waiting.ref}`));
+  t.ok(waitingPortal.includes('To arrange') && !waitingPortal.includes('Awaiting payment'),
+    'cash: the portal calls it To arrange, not Awaiting payment');
+  t.ok(waitingPortal.includes('Set aside for collection'),
+    'cash: and offers setting the books aside rather than recording a payment');
 
   // Nothing to pay in cash on something being posted.
   const postBook = await makeBook();
@@ -757,7 +899,8 @@ const SUITES = [
   ['auth', adminAuth, false], ['listings', listings, true],
   ['shelves', shelves, true], ['orders', portalOrders, true],
   ['notifications', notifications, true], ['lifecycle', lifecycle, true],
-  ['bot', botAndOptIn, true], ['integrity', integrity, false],
+  ['bot', botAndOptIn, true], ['settings', ownerSettings, true],
+  ['integrity', integrity, false],
 ];
 
 console.log(`\nRunning against ${PROD ? `\x1b[33m${SITE} (REAL)\x1b[0m` : SITE}`);

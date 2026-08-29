@@ -11,11 +11,21 @@ import Base from '../../layouts/Base.astro';
 import Rosette from '../../components/Rosette.astro';
 import OrderJourney from '../../components/OrderJourney.astro';
 import { getOrder } from '../../lib/orders';
-import { optInLink } from '../../lib/telegram';
+import { optInLink, contactHandle, contactLink } from '../../lib/telegram';
+import { ownerAddress } from '../../lib/email';
 import { price, SITE } from '../../lib/format';
-import { statusLabel, isSettled } from '../../lib/order-status';
+import { statusLabel, isSettled, moneyReceived } from '../../lib/order-status';
 import { getSetting } from '../../lib/settings';
 import QRCode from 'qrcode';
+
+// Who to message, from the portal rather than the channel constant - and the
+// handle and email in plain sight beside it, because a t.me link does nothing
+// at all for someone without the app.
+const [contactHandleText, contactTelegramLink] = await Promise.all([
+  contactHandle(),
+  contactLink(),
+]);
+const shopEmail = ownerAddress();
 
 const params = Astro.url.searchParams;
 const ref = params.get('ref')?.trim() ?? '';
@@ -28,12 +38,18 @@ const order = ref && token ? await getOrder(ref, token) : null;
 
 // A collection order that is ready needs to say where to come, so the address
 // is only fetched when it is about to be used.
+//
+// Wanted from the confirmation onward rather than only at 'paid': a cash order
+// is invited to arrange a time as soon as it is confirmed, and an invitation
+// that cannot name the place is not much of one.
+const cashPayment = Boolean(order?.cash_payment);
 const collectionAddress =
-  order?.fulfilment === 'collection' && order.status === 'paid'
+  order?.fulfilment === 'collection' &&
+  ['awaiting_payment', 'paid', 'dispatched', 'completed'].includes(order.status)
     ? await getSetting('collection_address')
     : '';
 
-const status = order ? statusLabel(order.status, order.fulfilment, collectionAddress, Boolean(order.cash_payment)) : null;
+const status = order ? statusLabel(order.status, order.fulfilment, collectionAddress, cashPayment) : null;
 const placed = order ? new Date(order.created_at * 1000) : null;
 const expires = order?.expires_at ? new Date(order.expires_at * 1000) : null;
 const stillHeld = order?.status === 'requested' && expires && expires.getTime() > Date.now();
@@ -42,6 +58,10 @@ const stillHeld = order?.status === 'requested' && expires && expires.getTime() 
 // continuing to ask for it - "Total to pay £16.45" under a heading saying
 // "Payment received" is the shop contradicting itself.
 const settled = order ? isSettled(order.status) : false;
+// Whether the shop actually has the money, which on a cash collection is not
+// true until they have been and gone. See lib/order-status.
+const paidFor = order ? moneyReceived(order.status, cashPayment) : false;
+const dropped = order?.status === 'cancelled' || order?.status === 'expired';
 
 const telegramLink = order ? optInLink(order.ref, token) : null;
 const awaitingReply = order?.status === 'requested' || order?.status === 'awaiting_payment';
@@ -110,11 +130,12 @@ if (offerTelegram && telegramLink) {
         {offerTelegram && telegramLink && (
           <section class="mt-6 p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-center">
             <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
-              Get your payment details on Telegram
+              {cashPayment ? 'Arrange your collection on Telegram' : 'Get your payment details on Telegram'}
             </h2>
             <p class="mt-1.5 text-[15px] text-[var(--color-ink-soft)] leading-relaxed max-w-lg">
-              Tap once to connect this order to your Telegram, and we will send the total and how to
-              pay straight to your chat. Otherwise we will email you.
+              Tap once to connect this order to your Telegram, and we will send
+              {cashPayment ? ' your total and a time to collect' : ' the total and how to pay'} straight
+              to your chat. Otherwise we will email you.
             </p>
             {/* Opens away from this page. Following it in place meant that a
                 customer without Telegram on this device - most laptops - lost
@@ -158,7 +179,10 @@ if (offerTelegram && telegramLink) {
 
         {telegramLinked && awaitingReply && (
           <p class="mt-4 text-[14.5px] text-[var(--color-instock)]">
-            Connected to Telegram. Your total and how to pay will arrive in that chat.
+            Connected to Telegram.
+            {cashPayment
+              ? ' Your total and a time to collect will arrive in that chat.'
+              : ' Your total and how to pay will arrive in that chat.'}
           </p>
         )}
 
@@ -191,7 +215,7 @@ if (offerTelegram && telegramLink) {
             <span class="text-[15px]">Subtotal</span>
             <span class="tabular-nums">{price(order.subtotal_pence)}</span>
           </div>
-          {order.total_pence !== null && (
+          {order.total_pence !== null && !dropped && (
             <>
               {order.fulfilment !== 'collection' && (
                 <div class="mt-1 flex justify-between items-baseline text-[var(--color-ink-soft)]">
@@ -200,19 +224,23 @@ if (offerTelegram && telegramLink) {
                 </div>
               )}
               <div class="mt-2 pt-2 border-t border-[var(--color-rule)] flex justify-between items-baseline">
-                <span class="text-[15px] font-medium">{settled ? 'Total paid' : 'Total to pay'}</span>
+                <span class="text-[15px] font-medium">{paidFor ? 'Total paid' : 'Total to pay'}</span>
                 <span class="price text-[20px]">{price(order.total_pence)}</span>
               </div>
             </>
           )}
           <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-            {settled
-              ? 'Paid in full. Nothing further is owed.'
-              : order.total_pence !== null
-                ? 'Nothing is charged through this website.'
-                : order.fulfilment === 'collection'
-                  ? 'Nothing has been charged.'
-                  : 'Postage is added when we confirm. Nothing has been charged.'}
+            {dropped
+              ? 'Nothing was charged.'
+              : paidFor
+                ? 'Paid in full. Nothing further is owed.'
+                : cashPayment
+                  ? 'Payable in cash when you collect. Nothing is charged through this website.'
+                  : order.total_pence !== null
+                    ? 'Nothing is charged through this website.'
+                    : order.fulfilment === 'collection'
+                      ? 'Nothing has been charged.'
+                      : 'Postage is added when we confirm. Nothing has been charged.'}
           </p>
         </section>
 
@@ -246,9 +274,19 @@ if (offerTelegram && telegramLink) {
             <strong class="text-[var(--color-ink)]">{order.ref}</strong> if you get in touch.
           </p>
           <div class="mt-4 flex flex-wrap gap-3">
-            <a href={SITE.telegram} rel="noopener" class="btn btn-ghost">Message us on Telegram</a>
+            <a href={contactTelegramLink ?? SITE.telegram} rel="noopener" class="btn btn-ghost">
+              Message us on Telegram
+            </a>
+            <a href={`mailto:${shopEmail}?subject=Order ${order.ref}`} class="btn btn-ghost">
+              Email us
+            </a>
             <a href="/catalogue" class="btn btn-ghost">Keep browsing</a>
           </div>
+          <p class="mt-3 text-[13px] text-[var(--color-ink-faint)]">
+            {contactHandleText && <span class="select-all">{contactHandleText}</span>}
+            {contactHandleText && ' · '}
+            <span class="select-all">{shopEmail}</span>
+          </p>
         </div>
       </div>
     ) : (
@@ -327,8 +365,13 @@ if (offerTelegram && telegramLink) {
 
         <p class="mt-8 pt-6 border-t border-[var(--color-rule)] text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
           Cannot find it?{' '}
-          <a href={SITE.telegram} rel="noopener" class="text-[var(--color-navy)] underline underline-offset-2">
+          <a href={contactTelegramLink ?? SITE.telegram} rel="noopener" class="text-[var(--color-navy)] underline underline-offset-2">
             Message us on Telegram
+          </a>{' '}
+          {contactHandleText && <span class="text-[var(--color-ink-faint)] select-all">({contactHandleText})</span>}{' '}
+          or{' '}
+          <a href={`mailto:${shopEmail}`} class="text-[var(--color-navy)] underline underline-offset-2">
+            email us
           </a>{' '}
           and we will find it for you.
         </p>

@@ -10,6 +10,8 @@
  */
 
 import { env } from 'cloudflare:workers';
+import { contactTelegram } from './settings';
+import { SITE } from './format';
 
 interface TelegramEnv {
   TELEGRAM_BOT_TOKEN?: string;
@@ -29,6 +31,34 @@ export function botConfigured(): boolean {
 
 export function botUsername(): string | null {
   return cfg().TELEGRAM_BOT_USERNAME ?? null;
+}
+
+/**
+ * Who a customer messages, as a handle and as a link.
+ *
+ * Three different Telegram identities exist here and they are easily confused:
+ * the *bot* (TELEGRAM_BOT_USERNAME, which only talks about orders), the
+ * *channel* (SITE.telegram, where listings are announced), and this - a person
+ * who answers. The site used to link the channel from every "message us"
+ * prompt, so anyone with a question was sent to a feed they cannot reply to.
+ *
+ * Falls back to the channel when the setting is blank, because a link that goes
+ * somewhere beats a missing one.
+ */
+export async function contactHandle(): Promise<string> {
+  const set = await contactTelegram();
+  const raw = set || SITE.telegram;
+  const name = raw
+    .replace(/^https?:\/\/t\.me\//i, '')
+    .replace(/^@/, '')
+    .trim();
+  return name ? `@${name}` : '';
+}
+
+/** The t.me link for {@link contactHandle}, or null if there is nothing to link. */
+export async function contactLink(): Promise<string | null> {
+  const handle = await contactHandle();
+  return handle ? `https://t.me/${handle.slice(1)}` : null;
 }
 
 /** The deep link a customer taps to let the bot message them about an order. */
