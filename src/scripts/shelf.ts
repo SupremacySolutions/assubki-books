@@ -28,6 +28,30 @@ export function nextOffset(current: number, elapsed: number, half: number): numb
   return moved >= half ? moved - half : moved;
 }
 
+/**
+ * Keeps the drift's own idea of where the strip is, as a float.
+ *
+ * **The strip cannot be asked where it is.** A browser rounds `scrollLeft` to
+ * whole pixels on read, and a drift this slow moves about a quarter of a pixel
+ * per frame - so reading the value back and adding to it rounded every frame's
+ * movement away, and the covers sat perfectly still. The remainder has to live
+ * here, in a number the browser cannot round.
+ */
+export function createDrift(el: { scrollLeft: number }, halfWidth: () => number) {
+  let pos = el.scrollLeft;
+
+  return {
+    step(elapsed: number): void {
+      pos = nextOffset(pos, elapsed, halfWidth());
+      el.scrollLeft = pos;
+    },
+    /** They scrolled it themselves; carry on from wherever they left it. */
+    resync(): void {
+      pos = el.scrollLeft;
+    },
+  };
+}
+
 function start(strip: HTMLElement): void {
   const track = strip.querySelector<HTMLElement>('.shelf-track');
   if (!track) return;
@@ -35,6 +59,7 @@ function start(strip: HTMLElement): void {
   // The covers are laid out twice, so wrapping at the halfway point is
   // invisible. Measured lazily: the images may not have loaded yet.
   const half = () => track.scrollWidth / 2;
+  const drift = createDrift(strip, half);
 
   let held = 0; // >0 while someone is interacting, or a timer is counting down
   let last = 0;
@@ -67,7 +92,7 @@ function start(strip: HTMLElement): void {
 
     const elapsed = now - last;
     last = now;
-    strip.scrollLeft = nextOffset(strip.scrollLeft, elapsed, half());
+    drift.step(elapsed);
   };
 
   // Hovering, touching, dragging the scrollbar, or tabbing into a cover all
@@ -81,7 +106,10 @@ function start(strip: HTMLElement): void {
   }
   strip.addEventListener('scroll', () => {
     // Their own scrolling, not ours: ours never fires this while paused.
-    if (held > 0) release();
+    if (held > 0) {
+      drift.resync();
+      release();
+    }
   });
   strip.addEventListener('pointerleave', release);
 

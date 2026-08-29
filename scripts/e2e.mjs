@@ -715,10 +715,32 @@ async function integrity() {
    * that would show as a visible jump is checked directly instead: the strip
    * holds every cover twice, and the wrap has to land exactly one copy back.
    */
-  const { nextOffset } = await import('../src/scripts/shelf.ts');
+  const { nextOffset, createDrift } = await import('../src/scripts/shelf.ts');
   t.ok(nextOffset(0, 1000, 1000) === 14, 'the shelf drifts 14px a second');
   t.ok(nextOffset(995, 1000, 1000) === 9, 'and wraps by exactly one copy of the covers');
   t.ok(nextOffset(10, 1000, 0) === 24, 'an unmeasured track still moves rather than sticking');
+
+  /*
+   * A browser rounds scrollLeft to whole pixels on read, and this drift moves
+   * about a quarter of a pixel per frame. Reading the position back from the
+   * element each frame therefore rounded every frame's movement away and the
+   * shelf sat perfectly still - which is what the shop's owner saw. The stub
+   * rounds the way a browser does, so the test fails if the remainder is ever
+   * kept anywhere the browser can round it.
+   */
+  const rounding = {
+    real: 0,
+    get scrollLeft() {
+      return Math.round(this.real);
+    },
+    set scrollLeft(v) {
+      this.real = v;
+    },
+  };
+  const shelfDrift = createDrift(rounding, () => 1000);
+  for (let frame = 0; frame < 60; frame++) shelfDrift.step(16.7);
+  t.ok(rounding.scrollLeft >= 13 && rounding.scrollLeft <= 15,
+    `a second of frames moves the shelf about 14px (moved ${rounding.scrollLeft})`);
 
   // The book page has to say when it could not take what was asked for; the
   // basket page always did, and the two disagreeing is the actual complaint.
