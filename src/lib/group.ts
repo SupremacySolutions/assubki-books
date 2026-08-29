@@ -64,10 +64,20 @@ export interface GroupView {
   /** Total across everyone, at today's prices. */
   subtotalPence: number;
   people: string[];
+  /** What the key used to read this basket entitles its holder to do. */
+  role: 'organiser' | 'member';
+  /** Only ever sent to the organiser: the link they hand round. */
+  shareToken?: string;
 }
 
-export async function createGroup(organiser: string): Promise<{ code: string; token: string }> {
+export async function createGroup(
+  organiser: string,
+  email: string,
+): Promise<{ code: string; token: string; ownerToken: string }> {
+  // Two keys, two powers. Everyone gets the first; only the organiser gets the
+  // second, and the server is what enforces the difference.
   const token = randomToken();
+  const ownerToken = randomToken();
   const expires = Math.floor(Date.now() / 1000) + GROUP_DAYS * 86_400;
 
   // A code clash is a 1-in-33-million event, not an error worth surfacing.
@@ -75,11 +85,12 @@ export async function createGroup(organiser: string): Promise<{ code: string; to
     const code = randomCode();
     try {
       await env.DB.prepare(
-        `INSERT INTO group_baskets (code, token, organiser, expires_at) VALUES (?,?,?,?)`,
+        `INSERT INTO group_baskets (code, token, owner_token, organiser, organiser_email, expires_at)
+         VALUES (?,?,?,?,?,?)`,
       )
-        .bind(code, token, organiser, expires)
+        .bind(code, token, ownerToken, organiser, email || null, expires)
         .run();
-      return { code, token };
+      return { code, token, ownerToken };
     } catch (err) {
       if (String(err).includes('UNIQUE')) continue;
       throw err;
@@ -88,25 +99,38 @@ export async function createGroup(organiser: string): Promise<{ code: string; to
   throw new Error('could not allocate a group code');
 }
 
-async function findGroup(code: string, token: string) {
+/**
+ * Find a basket by whichever key the caller holds, and say what it entitles
+ * them to. `owner` is required for anything that ends in an order.
+ */
+async function findGroup(code: string, key: string, need: 'any' | 'owner' = 'any') {
   const row = await env.DB.prepare(
-    `SELECT id, code, token, organiser, expires_at, order_ref FROM group_baskets WHERE code = ?`,
+    `SELECT id, code, token, owner_token, organiser, organiser_email, expires_at, order_ref
+       FROM group_baskets WHERE code = ?`,
   )
     .bind(code)
     .first<{
       id: number;
       code: string;
       token: string;
+      owner_token: string;
       organiser: string;
+      organiser_email: string | null;
       expires_at: number;
       order_ref: string | null;
     }>();
 
   if (!row) return null;
-  // Compared in full rather than trusted by prefix; a wrong link is not a group.
-  if (row.token !== token) return null;
+
+  // Compared in full rather than trusted by prefix; a wrong link is not a
+  // group. An empty key would otherwise match a column that was never set.
+  const isOwner = Boolean(key) && key === row.owner_token;
+  const isMember = Boolean(key) && key === row.token;
+  if (!isOwner && !isMember) return null;
+  if (need === 'owner' && !isOwner) return null;
   if (row.expires_at < Math.floor(Date.now() / 1000) && !row.order_ref) return null;
-  return row;
+
+  return { ...row, role: isOwner ? ('organiser' as const) : ('member' as const) };
 }
 
 /**
@@ -116,8 +140,8 @@ async function findGroup(code: string, token: string) {
  * what was stored when the line was added - the same rule the single-customer
  * basket follows, for the same reason.
  */
-export async function getGroup(code: string, token: string): Promise<GroupView | null> {
-  const group = await findGroup(code, token);
+export async function getGroup(code: string, key: string): Promise<GroupView | null> {
+  const group = await findGroup(code, key);
   if (!group) return null;
 
   const { results } = await env.DB.prepare(
@@ -159,6 +183,10 @@ export async function getGroup(code: string, token: string): Promise<GroupView |
     lines,
     subtotalPence,
     people: [...new Set(lines.map((l) => l.addedBy))],
+    role: group.role,
+    // The organiser needs the *other* link to hand round; nobody else is told
+    // a token they do not already have.
+    shareToken: group.role === 'organiser' ? group.token : undefined,
   };
 }
 
@@ -172,12 +200,12 @@ export type LineResult = 'ok' | 'not-found' | 'sent' | 'full';
  */
 export async function setGroupLine(
   code: string,
-  token: string,
+  key: string,
   bookId: number,
   qty: number,
   person: string,
 ): Promise<LineResult> {
-  const group = await findGroup(code, token);
+  const group = await findGroup(code, key);
   if (!group) return 'not-found';
   if (group.order_ref) return 'sent';
 
@@ -233,9 +261,14 @@ export async function setGroupLine(
  */
 export async function groupForOrder(
   code: string,
-  token: string,
+  ownerToken: string,
 ): Promise<{ items: { bookId: number; qty: number }[]; breakdown: string; organiser: string } | null> {
-  const view = await getGroup(code, token);
+  // Sending is the organiser's alone, and this is where that is decided: the
+  // page hiding a button is a courtesy, not a rule.
+  const owner = await findGroup(code, ownerToken, 'owner');
+  if (!owner) return null;
+
+  const view = await getGroup(code, ownerToken);
   if (!view || view.orderRef) return null;
 
   const merged = new Map<number, number>();

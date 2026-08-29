@@ -42,13 +42,19 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
    * receives one request holding all of it.
    */
   const groupCode = String(data.groupCode ?? '').trim();
-  const groupToken = String(data.groupToken ?? '').trim();
+  const groupOwnerToken = String(data.groupOwnerToken ?? '').trim();
   let group: Awaited<ReturnType<typeof groupForOrder>> = null;
 
-  if (groupCode && groupToken) {
-    group = await groupForOrder(groupCode, groupToken);
+  if (groupCode) {
+    // The organiser's key, not the one in the shared link - everybody adding to
+    // the basket holds that one, and sending the order is not something they
+    // should be able to do under their own name and address.
+    group = await groupForOrder(groupCode, groupOwnerToken);
     if (!group) {
-      return bad('That group basket has expired, or its order has already been sent.', 409);
+      return bad(
+        'That group basket has expired, its order has already been sent, or this is not the organiser\'s link.',
+        409,
+      );
     }
     if (!group.items.length) return bad('That group basket is empty.');
   }

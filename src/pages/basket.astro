@@ -40,6 +40,19 @@ import Rosette from '../components/Rosette.astro';
         <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
           Shown beside the books you add, so the organiser knows whose is whose.
         </p>
+
+        {/* Only asked of whoever starts the group: it is how they get back to
+            it. Anyone joining needs a name and nothing else. */}
+        <div id="groupemailwrap" class="mt-4">
+          <label for="groupemail" class="block text-[14px] font-medium mb-1.5">
+            Your email <span class="text-[var(--color-ink-faint)] font-normal">(to start a group)</span>
+          </label>
+          <input id="groupemail" type="email" maxlength="254" autocomplete="email" class="field !w-72" />
+          <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+            We send you the link that sends the order. Keep it - it is how you get back in if you
+            lose this page or carry on from your phone.
+          </p>
+        </div>
         <div class="mt-4 flex flex-wrap gap-3">
           <button type="button" id="groupcreate" class="btn btn-primary">Create a group</button>
           <button type="button" id="groupjoinopen" class="btn btn-ghost">Join with a link</button>
@@ -68,6 +81,10 @@ import Rosette from '../components/Rosette.astro';
         </div>
         <p class="mt-3 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
           Anyone with this link can add to the basket. It lasts a week.
+        </p>
+        <p id="groupkeep" hidden class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+          Your own link - the one that sends the order - is in your email. This page is that link;
+          the one above is not, so sharing it hands out nothing you would rather keep.
         </p>
         <button type="button" id="groupleave" class="mt-3 text-[13.5px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] underline underline-offset-2">
           Leave this group
@@ -116,6 +133,7 @@ import Rosette from '../components/Rosette.astro';
     type GroupView = {
       code: string; organiser: string; expiresAt: number; orderRef: string | null;
       lines: GroupLine[]; subtotalPence: number; people: string[];
+      role: 'organiser' | 'member'; shareToken?: string;
     };
 
     let member = readGroup();
@@ -143,9 +161,12 @@ import Rosette from '../components/Rosette.astro';
       if (member) {
         el('#grouprole').textContent = member.organiser
           ? 'You started this group.'
-          : `You are adding to ${member.name === '' ? 'a' : 'this'} group basket.`;
+          : 'You are adding to this group basket.';
         el('#groupcode').textContent = ` ${member.code}`;
         el<HTMLInputElement>('#groupshare').value = shareLink(member);
+        // Only the organiser has a second link, and only they need telling to
+        // keep it: it is the one that sends the order.
+        el('#groupkeep').hidden = !member.organiser;
       }
     }
 
@@ -163,7 +184,18 @@ import Rosette from '../components/Rosette.astro';
           groupError(data?.error ?? 'That group basket is no longer available.');
           return null;
         }
-        return data.group as GroupView;
+        const group = data.group as GroupView;
+
+        // The key decides the role, not this browser: an organiser opening
+        // their emailed link on a new phone is the organiser again.
+        if (member) {
+          const organiser = group.role === 'organiser';
+          if (organiser !== member.organiser || group.shareToken !== member.shareToken) {
+            member = { ...member, organiser, shareToken: group.shareToken };
+            joinGroup(member);
+          }
+        }
+        return group;
       } catch {
         return null; // offline: leave the page exactly as it is
       }
@@ -375,18 +407,30 @@ import Rosette from '../components/Rosette.astro';
 
     el('#groupcreate').addEventListener('click', async () => {
       const name = el<HTMLInputElement>('#groupname').value.trim();
+      const email = el<HTMLInputElement>('#groupemail').value.trim();
       if (name.length < 2) return groupError('Add your name first, so the others know whose list it is.');
 
       const res = await fetch('/api/group', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, email }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) return groupError(data?.error ?? 'Could not start a group just now.');
 
-      member = { code: data.code, token: data.token, name, organiser: true };
+      // This browser holds the organiser's key; the shared one is kept beside
+      // it so the copy box never hands out the wrong link.
+      member = {
+        code: data.code,
+        token: data.ownerToken,
+        shareToken: data.token,
+        name,
+        organiser: true,
+      };
       joinGroup(member);
+      if (!data.emailed) {
+        groupError('We could not email your link just now - keep this page, or copy your own link from the address bar.');
+      }
 
       // Whatever they had already chosen becomes their share of the group.
       const existing = read();
@@ -405,6 +449,9 @@ import Rosette from '../components/Rosette.astro';
       member = { ...parsed, name, organiser: false };
       const view = await fetchGroup();
       if (!view) return;
+      // fetchGroup has already promoted us if that key was the organiser's -
+      // which is what makes an emailed link work on a phone that has never
+      // seen this basket.
 
       joinGroup(member);
       groupError('');

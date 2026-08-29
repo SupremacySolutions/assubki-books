@@ -312,6 +312,55 @@ export async function notifyOrderConfirmed(
   };
 }
 
+/**
+ * The organiser's own link to a group basket they have just started.
+ *
+ * Their role is a key, not a browser setting, and a key can be lost: clearing
+ * the browser or picking the basket up on a phone used to leave them an
+ * ordinary member of their own group, with nobody able to send it. The link is
+ * in their inbox now, exactly as an order's link is.
+ */
+export async function notifyGroupStarted(input: {
+  name: string;
+  email: string;
+  code: string;
+  organiserLink: string;
+  shareLink: string;
+}): Promise<boolean> {
+  const html = shell(
+    'Your group basket',
+    `Reference ${input.code}`,
+    `<p style="margin:0 0 16px;font-size:15px">Assalamu alaikum ${escapeHtml(input.name)},</p>
+     <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
+       Your group basket is open. Send the first link to everyone adding to it; keep the second for
+       yourself - it is the one that sends the order to us when the list is complete.
+     </p>
+     <p style="margin:0 0 6px;font-size:14px;font-weight:600">The link to share</p>
+     <p style="margin:0 0 18px;font-size:13.5px;color:#4a5568;word-break:break-all">${escapeHtml(input.shareLink)}</p>
+     <p style="margin:0 0 6px;font-size:14px;font-weight:600">Your own link - keep this one</p>
+     <p style="margin:0 0 18px;font-size:13.5px;color:#4a5568;word-break:break-all">${escapeHtml(input.organiserLink)}</p>
+     ${button(input.organiserLink, 'Open your group basket')}
+     <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
+       Nothing is held or charged while a group basket is being filled. The books are only set aside
+       once you send it, and it lasts a week.
+     </p>`,
+  );
+
+  const text =
+    `Your group basket ${input.code}\n\nAssalamu alaikum ${input.name},\n\n` +
+    `Share this link with everyone adding to it:\n${input.shareLink}\n\n` +
+    `Keep this one for yourself - it sends the order when the list is complete:\n${input.organiserLink}\n\n` +
+    `Nothing is held or charged while a group basket is being filled. It lasts a week.\n`;
+
+  return deliver({
+    to: input.email,
+    replyTo: ownerAddress(),
+    subject: `Your group basket ${input.code} - ${SITE.name}`,
+    html,
+    text,
+  });
+}
+
 /** Plain status nudges - dispatched, cancelled. */
 export async function notifyStatusChange(input: {
   ref: string;

@@ -251,7 +251,7 @@ import { HOLD_HOURS } from '../lib/orders';
             // The shop reads the group's contents from its own copy; sending
             // them from here would be sending one member's stale view of them.
             groupCode: group?.organiser ? group.code : undefined,
-            groupToken: group?.organiser ? group.token : undefined,
+            groupOwnerToken: group?.organiser ? group.token : undefined,
           }),
         });
         const result = (await res.json()) as {

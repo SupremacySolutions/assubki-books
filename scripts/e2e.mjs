@@ -514,13 +514,18 @@ async function groupOrders() {
   const bookA = await makeBook();
   const bookB = await makeBook();
 
-  const made = await post('/api/group', { name: 'Yusuf' });
+  const made = await post('/api/group', { name: 'Yusuf', email: CUSTOMER_EMAIL });
   t.ok(made.status === 200 && made.body.code?.startsWith('GRP-'), 'a group basket can be started');
-  const { code, token } = made.body;
+  const { code, token, ownerToken } = made.body;
   created.groups.push(code);
 
-  t.ok((await post('/api/group', { name: 'A' })).status === 400,
+  t.ok(token && ownerToken && token !== ownerToken,
+    'with one key to add and a different one to send');
+
+  t.ok((await post('/api/group', { name: 'A', email: CUSTOMER_EMAIL })).status === 400,
     'and not without a name to put beside the books');
+  t.ok((await post('/api/group', { name: 'Yusuf', email: 'not-an-email' })).status === 400,
+    'nor without somewhere to send the organiser their own link');
 
   await post('/api/group/line', { code, token, name: 'Yusuf', bookId: bookA.id, qty: 2 });
   await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookB.id, qty: 1 });
@@ -544,9 +549,27 @@ async function groupOrders() {
   t.ok(shared3.group.lines.filter((l) => l.bookId === bookA.id).length === 1,
     'and removing one person\'s line leaves the other alone');
 
-  // --- the link is the permission ------------------------------------------
+  // --- the link is the permission, and says which one you hold --------------
   const guessed = await (await get(`/api/group?g=${code}&k=${'0'.repeat(32)}`)).json();
   t.ok(guessed.ok === false, 'a guessed token opens nothing');
+
+  const asMember = await readGroup(code, token);
+  const asOwner = await readGroup(code, ownerToken);
+  t.ok(asMember.group.role === 'member' && asOwner.group.role === 'organiser',
+    'the key decides the role, not the browser holding it');
+  t.ok(!asMember.group.shareToken && asOwner.group.shareToken === token,
+    'and only the organiser is handed the link to pass round');
+
+  /*
+   * The share link reaches everyone in the group, so it must not be able to
+   * send the order. Enforced here rather than by hiding a button: the organiser
+   * owns the address the parcel goes to.
+   */
+  const asImposter = await json('/api/orders', {
+    name: 'Aisha Patel', email: CUSTOMER_EMAIL, fulfilment: 'collection',
+    items: [], groupCode: code, groupToken: token, groupOwnerToken: token,
+  });
+  t.ok(asImposter.status === 409, 'somebody holding only the share link cannot send the order');
 
   // --- one basket becomes one order ----------------------------------------
   const sent = await json('/api/orders', {
@@ -556,7 +579,7 @@ async function groupOrders() {
     address: '12 Evington Road\nLeicester\nLE2 1HN',
     items: [],
     groupCode: code,
-    groupToken: token,
+    groupOwnerToken: ownerToken,
   });
   t.ok(sent.status === 200 && sent.body.ref, 'the organiser sends it as one order');
   if (sent.body.ref) created.orders.push(sent.body.ref);
@@ -578,7 +601,7 @@ async function groupOrders() {
 
   const again = await json('/api/orders', {
     name: 'Yusuf Patel', email: CUSTOMER_EMAIL, fulfilment: 'collection',
-    items: [], groupCode: code, groupToken: token,
+    items: [], groupCode: code, groupOwnerToken: ownerToken,
   });
   t.ok(again.status === 409, 'and it cannot be sent twice');
 }
