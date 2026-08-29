@@ -2,7 +2,13 @@
 import Admin from '../../../layouts/Admin.astro';
 import { getOrderByRef, getOrderItems, lastPostagePence } from '../../../lib/admin-db';
 import { price } from '../../../lib/format';
-import { paymentDrafts, defaultDraft } from '../../../lib/settings';
+import {
+  paymentOptions,
+  collectionPlaces,
+  defaultMessage,
+  composeMessage,
+  CASH_SLOT,
+} from '../../../lib/settings';
 import { nextActions, portalLabel, POSTAGE_PROVIDERS } from '../../../lib/order-status';
 
 const { ref } = Astro.params;
@@ -10,28 +16,29 @@ const order = ref ? await getOrderByRef(ref) : null;
 if (!order) return Astro.rewrite('/404');
 
 const isCollection = order.fulfilment === 'collection';
-const isCash = isCollection && Boolean(order.cash_payment);
+// Cash applies to either journey now - on a posted order it means one handed
+// over in person - so this no longer depends on how the books are going.
+const isCash = Boolean(order.cash_payment);
 
-// Every draft for this journey is fetched, not just the one in force: picking
-// another, or ticking "paying in cash", swaps the box without a page load, so
-// the other wordings have to be here to swap to.
-const [items, postageDefault, drafts, draft] = await Promise.all([
+// Every part is fetched, not just the ones in force: picking another, or
+// ticking "paying in cash", rebuilds the box without a page load, so the other
+// wordings have to be here to build from.
+const [items, postageDefault, payments, places, opening] = await Promise.all([
   getOrderItems(order.id),
   lastPostagePence(),
-  paymentDrafts(order.fulfilment),
-  defaultDraft(order.fulfilment),
+  paymentOptions(),
+  isCollection ? collectionPlaces() : Promise.resolve([]),
+  defaultMessage(order.fulfilment, isCash),
 ]);
 
-// Shown whenever there is anything to show, including on a cash order. Hiding
-// it when there was only one draft, and again whenever cash was ticked, is what
-// made the feature look broken - the owner pressed the tick and saw nothing to
-// choose from.
-const showPicker = drafts.length > 0;
-
-// Which button starts marked: the one whose wording is actually in the box.
-// None of them, if the owner has already written something of their own.
-const openText = (order.payment_message ?? draft).trim();
-const activeSlot = drafts.find((d) => d.body.trim() === openText)?.slot ?? null;
+// Which of each starts marked. A cash order starts on the cash wording, so bank
+// details are never the opening text on an order that is not paying by bank.
+const openText = (order.payment_message ?? opening).trim();
+const openPayment = isCash
+  ? payments.find((p) => p.slot === CASH_SLOT)
+  : payments.find((p) => p.slot !== CASH_SLOT);
+const activePayment = openPayment?.slot ?? null;
+const activePlace = places[0]?.slot ?? null;
 const suggestedPostage = order.postage_pence ?? (isCollection ? 0 : postageDefault);
 const canConfirm = order.status === 'requested';
 const hoursLeft = order.expires_at
@@ -148,7 +155,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
             <p class="mt-1.5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
               {isCollection ? 'We will send' : 'Set the postage and we will send'}{' '}
               {order.customer_name.split(' ')[0]}{' '}
-              {isCash ? 'the total and a time to collect' : 'the total and how to pay'}
+              {isCash ? 'the total and a time to arrange' : 'the total and how to pay'}
               {order.telegram_chat_id
                 ? ' - by Telegram and email, since they connected their Telegram.'
                 : ' by email. They have not connected Telegram, so email is the only way to reach them.'}
@@ -174,7 +181,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   />
                 </div>
                 <p class="text-[14.5px] text-[var(--color-ink-soft)] pb-2.5">
-                  {isCash ? 'To pay on collection: ' : isCollection ? 'Total to pay is ' : 'Total becomes '}
+                  {isCash ? 'To pay in cash: ' : isCollection ? 'Total to pay is ' : 'Total becomes '}
                   <strong id="total" class="price text-[17px]">
                     {price(order.subtotal_pence + suggestedPostage)}
                   </strong>
@@ -185,7 +192,6 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   aside it was two feet from the box it changes, and the owner
                   could send bank details to someone paying cash without ever
                   seeing the contradiction. */}
-              {isCollection && (
               <label class="mt-4 flex items-start gap-2.5 cursor-pointer">
                 <input
                   type="checkbox"
@@ -196,14 +202,15 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   data-ref={order.ref}
                 />
                 <span>
-                  <span class="block text-[14px] font-medium">Paying in cash on collection</span>
+                  <span class="block text-[14px] font-medium">
+                    Paying in cash {isCollection ? 'on collection' : 'when you hand them over'}
+                  </span>
                   <span class="block mt-0.5 text-[13px] text-[var(--color-ink-faint)]">
-                    Nothing is owed until they arrive. Their order page, this message and the
-                    emails all say so.
+                    Nothing is owed until then. Their order page, this message and the emails all
+                    say so.
                   </span>
                 </span>
               </label>
-              )}
 
               {/* Editable per order, not a fixed template: which account to pay
                   into depends on the size of the order and what is in it. The
@@ -213,37 +220,60 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   {isCash ? 'What they should do next' : 'How they should pay'}
                 </label>
 
-                {showPicker && (
-                  <div class="mb-2">
-                    <div class="flex flex-wrap items-center gap-2" data-draft-picker>
-                      {drafts.map((d) => (
+                {/* Two pickers, because a message has two parts: where they
+                    are collecting, and how they are paying. A collection paid
+                    by transfer needs both, which no single list of whole
+                    messages could offer without a box per combination. */}
+                {places.length > 0 && (
+                  <div class="mb-3">
+                    <p class="text-[12.5px] text-[var(--color-ink-faint)] mb-1">Where they collect</p>
+                    <div class="flex flex-wrap items-center gap-2" data-place-picker>
+                      {places.map((d) => (
                         <button
                           type="button"
-                          data-draft-pick={d.slot}
-                          aria-pressed={d.slot === activeSlot ? 'true' : 'false'}
+                          data-part-pick={d.slot}
+                          data-part-kind="place"
+                          aria-pressed={d.slot === activePlace ? 'true' : 'false'}
                           class="px-2.5 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:bg-[var(--color-navy)] aria-pressed:text-white"
                         >
                           {d.label}
                         </button>
                       ))}
-                      {drafts.length === 1 && (
+                    </div>
+                  </div>
+                )}
+
+                {payments.length > 0 && (
+                  <div class="mb-2">
+                    <p class="text-[12.5px] text-[var(--color-ink-faint)] mb-1">How they pay</p>
+                    <div class="flex flex-wrap items-center gap-2" data-draft-picker>
+                      {payments.map((d) => (
+                        <button
+                          type="button"
+                          data-part-pick={d.slot}
+                          data-part-kind="payment"
+                          aria-pressed={d.slot === activePayment ? 'true' : 'false'}
+                          class="px-2.5 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:bg-[var(--color-navy)] aria-pressed:text-white"
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                      {payments.length === 1 && (
                         <a href="/admin/settings" class="text-[13px] text-[var(--color-ink-faint)] hover:text-[var(--color-navy)] underline underline-offset-2">
                           Add another
                         </a>
                       )}
                     </div>
 
-                    {/* There is no separate cash wording any more, so ticking
-                        the box cannot pick one for them - it asks instead. The
-                        note stays up while cash is ticked, because sending
-                        "pay by bank transfer" to someone paying at the door is
-                        the mistake worth being loud about. */}
+                    {/* Ticking cash does not choose the wording, it asks - and
+                        sending bank details to somebody paying in person is the
+                        mistake worth being loud about. */}
                     <p
                       data-cash-prompt
                       hidden={!isCash}
                       class="mt-2 text-[13px] text-[var(--color-outstock)] leading-relaxed"
                     >
-                      This one is paying in cash on collection - check the wording below says so.
+                      This one is paying in cash - check the wording below says so.
                     </p>
                   </div>
                 )}
@@ -254,8 +284,9 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   rows="8"
                   maxlength="4000"
                   class="field font-[family-name:var(--font-body)] text-[14px] leading-relaxed"
-                  data-drafts={JSON.stringify(drafts)}
-                  >{order.payment_message ?? draft}</textarea
+                  data-payments={JSON.stringify(payments)}
+                  data-places={JSON.stringify(places)}
+                  >{order.payment_message ?? opening}</textarea
                 >
                 <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
                   Sent exactly as written, with the order reference added. Change it for this order
@@ -369,7 +400,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
         {/* Only here once the order is past confirming - before that it sits
             in the confirm card, next to the message it changes. */}
         {
-          isCollection && !canConfirm && (
+          !canConfirm && (
             <div class="mt-3 pt-3 border-t border-[var(--color-rule)]">
               <label class="flex items-center gap-2.5 cursor-pointer">
                 <input
@@ -383,7 +414,8 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                 <span class="text-[14px] font-medium">Paying in cash</span>
               </label>
               <p class="mt-2 text-[13px] text-[var(--color-ink-faint)]">
-                Nothing is owed until they collect. Their order page says so.
+                Nothing is owed until {isCollection ? 'they collect' : 'you hand them over'}. Their
+                order page says so.
               </p>
             </div>
           )
@@ -393,6 +425,16 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
           <p><a href={`mailto:${order.email}`} class="text-[var(--color-navy)] break-all">{order.email}</a></p>
           {order.phone && <p><a href={`tel:${order.phone}`} class="text-[var(--color-navy)]">{order.phone}</a></p>}
           {order.telegram && <p class="text-[var(--color-ink-soft)]">{order.telegram}</p>}
+          {/* What they asked for at checkout. Only their request - the tick
+              above is what actually decides it. */}
+          {order.payment_preference && (
+            <p class="text-[13px] text-[var(--color-ink-faint)]">
+              Asked to pay by{' '}
+              <span class="text-[var(--color-ink)] font-medium">
+                {order.payment_preference === 'cash' ? 'cash in person' : 'bank transfer'}
+              </span>
+            </p>
+          )}
           <p
             class:list={[
               'text-[13px]',
@@ -544,51 +586,71 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
     // to the browser exactly as written. A TypeScript generic here parses as a
     // pair of comparisons, and the listener silently never binds.
     const message = document.querySelector('#payment_message');
-    const drafts = message ? JSON.parse(message.dataset.drafts ?? '[]') : [];
+    const payments = message ? JSON.parse(message.dataset.payments ?? '[]') : [];
+    const places = message ? JSON.parse(message.dataset.places ?? '[]') : [];
 
-    // Untouched means the box still holds one of the wordings we put there.
-    // Anything else is the owner's own writing.
-    const boxIsUntouched = () => {
-      if (!message) return false;
-      const current = message.value.trim();
-      return drafts.some((d) => d.body.trim() === current);
+    // What is currently chosen in each picker. Read from the markup rather than
+    // assumed, so the server decides the opening state and this only tracks it.
+    const chosenOf = (kind) => {
+      const pressed = document.querySelector(`[data-part-kind="${kind}"][aria-pressed="true"]`);
+      return pressed ? pressed.dataset.partPick : null;
     };
 
-    const markPicked = (slot) => {
-      for (const button of document.querySelectorAll('[data-draft-pick]')) {
-        button.setAttribute('aria-pressed', String(button.dataset.draftPick === slot));
-      }
+    const bodyOf = (kind, slot) => {
+      const list = kind === 'place' ? places : payments;
+      return list.find((d) => d.slot === slot)?.body ?? '';
     };
 
-    // Clicking a draft is an explicit request to load it, so unlike the cash
-    // tick it does not silently refuse when the box has been edited - it asks.
-    // A button that appears to do nothing is worse than a question.
-    for (const button of document.querySelectorAll('[data-draft-pick]')) {
+    /*
+     * Rebuild the box from whichever parts are chosen: where first, then how to
+     * pay - the order the customer needs them in.
+     *
+     * Switching is deliberately silent. It used to ask before replacing edited
+     * text, which is the safe thing for a checkbox but wrong for a button whose
+     * entire purpose is to load a wording: the owner asked for it to be
+     * seamless, and the cost is that a bespoke message can be lost to a stray
+     * click.
+     */
+    const rebuild = () => {
+      if (!message) return;
+      const parts = [bodyOf('place', chosenOf('place')), bodyOf('payment', chosenOf('payment'))];
+      message.value = parts.map((p) => p.trim()).filter(Boolean).join('\n\n');
+    };
+
+    for (const button of document.querySelectorAll('[data-part-pick]')) {
       button.addEventListener('click', () => {
-        const chosen = drafts.find((d) => d.slot === button.dataset.draftPick);
-        if (!chosen || !message) return;
-        if (
-          !boxIsUntouched() &&
-          !confirm('Replace what you have written with this draft?')
-        ) {
-          return;
+        const kind = button.dataset.partKind;
+        for (const sibling of document.querySelectorAll(`[data-part-kind="${kind}"]`)) {
+          sibling.setAttribute('aria-pressed', String(sibling === button));
         }
-        message.value = chosen.body;
-        markPicked(chosen.slot);
+        rebuild();
       });
     }
 
-    const cashCheckbox = document.querySelector('.toggle-cash-payment');
-    if (cashCheckbox) {
-      const cashPrompt = document.querySelector('[data-cash-prompt]');
+    /** Move the payment picker onto, or off, the cash wording. */
+    const selectPayment = (slot) => {
+      for (const button of document.querySelectorAll('[data-part-kind="payment"]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.partPick === slot));
+      }
+      rebuild();
+    };
 
-      // There is no cash-specific draft to swap in any more. Ticking the box
-      // therefore asks rather than chooses: the owner picks which of their own
-      // wordings suits somebody paying at the door.
-      const showCashPrompt = (wanted) => {
-        if (cashPrompt) cashPrompt.hidden = !wanted;
-      };
+    const cashPrompt = document.querySelector('[data-cash-prompt]');
 
+    // Ticking the box does not choose a wording - there is no cash-specific
+    // draft - so it asks: the owner picks whichever of their own suits somebody
+    // paying when the books change hands.
+    const showCashPrompt = (wanted) => {
+      if (cashPrompt) cashPrompt.hidden = !wanted;
+    };
+
+    /*
+     * All of them, not the first. Two of these exist - one in the confirm card,
+     * one in the aside - kept apart only by a `canConfirm` condition. A
+     * singular querySelector meant that if those conditions ever overlapped,
+     * the second checkbox would silently do nothing.
+     */
+    for (const cashCheckbox of document.querySelectorAll('.toggle-cash-payment')) {
       cashCheckbox.addEventListener('change', async () => {
         const wanted = cashCheckbox.checked;
         const body = new FormData();
@@ -601,6 +663,14 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
           });
           if (!res.ok) throw new Error(`save failed: ${res.status}`);
           showCashPrompt(wanted);
+
+          // Ticking cash swings the payment picker onto the cash wording, and
+          // unticking puts it back on the first account - so the box never
+          // contradicts the tick beside it.
+          const cashOption = payments.find((p) => p.slot === 'cash');
+          const firstAccount = payments.find((p) => p.slot !== 'cash');
+          const next = wanted ? cashOption : firstAccount;
+          if (next) selectPayment(next.slot);
         } catch (err) {
           console.error('cash payment save failed', err);
           cashCheckbox.checked = !wanted;

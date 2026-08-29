@@ -29,6 +29,21 @@ export type Tone = 'wait' | 'good' | 'done' | 'off';
 
 const isCollection = (f: string): boolean => f === 'collection';
 
+/**
+ * When the money actually changes hands on a cash order.
+ *
+ * Cash used to mean collection, so every string could say "when you collect".
+ * It can now be either journey - a posted order marked cash is one handed over
+ * in person - and this is the one phrase that has to differ, so it lives here
+ * with the rest of the wording rather than being written out at each call site.
+ */
+export const cashMoment = (fulfilment: string): string =>
+  isCollection(fulfilment) ? 'when you collect' : 'when we hand them over';
+
+/** The same moment, said to the owner rather than the customer. */
+export const cashMomentOwner = (fulfilment: string): string =>
+  isCollection(fulfilment) ? 'when they collect' : 'when you hand them over';
+
 // ---------------------------------------------------------------------------
 // What the customer sees
 // ---------------------------------------------------------------------------
@@ -65,20 +80,31 @@ export function statusLabel(
       };
 
     case 'awaiting_payment':
-      return collecting && cashPayment
-        ? {
+      if (cashPayment) {
+        // Nothing is owed yet either way, so "Awaiting payment" would be a lie -
+        // no payment details were sent. What differs is only where the money
+        // changes hands.
+        if (collecting) {
+          return {
             label: 'Ready to arrange collection',
             blurb: collectionAddress
               ? `Your books are being set aside at ${collectionAddress}. Get in touch and we will agree a time - you can pay in cash when you collect.`
               : 'Your books are being set aside. Get in touch and we will agree a time - you can pay in cash when you collect.',
             tone: 'wait',
-          }
-        : {
-            label: 'Awaiting payment',
-            blurb:
-              'We have sent you payment details. Your books stay held until payment reaches us.',
-            tone: 'wait',
           };
+        }
+        return {
+          label: 'Confirmed, paying in cash',
+          blurb:
+            'Your books are set aside. We will be in touch to arrange handing them over, and you can pay in cash then.',
+          tone: 'wait',
+        };
+      }
+      return {
+        label: 'Awaiting payment',
+        blurb: 'We have sent you payment details. Your books stay held until payment reaches us.',
+        tone: 'wait',
+      };
 
     case 'paid':
       return collecting
@@ -93,11 +119,20 @@ export function statusLabel(
                 : 'Thank you. Your books are set aside and ready whenever suits you.',
             tone: 'good',
           }
-        : {
-            label: 'Payment received',
-            blurb: 'Thank you. Your order is being packed.',
-            tone: 'good',
-          };
+        : cashPayment
+          ? {
+              // Not "Payment received": on a cash order this step means the
+              // books are ready, and the money still comes later.
+              label: 'Ready to hand over',
+              blurb:
+                'Your books are packed. We will be in touch to arrange handing them over, and you can pay in cash then.',
+              tone: 'good',
+            }
+          : {
+              label: 'Payment received',
+              blurb: 'Thank you. Your order is being packed.',
+              tone: 'good',
+            };
 
     // Delivery only - the endpoint refuses it for a collection. The collection
     // branch is here because orders predating that rule exist, and telling
@@ -110,7 +145,13 @@ export function statusLabel(
             blurb: 'Your order is complete. جزاكم الله خيرا.',
             tone: 'done',
           }
-        : { label: 'Posted', blurb: 'Your books are on their way.', tone: 'done' };
+        : cashPayment
+          ? {
+              label: 'On its way',
+              blurb: 'Your books are on their way. The payment is due in cash when we hand them over.',
+              tone: 'done',
+            }
+          : { label: 'Posted', blurb: 'Your books are on their way.', tone: 'done' };
 
     case 'completed':
       return collecting
@@ -168,7 +209,7 @@ export const moneyReceived = (status: string, cashPayment = false): boolean =>
 /** The short label in the portal list and the status chip. */
 export function portalLabel(status: string, fulfilment: string, cashPayment = false): string {
   const collecting = isCollection(fulfilment);
-  const cash = collecting && cashPayment;
+  const cash = cashPayment;
 
   switch (status) {
     case 'requested':
@@ -176,11 +217,13 @@ export function portalLabel(status: string, fulfilment: string, cashPayment = fa
     case 'awaiting_payment':
       // Nothing is owed yet on a cash order, so "Awaiting payment" would have
       // the owner chasing money that is not late.
-      return cash ? 'To arrange' : 'Awaiting payment';
+      if (cash) return collecting ? 'To arrange' : 'To hand over';
+      return 'Awaiting payment';
     case 'paid':
-      if (cash) return 'Ready to collect · cash';
+      if (cash) return collecting ? 'Ready to collect · cash' : 'Ready to send · cash';
       return collecting ? 'Ready to collect' : 'Paid, to post';
     case 'dispatched':
+      if (cash && !collecting) return 'Posted · cash due';
       return collecting ? 'Collected' : 'Posted';
     case 'completed':
       return collecting ? 'Collected' : 'Delivered';
@@ -221,7 +264,7 @@ export function nextActions(
   cashPayment = false,
 ): NextAction[] {
   const collecting = isCollection(fulfilment);
-  const cash = collecting && cashPayment;
+  const cash = cashPayment;
   const cancel: NextAction = {
     action: 'cancelled',
     label: 'Cancel order',
@@ -252,21 +295,38 @@ export function nextActions(
                 },
             cancel,
           ]
-        : [
-            {
-              action: 'dispatched',
-              label: 'Payment received and posted',
-              hint: 'Records the payment and tells them it is on the way.',
-              needsPostage: true,
-            },
-            {
-              action: 'paid',
-              label: 'Payment received, not posted yet',
-              hint: 'Use when you will post it later.',
-              secondary: true,
-            },
-            cancel,
-          ];
+        : cash
+          ? [
+              // Nothing has been received, so neither button may say so.
+              {
+                action: 'dispatched',
+                label: 'Sent, cash still due',
+                hint: 'Tells them it is on the way. You take the cash when you hand them over.',
+                needsPostage: true,
+              },
+              {
+                action: 'paid',
+                label: 'Ready, not sent yet',
+                hint: 'Use when you will send it later.',
+                secondary: true,
+              },
+              cancel,
+            ]
+          : [
+              {
+                action: 'dispatched',
+                label: 'Payment received and posted',
+                hint: 'Records the payment and tells them it is on the way.',
+                needsPostage: true,
+              },
+              {
+                action: 'paid',
+                label: 'Payment received, not posted yet',
+                hint: 'Use when you will post it later.',
+                secondary: true,
+              },
+              cancel,
+            ];
 
     case 'paid':
       return collecting
@@ -281,15 +341,23 @@ export function nextActions(
         : [
             {
               action: 'dispatched',
-              label: 'Mark as posted',
-              hint: 'Tells the customer the books are on the way.',
+              label: cash ? 'Mark as sent' : 'Mark as posted',
+              hint: cash
+                ? 'Tells them it is on the way. The cash comes when you hand them over.'
+                : 'Tells the customer the books are on the way.',
               needsPostage: true,
             },
             cancel,
           ];
 
     case 'dispatched':
-      return [{ action: 'completed', label: 'Mark as delivered', hint: 'Closes the order.' }];
+      return [
+        {
+          action: 'completed',
+          label: 'Mark as delivered',
+          hint: cash ? 'Closes the order - take the cash when you hand them over.' : 'Closes the order.',
+        },
+      ];
 
     // completed, cancelled, expired
     default:
@@ -350,12 +418,19 @@ export function statusMessage(
 
   switch (status) {
     case 'paid':
-      if (collecting && cashPayment) {
+      if (cashPayment) {
+        if (collecting) {
+          return {
+            subject: `Ready to collect - ${ref}`,
+            line: collectionAddress
+              ? `Your books are set aside for you at ${collectionAddress}. Get in touch to arrange a time - you can pay when you collect.`
+              : 'Your books are set aside for you. Get in touch to arrange a time - you can pay when you collect.',
+          };
+        }
+        // Not "Payment received": nothing has been received yet on a cash order.
         return {
-          subject: `Ready to collect - ${ref}`,
-          line: collectionAddress
-            ? `Your books are set aside for you at ${collectionAddress}. Get in touch to arrange a time - you can pay when you collect.`
-            : 'Your books are set aside for you. Get in touch to arrange a time - you can pay when you collect.',
+          subject: `Your books are ready - ${ref}`,
+          line: 'Your books are packed. We will be in touch to arrange handing them over, and you can pay in cash then.',
         };
       }
       return collecting
@@ -376,9 +451,13 @@ export function statusMessage(
       // working link, this is that same link, reused.
       return {
         subject: `Your books are on the way - ${ref}`,
-        line: tracking
-          ? `Your order has been posted${provider ? ` with ${provider}` : ''}. Your tracking number is ${tracking}.`
-          : 'Your order has been posted. جزاكم الله خيرا.',
+        line:
+          (tracking
+            ? `Your order has been posted${provider ? ` with ${provider}` : ''}. Your tracking number is ${tracking}.`
+            : 'Your order has been posted. جزاكم الله خيرا.') +
+          // The money is still to come, and a message about the parcel is where
+          // they will be looking when it arrives.
+          (cashPayment ? ' The payment is due in cash when we hand them over.' : ''),
         trackingLink: tracking ? trackingUrl(provider, tracking) : null,
       };
 

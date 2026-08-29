@@ -38,6 +38,7 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
   // Not coerced. An unrecognised value used to become a delivery silently,
   // which is a stranger's books posted to nowhere rather than an error.
   const fulfilment = clean(data.fulfilment);
+  const paymentPreference = clean(data.paymentPreference);
   const notes = clean(data.notes);
 
   const parts = {
@@ -50,7 +51,9 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
   };
 
   // The same rules the page just applied - it is the server that decides.
-  const problems = checkOrder({ name, email, phone, fulfilment, notes, address: parts });
+  const problems = checkOrder({
+    name, email, phone, fulfilment, paymentPreference, notes, address: parts,
+  });
   if (problems.length) return badField(problems[0].field, problems[0].message);
 
   // The block every page and email already reads, written from the parts.
@@ -115,6 +118,7 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
       fulfilment: fulfilment as 'delivery' | 'collection',
       address,
       addressParts: fulfilment === 'delivery' ? parts : null,
+      paymentPreference: paymentPreference || null,
       notes: finalNotes,
       items: finalItems,
     });
@@ -128,7 +132,7 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     const notify = notifyOrderPlaced({
       order, name, email, phone: phone || null,
       fulfilment: fulfilment as 'delivery' | 'collection',
-      address, notes: finalNotes, origin,
+      address, paymentPreference: paymentPreference || null, notes: finalNotes, origin,
     }).catch(
       (err) => console.error('order notification failed', order.ref, err),
     );

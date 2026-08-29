@@ -7,40 +7,48 @@ import { env } from 'cloudflare:workers';
  */
 
 /**
- * The payment drafts the owner can keep ready, and the order they appear in.
+ * The parts a confirmation message is built from.
  *
- * One draft per journey was not enough: a large order goes to a different
- * account, a regular customer has a different arrangement, and the owner was
- * rewriting the box by hand every time. Several, each with a label they choose,
- * picked at the moment of confirming.
+ * Not whole messages keyed by journey, which is what these were: the three
+ * "delivery" boxes turned out to be **bank accounts** and the two "collection"
+ * boxes **collection addresses**, and either kind of order might be paid by
+ * transfer or in cash. So a collection paid by transfer needs an address *and*
+ * an account, while a posted order paid in cash needs neither - a shape no
+ * single list can hold without a box for every combination.
  *
- * This array is the only place the set is written down - the setting keys, the
- * type union, the Settings form and the picker on the order all derive from it,
- * so a fourth slot is a line here and a line of migration.
- *
- * There is deliberately no special draft for cash on collection. One used to
- * be applied automatically, which meant a slot the owner had to maintain for a
- * case the picker already covers - ticking "paying in cash" now asks them which
- * of their own wordings to send.
+ * Two groups, then, plus one line for cash. The message is assembled from
+ * whichever apply and stays editable on the order.
  */
-export const PAYMENT_DRAFTS = [
-  { slot: 'delivery_1', fulfilment: 'delivery', label: 'Bank transfer' },
-  { slot: 'delivery_2', fulfilment: 'delivery', label: 'Second account' },
-  { slot: 'delivery_3', fulfilment: 'delivery', label: 'Other' },
-  { slot: 'collection_1', fulfilment: 'collection', label: 'Paying in advance' },
-  { slot: 'collection_2', fulfilment: 'collection', label: 'Paying on the day' },
+export const PAYMENT_ACCOUNTS = [
+  { slot: 'account_1', label: 'Main account' },
+  { slot: 'account_2', label: 'Second account' },
+  { slot: 'account_3', label: 'Third account' },
 ] as const;
 
-export type DraftSlot = (typeof PAYMENT_DRAFTS)[number]['slot'];
+export const COLLECTION_PLACES = [
+  { slot: 'place_1', label: 'Main address' },
+  { slot: 'place_2', label: 'Second address' },
+] as const;
 
-export const draftBodyKey = (slot: DraftSlot) => `payment_draft_${slot}` as const;
-export const draftLabelKey = (slot: DraftSlot) => `payment_draft_${slot}_label` as const;
+/**
+ * One wording for cash, shared by both journeys - not one per journey. Where
+ * the money changes hands differs, and that phrase comes from
+ * `cashMoment()` in lib/order-status rather than from a second box here.
+ */
+export const CASH_SLOT = 'cash' as const;
+
+export type AccountSlot = (typeof PAYMENT_ACCOUNTS)[number]['slot'];
+export type PlaceSlot = (typeof COLLECTION_PLACES)[number]['slot'];
+export type PartSlot = AccountSlot | PlaceSlot | typeof CASH_SLOT;
+
+export const partBodyKey = (slot: PartSlot) => `payment_part_${slot}` as const;
+export const partLabelKey = (slot: PartSlot) => `payment_part_${slot}_label` as const;
 
 export type SettingKey =
-  // Derived from the array above rather than typed out beside it, so the list
-  // and the union cannot drift apart.
-  | `payment_draft_${DraftSlot}`
-  | `payment_draft_${DraftSlot}_label`
+  // Derived from the lists above rather than typed out beside them, so the
+  // lists and the union cannot drift apart.
+  | `payment_part_${PartSlot}`
+  | `payment_part_${PartSlot}_label`
   | 'collection_address'
   // Bound by the owner tapping the deep link on the settings page - the bot
   // cannot start a conversation, so this is the only way to obtain it.
@@ -73,36 +81,73 @@ export async function setSetting(key: SettingKey, value: string): Promise<void> 
     .run();
 }
 
-export interface PaymentDraft {
-  slot: DraftSlot;
+export interface MessagePart {
+  slot: PartSlot;
   /** The owner's own name for it, shown on the picker. */
   label: string;
   body: string;
 }
 
-/**
- * The drafts on offer for this kind of order.
- *
- * Slots with nothing written in them are left out: an empty draft is not a
- * choice, it is a slot the owner has not got round to using.
- */
-export async function paymentDrafts(fulfilment: string): Promise<PaymentDraft[]> {
-  const wanted = fulfilment === 'collection' ? 'collection' : 'delivery';
+const parts = async (
+  defs: readonly { slot: PartSlot; label: string }[],
+): Promise<MessagePart[]> => {
   const all = await getSettings();
-
-  return PAYMENT_DRAFTS.filter((d) => d.fulfilment === wanted)
+  return defs
     .map((d) => ({
       slot: d.slot,
-      label: (all[draftLabelKey(d.slot)] ?? '').trim() || d.label,
-      body: (all[draftBodyKey(d.slot)] ?? '').trim(),
+      label: (all[partLabelKey(d.slot)] ?? '').trim() || d.label,
+      body: (all[partBodyKey(d.slot)] ?? '').trim(),
     }))
     .filter((d) => d.body !== '');
+};
+
+/**
+ * How the customer pays: the accounts, and cash.
+ *
+ * Cash is offered last and on every journey, because whether it applies is the
+ * owner's decision on the order rather than a property of how the books travel.
+ * Empty boxes are left out - an unwritten draft is not a choice.
+ */
+export async function paymentOptions(): Promise<MessagePart[]> {
+  const [accounts, cash] = await Promise.all([
+    parts(PAYMENT_ACCOUNTS),
+    parts([{ slot: CASH_SLOT, label: 'Cash' }]),
+  ]);
+  return [...accounts, ...cash];
 }
 
-/** The one the box opens on: the first the owner has filled in. */
-export async function defaultDraft(fulfilment: string): Promise<string> {
-  const drafts = await paymentDrafts(fulfilment);
-  return drafts[0]?.body ?? '';
+/** Where they collect. Only ever offered on a collection. */
+export async function collectionPlaces(): Promise<MessagePart[]> {
+  return parts(COLLECTION_PLACES);
+}
+
+/**
+ * The message, built from the parts that apply.
+ *
+ * Where before how to pay, because that is the order the customer needs them
+ * in: they want to know where they are going before what to bring.
+ */
+export function composeMessage(chosen: { place?: string | null; payment?: string | null }): string {
+  return [chosen.place, chosen.payment]
+    .map((part) => (part ?? '').trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/** What the box opens on before the owner touches it. */
+export async function defaultMessage(fulfilment: string, cashPayment = false): Promise<string> {
+  const [options, places] = await Promise.all([
+    paymentOptions(),
+    fulfilment === 'collection' ? collectionPlaces() : Promise.resolve([]),
+  ]);
+
+  // A cash order must never open with bank details in the box - that is the
+  // contradiction this whole feature exists to prevent.
+  const payment = cashPayment
+    ? options.find((o) => o.slot === CASH_SLOT)
+    : options.find((o) => o.slot !== CASH_SLOT);
+
+  return composeMessage({ place: places[0]?.body, payment: payment?.body });
 }
 
 /**

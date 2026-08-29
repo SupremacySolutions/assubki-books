@@ -1,6 +1,13 @@
 ---
 import Admin from '../../layouts/Admin.astro';
-import { getSettings, PAYMENT_DRAFTS, draftBodyKey, draftLabelKey } from '../../lib/settings';
+import {
+  getSettings,
+  PAYMENT_ACCOUNTS,
+  COLLECTION_PLACES,
+  CASH_SLOT,
+  partBodyKey,
+  partLabelKey,
+} from '../../lib/settings';
 import { botConfigured, botUsername, ownerOptInLink } from '../../lib/telegram';
 import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
 
@@ -10,14 +17,17 @@ const saved = Astro.url.searchParams.get('saved');
 
 const draftGroups = [
   {
-    heading: 'Posted orders',
-    note: 'Pick one of these when you confirm an order being posted. Leave a box empty and it simply will not be offered.',
-    slots: PAYMENT_DRAFTS.filter((d) => d.fulfilment === 'delivery'),
+    heading: 'How they pay',
+    note: 'Your bank accounts, and the wording for cash. On an order you pick one of these - the cash one whenever the order is paid in cash, whether it is posted or collected. Leave a box empty and it will not be offered.',
+    slots: [
+      ...PAYMENT_ACCOUNTS.map((a) => ({ ...a, cash: false })),
+      { slot: CASH_SLOT, label: 'Cash', cash: true },
+    ],
   },
   {
-    heading: 'Collection orders',
-    note: 'The same, for orders being collected. When you tick "paying in cash on collection" you are asked which of these to send.',
-    slots: PAYMENT_DRAFTS.filter((d) => d.fulfilment === 'collection'),
+    heading: 'Where they collect',
+    note: 'Your collection addresses. One of these is added to the message on a collection order, above however they are paying.',
+    slots: COLLECTION_PLACES.map((p) => ({ ...p, cash: false })),
   },
 ];
 ---
@@ -63,35 +73,37 @@ const draftGroups = [
                 aria-selected={i === 0 ? 'true' : 'false'}
                 class="px-3 py-1.5 text-[13.5px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-selected:border-[var(--color-navy)] aria-selected:bg-[var(--color-navy)] aria-selected:text-white"
               >
-                {settings[draftLabelKey(slot.slot)]?.trim() || slot.label}
+                {settings[partLabelKey(slot.slot)]?.trim() || slot.label}
               </button>
             ))}
           </div>
 
           {group.slots.map((slot, i) => (
             <div class="mt-3" data-draft-panel={slot.slot} hidden={i !== 0}>
-              <label for={draftLabelKey(slot.slot)} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">
+              <label for={partLabelKey(slot.slot)} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">
                 Name for this one
               </label>
               <input
-                id={draftLabelKey(slot.slot)}
-                name={draftLabelKey(slot.slot)}
+                id={partLabelKey(slot.slot)}
+                name={partLabelKey(slot.slot)}
                 maxlength="40"
                 placeholder={slot.label}
-                value={settings[draftLabelKey(slot.slot)] ?? ''}
+                value={settings[partLabelKey(slot.slot)] ?? ''}
                 data-draft-name={slot.slot}
                 class="field !py-1.5 !text-[14px] !w-64"
               />
-              <label for={draftBodyKey(slot.slot)} class="block mt-3 text-[13px] text-[var(--color-ink-faint)] mb-1">
+              <label for={partBodyKey(slot.slot)} class="block mt-3 text-[13px] text-[var(--color-ink-faint)] mb-1">
                 What it says
               </label>
               <textarea
-                id={draftBodyKey(slot.slot)}
-                name={draftBodyKey(slot.slot)}
+                id={partBodyKey(slot.slot)}
+                name={partBodyKey(slot.slot)}
                 rows="8"
                 maxlength="4000"
-                placeholder="Leave empty if you do not use this one - it will not be offered on an order."
-                class="field font-[family-name:var(--font-body)]">{settings[draftBodyKey(slot.slot)] ?? ''}</textarea
+                placeholder={slot.cash
+                  ? 'What to tell somebody paying in cash. Where the money changes hands is added for you.'
+                  : 'Leave empty if you do not use this one - it will not be offered on an order.'}
+                class="field font-[family-name:var(--font-body)]">{settings[partBodyKey(slot.slot)] ?? ''}</textarea
               >
             </div>
           ))}

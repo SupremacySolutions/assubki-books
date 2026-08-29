@@ -25,8 +25,10 @@ export interface AdminOrderRow {
   confirmed_at: number | null;
   telegram_chat_id: string | null;
   tracking_number: string | null;
-  /** Collection orders only: the customer is paying cash when they collect. */
+  /** The customer is paying cash when the books change hands. */
   cash_payment: number;
+  /** What they asked for at checkout: 'transfer', 'cash', or nothing. */
+  payment_preference: string | null;
   item_count: number;
 }
 

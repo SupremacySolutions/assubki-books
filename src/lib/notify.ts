@@ -21,7 +21,7 @@ import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml } from './email';
 import { sendMessage, optInLink, esc, botConfigured, mdLink } from './telegram';
-import { statusMessage } from './order-status';
+import { statusMessage, cashMoment } from './order-status';
 import { getSetting } from './settings';
 
 export interface PlacedInput {
@@ -30,6 +30,8 @@ export interface PlacedInput {
   email: string;
   phone?: string | null;
   fulfilment: 'delivery' | 'collection';
+  /** What the customer asked for at checkout, if they said. */
+  paymentPreference?: string | null;
   address?: string | null;
   notes?: string | null;
   origin: string;
@@ -106,6 +108,11 @@ function ownerPlaced(input: PlacedInput) {
   const contact = [
     `Email: ${escapeHtml(email)}`,
     input.phone ? `Phone: ${escapeHtml(input.phone)}` : null,
+    // What they would rather do about paying. Only shown when they said, since
+    // an absent answer is not a preference for either.
+    input.paymentPreference
+      ? `Would rather pay: ${input.paymentPreference === 'cash' ? 'cash in person' : 'bank transfer'}`
+      : null,
   ]
     .filter(Boolean)
     .join('<br>');
@@ -133,6 +140,9 @@ function ownerPlaced(input: PlacedInput) {
   const text =
     `New request ${order.ref}\n${name}\n${email}` +
     (input.phone ? ` · ${input.phone}` : '') +
+    (input.paymentPreference
+      ? `\nWould rather pay: ${input.paymentPreference === 'cash' ? 'cash in person' : 'bank transfer'}`
+      : '') +
     `\n\n` +
     order.items.map((i) => `  ${i.title} x${i.qty}  ${price(i.pricePence * i.qty)}`).join('\n') +
     `\n  Subtotal: ${price(order.subtotalPence)}\n\n` +
@@ -197,14 +207,17 @@ export interface ConfirmedInput {
 
 function confirmedEmail(input: ConfirmedInput) {
   const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
-  // Nothing is owed yet on a cash collection, so the message stops asking for
-  // money and asks for a time instead. The figures still go, because the
-  // customer wants to know what they are bringing.
+  // Nothing is owed yet on a cash order, so the message stops asking for money
+  // and asks for a time instead. The figures still go, because the customer
+  // wants to know what they are bringing. Cash is no longer collection-only,
+  // so the moment the money changes hands has to be said per journey.
   const cash = Boolean(input.cashPayment);
-  const totalLabel = cash ? 'Total, payable on collection' : 'Total to pay';
+  const moment = cashMoment(input.fulfilment);
+  const totalLabel = cash ? `Total, payable ${moment}` : 'Total to pay';
   const quote = cash
-    ? `Quote ${input.ref} when you collect.`
+    ? `Quote ${input.ref} ${moment}.`
     : `Please quote ${input.ref} with your payment.`;
+  const heading = cash ? 'Paying in cash' : 'How to pay';
 
   const html = shell(
     'Your order is confirmed',
@@ -213,7 +226,7 @@ function confirmedEmail(input: ConfirmedInput) {
      <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
        ${
          cash
-           ? 'Your books are set aside. Here is what they come to - you can pay in cash when you collect.'
+           ? `Your books are set aside. Here is what they come to - you can pay in cash ${moment}.`
            : 'Your books are reserved. Here is the total and how to pay.'
        }
      </p>
@@ -225,13 +238,13 @@ function confirmedEmail(input: ConfirmedInput) {
        input.totalPence,
      )}
      <div style="margin:22px 0 0;padding:16px;background:#f5f4f0;border:1px solid #ddd9d1;border-radius:3px">
-       <p style="margin:0 0 8px;font-size:15px;font-weight:600">${cash ? 'Collecting your books' : 'How to pay'}</p>
+       <p style="margin:0 0 8px;font-size:15px;font-weight:600">${heading}</p>
        <p style="margin:0;font-size:14.5px;color:#4a5568;line-height:1.65;white-space:pre-line">${escapeHtml(
          input.paymentInstructions,
        )}</p>
        <p style="margin:12px 0 0;font-size:14.5px">${
          cash
-           ? `Quote <strong>${escapeHtml(input.ref)}</strong> when you collect.`
+           ? `Quote <strong>${escapeHtml(input.ref)}</strong> ${escapeHtml(moment)}.`
            : `Please quote <strong>${escapeHtml(input.ref)}</strong> with your payment.`
        }</p>
      </div>
@@ -253,17 +266,18 @@ function confirmedEmail(input: ConfirmedInput) {
     `\n  Subtotal: ${price(input.subtotalPence)}` +
     (input.fulfilment === 'collection' ? '' : `\n  Postage: ${price(input.postagePence)}`) +
     `\n  ${totalLabel.toUpperCase()}: ${price(input.totalPence)}\n\n` +
-    `${cash ? 'Collecting your books' : 'How to pay'}\n${input.paymentInstructions}\n\n` +
+    `${heading}\n${input.paymentInstructions}\n\n` +
     `${quote}\n\n${link}\n`;
 
   const subject = cash
-    ? `Order ${input.ref} confirmed - ${price(input.totalPence)} on collection`
+    ? `Order ${input.ref} confirmed - ${price(input.totalPence)} in cash`
     : `Order ${input.ref} confirmed - ${price(input.totalPence)} to pay`;
   return { subject, html, text };
 }
 
 function confirmedTelegram(input: ConfirmedInput): string {
   const cash = Boolean(input.cashPayment);
+  const moment = cashMoment(input.fulfilment);
   const lines = [
     `*${esc(`Order ${input.ref} confirmed`)}*`,
     '',
@@ -282,14 +296,14 @@ function confirmedTelegram(input: ConfirmedInput): string {
   lines.push(
     `*${esc(
       cash
-        ? `Total ${price(input.totalPence)}, payable on collection`
+        ? `Total ${price(input.totalPence)}, payable ${moment}`
         : `Total to pay ${price(input.totalPence)}`,
     )}*`,
     '',
-    `*${esc(cash ? 'Collecting your books' : 'How to pay')}*`,
+    `*${esc(cash ? 'Paying in cash' : 'How to pay')}*`,
     esc(input.paymentInstructions),
     '',
-    esc(cash ? `Quote ${input.ref} when you collect.` : `Please quote ${input.ref} with your payment.`),
+    esc(cash ? `Quote ${input.ref} ${moment}.` : `Please quote ${input.ref} with your payment.`),
   );
   return lines.join('\n');
 }

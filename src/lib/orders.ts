@@ -28,6 +28,8 @@ export interface OrderInput {
   address?: string | null;
   /** The same address in parts, for labels and customs forms. */
   addressParts?: AddressParts | null;
+  /** What the customer said they would rather do: 'transfer' or 'cash'. */
+  paymentPreference?: string | null;
   notes?: string | null;
   items: RequestedItem[];
 }
@@ -165,8 +167,9 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
                              fulfilment, address, notes, status, subtotal_pence, expires_at,
                              telegram_chat_id, telegram_linked_at,
                              address_line1, address_line2, address_city,
-                             address_region, address_postcode, address_country)
-         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?)`,
+                             address_region, address_postcode, address_country,
+                             payment_preference, cash_payment)
+         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         ref,
         token,
@@ -186,6 +189,11 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
         input.addressParts?.region ?? null,
         input.addressParts?.postcode ?? null,
         input.addressParts?.country ?? null,
+        input.paymentPreference ?? null,
+        // Their stated preference pre-sets the owner's tick, so the common case
+        // needs no action. It stays the owner's to change - the two are kept in
+        // separate columns precisely so this is a starting point, not a fact.
+        input.paymentPreference === 'cash' ? 1 : 0,
       ),
     ];
 

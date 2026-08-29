@@ -2,9 +2,11 @@ import type { APIRoute } from 'astro';
 import {
   setSetting,
   forgetContactTelegram,
-  PAYMENT_DRAFTS,
-  draftBodyKey,
-  draftLabelKey,
+  PAYMENT_ACCOUNTS,
+  COLLECTION_PLACES,
+  CASH_SLOT,
+  partBodyKey,
+  partLabelKey,
 } from '../../../lib/settings';
 
 export const prerender = false;
@@ -28,11 +30,16 @@ const text = async (
 export const POST: APIRoute = async ({ request }) => {
   const form = await request.formData();
 
-  // Looped rather than written out twelve times, so adding a slot to the list
+  // Looped rather than written out a dozen times, so adding a slot to the lists
   // in lib/settings is the whole change.
-  for (const draft of PAYMENT_DRAFTS) {
-    await text(form, draftBodyKey(draft.slot), draftBodyKey(draft.slot), 4000);
-    await text(form, draftLabelKey(draft.slot), draftLabelKey(draft.slot), 40);
+  const slots = [
+    ...PAYMENT_ACCOUNTS.map((a) => a.slot),
+    ...COLLECTION_PLACES.map((p) => p.slot),
+    CASH_SLOT,
+  ];
+  for (const slot of slots) {
+    await text(form, partBodyKey(slot), partBodyKey(slot), 4000);
+    await text(form, partLabelKey(slot), partLabelKey(slot), 40);
   }
 
   await text(form, 'collection_address', 'collection_address', 300);

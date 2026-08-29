@@ -115,10 +115,12 @@ Part two, section B. If neither can be delivered, the order goes back in your
 queue and nothing is sent, so an order can never look handled when the customer
 was never told.
 
-The payment wording comes from your saved drafts in Settings — **three for
-posted orders, two for collections**. When you confirm an order you pick which
-one to use by its name, and you can still edit it on the order before it goes. A
-draft you have left empty is not offered.
+The wording is built from parts you keep in Settings: **how they pay** (your
+bank accounts, plus one wording for cash) and **where they collect** (your
+collection addresses). When you confirm an order you pick one of each that
+applies — a collection paid by transfer gets the address and the account — and
+you can still edit the result before it goes. A box you have left empty is not
+offered.
 
 ### If they are paying now
 
@@ -163,13 +165,14 @@ Same email, five things worded differently:
 | **Under the box** | Quote **ASB-4F7K** when you collect. |
 | **Last line** | No payment is taken on our website. Message us to agree a time and the books will be waiting. |
 
-Ticking "paying in cash on collection" does not pick the wording for you — it
-asks. A note appears telling you to check the wording suits somebody paying at
-the door, and you choose whichever of your two collection drafts fits.
+Ticking "paying in cash" swaps the payment part to your cash wording and raises
+a note to check it reads right. **Cash now applies to posted orders too** — there
+it means you are handing the books over in person, and the customer's page says
+so rather than talking about collecting.
 
-✅ **Changed:** there used to be a separate, fixed cash wording. It was a third
-draft to maintain for a case the picker already covers, so it is gone — its
-wording became your second collection draft.
+Customers can also say at checkout whether they would rather pay by transfer or
+in cash. It is optional, it is shown to you on the order and in your email, and
+it pre-ticks the cash box — but it is their request, and you decide.
 
 ---
 

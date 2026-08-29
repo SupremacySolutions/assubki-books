@@ -22,6 +22,7 @@ export type Field =
   | 'email'
   | 'phone'
   | 'fulfilment'
+  | 'paymentPreference'
   | 'line1'
   | 'city'
   | 'region'
@@ -88,6 +89,18 @@ export function checkFulfilment(value: string): string | null {
     : 'Choose whether we post the books or you collect them.';
 }
 
+/**
+ * What the customer would rather do about paying. Optional on purpose - it is a
+ * request, not a decision, and one more required field between somebody and a
+ * £6 book is a worse trade than occasionally not knowing.
+ */
+export function checkPaymentPreference(value: string): string | null {
+  if (!value) return null;
+  return value === 'transfer' || value === 'cash'
+    ? null
+    : 'Choose bank transfer or cash, or leave it blank.';
+}
+
 export function checkNotes(value: string): string | null {
   return value.length > LIMITS.notes ? 'That note is too long.' : null;
 }
@@ -147,6 +160,7 @@ export function checkOrder(input: {
   email: string;
   phone: string;
   fulfilment: string;
+  paymentPreference?: string;
   notes: string;
   address: Partial<AddressParts>;
 }): Problem[] {
@@ -159,6 +173,7 @@ export function checkOrder(input: {
   add('email', checkEmail(input.email));
   add('phone', checkPhone(input.phone));
   add('fulfilment', checkFulfilment(input.fulfilment));
+  add('paymentPreference', checkPaymentPreference(input.paymentPreference ?? ''));
   if (input.fulfilment === 'delivery') problems.push(...checkAddress(input.address));
   add('notes', checkNotes(input.notes));
 

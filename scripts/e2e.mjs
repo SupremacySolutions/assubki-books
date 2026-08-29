@@ -664,17 +664,19 @@ async function ownerSettings() {
   // One draft used to serve each journey, so the owner rewrote the box by hand
   // whenever an order did not suit the single saved text.
   await admin('/api/admin/settings', {
-    payment_draft_delivery_1: 'POSTED-ONE bank transfer please.',
-    payment_draft_delivery_1_label: 'Main account',
-    payment_draft_delivery_2: 'POSTED-TWO the other account.',
-    payment_draft_delivery_2_label: 'Second account',
+    payment_part_account_1: 'ACCOUNT-ONE bank transfer please.',
+    payment_part_account_1_label: 'Main account',
+    payment_part_account_2: 'ACCOUNT-TWO the other account.',
+    payment_part_account_2_label: 'Second account',
     // Deliberately left empty: an unused slot must not be offered.
-    payment_draft_delivery_3: '',
-    payment_draft_delivery_3_label: 'Never used',
-    payment_draft_collection_1: 'COLLECT-ONE pay in advance.',
-    payment_draft_collection_1_label: 'In advance',
-    payment_draft_collection_2: 'COLLECT-TWO pay when you collect.',
-    payment_draft_collection_2_label: 'On the day',
+    payment_part_account_3: '',
+    payment_part_account_3_label: 'Never used',
+    payment_part_cash: 'CASH-WORDING nothing to pay now.',
+    payment_part_cash_label: 'Cash',
+    payment_part_place_1: 'PLACE-ONE the Leicester shop.',
+    payment_part_place_1_label: 'Leicester',
+    payment_part_place_2: 'PLACE-TWO the Saturday stall.',
+    payment_part_place_2_label: 'Saturday stall',
     collection_address: '12 Evington Road, Leicester LE2 1HN - Saturdays 10am to 4pm',
     contact_telegram: '@alsubkibooks',
   });
@@ -688,28 +690,30 @@ async function ownerSettings() {
   const dBook = await makeBook();
   const d = await placeOrder(dBook.id, 'delivery');
   const dPortal = await html(`/admin/orders/${d.ref}`);
-  t.ok(draftInBox(dPortal).includes('POSTED-ONE'),
-    'a posted order opens with the first posted draft');
+  t.ok(draftInBox(dPortal).includes('ACCOUNT-ONE'),
+    'a posted order opens with the first account');
   t.ok(dPortal.includes('Main account') && dPortal.includes('Second account'),
-    'and offers the drafts by the names the owner gave them');
+    'and offers the accounts by the names the owner gave them');
   t.ok(!dPortal.includes('Never used'),
-    'a draft with nothing written in it is not offered');
-  t.ok(!dPortal.includes('In advance'),
-    'and a posted order is not offered the collection drafts');
-
-  // Hiding the picker whenever there was only one draft is what made this look
-  // broken: the owner ticked cash and had nothing to choose from.
-  await admin('/api/admin/settings', { payment_draft_delivery_2: '' });
-  const oneDraft = await html(`/admin/orders/${d.ref}`);
-  t.ok(oneDraft.includes('data-draft-picker'), 'the picker shows even with a single draft');
-  t.ok(oneDraft.includes('Add another'), 'and points at Settings to add more');
-  await admin('/api/admin/settings', { payment_draft_delivery_2: 'POSTED-TWO the other account.' });
+    'an account with nothing written in it is not offered');
+  t.ok(!dPortal.includes('data-place-picker'),
+    'a posted order is not asked where they collect');
 
   const cBook = await makeBook();
   const c = await placeOrder(cBook.id, 'collection');
-  const cPortal = draftInBox(await html(`/admin/orders/${c.ref}`));
-  t.ok(cPortal.includes('COLLECT-ONE') && !cPortal.includes('POSTED-ONE'),
-    'a collection opens with the collection draft, not the posted one');
+  const cPortalRaw = await html(`/admin/orders/${c.ref}`);
+  const cPortal = draftInBox(cPortalRaw);
+
+  /*
+   * The point of the restructure: a collection paid by transfer needs the
+   * address *and* the account, which no single list of whole messages could
+   * offer without a box per combination.
+   */
+  t.ok(cPortal.includes('PLACE-ONE') && cPortal.includes('ACCOUNT-ONE'),
+    'a collection opens with both where they collect and how they pay');
+  t.ok(cPortalRaw.includes('data-place-picker') && cPortalRaw.includes('data-draft-picker'),
+    'and offers both pickers');
+  t.ok(cPortalRaw.includes('Saturday stall'), 'including the second address');
 
   /*
    * There is no separate cash draft any more - it was a slot to maintain for a
@@ -719,12 +723,12 @@ async function ownerSettings() {
    */
   await admin(`/api/admin/orders/${c.ref}/cash-payment`, { cash_payment: '1' });
   const cashPage = await html(`/admin/orders/${c.ref}`);
-  t.ok(cashPage.includes('paying in cash on collection - check the wording'),
+  t.ok(cashPage.includes('paying in cash - check the wording'),
     'a cash order asks the owner to check the wording');
-  t.ok(cashPage.includes('data-draft-picker'),
-    'and still offers the drafts to choose between');
-  t.ok(cashPage.includes('In advance') && cashPage.includes('On the day'),
-    'both collection drafts among them');
+  t.ok(draftInBox(cashPage).includes('CASH-WORDING') && !draftInBox(cashPage).includes('ACCOUNT-ONE'),
+    'and opens on the cash wording rather than bank details');
+  t.ok(draftInBox(cashPage).includes('PLACE-ONE'),
+    'while still saying where they collect');
 
   // --- postage remembers rather than being maintained -----------------------
   //
@@ -751,8 +755,8 @@ async function ownerSettings() {
 
   // --- the settings page itself ---------------------------------------------
   const page = visibleText(await html('/admin/settings'));
-  t.ok(page.includes('Posted orders') && page.includes('Collection orders'),
-    'settings offers drafts for each kind of order');
+  t.ok(page.includes('How they pay') && page.includes('Where they collect'),
+    'settings keeps how they pay apart from where they collect');
   t.ok(page.includes('Name for this one'),
     'and each one can be named');
   t.ok(!page.includes('Usual postage'),
@@ -869,9 +873,18 @@ async function lifecycle() {
   const sweep = async (stage) => {
     const page = await html(cUrl);
     const portal = await html(`/admin/orders/${c.ref}`);
+    /*
+     * What is being checked is the *shop's* vocabulary, not the owner's. The
+     * confirm box now carries their own drafts - a bank account's wording is
+     * theirs to write, and may say anything - so it is cut out before the
+     * sweep. Leaving it in made this fail on the word "posted" appearing inside
+     * somebody's account details.
+     */
+    const ownWords = (markup) =>
+      markup.replace(/<textarea[^>]*id="payment_message"[^>]*>[\s\S]*?<\/textarea>/, '');
     // The portal legitimately contains the word "Delete"; only the delivery
     // vocabulary is forbidden.
-    const bad = [page, portal].map(visibleText).some((h) => POSTING.test(h));
+    const bad = [page, ownWords(portal)].map(visibleText).some((h) => POSTING.test(h));
     seen.push([stage, bad]);
     return { page, portal };
   };
@@ -955,11 +968,66 @@ async function lifecycle() {
   t.ok(waitingPortal.includes('Set aside for collection'),
     'cash: and offers setting the books aside rather than recording a payment');
 
-  // Nothing to pay in cash on something being posted.
+  /*
+   * Cash is no longer collection-only: a posted order marked cash is one handed
+   * over in person. What must not happen is a delivery inheriting the
+   * collection wording - it would tell somebody to come and collect books that
+   * are being sent to them.
+   */
   const postBook = await makeBook();
   const posted = await placeOrder(postBook.id, 'delivery');
-  const refused = await admin(`/api/admin/orders/${posted.ref}/cash-payment`, { cash_payment: '1' });
-  t.ok(refused.status === 404, 'cash: a delivery order cannot be marked as cash on collection');
+  const allowed = await admin(`/api/admin/orders/${posted.ref}/cash-payment`, { cash_payment: '1' });
+  t.ok(allowed.status === 200, 'cash: a posted order can be marked as paying in cash');
+
+  await admin(`/api/admin/orders/${posted.ref}/confirm`, { postage: '3.95', payment_message: 'x' });
+  const postedCash = visibleText(await html(`/order?ref=${posted.ref}&t=${posted.token}`));
+  t.ok(/hand(ing)? them over|hand them over/.test(postedCash),
+    'cash: a posted order talks about handing over, not collecting');
+  t.ok(!/come and collect|Ready to collect|when you collect/i.test(postedCash),
+    'cash: and never tells them to come and collect');
+
+  const postedPortal = visibleText(await html(`/admin/orders/${posted.ref}`));
+  t.ok(!postedPortal.includes('Payment received and posted'),
+    'cash: the owner is not offered a button recording money that has not arrived');
+
+  // An unknown reference is still a 404 - that guard was doing two jobs.
+  const missing = await admin('/api/admin/orders/ASB-NOPE/cash-payment', { cash_payment: '1' });
+  t.ok(missing.status === 404, 'cash: an unknown reference is still refused');
+
+  /*
+   * What the customer asked for at checkout is a request, not a decision: it
+   * pre-sets the owner's tick and is shown to them, but the two live in
+   * separate columns so a customer's click can never rewrite what the shop
+   * actually sends.
+   */
+  const prefBook = await makeBook();
+  const preferred = await placeOrder(prefBook.id, 'collection', { paymentPreference: 'cash' });
+  const prefRow = await one(
+    `SELECT payment_preference AS p, cash_payment AS c FROM orders WHERE ref='${preferred.ref}'`,
+  );
+  t.ok(prefRow.p === 'cash', 'the stated payment preference is kept');
+  t.ok(prefRow.c === 1, 'and pre-ticks the cash box for the owner');
+  t.ok(visibleText(await html(`/admin/orders/${preferred.ref}`)).includes('Asked to pay by'),
+    'the owner is told what they asked for');
+
+  const transferBook = await makeBook();
+  const byTransfer = await placeOrder(transferBook.id, 'delivery', { paymentPreference: 'transfer' });
+  const transferRow = await one(`SELECT cash_payment AS c FROM orders WHERE ref='${byTransfer.ref}'`);
+  t.ok(transferRow.c === 0, 'asking to pay by transfer leaves the cash box alone');
+
+  // Saying nothing is a valid answer - it is one more field between somebody
+  // and a six pound book otherwise.
+  const quietBook = await makeBook();
+  const quiet = await placeOrder(quietBook.id, 'delivery');
+  const quietRow = await one(`SELECT payment_preference AS p FROM orders WHERE ref='${quiet.ref}'`);
+  t.ok(quietRow.p === null, 'saying nothing about payment is allowed');
+
+  const badPref = await json('/api/orders', {
+    name: 'A B', email: CUSTOMER_EMAIL, phone: '07700 900321', fulfilment: 'collection',
+    paymentPreference: 'gold bars', items: [{ bookId: quietBook.id, qty: 1 }],
+  });
+  t.ok(badPref.status === 400 && badPref.body.field === 'paymentPreference',
+    'but an invented preference is refused');
 
   // --- collection cannot be dispatched, however it is asked -----------------
   const cb2 = await makeBook();
