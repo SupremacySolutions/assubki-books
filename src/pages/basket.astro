@@ -130,7 +130,13 @@ import Rosette from '../components/Rosette.astro';
     function paintGroupPanel() {
       el('#grouppanel').hidden = false;
       const on = el<HTMLInputElement>('#groupon');
-      on.checked = Boolean(member);
+
+      // Being in a group ticks the box; not being in one says nothing about
+      // whether they have just ticked it themselves. Assigning `false` here
+      // unticked the box on the very render their tick triggered, so the
+      // choices never appeared and the option looked dead.
+      if (member) on.checked = true;
+
       el('#groupchoice').hidden = Boolean(member) || !on.checked;
       el('#groupactive').hidden = !member;
 
