@@ -9,6 +9,7 @@
  * reflow as images load.
  */
 import { price, availability, imageUrl } from '../lib/format';
+import { IMAGE_PRESETS } from '../lib/image-presets';
 import { classmark } from '../lib/classmarks';
 import Rosette from './Rosette.astro';
 import type { BookRow } from '../lib/db';
@@ -19,7 +20,7 @@ interface Props {
 }
 const { book, eager = false } = Astro.props;
 
-const img = imageUrl(book.image_key);
+const img = imageUrl(book.image_key, 'card');
 const avail = availability(book.available);
 const marks = (book.cat_slugs ?? '')
   .split(',')
@@ -39,8 +40,12 @@ const marks = (book.cat_slugs ?? '')
           <img
             src={img}
             alt={book.title}
-            width={book.width ?? undefined}
-            height={book.height ?? undefined}
+            {/* The frame's own size, not the stored image's: every cover is
+                padded to the same shape now, and an owner-uploaded photo has no
+                stored dimensions at all - which is what used to shift the grid
+                as it loaded. */}
+            width={IMAGE_PRESETS.card.width}
+            height={IMAGE_PRESETS.card.height}
             loading={eager ? 'eager' : 'lazy'}
             decoding="async"
             class="h-full w-full object-contain p-3 transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transform-none"

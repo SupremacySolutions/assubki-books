@@ -127,6 +127,20 @@ export async function admin(path, body = {}) {
   return { status: res.status, location: res.headers.get('location') ?? '' };
 }
 
+/**
+ * A multipart POST to the portal, for endpoints that take a file. `admin()`
+ * url-encodes its body, which cannot carry one.
+ */
+export async function adminUpload(path, form) {
+  const res = await fetch(`${SITE}${path}`, {
+    method: 'POST',
+    headers: { ...ORIGIN, Cookie: cookie },
+    body: form,
+    redirect: 'manual',
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
 export async function get(path, opts = {}) {
   return fetch(`${SITE}${path}`, { headers: { Cookie: cookie }, redirect: 'manual', ...opts });
 }

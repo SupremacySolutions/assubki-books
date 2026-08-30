@@ -23,7 +23,7 @@ export async function publishListing(bookId: number, origin: string): Promise<Pu
   // Announcing a draft would send the channel to a page the shop does not serve.
   if (book.status !== 'live') return 'not-live';
 
-  const cover = book.images[0] ? imageUrl(book.images[0].image_key) : null;
+  const cover = book.images[0] ? imageUrl(book.images[0].image_key, 'social') : null;
 
   const post: ListingPost = {
     title: book.title,

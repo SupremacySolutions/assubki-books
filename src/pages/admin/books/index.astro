@@ -179,7 +179,7 @@ const windowed = () => {
               class="shrink-0 w-11 h-14 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden"
             >
               {b.image_key ? (
-                <img src={imageUrl(b.image_key)} alt="" class="max-h-full max-w-full object-contain" loading="lazy" />
+                <img src={imageUrl(b.image_key, 'thumb')} alt="" class="max-h-full max-w-full object-contain" loading="lazy" />
               ) : (
                 <span class="text-[10px] text-[var(--color-ink-faint)] text-center leading-tight px-0.5">
                   no photo

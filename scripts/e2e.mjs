@@ -18,7 +18,7 @@
 import {
   PROD, SITE, ORIGIN, vars, prodVars, TEST_CHAT, CUSTOMER_EMAIL,
   suite, report, db, one, signIn, admin, get, html, json, visibleText,
-  created, makeBook, placeOrder, teardown,
+  created, makeBook, placeOrder, teardown, adminUpload,
 } from './lib/e2e-helpers.mjs';
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -775,6 +775,70 @@ async function integrity() {
 
   const dupes = await db(`SELECT slug FROM books GROUP BY slug HAVING COUNT(*) > 1`);
   t.ok(dupes.length === 0, 'no duplicate slugs');
+
+  /*
+   * Covers are padded into one frame as they are served rather than rewritten,
+   * so the presets have to survive the route - and an unknown one has to fall
+   * through rather than 404, or a stale link in somebody's inbox becomes a
+   * broken image.
+   *
+   * The migrated covers live in the *remote* bucket, so there is nothing local
+   * to fetch. Uploading one through the real endpoint gives this an object to
+   * ask for and exercises the upload path at the same time.
+   *
+   * Note the transform itself cannot run here: the IMAGES binding only exists
+   * in the deployed Worker, so what this proves locally is the fallthrough -
+   * that every preset serves the image rather than failing.
+   */
+  const imgBook = await makeBook();
+  // A 1×1 PNG, the smallest thing the endpoint will accept.
+  const png = Uint8Array.from(atob(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  ), (ch) => ch.charCodeAt(0));
+
+  const upload = new FormData();
+  upload.append('bookId', String(imgBook.id));
+  upload.append('photo', new File([png], 'cover.png', { type: 'image/png' }));
+  upload.append('width', '600');
+  upload.append('height', '800');
+
+  const uploaded = await adminUpload('/api/admin/upload', upload);
+  const uploadedBody = uploaded.body;
+  t.ok(uploaded.status === 200 && uploadedBody.key, 'a photo can be uploaded');
+
+  if (uploadedBody.key) {
+    const key = uploadedBody.key;
+
+    // The dimensions were never recorded before, so nothing could reserve space
+    // for an owner's photo and the grid jumped as it loaded.
+    const stored = await one(
+      `SELECT width AS w, height AS h FROM book_images WHERE image_key = '${key}'`,
+    );
+    t.ok(stored.w === 600 && stored.h === 800, 'and its size is recorded, so the page can reserve space');
+
+    const plain = await get(`/img/${key}`);
+    const framed = await get(`/img/${key}?p=card`);
+    const nonsense = await get(`/img/${key}?p=enormous`);
+    t.ok(plain.status === 200, 'a cover serves without a preset');
+    t.ok(framed.status === 200, 'and with one');
+    t.ok(nonsense.status === 200, 'an unknown preset falls through to the original');
+
+    // A preset changes the bytes, so it has to change the etag - otherwise a
+    // browser holding the full-size cover is told its copy of the 84px one is
+    // still good.
+    const plainTag = plain.headers.get('etag');
+    const framedTag = framed.headers.get('etag');
+    t.ok(Boolean(plainTag) && plainTag !== framedTag, 'each preset has its own etag');
+    t.ok(nonsense.headers.get('etag') === plainTag, 'and an unknown one keeps the original etag');
+  }
+
+  // The home page was serving 800px covers into 84px slots, 28 of them. Every
+  // cover anywhere should now ask for the size it is actually shown at.
+  const homeImages = [...(await html('/')).matchAll(/<img[^>]+src="([^"]*\/img\/[^"]*)"/g)].map(
+    (m) => m[1],
+  );
+  t.ok(homeImages.length > 0 && homeImages.every((src) => /\?p=(hero|card)$/.test(src)),
+    'every cover on the home page asks for the size it is shown at');
 
   /*
    * Astro compiles an ordinary <script>, but ships an `is:inline` one to the

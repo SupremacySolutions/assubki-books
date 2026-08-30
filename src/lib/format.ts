@@ -1,3 +1,5 @@
+import type { PresetName } from './image-presets';
+
 export const SITE = {
   name: 'As-Subkī Books',
   // Absolute, because email has no notion of a relative URL.
@@ -19,9 +21,19 @@ export function availability(available: number): { label: string; state: 'in' | 
   return { label: 'In stock', state: 'in' };
 }
 
-/** "books/al-nahw-al-wadih/1.webp" → "/img/books/al-nahw-al-wadih/1.webp" */
-export function imageUrl(key: string | null | undefined): string | null {
-  return key ? `/img/${key}` : null;
+/**
+ * "books/al-nahw-al-wadih/1.webp" → "/img/books/al-nahw-al-wadih/1.webp"
+ *
+ * With a preset, the same image comes back padded into the standard frame at
+ * the size that place actually needs - the home page was serving 800px covers
+ * into 84px slots, 28 of them.
+ */
+export function imageUrl(
+  key: string | null | undefined,
+  preset?: PresetName,
+): string | null {
+  if (!key) return null;
+  return preset ? `/img/${key}?p=${preset}` : `/img/${key}`;
 }
 
 /** Flattens to a single line - for meta descriptions and Telegram blurbs. */

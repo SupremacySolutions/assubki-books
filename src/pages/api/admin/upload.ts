@@ -34,6 +34,23 @@ export const POST: APIRoute = async ({ request }) => {
   const ext = ALLOWED.get(file.type);
   if (!ext) return new Response('Use a JPEG, PNG or WebP', { status: 415 });
 
+  /*
+   * The browser measures the photo before sending it. Without this, width and
+   * height stayed NULL on every photo the owner ever added, and the page had
+   * nothing to reserve space with - so the grid jumped as each one loaded,
+   * which is exactly what the migrated covers store dimensions to avoid.
+   *
+   * Trusted only as a hint: they come from the client, so they are bounded and
+   * dropped if they are not sane. Nothing depends on them being right beyond
+   * the space reserved before the image lands.
+   */
+  const dimension = (name: string): number | null => {
+    const value = Number.parseInt(String(form.get(name) ?? ''), 10);
+    return Number.isInteger(value) && value > 0 && value <= 20000 ? value : null;
+  };
+  const width = dimension('width');
+  const height = dimension('height');
+
   const book = await env.DB.prepare('SELECT slug FROM books WHERE id = ?')
     .bind(bookId)
     .first<{ slug: string }>();
@@ -56,8 +73,8 @@ export const POST: APIRoute = async ({ request }) => {
 
   await env.DB.batch([
     env.DB.prepare(
-      'INSERT INTO book_images (book_id, image_key, alt, sort) VALUES (?, ?, ?, ?)',
-    ).bind(bookId, key, null, nextSort?.n ?? 0),
+      'INSERT INTO book_images (book_id, image_key, alt, sort, width, height) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(bookId, key, null, nextSort?.n ?? 0, width, height),
     env.DB.prepare('UPDATE books SET updated_at = unixepoch() WHERE id = ?').bind(bookId),
   ]);
 

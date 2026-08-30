@@ -71,7 +71,7 @@ const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
             {drifting.map((book) => (
               <a class="shelf-book" href={`/book/${book.slug}`}>
                 <img
-                  src={imageUrl(book.image_key)}
+                  src={imageUrl(book.image_key, 'hero')}
                   alt={book.title}
                   loading="lazy"
                   decoding="async"
@@ -87,7 +87,7 @@ const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
             {drifting.map((book) => (
               <span class="shelf-book" aria-hidden="true">
                 <img
-                  src={imageUrl(book.image_key)}
+                  src={imageUrl(book.image_key, 'hero')}
                   alt=""
                   loading="lazy"
                   decoding="async"

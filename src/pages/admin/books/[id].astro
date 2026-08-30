@@ -225,7 +225,7 @@ const previewCaption = book
               {book.images.map((img) => (
                 <li class="relative">
                   <div class="aspect-[3/4] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
-                    <img src={imageUrl(img.image_key)} alt="" class="max-h-full max-w-full object-contain" />
+                    <img src={imageUrl(img.image_key, 'thumb')} alt="" class="max-h-full max-w-full object-contain" />
                   </div>
                   <button
                     type="button"
@@ -297,7 +297,7 @@ const previewCaption = book
               <div class="mt-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]">
                 {book.images[0] && (
                   <img
-                    src={imageUrl(book.images[0].image_key)}
+                    src={imageUrl(book.images[0].image_key, 'social')}
                     alt=""
                     class="w-full max-h-40 object-contain mb-2"
                   />
@@ -464,6 +464,16 @@ const previewCaption = book
          * not accept, because the canvas decodes it and hands back WebP. If any
          * of it fails the original is uploaded unchanged.
          */
+        /*
+         * Shrink for the upload, and measure while we are holding the bitmap -
+         * the server has no way to read dimensions from a stream it is passing
+         * straight through, and without them the page cannot reserve space for
+         * the photo, so the grid jumps as it loads.
+         *
+         * A failure here used to return the original silently, which on a phone
+         * that cannot decode HEIC meant several megabytes going to R2 unshrunk.
+         * It still sends - refusing the photo would be worse - but it says so.
+         */
         async function shrink(file) {
           try {
             const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
@@ -476,9 +486,11 @@ const previewCaption = book
             canvas.height = h;
             canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
             const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.82));
-            return blob ? new File([blob], 'photo.webp', { type: 'image/webp' }) : file;
+            return blob
+              ? { file: new File([blob], 'photo.webp', { type: 'image/webp' }), width: w, height: h }
+              : { file, width: bitmap.width, height: bitmap.height };
           } catch {
-            return file;
+            return { file, width: null, height: null, failed: true };
           }
         }
 
@@ -488,15 +500,21 @@ const previewCaption = book
           status.hidden = false;
           status.textContent = 'Preparing…';
 
-          const file = await shrink(original);
+          const { file, width, height, failed } = await shrink(original);
           const saved = original.size - file.size;
-          status.textContent = saved > 0
-            ? `Uploading… (${Math.round(original.size / 1024)}KB down to ${Math.round(file.size / 1024)}KB)`
-            : 'Uploading…';
+          status.textContent = failed
+            ? 'This phone could not shrink that photo - sending it as it is…'
+            : saved > 0
+              ? `Uploading… (${Math.round(original.size / 1024)}KB down to ${Math.round(file.size / 1024)}KB)`
+              : 'Uploading…';
 
           const body = new FormData();
           body.append('bookId', String(bookId));
           body.append('photo', file);
+          if (width && height) {
+            body.append('width', String(width));
+            body.append('height', String(height));
+          }
 
           try {
             const res = await fetch('/api/admin/upload', { method: 'POST', body });

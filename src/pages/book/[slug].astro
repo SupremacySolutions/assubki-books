@@ -5,6 +5,7 @@ import Rosette from '../../components/Rosette.astro';
 import { bookBySlug, relatedBooks } from '../../lib/db';
 import { price, availability, imageUrl, stripTags, truncate, SITE } from '../../lib/format';
 import { classmark } from '../../lib/classmarks';
+import { IMAGE_PRESETS } from '../../lib/image-presets';
 import MessageUs from '../../components/MessageUs.astro';
 
 const { slug } = Astro.params;
@@ -13,7 +14,7 @@ if (!book) return Astro.rewrite('/404');
 
 const related = await relatedBooks(book.id, 6);
 const avail = availability(book.available);
-const cover = imageUrl(book.images[0]?.image_key);
+const cover = imageUrl(book.images[0]?.image_key, 'detail');
 const plain = stripTags(book.description_html);
 
 // This is the description Telegram shows when the owner posts the link, so it
@@ -73,8 +74,10 @@ const jsonLd = {
                 id="cover"
                 src={cover}
                 alt={book.images[0]?.alt ?? book.title}
-                width={book.images[0]?.width ?? undefined}
-                height={book.images[0]?.height ?? undefined}
+                {/* The frame, not the stored image: covers are padded to one
+                    shape now, and an owner-uploaded photo has no stored size. */}
+                width={IMAGE_PRESETS.detail.width}
+                height={IMAGE_PRESETS.detail.height}
                 class="h-full w-full object-contain p-4"
                 fetchpriority="high"
               />
@@ -94,10 +97,10 @@ const jsonLd = {
                   <button
                     type="button"
                     class="thumb w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] p-1 grid place-items-center hover:border-[var(--color-navy)] transition-colors aria-pressed:border-[var(--color-navy)] aria-pressed:ring-1 aria-pressed:ring-[var(--color-navy)]"
-                    data-src={imageUrl(img.image_key)}
+                    data-src={imageUrl(img.image_key, 'detail')}
                     aria-pressed={i === 0 ? 'true' : 'false'}
                   >
-                    <img src={imageUrl(img.image_key)} alt="" class="max-h-full max-w-full object-contain" loading="lazy" />
+                    <img src={imageUrl(img.image_key, 'thumb')} alt="" class="max-h-full max-w-full object-contain" loading="lazy" />
                     <span class="sr-only">View image {i + 1}</span>
                   </button>
                 </li>
