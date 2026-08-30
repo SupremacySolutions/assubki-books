@@ -725,15 +725,29 @@ async function ownerSettings() {
    * `disabled` and not merely faded: a greyed button that still works is worse
    * than no greying at all.
    */
+  // Matched on the attribute set rather than on a fixed order of attributes:
+  // the first version of this assumed `data-part-pick` came before
+  // `data-part-kind` in the rendered markup and silently matched nothing,
+  // which reads exactly like the feature being broken.
+  const paymentButtons = (page) =>
+    [...page.matchAll(/<button\b([^>]*)>/g)]
+      .map((m) => m[1])
+      .filter((attrs) => attrs.includes('data-part-kind="payment"'));
+  // Attribute *values* are emptied before looking for `disabled`, because the
+  // class list carries `disabled:opacity-40` and friends - so a plain word
+  // search finds "disabled" on every button, enabled or not.
+  const flags = (attrs) => attrs.replace(/="[^"]*"/g, '=""');
   const enabledPicks = (page) =>
-    [...page.matchAll(/<button[^>]*data-part-pick="([^"]+)"[^>]*data-part-kind="payment"[^>]*>/g)]
-      .filter((m) => !m[0].includes('disabled'))
-      .map((m) => m[1]);
+    paymentButtons(page)
+      .filter((attrs) => !/\bdisabled\b/.test(flags(attrs)))
+      .map((attrs) => /data-part-pick="([^"]+)"/.exec(attrs)?.[1])
+      .filter(Boolean);
 
   await admin(`/api/admin/orders/${c.ref}/cash-payment`, { cash_payment: '1' });
   const cashPage = await html(`/admin/orders/${c.ref}`);
   t.ok(enabledPicks(cashPage).join() === 'cash',
-    `a cash order offers only the cash wording (offered ${enabledPicks(cashPage).join() || 'nothing'})`);
+    `a cash order offers only the cash wording (offered ${enabledPicks(cashPage).join() || 'nothing'}` +
+      `, of ${paymentButtons(cashPage).length} payment buttons)`);
   t.ok(!cashPage.includes('check the wording'),
     'and no longer has to ask the owner to check the two agree');
   t.ok(draftInBox(cashPage).includes('CASH-WORDING') && !draftInBox(cashPage).includes('ACCOUNT-ONE'),
