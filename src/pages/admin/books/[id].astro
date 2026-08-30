@@ -490,7 +490,7 @@ const previewCaption = book
          * that cannot decode HEIC meant several megabytes going to R2 unframed.
          * It still sends - refusing the photo would be worse - but it says so.
          */
-        const FRAME = { width: 600, height: 800, fill: 0.88, paper: '#f5f4f0' };
+        const FRAME = { width: 600, height: 800, fill: 0.88, band: 0.08, paper: '#f5f4f0' };
 
         async function shrink(file) {
           try {
@@ -503,14 +503,17 @@ const previewCaption = book
             ctx.fillStyle = FRAME.paper;
             ctx.fillRect(0, 0, FRAME.width, FRAME.height);
 
-            // Fitted inside, never cropped, so a wide book keeps all of itself.
-            const box = { w: FRAME.width * FRAME.fill, h: FRAME.height * FRAME.fill };
+            // Fitted inside, never cropped, so a wide book keeps all of itself -
+            // and only into the area above the band, which belongs to the mark.
+            const band = Math.round(FRAME.height * FRAME.band);
+            const area = FRAME.height - band;
+            const box = { w: FRAME.width * FRAME.fill, h: area * FRAME.fill };
             const scale = Math.min(box.w / bitmap.width, box.h / bitmap.height, 2);
             const w = Math.round(bitmap.width * scale);
             const h = Math.round(bitmap.height * scale);
-            ctx.drawImage(bitmap, (FRAME.width - w) / 2, (FRAME.height - h) / 2, w, h);
+            ctx.drawImage(bitmap, (FRAME.width - w) / 2, (area - h) / 2, w, h);
 
-            await drawMark(ctx, FRAME.width, FRAME.height);
+            await drawMark(ctx, FRAME.width, area, band);
 
             const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.82));
             return blob
@@ -525,9 +528,9 @@ const previewCaption = book
           }
         }
 
-        /** The shop's rosette, bottom-right, at the same weight as the covers'. */
-        async function drawMark(ctx, width, height) {
-          const size = Math.round(width * 0.11);
+        /** The shop's rosette, in the band below the cover, as on every cover. */
+        async function drawMark(ctx, width, area, band) {
+          const size = Math.round(band * 0.7);
           const margin = Math.round(width * 0.045);
           const svg =
             `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 200 200">` +
@@ -535,7 +538,7 @@ const previewCaption = book
           const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
           try {
             const mark = await createImageBitmap(await (await fetch(url)).blob());
-            ctx.drawImage(mark, width - size - margin, height - size - margin, size, size);
+            ctx.drawImage(mark, width - size - margin, area + Math.round((band - size) / 2), size, size);
           } catch {
             // A missing mark is not worth losing the photo over.
           } finally {

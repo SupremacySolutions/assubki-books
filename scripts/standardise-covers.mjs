@@ -39,6 +39,14 @@ const BUCKET = 'assubki-books-uploads';
 const CONCURRENCY = 4;
 
 const SAMPLE = process.argv.includes('--sample');
+/**
+ * `--only=<substring>` reprocesses just the rows whose key matches.
+ *
+ * An upload can fail on its own - one did, on a run where the other 454 were
+ * fine - and when the master fails the variants after it are never written, so
+ * that row needs the whole set again and nothing else does.
+ */
+const ONLY = process.argv.find((a) => a.startsWith('--only='))?.slice('--only='.length) ?? null;
 const DRY = process.argv.includes('--dry') || SAMPLE;
 
 /** The shop's paper colour - the same one the pages sit on. */
@@ -63,10 +71,18 @@ const PRESETS = {
 };
 
 /**
- * How much of the frame the cover fills. The rest is background, and the mark
- * sits in it.
+ * How much of the frame the cover fills, and how much of the bottom is kept
+ * clear for the mark.
+ *
+ * The mark used to go in the corner of the whole frame, which only worked for
+ * covers narrower than 3:4. An exactly-3:4 scan reaches to within 36px of the
+ * edge, so the mark landed on the artwork - and because it happened to some
+ * covers and not others it read as damage rather than as a mark. The band is
+ * reserved first now and the cover fitted into what is left, so nothing can
+ * overlap whatever shape turns up.
  */
 const FILL = 0.88;
+const BAND = 0.08;
 
 /**
  * Small covers *are* enlarged, up to a point.
@@ -81,9 +97,8 @@ const MAX_UPSCALE = 2;
 
 const ROSETTE = (await import(join(ROOT, 'scripts', 'lib', 'rosette.mjs'))).ROSETTE_PATH;
 
-/** The mark, as an SVG buffer sized for the frame it is going into. */
-function markFor(width) {
-  const size = Math.round(width * 0.11);
+/** The mark, as an SVG buffer at the size it will be drawn. */
+function markFor(size) {
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 200 200">` +
       `<path d="${ROSETTE}" fill="#184485" fill-opacity="0.5"/></svg>`,
@@ -93,20 +108,28 @@ function markFor(width) {
 /** One cover, one size. */
 async function frame(input, preset) {
   const { width, height } = PRESETS[preset];
-  // The mark sits in the corner with a margin proportional to the frame, so it
-  // reads the same at 168px as it does at 900.
+
+  // Band, mark and margin are all proportional to the frame, so the whole
+  // arrangement reads the same at 168px as it does at 600.
+  const band = Math.round(height * BAND);
+  // Sized from the band, not the frame: a square social frame has the same
+  // width as the master but a much shallower band, and 0.075 of the width did
+  // not fit in it.
+  const markSize = Math.round(band * 0.7);
   const margin = Math.round(width * 0.045);
-  const mark = markFor(width);
-  const markSize = Math.round(width * 0.11);
+  const mark = markFor(markSize);
+
+  // The cover only ever gets the area above the band.
+  const area = height - band;
+  const box = { width: Math.round(width * FILL), height: Math.round(area * FILL) };
 
   const meta = await sharp(input).rotate().metadata();
-  const box = { width: Math.round(width * FILL), height: Math.round(height * FILL) };
 
   // Never ask for more than MAX_UPSCALE of what the source actually has.
   const natural = Math.min(box.width / meta.width, box.height / meta.height);
   const scale = Math.min(natural, MAX_UPSCALE);
 
-  return sharp(input)
+  const cover = await sharp(input)
     .rotate()
     .resize({
       width: Math.max(1, Math.round(meta.width * scale)),
@@ -115,16 +138,23 @@ async function frame(input, preset) {
       kernel: 'lanczos3',
     })
     .flatten({ background: PAPER })
-    .toBuffer()
-    .then((cover) =>
-      sharp({ create: { width, height, channels: 3, background: PAPER } })
-        .composite([
-          { input: cover, gravity: 'centre' },
-          { input: mark, top: height - markSize - margin, left: width - markSize - margin },
-        ])
-        .webp({ quality: 82 })
-        .toBuffer(),
-    );
+    .toBuffer();
+
+  // Centred by hand rather than by gravity: gravity centres on the frame, and
+  // the cover has to be centred on the area above the band instead.
+  const drawn = await sharp(cover).metadata();
+
+  return sharp({ create: { width, height, channels: 3, background: PAPER } })
+    .composite([
+      {
+        input: cover,
+        left: Math.round((width - drawn.width) / 2),
+        top: Math.round((area - drawn.height) / 2),
+      },
+      { input: mark, left: width - markSize - margin, top: area + Math.round((band - markSize) / 2) },
+    ])
+    .webp({ quality: 82 })
+    .toBuffer();
 }
 
 /** Every image the catalogue knows about, newest keys last. */
@@ -135,6 +165,33 @@ async function loadImages() {
     "SELECT bi.id, bi.image_key, b.slug FROM book_images bi JOIN books b ON b.id = bi.book_id ORDER BY bi.id",
   ], { maxBuffer: 32 * 1024 * 1024 });
   return JSON.parse(stdout)[0].results;
+}
+
+/**
+ * Pulls the original this key was made from.
+ *
+ * After the first pass the catalogue points at the framed files, so a re-run
+ * reading `image_key` straight off would frame an already-framed cover and put
+ * a frame inside a frame. The originals were deliberately left in R2; this
+ * goes back to them. The extension is not recoverable from the framed name -
+ * everything is written as `.webp` - so the candidates are tried in turn, and
+ * a row whose original has gone is reported rather than reprocessed.
+ */
+async function pullOriginal(key, dest) {
+  if (!key.endsWith('-std.webp')) {
+    await pull(key, dest);
+    return key;
+  }
+  const stem = key.slice(0, -'-std.webp'.length);
+  for (const ext of ['.webp', '.jpg', '.jpeg', '.png']) {
+    try {
+      await pull(stem + ext, dest);
+      return stem + ext;
+    } catch {
+      // Next extension. Only the last one failing is a real failure.
+    }
+  }
+  throw new Error(`no original behind ${key}`);
 }
 
 async function pull(key, dest) {
@@ -162,16 +219,23 @@ mkdirSync(WORK, { recursive: true });
 let images = await loadImages();
 console.log(`${images.length} images in the catalogue`);
 
+if (ONLY) {
+  images = images.filter((i) => i.image_key.includes(ONLY));
+  console.log(`only: ${images.length} matching "${ONLY}"`);
+}
+
 if (SAMPLE) {
-  // The four that decide whether the frame works: a spine, a landscape scan, a
-  // small straggler, and an ordinary portrait cover.
+  // The five that decide whether the frame works: a spine, a landscape scan, a
+  // small straggler, an ordinary portrait cover, and an exactly-3:4 one.
   const want = [
     'books/al-tawdih-wal-talwih/4.webp',
     'books/hidayah-al-nahw/1.webp',
     'books/usul-al-shashi/1.webp',
     'books/al-nahw-al-wadih/1.webp',
+    // Exactly 3:4, which is the case the mark used to land on.
+    'books/an-nasihah-islamic-curriculum-coursebook-2/1.webp',
   ];
-  images = images.filter((i) => want.includes(i.image_key));
+  images = images.filter((i) => want.includes(i.image_key) || want.includes(i.image_key.replace(/-std\.webp$/, '.webp')));
   console.log(`sample: ${images.map((i) => i.image_key).join(', ')}`);
 }
 
@@ -186,9 +250,9 @@ await Promise.all(
       const row = queue.shift();
       const src = join(WORK, `src-${row.id}`);
       try {
-        await pull(row.image_key, src);
+        const from = await pullOriginal(row.image_key, src);
 
-        const master = stdKey(row.image_key);
+        const master = stdKey(from);
         for (const preset of Object.keys(PRESETS)) {
           const out = join(WORK, `${row.id}-${preset}.webp`);
           writeFileSync(out, await frame(src, preset));

@@ -1,4 +1,4 @@
-import type { PresetName } from './image-presets';
+import { FRAME_VERSION, type PresetName } from './image-presets';
 
 export const SITE = {
   name: 'As-Subkī Books',
@@ -33,7 +33,7 @@ export function imageUrl(
   preset?: PresetName,
 ): string | null {
   if (!key) return null;
-  return preset ? `/img/${key}?p=${preset}` : `/img/${key}`;
+  return `/img/${key}${preset ? `?p=${preset}&` : '?'}v=${FRAME_VERSION}`;
 }
 
 /** Flattens to a single line - for meta descriptions and Telegram blurbs. */

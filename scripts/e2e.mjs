@@ -843,11 +843,22 @@ async function integrity() {
 
   // The home page was serving 800px covers into 84px slots, 28 of them. Every
   // cover anywhere should now ask for the size it is actually shown at.
+  // `&` is written `&amp;` in the attribute - the browser decodes it, a raw
+  // text match does not, and comparing the escaped form tests the wrong thing.
   const homeImages = [...(await html('/')).matchAll(/<img[^>]+src="([^"]*\/img\/[^"]*)"/g)].map(
-    (m) => m[1],
+    (m) => m[1].replace(/&amp;/g, '&'),
   );
-  t.ok(homeImages.length > 0 && homeImages.every((src) => /\?p=(hero|card)$/.test(src)),
+  t.ok(homeImages.length > 0 && homeImages.every((src) => /\?p=(hero|card)&v=\d+$/.test(src)),
     'every cover on the home page asks for the size it is shown at');
+
+  /*
+   * A re-run of the framing writes over the same keys, which are served
+   * `immutable` for a year - so the frame version has to ride along in the URL
+   * or a browser that has seen a cover keeps the old frame indefinitely. No
+   * purge reaches a browser; only a different URL does.
+   */
+  t.ok(homeImages.every((src) => /[?&]v=\d+$/.test(src)),
+    'and carries the frame version, so a reframed cover is not held stale');
 
   /*
    * Astro compiles an ordinary <script>, but ships an `is:inline` one to the

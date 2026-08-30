@@ -117,6 +117,7 @@ import Rosette from '../components/Rosette.astro';
   <script>
     import { read, setQty, remove, setBadge, count } from '../scripts/basket.ts';
     import { readGroup, joinGroup, leaveGroup, shareLink, parseShare } from '../scripts/group.ts';
+    import { FRAME_VERSION } from '../lib/image-presets.ts';
 
     const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
     const el = <T extends HTMLElement>(id: string) => document.querySelector<T>(id)!;
@@ -210,7 +211,7 @@ import Rosette from '../components/Rosette.astro';
       return `
         <li class="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-4 gap-y-3 py-4 items-start sm:flex sm:gap-4">
           <a href="/book/${line.slug}" class="shrink-0 w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[3px] grid place-items-center overflow-hidden">
-            ${line.imageKey ? `<img src="/img/${line.imageKey}?p=card" alt="" class="max-h-full max-w-full object-contain p-1">` : ''}
+            ${line.imageKey ? `<img src="/img/${line.imageKey}?p=card&v=${FRAME_VERSION}" alt="" class="max-h-full max-w-full object-contain p-1">` : ''}
           </a>
           <div class="flex-1 min-w-0">
             <a href="/book/${line.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${line.title}</a>
@@ -344,7 +345,7 @@ import Rosette from '../components/Rosette.astro';
         li.className = 'grid grid-cols-[4rem_minmax(0,1fr)] gap-x-4 gap-y-3 py-4 items-start sm:flex sm:gap-4';
         li.innerHTML = `
           <a href="/book/${book.slug}" class="shrink-0 w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[3px] grid place-items-center overflow-hidden">
-            ${book.imageKey ? `<img src="/img/${book.imageKey}?p=card" alt="" class="max-h-full max-w-full object-contain p-1">` : ''}
+            ${book.imageKey ? `<img src="/img/${book.imageKey}?p=card&v=${FRAME_VERSION}" alt="" class="max-h-full max-w-full object-contain p-1">` : ''}
           </a>
           <div class="flex-1 min-w-0">
             <a href="/book/${book.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${book.title}</a>
