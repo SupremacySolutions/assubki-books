@@ -1043,6 +1043,70 @@ async function integrity() {
   t.ok(Math.abs(red / (outSize * outSize) - 40) < 6,
     'and the straightened cover carries none of the surface it was lying on');
 
+  /*
+   * The erase pass. The model itself cannot run here, but everything around it
+   * can - and both of the bugs this had were in the arithmetic, not the model.
+   */
+  t.ok(clean.maskFit(617, 800).height === clean.MASK_EDGE &&
+       clean.maskFit(617, 800).width === 247,
+    'a portrait photo is fitted into the model square by its long edge');
+  t.ok(clean.maskFit(800, 400).width === clean.MASK_EDGE,
+    'and a landscape one by its own');
+
+  // Channel-planar, not pixel-interleaved. Interleaved produces a tensor of
+  // exactly the right length and a mask that is complete nonsense.
+  const square = { data: new Uint8ClampedArray(clean.MASK_EDGE * clean.MASK_EDGE * 4) };
+  for (let i = 0; i < clean.MASK_EDGE * clean.MASK_EDGE; i++) {
+    square.data[i * 4] = 255;
+    square.data[i * 4 + 3] = 255;
+  }
+  const tensor = clean.toTensor(square);
+  const plane = clean.MASK_EDGE * clean.MASK_EDGE;
+  t.ok(tensor.length === 3 * plane, 'the tensor is one plane per channel');
+  t.ok(tensor[0] > 2 && tensor[plane] < 0 && tensor[2 * plane] < 0,
+    'with the channels kept apart rather than interleaved');
+
+  /*
+   * The mask is refused, never invented.
+   *
+   * The model returns 0..1 already. An earlier version rescaled it across its
+   * own range the way most implementations do, which is harmless until the
+   * crop is all book and there is no background to find: the model then
+   * correctly returns almost nothing, and stretching that noise produced a
+   * confident mask that painted the whole cover white.
+   */
+  const fitAll = { width: 100, height: 100 };
+  const nothing = new Float32Array(clean.MASK_EDGE * clean.MASK_EDGE).fill(0.01);
+  t.ok(clean.checkMask(nothing, fitAll) === null,
+    'a mask with nothing in it is refused rather than stretched into one');
+
+  const confident = new Float32Array(clean.MASK_EDGE * clean.MASK_EDGE);
+  for (let y = 0; y < 100; y++) for (let x = 0; x < 100; x++) confident[y * clean.MASK_EDGE + x] = 1;
+  t.ok(clean.checkMask(confident, fitAll) === confident, 'and a confident one is used as it is');
+
+  // Keeping only a small share of the frame is NOT a reason to refuse: a
+  // loosely cropped shot of a book on a table is mostly table, and erasing
+  // most of it is the point. An earlier threshold of a quarter refused exactly
+  // the case this feature exists for.
+  const sliver = new Float32Array(clean.MASK_EDGE * clean.MASK_EDGE);
+  for (let y = 0; y < 30; y++) for (let x = 0; x < 30; x++) sliver[y * clean.MASK_EDGE + x] = 1;
+  t.ok(clean.checkMask(sliver, fitAll) === sliver,
+    'a book filling only a tenth of a loose crop is still erased around');
+
+  // And the erase keeps what the mask claims and whitens the rest. The mask
+  // covers the top-left quarter of the fit, so one corner survives and the
+  // opposite one does not.
+  const quarter = new Float32Array(clean.MASK_EDGE * clean.MASK_EDGE);
+  for (let y = 0; y < 50; y++) for (let x = 0; x < 50; x++) quarter[y * clean.MASK_EDGE + x] = 1;
+  const shot = {
+    data: new Uint8ClampedArray(100 * 100 * 4).fill(60),
+    width: 100,
+    height: 100,
+  };
+  clean.eraseBackground(shot, quarter, fitAll);
+  t.ok(shot.data[(10 * 100 + 10) * 4] === 60, 'the book itself comes through the erase untouched');
+  t.ok(shot.data[(90 * 100 + 90) * 4] === 255, 'and everything the mask does not claim is white');
+
   // The book page has to say when it could not take what was asked for; the
   // basket page always did, and the two disagreeing is the actual complaint.
   const bookSource = readFileSync('src/pages/book/[slug].astro', 'utf8');

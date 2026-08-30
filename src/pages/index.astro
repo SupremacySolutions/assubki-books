@@ -70,13 +70,16 @@ const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
           <div class="shelf-track">
             {drifting.map((book) => (
               <a class="shelf-book" href={`/book/${book.slug}`}>
+                {/* The cover's own size, not a fixed box: it gives the browser
+                    the aspect before the image arrives, so the row does not
+                    shuffle as covers load. */}
                 <img
                   src={imageUrl(book.image_key, 'hero')}
                   alt={book.title}
                   loading="lazy"
                   decoding="async"
-                  width="84"
-                  height="118"
+                  width={book.width ?? 84}
+                  height={book.height ?? 118}
                 />
               </a>
             ))}
@@ -91,8 +94,8 @@ const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
                   alt=""
                   loading="lazy"
                   decoding="async"
-                  width="84"
-                  height="118"
+                  width={book.width ?? 84}
+                  height={book.height ?? 118}
                 />
               </span>
             ))}

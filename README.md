@@ -97,10 +97,17 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   for a year and no purge reaches a browser.
 - **A photo is straightened before it is uploaded.** The portal detects the
   book in the shot, warps its corners square and crops the rest, then shows it
-  with four draggable handles and uploads nothing until the owner agrees
-  (src/scripts/cover-clean.ts, src/components/CoverReview.astro). `/clean-check`
-  mounts that panel on its own in dev, which is the only way to drive it - the
-  HTTP suite cannot click and the portal needs a password.
+  in a dialog with four draggable handles and uploads nothing until the owner
+  agrees (src/scripts/cover-clean.ts, src/components/CoverReview.astro).
+  `/clean-check` mounts that dialog on its own in dev, which is the only way to
+  drive it - the HTTP suite cannot click and the portal needs a password.
+- **Background removal is optional and refuses rather than guesses.** U²-Netp
+  (Apache-2.0; *not* BRIA RMBG, which is non-commercial) runs in the browser on
+  onnxruntime-web, loaded only when the box is ticked. Its output is already
+  0..1 - do not rescale it. Rescaling a mask from a crop that is all book turns
+  noise into a confident mask and paints the cover white; `checkMask` refuses
+  instead. The weights live in R2 under `models/` and are served by
+  src/pages/model/[...key].ts; the runtime is bundled with the site.
 - **Do not name an R2 binding `IMAGES`.** The Astro Cloudflare adapter treats a
   binding of that name as the Cloudflare Images service and wires itself to it.
   The uploads bucket is `UPLOADS`.

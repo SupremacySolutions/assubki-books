@@ -345,3 +345,126 @@ export function warp(
   }
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// Erasing what is left behind the book
+// ---------------------------------------------------------------------------
+//
+// The crop removes everything outside the book. This is for what survives
+// inside it: a thumb over a corner, a shadow, a strip of table past a curled
+// edge. A saliency model (U²-Netp, Apache-2.0) says which pixels are the
+// subject; everything else becomes white.
+//
+// White rather than transparent because that is what the shop's other covers
+// already sit on - the publisher scans it has to sit beside - and because a
+// slightly rough cut-out edge disappears into white and would show against
+// the navy of the hero strip.
+//
+// The model's own numbers, from its preprocessor_config: fit inside a 320
+// square keeping the aspect, pad the rest, rescale to 0-1, normalise with the
+// ImageNet statistics, feed NCHW.
+
+export const MASK_EDGE = 320;
+const MASK_MEAN = [0.485, 0.456, 0.406];
+const MASK_STD = [0.229, 0.224, 0.225];
+
+export interface MaskFit {
+  /** Where the photo actually is inside the padded square. */
+  width: number;
+  height: number;
+}
+
+/** How a photo of this shape sits inside the model's square. */
+export function maskFit(width: number, height: number): MaskFit {
+  const scale = Math.min(MASK_EDGE / width, MASK_EDGE / height);
+  return {
+    width: Math.max(1, Math.min(MASK_EDGE, Math.round(width * scale))),
+    height: Math.max(1, Math.min(MASK_EDGE, Math.round(height * scale))),
+  };
+}
+
+/**
+ * The 320x320 RGBA square as the NCHW float tensor the model wants.
+ *
+ * Channel-planar, not pixel-interleaved: all the reds, then all the greens,
+ * then all the blues. Feeding it interleaved produces a plausible-looking
+ * tensor of the right length and a mask that is complete nonsense.
+ */
+export function toTensor(square: { data: Uint8ClampedArray }): Float32Array {
+  const pixels = MASK_EDGE * MASK_EDGE;
+  const out = new Float32Array(3 * pixels);
+  for (let i = 0; i < pixels; i++) {
+    for (let c = 0; c < 3; c++) {
+      out[c * pixels + i] = (square.data[i * 4 + c] / 255 - MASK_MEAN[c]) / MASK_STD[c];
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether this mask is worth applying - the mask itself, or null.
+ *
+ * The model's output is already 0..1: on a book photographed on a table the
+ * cover reads 1.0 and the table 0.0. It needs no rescaling, and rescaling it
+ * is actively dangerous. An earlier version stretched the output across its
+ * own range, the way most implementations of this do, which is fine until the
+ * crop is *all book* and there is no background left to find. The model then
+ * correctly returns almost nothing - a maximum around 0.017 - and stretching
+ * that turns pure noise into a confident mask that whites out the cover.
+ *
+ * So: refuse rather than invent. A mask is refused when nothing in it stands
+ * out at all, or when it keeps so little that applying it would white out the
+ * whole picture.
+ *
+ * Note what is *not* a reason to refuse: keeping only a small share of the
+ * frame. A first attempt rejected any mask keeping under a quarter, on the
+ * reasoning that erasing most of a photo cannot be right - but a loosely
+ * cropped shot of a book on a table is mostly table, and erasing most of it is
+ * precisely the point. That threshold refused the exact case this feature
+ * exists for. The owner sees the result before accepting it, which is the real
+ * safeguard; this one only has to catch the absurd.
+ */
+export function checkMask(mask: Float32Array, fit: MaskFit): Float32Array | null {
+  let max = 0;
+  let kept = 0;
+  for (let y = 0; y < fit.height; y++) {
+    for (let x = 0; x < fit.width; x++) {
+      const v = mask[y * MASK_EDGE + x];
+      if (v > max) max = v;
+      if (v > 0.5) kept++;
+    }
+  }
+  if (max < 0.5) return null; // nothing stood out from anything else
+  if (kept / (fit.width * fit.height) < 0.02) return null; // keeps nothing at all
+  return mask;
+}
+
+/**
+ * Paints everything the mask does not claim white, in place.
+ *
+ * The mask is 320x320 with the photo occupying only `fit` of it, so sampling
+ * has to map through that rather than across the whole square - otherwise the
+ * padding drags the mask sideways and the book is erased instead of the
+ * background.
+ */
+export function eraseBackground(
+  image: { data: Uint8ClampedArray; width: number; height: number },
+  mask: Float32Array,
+  fit: MaskFit,
+): void {
+  const { width: w, height: h } = image;
+  for (let y = 0; y < h; y++) {
+    // Nearest neighbour: the mask is soft to begin with and a bilinear read
+    // buys nothing visible at this size.
+    const my = Math.min(fit.height - 1, Math.floor((y / h) * fit.height));
+    for (let x = 0; x < w; x++) {
+      const mx = Math.min(fit.width - 1, Math.floor((x / w) * fit.width));
+      const alpha = mask[my * MASK_EDGE + mx];
+      const p = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        image.data[p + c] = image.data[p + c] * alpha + 255 * (1 - alpha);
+      }
+      image.data[p + 3] = 255;
+    }
+  }
+}
