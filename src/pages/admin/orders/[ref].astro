@@ -247,13 +247,20 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   <div class="mb-2">
                     <p class="text-[12.5px] text-[var(--color-ink-faint)] mb-1">How they pay</p>
                     <div class="flex flex-wrap items-center gap-2" data-draft-picker>
+                      {/* Only one side of this is ever live. Ticking cash kills
+                          the bank accounts and wakes the cash wording, and
+                          unticking does the reverse - so bank details and "pay
+                          in cash" cannot both be armed, which is how a message
+                          carrying both used to be possible. */}
                       {payments.map((d) => (
                         <button
                           type="button"
                           data-part-pick={d.slot}
                           data-part-kind="payment"
+                          data-cash-slot={d.slot === CASH_SLOT ? 'true' : 'false'}
+                          disabled={d.slot === CASH_SLOT ? !isCash : isCash}
                           aria-pressed={d.slot === activePayment ? 'true' : 'false'}
-                          class="px-2.5 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:bg-[var(--color-navy)] aria-pressed:text-white"
+                          class="px-2.5 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:bg-[var(--color-navy)] aria-pressed:text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--color-rule)]"
                         >
                           {d.label}
                         </button>
@@ -265,16 +272,22 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                       )}
                     </div>
 
-                    {/* Ticking cash does not choose the wording, it asks - and
-                        sending bank details to somebody paying in person is the
-                        mistake worth being loud about. */}
-                    <p
-                      data-cash-prompt
-                      hidden={!isCash}
-                      class="mt-2 text-[13px] text-[var(--color-outstock)] leading-relaxed"
-                    >
-                      This one is paying in cash - check the wording below says so.
-                    </p>
+                    {/* An unwritten draft is dropped from the list entirely, so
+                        ticking cash could otherwise leave nothing selectable
+                        and no explanation for it. */}
+                    {!payments.some((d) => d.slot === CASH_SLOT) && (
+                      <p
+                        data-cash-missing
+                        hidden={!isCash}
+                        class="mt-2 text-[13px] text-[var(--color-outstock)] leading-relaxed"
+                      >
+                        No cash wording written yet -{' '}
+                        <a href="/admin/settings" class="underline underline-offset-2">
+                          add one in Settings
+                        </a>
+                        , or the message below is whatever you type here.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -398,7 +411,13 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
         </p>
 
         {/* Only here once the order is past confirming - before that it sits
-            in the confirm card, next to the message it changes. */}
+            in the confirm card, next to the message it changes.
+
+            After confirming it is a correction, not a choice: the message has
+            already gone, so this only changes what their order page and the
+            reminders say. Somebody who asked for bank details and then turns
+            up with cash is an ordinary afternoon in a shop that takes both,
+            and the alternative to this box is editing the database. */}
         {
           !canConfirm && (
             <div class="mt-3 pt-3 border-t border-[var(--color-rule)]">
@@ -411,11 +430,12 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   class="w-4 h-4 accent-[var(--color-navy)] toggle-cash-payment"
                   data-ref={order.ref}
                 />
-                <span class="text-[14px] font-medium">Paying in cash</span>
+                <span class="text-[14px] font-medium">They are paying in cash after all</span>
               </label>
               <p class="mt-2 text-[13px] text-[var(--color-ink-faint)]">
-                Nothing is owed until {isCollection ? 'they collect' : 'you hand them over'}. Their
-                order page says so.
+                The confirmation has already gone. This only changes what their order page and
+                any reminder say - nothing is owed until{' '}
+                {isCollection ? 'they collect' : 'you hand them over'}.
               </p>
             </div>
           )
@@ -635,13 +655,23 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
       rebuild();
     };
 
-    const cashPrompt = document.querySelector('[data-cash-prompt]');
+    const cashMissing = document.querySelector('[data-cash-missing]');
 
-    // Ticking the box does not choose a wording - there is no cash-specific
-    // draft - so it asks: the owner picks whichever of their own suits somebody
-    // paying when the books change hands.
-    const showCashPrompt = (wanted) => {
-      if (cashPrompt) cashPrompt.hidden = !wanted;
+    /**
+     * Arm one side of the payment picker and kill the other.
+     *
+     * The tick and the wording are now the same decision rather than two that
+     * have to be kept in agreement: a greyed-out button cannot be clicked, so
+     * bank details cannot be sent to someone paying in person by leaving a
+     * draft selected and forgetting about it.
+     */
+    const applyCashMode = (wanted) => {
+      for (const button of document.querySelectorAll('[data-part-kind="payment"]')) {
+        const isCashSlot = button.dataset.cashSlot === 'true';
+        button.disabled = isCashSlot ? !wanted : wanted;
+      }
+      // Only rendered when there is no cash draft at all.
+      if (cashMissing) cashMissing.hidden = !wanted;
     };
 
     /*
@@ -662,7 +692,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
             body,
           });
           if (!res.ok) throw new Error(`save failed: ${res.status}`);
-          showCashPrompt(wanted);
+          applyCashMode(wanted);
 
           // Ticking cash swings the payment picker onto the cash wording, and
           // unticking puts it back on the first account - so the box never

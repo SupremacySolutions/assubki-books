@@ -1,0 +1,26 @@
+---
+import '../styles/global.css';
+import CoverReview from '../components/CoverReview.astro';
+
+/*
+ * A bench for the cover review panel, in development only.
+ *
+ * The panel cannot be reached any other way: the HTTP suite cannot click, and
+ * the portal needs a password. This mounts the real component and the real
+ * module - not a copy - so driving it here is driving what ships.
+ *
+ * Feed it a photo from the console:
+ *   await window.coverClean.review(someFile)
+ */
+if (!import.meta.env.DEV) return Astro.rewrite('/404');
+---
+<html lang="en">
+  <head><title>Cover review bench</title></head>
+  <body class="p-6 bg-white">
+    <CoverReview />
+    <script>
+      import { mountCoverReview } from '../scripts/cover-review.ts';
+      mountCoverReview();
+    </script>
+  </body>
+</html>

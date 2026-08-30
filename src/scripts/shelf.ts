@@ -12,7 +12,14 @@
  */
 
 const SPEED = 14; // px per second - the covers should drift, not travel
-const RESUME_AFTER = 2500; // ms of being left alone
+/**
+ * How long to wait before drifting again after someone *scrolled* it.
+ *
+ * Only for scrolling and touching. A mouse leaving the strip resumes at once -
+ * waiting two and a half seconds after the cursor has gone reads as broken,
+ * because by then there is nothing on screen to explain why it is still.
+ */
+const RESUME_AFTER = 2500;
 
 /**
  * Where the strip should sit after `elapsed` ms of drifting.
@@ -52,6 +59,62 @@ export function createDrift(el: { scrollLeft: number }, halfWidth: () => number)
   };
 }
 
+/**
+ * Who currently has the strip, and when it may drift again.
+ *
+ * Pulled out of the listeners for the same reason `nextOffset` was: none of it
+ * can be exercised in a headless browser, and the rule it encodes is easy to
+ * get wrong. It was wrong - a mouse leaving the strip armed the same 2500ms
+ * timer as a thumb mid-flick, so the covers sat still for two and a half
+ * seconds after the cursor had gone, with nothing on screen to explain why.
+ *
+ * The two cases are genuinely different. A cursor leaving means nobody is
+ * reading it: carry on at once. A finger that has just scrolled means someone
+ * still is, and drifting into their scroll would fight it: wait.
+ */
+export function createHold(opts: {
+  resumeAfter: number;
+  hasFocus: () => boolean;
+  setTimer: (fn: () => void, ms: number) => unknown;
+  clearTimer: (id: unknown) => void;
+}) {
+  let held = false;
+  let hovering = false;
+  let idle: unknown = null;
+
+  const cancel = () => {
+    if (idle !== null) opts.clearTimer(idle);
+    idle = null;
+  };
+
+  /** Now - unless a cursor is still on it, or a cover still has focus. */
+  const resume = () => {
+    cancel();
+    if (hovering || opts.hasFocus()) return;
+    held = false;
+  };
+
+  return {
+    held: () => held,
+    /** `mouse` is the only pointer type that can go on hovering afterwards. */
+    grab(pointerType?: string) {
+      if (pointerType === 'mouse') hovering = true;
+      cancel();
+      held = true;
+    },
+    /** The cursor or the keyboard has gone. */
+    leave() {
+      hovering = false;
+      resume();
+    },
+    /** They scrolled or lifted a finger: let them finish first. */
+    soon() {
+      cancel();
+      idle = opts.setTimer(resume, opts.resumeAfter);
+    },
+  };
+}
+
 function start(strip: HTMLElement): void {
   const track = strip.querySelector<HTMLElement>('.shelf-track');
   if (!track) return;
@@ -61,32 +124,24 @@ function start(strip: HTMLElement): void {
   const half = () => track.scrollWidth / 2;
   const drift = createDrift(strip, half);
 
-  let held = 0; // >0 while someone is interacting, or a timer is counting down
+  const hold = createHold({
+    resumeAfter: RESUME_AFTER,
+    hasFocus: () => strip.contains(document.activeElement),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+  });
+
   let last = 0;
-  let idle: ReturnType<typeof setTimeout> | null = null;
-
-  const pause = () => {
-    held++;
-    if (idle) clearTimeout(idle);
-  };
-
-  const release = () => {
-    if (idle) clearTimeout(idle);
-    idle = setTimeout(() => {
-      held = 0;
-      last = 0; // do not lurch forward by however long they lingered
-    }, RESUME_AFTER);
-  };
 
   const step = (now: number) => {
     requestAnimationFrame(step);
 
-    if (held > 0 || document.visibilityState !== 'visible') {
+    if (hold.held() || document.visibilityState !== 'visible') {
       last = now;
       return;
     }
     if (!last) {
-      last = now;
+      last = now; // do not lurch forward by however long they lingered
       return;
     }
 
@@ -98,20 +153,30 @@ function start(strip: HTMLElement): void {
   // Hovering, touching, dragging the scrollbar, or tabbing into a cover all
   // mean someone is reading it rather than watching it go by.
   for (const event of ['pointerenter', 'pointerdown', 'focusin'] as const) {
-    strip.addEventListener(event, () => {
-      pause();
-      held = 1; // one holder, however many of these fired
-      release();
+    strip.addEventListener(event, (e) => {
+      hold.grab(e instanceof PointerEvent ? e.pointerType : undefined);
     });
   }
+
+  // Their own scrolling, not ours: ours never fires this while held.
   strip.addEventListener('scroll', () => {
-    // Their own scrolling, not ours: ours never fires this while paused.
-    if (held > 0) {
+    if (hold.held()) {
       drift.resync();
-      release();
+      hold.soon();
     }
   });
-  strip.addEventListener('pointerleave', release);
+
+  // A finger lifting. `pointerleave` is not reliable for touch, so without
+  // this a tap that never became a scroll would hold the strip for good.
+  for (const event of ['pointerup', 'pointercancel'] as const) {
+    strip.addEventListener(event, () => hold.soon());
+  }
+
+  strip.addEventListener('pointerleave', () => hold.leave());
+  strip.addEventListener('focusout', () => {
+    // Tabbing from one cover to the next is not leaving the strip.
+    if (!strip.contains(document.activeElement)) hold.leave();
+  });
 
   requestAnimationFrame(step);
 }

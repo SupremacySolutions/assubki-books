@@ -278,7 +278,20 @@ function confirmedEmail(input: ConfirmedInput) {
 function confirmedTelegram(input: ConfirmedInput): string {
   const cash = Boolean(input.cashPayment);
   const moment = cashMoment(input.fulfilment);
+  /*
+   * Opens with the greeting and their first name.
+   *
+   * A customer whose chat carried over from a previous order never saw the
+   * bot's connect message for this one, so without this the first thing they
+   * get is a bare "Order ASB-XXXX confirmed" arriving unannounced.
+   *
+   * No full stop after the name: the greeting reads right to left and the
+   * name ends it, so a stop lands at the left-hand edge and looks as though it
+   * belongs to the next line.
+   */
+  const first = input.name.trim().split(/\s+/)[0];
   const lines = [
+    ...(first ? [esc(`السلام عليكم ${first}`), ''] : []),
     `*${esc(`Order ${input.ref} confirmed`)}*`,
     '',
     ...input.items.map(

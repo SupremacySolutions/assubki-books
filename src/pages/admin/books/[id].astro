@@ -1,6 +1,6 @@
 ---
-import { ROSETTE_PATH } from '../../../lib/mark';
 import Admin from '../../../layouts/Admin.astro';
+import CoverReview from '../../../components/CoverReview.astro';
 import { getBookAdmin } from '../../../lib/admin-db';
 import { allCategories } from '../../../lib/db';
 import { imageUrl, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
@@ -260,6 +260,8 @@ const previewCaption = book
               </label>
               <input id="photo" type="file" accept="image/*" class="sr-only" />
               <p id="uploadStatus" class="mt-2 text-[13.5px] text-[var(--color-ink-soft)]" hidden />
+
+              <CoverReview />
             </div>
           )
         }
@@ -396,7 +398,7 @@ const previewCaption = book
 
   {
     book && (
-      <script is:inline define:vars={{ bookId: book.id, bookTitle: book.title, rosettePath: ROSETTE_PATH }}>
+      <script is:inline define:vars={{ bookId: book.id, bookTitle: book.title }}>
         // ------------------------------------------------------------------
         // Save and post are ordered, not parallel. Posting sends whatever is
         // in the database, so offering it while the form has unsaved edits
@@ -457,101 +459,77 @@ const previewCaption = book
         const status = document.querySelector('#uploadStatus');
 
         /**
-         * Shrinks the photo before it leaves the phone.
+         * Shrinks the photo before it leaves the phone, and measures it.
          *
          * A phone camera produces something like 4000px and several megabytes,
          * and the shop never displays a cover larger than about 800. Resizing
          * here also sidesteps HEIC, which iPhones produce and the server does
-         * not accept, because the canvas decodes it and hands back WebP. If any
-         * of it fails the original is uploaded unchanged.
-         */
-        /*
-         * Shrink for the upload, and measure while we are holding the bitmap -
-         * the server has no way to read dimensions from a stream it is passing
-         * straight through, and without them the page cannot reserve space for
-         * the photo, so the grid jumps as it loads.
+         * not accept, because the canvas decodes it and hands back WebP.
+         *
+         * Measured while we are holding the bitmap: the server cannot read
+         * dimensions from a stream it passes straight through, and without them
+         * the page has nothing to reserve space with, so the grid jumps as the
+         * photo loads.
+         *
+         * The photo itself is not altered - no frame, no background, no mark.
+         * There was a frame here briefly, to match a standardising pass over
+         * the catalogue; the owner did not want it, and the covers read better
+         * as they are.
          *
          * A failure here used to return the original silently, which on a phone
          * that cannot decode HEIC meant several megabytes going to R2 unshrunk.
          * It still sends - refusing the photo would be worse - but it says so.
          */
-        /*
-         * The same frame the catalogue's own covers are in - 3:4, on the shop's
-         * paper colour, with the mark in the corner - composed here on the
-         * canvas the browser is already drawing to. Done in the page because a
-         * Worker cannot run an image library, and paying for one to do this was
-         * not worth it.
-         *
-         * Measured while we hold the bitmap, too: without the dimensions the
-         * page has nothing to reserve space with and the grid jumps as the
-         * photo loads.
-         *
-         * A failure here used to return the original silently, which on a phone
-         * that cannot decode HEIC meant several megabytes going to R2 unframed.
-         * It still sends - refusing the photo would be worse - but it says so.
-         */
-        const FRAME = { width: 600, height: 800, fill: 0.88, band: 0.08, paper: '#f5f4f0' };
+        const MAX_EDGE = 800;
 
         async function shrink(file) {
           try {
             const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
 
+            // Fitted inside, never cropped and never enlarged, so a wide book
+            // or a spine keeps all of itself at whatever size it arrived.
+            const scale = Math.min(MAX_EDGE / bitmap.width, MAX_EDGE / bitmap.height, 1);
+            const w = Math.max(1, Math.round(bitmap.width * scale));
+            const h = Math.max(1, Math.round(bitmap.height * scale));
+
             const canvas = document.createElement('canvas');
-            canvas.width = FRAME.width;
-            canvas.height = FRAME.height;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = FRAME.paper;
-            ctx.fillRect(0, 0, FRAME.width, FRAME.height);
-
-            // Fitted inside, never cropped, so a wide book keeps all of itself -
-            // and only into the area above the band, which belongs to the mark.
-            const band = Math.round(FRAME.height * FRAME.band);
-            const area = FRAME.height - band;
-            const box = { w: FRAME.width * FRAME.fill, h: area * FRAME.fill };
-            const scale = Math.min(box.w / bitmap.width, box.h / bitmap.height, 2);
-            const w = Math.round(bitmap.width * scale);
-            const h = Math.round(bitmap.height * scale);
-            ctx.drawImage(bitmap, (FRAME.width - w) / 2, (area - h) / 2, w, h);
-
-            await drawMark(ctx, FRAME.width, area, band);
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
 
             const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.82));
             return blob
-              ? {
-                  file: new File([blob], 'photo.webp', { type: 'image/webp' }),
-                  width: FRAME.width,
-                  height: FRAME.height,
-                }
+              ? { file: new File([blob], 'photo.webp', { type: 'image/webp' }), width: w, height: h }
               : { file, width: bitmap.width, height: bitmap.height };
           } catch {
             return { file, width: null, height: null, failed: true };
           }
         }
 
-        /** The shop's rosette, in the band below the cover, as on every cover. */
-        async function drawMark(ctx, width, area, band) {
-          const size = Math.round(band * 0.7);
-          const margin = Math.round(width * 0.045);
-          const svg =
-            `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 200 200">` +
-            `<path d="${rosettePath}" fill="#184485" fill-opacity="0.5"/></svg>`;
-          const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-          try {
-            const mark = await createImageBitmap(await (await fetch(url)).blob());
-            ctx.drawImage(mark, width - size - margin, area + Math.round((band - size) / 2), size, size);
-          } catch {
-            // A missing mark is not worth losing the photo over.
-          } finally {
-            URL.revokeObjectURL(url);
-          }
-        }
-
         input?.addEventListener('change', async () => {
-          const original = input.files?.[0];
-          if (!original) return;
+          const chosen = input.files?.[0];
+          if (!chosen) return;
           status.hidden = false;
           status.textContent = 'Preparing…';
 
+          /*
+           * Straighten and crop first, and let the owner look at it.
+           *
+           * Nothing reaches R2 until he has answered: a crooked photo of a book
+           * on a kitchen table used to be live the moment it was chosen. If the
+           * panel is not on the page - an older browser, a failed module - this
+           * is undefined and the upload carries on exactly as it did.
+           */
+          const original = (await window.coverClean?.review(chosen)) ?? chosen;
+          if (!original) {
+            // Cancelled. Clear the input so choosing the same file again still
+            // fires a change event.
+            input.value = '';
+            status.hidden = true;
+            return;
+          }
+
+          status.textContent = 'Preparing…';
           const { file, width, height, failed } = await shrink(original);
           const saved = original.size - file.size;
           status.textContent = failed
@@ -570,6 +548,7 @@ const previewCaption = book
 
           try {
             const res = await fetch('/api/admin/upload', { method: 'POST', body });
+            input.value = '';
             if (!res.ok) throw new Error(await res.text());
             status.textContent = 'Uploaded.';
             window.location.reload();
@@ -587,6 +566,26 @@ const previewCaption = book
             if (res.ok) window.location.reload();
           });
         }
+      </script>
+    )
+  }
+  {/*
+    The review panel.
+
+    A bundled module rather than another `is:inline` block: this is far too
+    much logic for a script Astro ships verbatim, and it needs to import the
+    geometry from src/scripts/cover-clean.ts, which an inline script cannot do.
+
+    It hands itself to the inline uploader through `window.coverClean`, which
+    is the whole seam between them - the uploader asks for a file to send and
+    gets one back, or null if the owner cancelled.
+  */}
+  {
+    !isNew && (
+      <script>
+        import { mountCoverReview } from '../../../scripts/cover-review.ts';
+
+        mountCoverReview();
       </script>
     )
   }

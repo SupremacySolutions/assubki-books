@@ -14,6 +14,20 @@ import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../.
 const [settings, emailError] = await Promise.all([getSettings(), lastEmailError()]);
 const ownerTelegramLink = await ownerOptInLink();
 const saved = Astro.url.searchParams.get('saved');
+const unbound = Astro.url.searchParams.get('unbound');
+
+/*
+ * Whether the bound chat can be shown to be the handle customers are given.
+ *
+ * A Telegram account need not have a username, and then the label is a display
+ * name that proves nothing. That is worth saying out loud rather than implying
+ * a check that did not happen.
+ */
+const boundLabel = (settings.owner_telegram_label ?? '').trim();
+const handle = (v: string) => v.trim().replace(/^@/, '').toLowerCase();
+const alertsUnverified =
+  Boolean(settings.owner_telegram_chat_id) &&
+  (!boundLabel.startsWith('@') || handle(boundLabel) !== handle(settings.contact_telegram ?? ''));
 
 const draftGroups = [
   {
@@ -37,6 +51,18 @@ const draftGroups = [
     saved && (
       <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
         Settings saved.
+      </p>
+    )
+  }
+
+  {
+    /* Said plainly, because it stops alerts arriving and nothing else on the
+       page would explain why. */
+    unbound && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)] leading-relaxed">
+        The Telegram handle changed, so owner alerts were disconnected - they were still going to
+        the previous chat, which is not something the handle can redirect. Connect the new one
+        below to start receiving them again.
       </p>
     )
   }
@@ -180,7 +206,9 @@ const draftGroups = [
         <dd class="text-right max-w-[60%]">
           {settings.owner_telegram_chat_id ? (
             <>
-              <span class="text-[var(--color-instock)]">Connected</span>
+              <span class="text-[var(--color-instock)]">
+                Connected{boundLabel ? ` · ${boundLabel}` : ''}
+              </span>
               {/* Without this, recovering from a wrong chat being bound needed
                   direct database access. */}
               <form method="post" action="/api/admin/settings/unbind-telegram" class="inline">
@@ -191,6 +219,16 @@ const draftGroups = [
                   Disconnect
                 </button>
               </form>
+              {alertsUnverified && ownerTelegramLink && (
+                <span class="block mt-1 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                  We cannot confirm this is {settings.contact_telegram || 'the contact handle'} -
+                  alerts go to whichever chat pressed Start, not to a handle.{' '}
+                  <a href={ownerTelegramLink} class="text-[var(--color-navy)] underline">
+                    Reconnect
+                  </a>{' '}
+                  from the right account if this is wrong.
+                </span>
+              )}
             </>
           ) : ownerTelegramLink ? (
             <a href={ownerTelegramLink} class="text-[var(--color-navy)] underline">Connect this chat</a>

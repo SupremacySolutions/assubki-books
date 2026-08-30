@@ -716,19 +716,36 @@ async function ownerSettings() {
   t.ok(cPortalRaw.includes('Saturday stall'), 'including the second address');
 
   /*
-   * There is no separate cash draft any more - it was a slot to maintain for a
-   * case the picker already covers. Ticking cash asks the owner which of their
-   * own wordings to send, so the page must carry that prompt and still offer
-   * every draft to choose from.
+   * Cash and bank transfer are one decision, not two that have to be kept in
+   * agreement. Ticking cash puts the bank accounts out of reach and wakes the
+   * cash wording; unticking does the reverse. There used to be a warning here
+   * asking the owner to check the two agreed - that only existed because they
+   * could disagree, and now they cannot.
+   *
+   * `disabled` and not merely faded: a greyed button that still works is worse
+   * than no greying at all.
    */
+  const enabledPicks = (page) =>
+    [...page.matchAll(/<button[^>]*data-part-pick="([^"]+)"[^>]*data-part-kind="payment"[^>]*>/g)]
+      .filter((m) => !m[0].includes('disabled'))
+      .map((m) => m[1]);
+
   await admin(`/api/admin/orders/${c.ref}/cash-payment`, { cash_payment: '1' });
   const cashPage = await html(`/admin/orders/${c.ref}`);
-  t.ok(cashPage.includes('paying in cash - check the wording'),
-    'a cash order asks the owner to check the wording');
+  t.ok(enabledPicks(cashPage).join() === 'cash',
+    `a cash order offers only the cash wording (offered ${enabledPicks(cashPage).join() || 'nothing'})`);
+  t.ok(!cashPage.includes('check the wording'),
+    'and no longer has to ask the owner to check the two agree');
   t.ok(draftInBox(cashPage).includes('CASH-WORDING') && !draftInBox(cashPage).includes('ACCOUNT-ONE'),
     'and opens on the cash wording rather than bank details');
   t.ok(draftInBox(cashPage).includes('PLACE-ONE'),
     'while still saying where they collect');
+
+  await admin(`/api/admin/orders/${c.ref}/cash-payment`, { cash_payment: '0' });
+  const bankPage = await html(`/admin/orders/${c.ref}`);
+  const bankPicks = enabledPicks(bankPage);
+  t.ok(bankPicks.length > 0 && !bankPicks.includes('cash'),
+    `and unticking it puts the accounts back and the cash wording away (offered ${bankPicks.join() || 'nothing'})`);
 
   // --- postage remembers rather than being maintained -----------------------
   //
@@ -889,7 +906,7 @@ async function integrity() {
    * that would show as a visible jump is checked directly instead: the strip
    * holds every cover twice, and the wrap has to land exactly one copy back.
    */
-  const { nextOffset, createDrift } = await import('../src/scripts/shelf.ts');
+  const { nextOffset, createDrift, createHold } = await import('../src/scripts/shelf.ts');
   t.ok(nextOffset(0, 1000, 1000) === 14, 'the shelf drifts 14px a second');
   t.ok(nextOffset(995, 1000, 1000) === 9, 'and wraps by exactly one copy of the covers');
   t.ok(nextOffset(10, 1000, 0) === 24, 'an unmeasured track still moves rather than sticking');
@@ -915,6 +932,102 @@ async function integrity() {
   for (let frame = 0; frame < 60; frame++) shelfDrift.step(16.7);
   t.ok(rounding.scrollLeft >= 13 && rounding.scrollLeft <= 15,
     `a second of frames moves the shelf about 14px (moved ${rounding.scrollLeft})`);
+
+  /*
+   * A cursor leaving used to arm the same 2500ms timer as a thumb mid-flick,
+   * so the covers sat still for two and a half seconds after the mouse had
+   * gone - with nothing on screen by then to explain why. The two cases are
+   * not the same and the hold has to tell them apart.
+   */
+  const timers = [];
+  const holdOpts = {
+    resumeAfter: 2500,
+    hasFocus: () => false,
+    setTimer: (fn) => timers.push(fn) - 1,
+    clearTimer: (id) => { timers[id] = null; },
+  };
+
+  const mouse = createHold(holdOpts);
+  mouse.grab('mouse');
+  t.ok(mouse.held(), 'hovering the shelf holds it');
+  mouse.leave();
+  t.ok(!mouse.held() && timers.every((fn) => fn === null),
+    'and the cursor leaving releases it at once, with no timer left running');
+
+  // Clicking a cover fires pointerup while the cursor is still on the strip.
+  const clicked = createHold(holdOpts);
+  clicked.grab('mouse');
+  clicked.soon();
+  timers.filter(Boolean).forEach((fn) => fn());
+  t.ok(clicked.held(), 'a click does not start the drift under a cursor still on it');
+
+  // A finger: no pointerleave follows, so only the timer can release it.
+  const touch = createHold(holdOpts);
+  touch.grab('touch');
+  touch.soon();
+  t.ok(touch.held(), 'a finger scrolling keeps the shelf still while it moves');
+  timers.filter(Boolean).forEach((fn) => fn());
+  t.ok(!touch.held(), 'and it drifts again once they have finished');
+
+  /*
+   * The cover cleanup: geometry only, so all of it can be checked here. None
+   * of it can be checked from HTTP, and the portal cannot be clicked from this
+   * suite, so a synthetic photo - a dark book, rotated, on a light table - is
+   * the only test this code will ever get.
+   */
+  const clean = await import('../src/scripts/cover-clean.ts');
+  const CW = 240;
+  const photo = new Uint8ClampedArray(CW * CW * 4);
+  for (let i = 0; i < CW * CW; i++) {
+    photo[i * 4] = 210; photo[i * 4 + 1] = 205; photo[i * 4 + 2] = 195; photo[i * 4 + 3] = 255;
+  }
+  const bookQuad = [{ x: 60, y: 40 }, { x: 190, y: 70 }, { x: 170, y: 200 }, { x: 40, y: 170 }];
+  const insideQuad = (px, py) => {
+    let sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = bookQuad[i];
+      const b = bookQuad[(i + 1) % 4];
+      sign += (b.x - a.x) * (py - a.y) - (b.y - a.y) * (px - a.x) > 0 ? 1 : -1;
+    }
+    return Math.abs(sign) === 4;
+  };
+  for (let y = 0; y < CW; y++) {
+    for (let x = 0; x < CW; x++) {
+      if (!insideQuad(x, y)) continue;
+      const p = (y * CW + x) * 4;
+      photo[p] = 40; photo[p + 1] = 50; photo[p + 2] = 70;
+    }
+  }
+
+  const found = clean.detectQuad({ data: photo, width: CW, height: CW });
+  const worst = found
+    ? Math.max(...found.map((p, i) => Math.hypot(p.x - bookQuad[i].x, p.y - bookQuad[i].y)))
+    : Infinity;
+  t.ok(worst <= 3, `the book is found in a photo of a table (worst corner off by ${worst.toFixed(1)}px)`);
+
+  // A photo of nothing but table must not be cropped to a shadow - the panel
+  // offers the whole frame instead and says it could not tell.
+  const blank = new Uint8ClampedArray(CW * CW * 4).fill(200);
+  t.ok(clean.detectQuad({ data: blank, width: CW, height: CW }) === null,
+    'and an empty surface is reported as not found rather than guessed at');
+
+  const h = clean.solveHomography(
+    [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
+    bookQuad,
+  );
+  const mapped = clean.project(h, { x: 10, y: 10 });
+  t.ok(Math.hypot(mapped.x - 170, mapped.y - 200) < 0.001, 'the warp maps a corner exactly onto its corner');
+  t.ok(clean.solveHomography(Array(4).fill({ x: 0, y: 0 }), bookQuad) === null,
+    'and four points on top of each other are refused rather than returning infinities');
+
+  // The whole purpose: what comes out is the book, with none of the table.
+  const outSize = 60;
+  const warped = { data: new Uint8ClampedArray(outSize * outSize * 4), width: outSize, height: outSize };
+  clean.warp({ data: photo, width: CW, height: CW }, found ?? bookQuad, warped);
+  let red = 0;
+  for (let i = 0; i < outSize * outSize; i++) red += warped.data[i * 4];
+  t.ok(Math.abs(red / (outSize * outSize) - 40) < 6,
+    'and the straightened cover carries none of the surface it was lying on');
 
   // The book page has to say when it could not take what was asked for; the
   // basket page always did, and the two disagreeing is the actual complaint.

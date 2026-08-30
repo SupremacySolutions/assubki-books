@@ -58,7 +58,7 @@ scripts/lib/catalogue.mjs    Shared transform: slugs, title splitting, sanitisin
 scripts/migrate-from-woo.mjs Rebuilds the seed from data/raw/
 scripts/fetch-images.mjs     Downloads + re-encodes covers into public/img/
 scripts/upload-covers.mjs    Pushes those covers into R2 under their image_key
-scripts/standardise-covers.mjs  Frames every cover the same and stores each size
+scripts/resize-covers.mjs    Stores each cover at the sizes the site shows it at
 src/lib/db.ts                Every catalogue read
 src/lib/orders.ts            Hold, expire, and read orders
 src/lib/notify.ts            Customer + owner email, owner Telegram
@@ -83,14 +83,24 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   as static assets - that made delete half-work, since the files stayed in the
   repo forever. `public/img/books/` is gitignored now; rebuild it locally with
   `scripts/fetch-images.mjs` and push with `scripts/upload-covers.mjs`.
-- **Covers are framed, not resized on the way out.** Every one sits in a 3:4
-  frame on the paper colour with the shop's mark in the corner, and each display
-  size is a separate object beside the master - `1-std.webp`, `1-std-card.webp`
-  and so on. Cloudflare Images would do this per request, but it is not enabled
-  on this account and is not free. `scripts/standardise-covers.mjs --sample`
-  writes a contact sheet without uploading anything; look at it before a real
-  run. The route falls back to the master for any size that is missing, so an
-  owner's upload and anything predating the pass still work.
+- **Covers are sized ahead of time, not on the way out.** Each display size is
+  a separate object beside the original - `1.webp`, `1-card.webp` and so on -
+  because Cloudflare Images would do it per request and is neither enabled on
+  this account nor free. `scripts/resize-covers.mjs --sample` writes a contact
+  sheet without uploading anything; look at it before a real run. The route
+  falls back to the original for any size that is missing, so an owner's upload
+  and anything predating the pass still work.
+- **The photo itself is never altered.** There was a pass that framed every
+  cover on the paper colour with the mark in the corner; the owner did not want
+  it and it was reverted. If you change what the stored bytes are again, bump
+  `IMAGE_VERSION` in src/lib/image-presets.ts - the keys are served `immutable`
+  for a year and no purge reaches a browser.
+- **A photo is straightened before it is uploaded.** The portal detects the
+  book in the shot, warps its corners square and crops the rest, then shows it
+  with four draggable handles and uploads nothing until the owner agrees
+  (src/scripts/cover-clean.ts, src/components/CoverReview.astro). `/clean-check`
+  mounts that panel on its own in dev, which is the only way to drive it - the
+  HTTP suite cannot click and the portal needs a password.
 - **Do not name an R2 binding `IMAGES`.** The Astro Cloudflare adapter treats a
   binding of that name as the Cloudflare Images service and wires itself to it.
   The uploads bucket is `UPLOADS`.

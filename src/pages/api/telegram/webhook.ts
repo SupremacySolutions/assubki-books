@@ -69,7 +69,7 @@ export const POST: APIRoute = async ({ request }) => {
   let update: {
     message?: {
       message_id?: number;
-      chat?: { id: number };
+      chat?: { id: number; username?: string; first_name?: string; last_name?: string };
       text?: string;
       caption?: string;
       photo?: unknown[];
@@ -97,6 +97,15 @@ export const POST: APIRoute = async ({ request }) => {
 
   if (start && payload && (await isOwnerLinkPayload(payload))) {
     await setSetting('owner_telegram_chat_id', chat);
+
+    // Recorded so the settings page can say *whose* chat this is. A username
+    // is optional on Telegram, so fall back to the name and accept that the
+    // page will then be unable to check it against the contact handle.
+    const who = message?.chat?.username
+      ? `@${message.chat.username}`
+      : [message?.chat?.first_name, message?.chat?.last_name].filter(Boolean).join(' ');
+    await setSetting('owner_telegram_label', who.slice(0, 80));
+
     await sendMessage(
       chat,
       esc('Connected. New orders and payment screenshots will be sent here.'),
@@ -133,25 +142,52 @@ export const POST: APIRoute = async ({ request }) => {
       .run();
 
     const name = order.customer_name.split(' ')[0];
+
+    /*
+     * Someone who has ordered before does not need the connection explained
+     * again - they set it up months ago. `bound` is any *other* order already
+     * on this chat.
+     *
+     * No full stop after the name. The greeting runs right to left and the
+     * name ends it, so a stop lands at the left-hand edge, reading as though
+     * it belongs to whatever follows rather than to the greeting.
+     */
+    const returning = await env.DB.prepare(
+      'SELECT 1 FROM orders WHERE telegram_chat_id = ? AND id != ? LIMIT 1',
+    )
+      .bind(chat, order.id)
+      .first();
+
     await sendMessage(
       chat,
       [
-        esc(`السلام عليكم ${name}.`),
+        esc(`السلام عليكم ${name}`),
         '',
-        esc(`This chat is now connected to order ${order.ref}.`),
-        esc('We will send your total and how to pay here as soon as the shop confirms it.'),
-        esc('Once you have paid you can send a screenshot here and it will reach the shop.'),
+        ...(returning
+          ? [
+              esc(`Welcome back. Order ${order.ref} is connected to this chat.`),
+              esc('We will send your total and how to pay here once the shop confirms it.'),
+            ]
+          : [
+              esc(`This chat is now connected to order ${order.ref}.`),
+              esc('We will send your total and how to pay here as soon as the shop confirms it.'),
+              esc('Once you have paid you can send a screenshot here and it will reach the shop.'),
+            ]),
       ].join('\n'),
     );
     return new Response('ok');
   }
 
   if (start) {
+    // The greeting gets its own line for the same reason the stop went: it
+    // reads right to left, and English on the same line collides with it.
     await sendMessage(
       chat,
-      esc(
-        'السلام عليكم. Open the link in your order confirmation and I will connect this chat to your order.',
-      ),
+      [
+        esc('السلام عليكم'),
+        '',
+        esc('Open the link in your order confirmation and I will connect this chat to your order.'),
+      ].join('\n'),
     );
     return new Response('ok');
   }

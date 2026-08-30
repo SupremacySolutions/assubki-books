@@ -53,6 +53,10 @@ export type SettingKey =
   // Bound by the owner tapping the deep link on the settings page - the bot
   // cannot start a conversation, so this is the only way to obtain it.
   | 'owner_telegram_chat_id'
+  // Who that chat belongs to, captured at bind time. A numeric chat id tells
+  // nobody anything, so the settings page said only "Connected" and a binding
+  // to the wrong person was invisible.
+  | 'owner_telegram_label'
   // Who the shop is reached at: the handle the bot points people to, and the
   // one behind every "Message us on Telegram" link on the site.
   | 'contact_telegram';

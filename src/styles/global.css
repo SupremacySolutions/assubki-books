@@ -348,10 +348,14 @@
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
     transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   }
+  /* `cover` was only safe while every cover was padded into the same 3:4
+     frame. Unpadded it crops an 88x800 spine to nothing, so the cover is
+     fitted whole into the slot instead and the faint panel behind it shows
+     at the sides. */
   .shelf-book img {
     width: 100%;
     height: 118px;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
   }
   .shelf-book:hover,

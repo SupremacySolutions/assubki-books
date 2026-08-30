@@ -11,6 +11,10 @@ export const prerender = false;
  * would have kept sending that chat customers' names and addresses.
  */
 export const POST: APIRoute = async () => {
-  await env.DB.prepare(`DELETE FROM settings WHERE key = 'owner_telegram_chat_id'`).run();
+  // The label goes with it, or the page would go on naming a chat that is no
+  // longer bound to anything.
+  await env.DB.prepare(
+    `DELETE FROM settings WHERE key IN ('owner_telegram_chat_id', 'owner_telegram_label')`,
+  ).run();
   return new Response(null, { status: 302, headers: { Location: '/admin/settings?saved=1' } });
 };

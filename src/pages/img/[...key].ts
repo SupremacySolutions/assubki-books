@@ -29,18 +29,39 @@ export const GET: APIRoute = async ({ params, request }) => {
   const bucket = (env as unknown as UploadEnv).UPLOADS;
   if (!bucket) return new Response('Not found', { status: 404 });
 
-  const object = await bucket.get(key);
-  if (!object) return new Response('Not found', { status: 404 });
-
   // A preset varies the bytes, so it has to vary the etag too - otherwise a
   // browser holding the full-size cover would be told its copy of the 84px one
   // is still good.
   const wanted = new URL(request.url).searchParams.get('p') ?? '';
   const preset = isPreset(wanted) ? wanted : null;
+
+  /*
+   * The sizes are made once by scripts/resize-covers.mjs and stored beside the
+   * original rather than transformed on the way out: transforming needs
+   * Cloudflare Images, which is not enabled on this account and is not free.
+   *
+   * The variant is asked for *first*. Reading the original and then the
+   * variant cost two R2 reads on every sized request, which is every cover on
+   * every page; this way the common case is one, and only a size that was
+   * never made pays for the miss.
+   */
+  const variant = preset ? await bucket.get(variantKey(key, preset)) : null;
+
+  // No variant - the original is the right image, just larger than this place
+  // needs. Better a heavy cover than a missing one, and `detail` has no file
+  // at all by design.
+  const object = variant ?? (await bucket.get(key));
+  if (!object) return new Response('Not found', { status: 404 });
+
+  // Taken from whatever was actually served, so no second read is needed to
+  // build it. A variant has different bytes and therefore a different etag
+  // already; the suffix keeps a fallback-to-original distinct from the plain
+  // request for the same key.
   const etag = preset ? `${object.httpEtag.slice(0, -1)}-${preset}"` : object.httpEtag;
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
+  if (variant) headers.set('Content-Type', 'image/webp');
   headers.set('etag', etag);
   headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 
@@ -49,31 +70,15 @@ export const GET: APIRoute = async ({ params, request }) => {
     return new Response(null, { status: 304, headers });
   }
 
-  if (!preset) return new Response(object.body, { headers });
-
-  /*
-   * The sizes are made once by scripts/standardise-covers.mjs and stored beside
-   * the master, rather than transformed as they are served: transforming needs
-   * Cloudflare Images, which is not enabled on this account and is not free.
-   *
-   * Only standardised covers have variants, so only they are looked up - an
-   * older key or an owner's upload would otherwise cost a second R2 read on
-   * every request to discover something that was never there.
-   */
-  const master = key.endsWith('-std.webp');
-  if (master) {
-    const variant = await bucket.get(key.replace(/\.webp$/, `-${preset}.webp`));
-    if (variant) {
-      const framed = new Headers(headers);
-      variant.writeHttpMetadata(framed);
-      framed.set('etag', etag);
-      framed.set('Cache-Control', 'public, max-age=31536000, immutable');
-      framed.set('Content-Type', 'image/webp');
-      return new Response(variant.body, { headers: framed });
-    }
-  }
-
-  // No variant: the master is the right image, just larger than this place
-  // needs. Better a heavy cover than a missing one.
   return new Response(object.body, { headers });
 };
+
+/**
+ * "books/x/1.webp" + "card" → "books/x/1-card.webp".
+ *
+ * Any extension, not only `.webp`: an owner's upload keeps whatever it
+ * arrived as, while every derived size is written as WebP.
+ */
+function variantKey(key: string, preset: string): string {
+  return `${key.replace(/\.[a-z0-9]+$/i, '')}-${preset}.webp`;
+}

@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import {
   setSetting,
+  getSetting,
   forgetContactTelegram,
   PAYMENT_ACCOUNTS,
   COLLECTION_PLACES,
@@ -43,6 +44,8 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   await text(form, 'collection_address', 'collection_address', 300);
+
+  const dropped = await retargetAlerts(form);
   await text(form, 'contact_telegram', 'contact_telegram', 80);
 
   // The handle is cached for a minute so the footer is not a query per page
@@ -50,5 +53,47 @@ export const POST: APIRoute = async ({ request }) => {
   // see whether it took.
   forgetContactTelegram();
 
-  return new Response(null, { status: 302, headers: { Location: '/admin/settings?saved=1' } });
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `/admin/settings?saved=1${dropped ? '&unbound=1' : ''}` },
+  });
 };
+
+/**
+ * A new contact handle means alerts are pointed at the wrong person.
+ *
+ * Owner alerts go to a chat id, not to a handle - the bot cannot message a
+ * `@username` at all, only a chat that has messaged it first. So changing the
+ * handle here does nothing to where alerts land, and they would go on reaching
+ * whoever bound their chat: customer names, addresses and phone numbers, sent
+ * to somebody who is no longer the owner.
+ *
+ * Rather than let that sit unnoticed, the binding is dropped and the settings
+ * page shows "Connect this chat" again.
+ *
+ * Only when we can actually tell. A Telegram account need not have a username,
+ * in which case the label is a display name and proves nothing - cutting the
+ * alerts off on a guess would be worse than the ambiguity, so the binding
+ * stays and the page says it could not be checked.
+ */
+async function retargetAlerts(form: FormData): Promise<boolean> {
+  const raw = form.get('contact_telegram');
+  if (raw === null) return false;
+
+  const [next, current, bound] = await Promise.all([
+    Promise.resolve(String(raw).trim()),
+    getSetting('contact_telegram'),
+    getSetting('owner_telegram_label'),
+  ]);
+
+  const handle = (v: string) => v.trim().replace(/^@/, '').toLowerCase();
+  if (handle(next) === handle(current)) return false; // a typo fix, not a new person
+  if (!bound.startsWith('@')) return false; // a display name; nothing to compare
+  if (handle(bound) === handle(next)) return false; // still the same person
+
+  await Promise.all([
+    setSetting('owner_telegram_chat_id', ''),
+    setSetting('owner_telegram_label', ''),
+  ]);
+  return true;
+}

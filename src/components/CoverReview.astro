@@ -1,0 +1,62 @@
+---
+/**
+ * The panel that shows a photo straightened before it is uploaded.
+ *
+ * Its own component so the same markup can be mounted outside the portal and
+ * driven for real. Everything here is inert until
+ * src/scripts/cover-review.ts finds it.
+ */
+---
+
+        {/* Nothing is uploaded until this has been answered. The photo
+            used to go straight to R2 the moment it was chosen, so a
+            crooked shot of a book on a kitchen table was already live
+            before anyone saw it. */}
+        <div
+          id="cleanPanel"
+          hidden
+          class="mt-4 p-4 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]"
+        >
+          <p class="text-[13.5px] font-medium">Straightened and cropped</p>
+          <p class="mt-0.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+            Drag the four corners onto the edges of the book if they are not already there.
+          </p>
+
+          <div class="mt-3 grid gap-4 sm:grid-cols-2">
+            <div>
+              <p class="eyebrow mb-1.5">The photo</p>
+<div
+                id="cleanStage"
+                class="relative inline-block touch-none select-none max-w-full"
+              >
+                <canvas id="cleanSource" class="block max-w-full h-auto rounded-[2px]"></canvas>
+                <svg
+                  id="cleanOverlay"
+                  class="absolute inset-0 w-full h-full overflow-visible"
+                  aria-hidden="true"
+                ></svg>
+              </div>
+            </div>
+            <div>
+              <p class="eyebrow mb-1.5">On the listing</p>
+              <canvas
+                id="cleanResult"
+                class="block max-w-full h-auto rounded-[2px] border border-[var(--color-rule)] bg-white"
+              ></canvas>
+            </div>
+          </div>
+
+          <p id="cleanNote" class="mt-3 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed"></p>
+
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button type="button" id="cleanUse" class="btn btn-primary !py-1.5 !text-[13.5px]">
+              Use this
+            </button>
+            <button type="button" id="cleanRaw" class="btn btn-ghost !py-1.5 !text-[13.5px]">
+              Use the photo as it is
+            </button>
+            <button type="button" id="cleanCancel" class="btn btn-ghost !py-1.5 !text-[13.5px]">
+              Cancel
+            </button>
+          </div>
+        </div>
