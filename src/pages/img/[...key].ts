@@ -1,30 +1,11 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { IMAGE_PRESETS, isPreset, FRAME_BACKGROUND } from '../../lib/image-presets';
+import { isPreset } from '../../lib/image-presets';
 
 export const prerender = false;
 
 interface UploadEnv {
   UPLOADS?: R2Bucket;
-  /**
-   * Added by the Astro Cloudflare adapter rather than by wrangler.jsonc, so it
-   * is not in the generated Env types. Optional here because it is absent in
-   * local dev, where every request simply falls through untransformed.
-   */
-  /**
-   * Off until Cloudflare Images is enabled on the account. Without it, every
-   * request would attempt a transform that cannot work, fail, and then read the
-   * object from R2 a second time to recover - doubling the reads on every cover
-   * to achieve nothing.
-   */
-  IMAGE_TRANSFORMS?: string;
-  IMAGES?: {
-    input: (stream: ReadableStream) => {
-      transform: (options: Record<string, unknown>) => {
-        output: (options: Record<string, unknown>) => Promise<{ image: () => ReadableStream }>;
-      };
-    };
-  };
 }
 
 /**
@@ -70,44 +51,29 @@ export const GET: APIRoute = async ({ params, request }) => {
 
   if (!preset) return new Response(object.body, { headers });
 
-  const frame = IMAGE_PRESETS[preset];
-  const cfEnv = env as unknown as UploadEnv;
-  const images = cfEnv.IMAGE_TRANSFORMS === '1' ? cfEnv.IMAGES : undefined;
-
   /*
-   * Padded, never cropped: a spine or a landscape scan keeps all of itself and
-   * gains background instead. The frame colour is the page's own, so the
-   * padding is invisible where it lands.
+   * The sizes are made once by scripts/standardise-covers.mjs and stored beside
+   * the master, rather than transformed as they are served: transforming needs
+   * Cloudflare Images, which is not enabled on this account and is not free.
    *
-   * A failure here falls through to the untransformed image rather than
-   * erroring. A cover that is the wrong shape is a blemish; a catalogue of
-   * broken images is a shop that looks shut.
+   * Only standardised covers have variants, so only they are looked up - an
+   * older key or an owner's upload would otherwise cost a second R2 read on
+   * every request to discover something that was never there.
    */
-  // Not enabled: serve the stored image. The preset still shapes the layout
-  // through the width and height the page reserves, so nothing looks broken -
-  // the covers are simply not yet resized on the way out.
-  if (!images) return new Response(object.body, { headers });
-
-  try {
-    const result = await images
-      .input(object.body)
-      .transform({
-        width: frame.width * frame.scale,
-        height: frame.height * frame.scale,
-        fit: 'pad',
-        background: FRAME_BACKGROUND,
-      })
-      .output({ format: 'image/webp' });
-
-    headers.set('Content-Type', 'image/webp');
-    return new Response(result.image(), { headers });
-  } catch (err) {
-    console.error('[img] transform failed, serving the original', key, preset, err);
-    // The stream above may be partly consumed, so re-read rather than reuse it.
-    const fallback = await bucket.get(key);
-    if (!fallback) return new Response('Not found', { status: 404 });
-    const plain = new Headers(headers);
-    plain.set('etag', object.httpEtag);
-    return new Response(fallback.body, { headers: plain });
+  const master = key.endsWith('-std.webp');
+  if (master) {
+    const variant = await bucket.get(key.replace(/\.webp$/, `-${preset}.webp`));
+    if (variant) {
+      const framed = new Headers(headers);
+      variant.writeHttpMetadata(framed);
+      framed.set('etag', etag);
+      framed.set('Cache-Control', 'public, max-age=31536000, immutable');
+      framed.set('Content-Type', 'image/webp');
+      return new Response(variant.body, { headers: framed });
+    }
   }
+
+  // No variant: the master is the right image, just larger than this place
+  // needs. Better a heavy cover than a missing one.
+  return new Response(object.body, { headers });
 };

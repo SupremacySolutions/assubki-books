@@ -830,6 +830,15 @@ async function integrity() {
     const framedTag = framed.headers.get('etag');
     t.ok(Boolean(plainTag) && plainTag !== framedTag, 'each preset has its own etag');
     t.ok(nonsense.headers.get('etag') === plainTag, 'and an unknown one keeps the original etag');
+
+    /*
+     * Sizes are stored beside the master rather than transformed on the way
+     * out, so a preset whose file was never made has to fall back to the master
+     * rather than 404 - an owner's upload has no variants at all, and neither
+     * does anything that predates the standardising pass.
+     */
+    t.ok(framed.headers.get('content-type')?.startsWith('image/'),
+      'a preset with no stored variant still returns an image');
   }
 
   // The home page was serving 800px covers into 84px slots, 28 of them. Every

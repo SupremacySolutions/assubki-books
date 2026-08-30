@@ -10,3 +10,6 @@ dist/
 # `node scripts/fetch-images.mjs`, then push with `node scripts/upload-covers.mjs`.
 public/img/books/
 .scratch/
+
+# Working files for scripts/standardise-covers.mjs - derived, never source.
+.cache/
