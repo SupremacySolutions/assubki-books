@@ -379,6 +379,30 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                     </div>
                   )}
 
+                  {/* A cancellation almost always has a reason, and the standing
+                      wording cannot know it - "your order has been cancelled"
+                      and nothing else invites a reply asking why. Whatever is
+                      written here reaches the email, their order page and
+                      Telegram, so the three cannot disagree. */}
+                  {step.action === 'cancelled' && (
+                    <div class="mb-4">
+                      <label for="cancel_note" class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                        Why, in your own words (optional)
+                      </label>
+                      <textarea
+                        id="cancel_note"
+                        name="cancel_note"
+                        rows="3"
+                        maxlength="600"
+                        placeholder="e.g. The printer has these out of stock until March - happy to reorder when they return."
+                        class="field font-[family-name:var(--font-body)] !text-[14px]"
+                      />
+                      <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">
+                        Goes with the email, their order page, and Telegram if they connected it.
+                      </p>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     class:list={['btn', step.danger || step.secondary ? 'btn-ghost' : 'btn-primary']}

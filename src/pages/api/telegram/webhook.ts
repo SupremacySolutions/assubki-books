@@ -144,6 +144,11 @@ export const POST: APIRoute = async ({ request }) => {
     const name = order.customer_name.split(' ')[0];
 
     /*
+     * No mention of sending a screenshot here. It used to be in this message,
+     * which arrives before there is a total, an account, or anything to pay -
+     * so it asked for proof of a payment that could not have happened yet. It
+     * now travels with the payment details, where it means something.
+     *
      * Someone who has ordered before does not need the connection explained
      * again - they set it up months ago. `bound` is any *other* order already
      * on this chat.
@@ -171,7 +176,6 @@ export const POST: APIRoute = async ({ request }) => {
           : [
               esc(`This chat is now connected to order ${order.ref}.`),
               esc('We will send your total and how to pay here as soon as the shop confirms it.'),
-              esc('Once you have paid you can send a screenshot here and it will reach the shop.'),
             ]),
       ].join('\n'),
     );

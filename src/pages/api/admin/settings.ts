@@ -43,7 +43,6 @@ export const POST: APIRoute = async ({ request }) => {
     await text(form, partLabelKey(slot), partLabelKey(slot), 40);
   }
 
-  await text(form, 'collection_address', 'collection_address', 300);
 
   const dropped = await retargetAlerts(form);
   await text(form, 'contact_telegram', 'contact_telegram', 80);

@@ -339,34 +339,31 @@
   }
 
   /*
-   * Each cover is its own width.
+   * Every cover the same size, filled and cropped to it.
    *
-   * A fixed 84px box with the cover fitted inside it left a margin down both
-   * sides of anything narrower, and the faint panel that used to sit behind
-   * the covers turned that margin into a visible white border. The panel is
-   * gone and the width comes from the cover, so there is nothing left to show:
-   * a 600x778 lands at 91px, a 617x800 at 90px, each ending where it ends.
+   * `cover` is doing real work here, not just filling a box: the scans carry a
+   * white margin of their own - six pixels each side of a 168px hero on most
+   * of them - and cropping is what takes it off. Fitting them instead put that
+   * border back on every cover in the strip, which is what it looked like.
    *
-   * The `min-width` is for the spines. An 88x800 would come out 13px wide and
-   * read as a gap in the row rather than as a book; with no panel behind it,
-   * the room it gains is transparent.
+   * Cropping is only safe because `shelfBooks` now offers upright covers only.
+   * A landscape photo or a spine would be butchered by this, so it is not
+   * given a slot rather than being handled here.
    */
   .shelf-book {
     display: block;
+    width: 84px;
     flex: none;
-    min-width: 34px;
     border-radius: 2px;
     overflow: hidden;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
     transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .shelf-book img {
-    width: auto;
+    width: 100%;
     height: 118px;
-    /* Only ever does anything for a cover narrower than the min-width. */
-    object-fit: contain;
+    object-fit: cover;
     display: block;
-    margin-inline: auto;
   }
   .shelf-book:hover,
   .shelf-book:focus-visible {

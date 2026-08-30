@@ -282,7 +282,15 @@ export async function relatedBooks(bookId: number, limit = 6): Promise<BookRow[]
   return results;
 }
 
-/** Books for the home shelf - in stock, with a cover, most recent first. */
+/**
+ * Books for the home shelf - in stock, with a cover, most recent first.
+ *
+ * Deliberately not filtered by cover shape, even though the drifting strip
+ * needs upright ones: these same rows are the "recently added" grid, which
+ * sizes to whatever shape a cover is and shows a wide one perfectly well.
+ * Narrowing the query would have quietly dropped books from that grid too.
+ * The strip does its own filtering.
+ */
 export async function shelfBooks(limit = 18): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(

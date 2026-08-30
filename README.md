@@ -101,13 +101,36 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   agrees (src/scripts/cover-clean.ts, src/components/CoverReview.astro).
   `/clean-check` mounts that dialog on its own in dev, which is the only way to
   drive it - the HTTP suite cannot click and the portal needs a password.
-- **Background removal is optional and refuses rather than guesses.** U²-Netp
-  (Apache-2.0; *not* BRIA RMBG, which is non-commercial) runs in the browser on
-  onnxruntime-web, loaded only when the box is ticked. Its output is already
-  0..1 - do not rescale it. Rescaling a mask from a crop that is all book turns
-  noise into a confident mask and paints the cover white; `checkMask` refuses
-  instead. The weights live in R2 under `models/` and are served by
-  src/pages/model/[...key].ts; the runtime is bundled with the site.
+- **Background removal is optional and refuses rather than guesses.** U²-Net
+  (Apache-2.0; *not* BRIA RMBG, which is non-commercial, and *not* the
+  `u2net_portrait` checkpoint, whose training set is not) runs in the browser
+  on onnxruntime-web, loaded only when the box is ticked. Two sizes, chosen in
+  the dialog: `u2netp` at 4MB and the full `u2net` at 168MB. Its output is
+  already 0..1 - do not rescale it. Rescaling a mask from a crop that is all
+  book turns noise into a confident mask and paints the cover white;
+  `checkMask` refuses instead, and `refineMask` tightens the soft edge that
+  otherwise leaves a fringe of background round the cover. The weights live in
+  R2 under `models/` and are served by src/pages/model/[...key].ts; the runtime
+  is bundled with the site.
+- **The shelf crops, and that is load-bearing.** The scans carry a white margin
+  of their own - six pixels each side of a 168px hero on most of them - and
+  `object-fit: cover` is what removes it. Anything that stops it cropping puts
+  that border back on every cover. Cropping is only safe because the strip is
+  given upright covers only (see `upright` in src/pages/index.astro); a
+  landscape photo or a spine is not offered a slot.
+- **A cut-out that came out wrong can be reported** from the dialog. It keeps
+  the photo, the result and a note in R2 under `reports/`. That is for working
+  out which of the edge handling, the thresholds or the model was at fault -
+  not for training: that would need hand-painted correct masks and a GPU, and a
+  handful of examples would overfit.
+- **Posting a paid order closes it.** `closesOnDispatch` in lib/order-status:
+  there is no second "mark as delivered" click, because on a paid order it told
+  the portal nothing. Cash on delivery is excluded - there the second step is
+  when the money arrives.
+- **Where a collecting customer is told to come** is the first written
+  collection draft (`collectionAddress()` in lib/settings). There used to be a
+  separate `collection_address` setting as well, so two places said where to
+  collect and could disagree.
 - **Do not name an R2 binding `IMAGES`.** The Astro Cloudflare adapter treats a
   binding of that name as the Cloudflare Images service and wires itself to it.
   The uploads bucket is `UPLOADS`.

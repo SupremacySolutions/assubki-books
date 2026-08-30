@@ -290,6 +290,8 @@ export interface OrderView {
   telegram: string | null;
   /** For collection orders: whether payment will be made in cash on pickup. */
   cash_payment: number;
+  /** What the owner said when cancelling, if anything. */
+  cancel_note: string | null;
   items: { title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null }[];
 }
 
@@ -299,7 +301,7 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
     `SELECT ref, status, customer_name, email, fulfilment, address, notes,
             subtotal_pence, postage_pence, total_pence, created_at, expires_at,
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
-            postage_provider, postage_service, telegram,
+            postage_provider, postage_service, telegram, cancel_note,
             access_token, telegram_chat_id, COALESCE(cash_payment, 0) as cash_payment
        FROM orders WHERE ref = ?`,
   )

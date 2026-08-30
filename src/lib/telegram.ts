@@ -321,8 +321,17 @@ export async function editListing(messageId: number, post: ListingPost): Promise
 export async function deleteChannelMessage(messageId: number): Promise<boolean> {
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) return false;
-  const result = await call('deleteMessage', { chat_id: channel, message_id: messageId });
-  return result !== null;
+
+  // A post that is already gone counts as gone. Telegram answers "message to
+  // delete not found" for one deleted by hand in the channel, and treating
+  // that as a failure made the portal warn about an orphaned announcement that
+  // does not exist - which is worse than saying nothing, because it sends the
+  // owner looking for something they already dealt with.
+  let missing = false;
+  const result = await call('deleteMessage', { chat_id: channel, message_id: messageId }, (why) => {
+    if (/not found/i.test(why)) missing = true;
+  });
+  return result !== null || missing;
 }
 
 /**

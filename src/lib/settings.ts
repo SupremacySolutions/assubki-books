@@ -23,6 +23,8 @@ export const PAYMENT_ACCOUNTS = [
   { slot: 'account_1', label: 'Main account' },
   { slot: 'account_2', label: 'Second account' },
   { slot: 'account_3', label: 'Third account' },
+  { slot: 'account_4', label: 'Fourth account' },
+  { slot: 'account_5', label: 'Fifth account' },
 ] as const;
 
 export const COLLECTION_PLACES = [
@@ -49,7 +51,6 @@ export type SettingKey =
   // lists and the union cannot drift apart.
   | `payment_part_${PartSlot}`
   | `payment_part_${PartSlot}_label`
-  | 'collection_address'
   // Bound by the owner tapping the deep link on the settings page - the bot
   // cannot start a conversation, so this is the only way to obtain it.
   | 'owner_telegram_chat_id'
@@ -123,6 +124,20 @@ export async function paymentOptions(): Promise<MessagePart[]> {
 /** Where they collect. Only ever offered on a collection. */
 export async function collectionPlaces(): Promise<MessagePart[]> {
   return parts(COLLECTION_PLACES);
+}
+
+/**
+ * The address a collecting customer is told to come to.
+ *
+ * There used to be a separate `collection_address` setting for this, written
+ * in its own box, while the message the owner actually sends was built from
+ * the collection place drafts - two places saying where to collect, which
+ * could disagree and did not have to be kept in step. The box is gone and this
+ * reads the first written draft, so there is one source of it.
+ */
+export async function collectionAddress(): Promise<string> {
+  const places = await collectionPlaces();
+  return places[0]?.body ?? '';
 }
 
 /**

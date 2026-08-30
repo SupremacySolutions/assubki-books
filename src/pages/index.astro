@@ -6,12 +6,25 @@ import { categoryTree, shelfBooks, catalogueStats } from '../lib/db';
 import { classmark } from '../lib/classmarks';
 import { SITE, imageUrl } from '../lib/format';
 
-const [tree, shelf, stats] = await Promise.all([categoryTree(), shelfBooks(20), catalogueStats()]);
+const [tree, shelf, stats] = await Promise.all([categoryTree(), shelfBooks(24), catalogueStats()]);
 const top = tree.slice(0, 8);
 
-// The drifting shelf behind the hero uses the same covers as the grid below,
-// so the browser fetches each image once and the second use is a cache hit.
-const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
+/*
+ * The drifting shelf behind the hero uses the same covers as the grid below,
+ * so the browser fetches each image once and the second use is a cache hit.
+ *
+ * Upright covers only, because the strip crops every one of them to a single
+ * size. Cropping is what keeps it even and what removes the white margin the
+ * scans carry - but a landscape photo cropped to 84x118 loses most of itself
+ * and a spine loses nearly all of it, so those are simply not offered a slot.
+ * The grid below is unaffected and shows them at their own shape.
+ *
+ * It costs almost nothing: of the in-stock covers, 198 are upright and 4 wide.
+ */
+const upright = (b: { width: number | null; height: number | null }) =>
+  Boolean(b.width && b.height) && b.width! / b.height! >= 0.6 && b.width! / b.height! <= 0.85;
+
+const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
 ---
 
 <Base wide description={`${stats.titles} Islamic titles - classical texts, Dars Nizami and Maktab syllabus sets, hadith, fiqh and tafsir. ${SITE.tagline}.`}>
@@ -70,34 +83,41 @@ const drifting = shelf.filter((b) => b.image_key).slice(0, 14);
           <div class="shelf-track">
             {drifting.map((book) => (
               <a class="shelf-book" href={`/book/${book.slug}`}>
-                {/* The cover's own size, not a fixed box: it gives the browser
-                    the aspect before the image arrives, so the row does not
-                    shuffle as covers load. */}
                 <img
                   src={imageUrl(book.image_key, 'hero')}
                   alt={book.title}
                   loading="lazy"
                   decoding="async"
-                  width={book.width ?? 84}
-                  height={book.height ?? 118}
+                  width="84"
+                  height="118"
                 />
               </a>
             ))}
             {/* The same covers again, so the drift can wrap without a visible
-                jump. A second copy of every link would be noise to a screen
-                reader and a second stop for the keyboard, so this half is
-                neither. */}
+                jump.
+
+                These are links too. They used to be plain spans, to keep a
+                second copy of every book out of a screen reader and off the
+                keyboard's path - but both halves are on screen and drifting
+                past, so that made roughly half the covers anyone could see
+                unclickable. `aria-hidden` and `tabindex="-1"` get the same
+                quiet without taking the click away. */}
             {drifting.map((book) => (
-              <span class="shelf-book" aria-hidden="true">
+              <a
+                class="shelf-book"
+                href={`/book/${book.slug}`}
+                aria-hidden="true"
+                tabindex="-1"
+              >
                 <img
                   src={imageUrl(book.image_key, 'hero')}
                   alt=""
                   loading="lazy"
                   decoding="async"
-                  width={book.width ?? 84}
-                  height={book.height ?? 118}
+                  width="84"
+                  height="118"
                 />
-              </span>
+              </a>
             ))}
           </div>
         </div>

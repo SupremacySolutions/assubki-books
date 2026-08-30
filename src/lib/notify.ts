@@ -161,6 +161,32 @@ function ownerPlaced(input: PlacedInput) {
  */
 export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
   const ownerChatId = await getSetting('owner_telegram_chat_id');
+
+  /*
+   * A customer whose chat is already linked hears about it here.
+   *
+   * There was never a placement message to the customer - only email - and a
+   * first-time customer does not notice, because tapping the connect link
+   * produces a welcome of its own. A returning customer, whose chat is carried
+   * forward by email address in `createOrder`, got nothing at all until the
+   * order was confirmed or cancelled: they had connected once, and Telegram
+   * then stayed silent through the part where they were waiting.
+   */
+  const telegramCustomer =
+    input.order.telegramChatId && botConfigured()
+      ? sendMessage(
+          input.order.telegramChatId,
+          [
+            esc(`السلام عليكم ${input.name.trim().split(/\s+/)[0]}`),
+            '',
+            `*${esc(`We have your request, ${input.order.ref}`)}*`,
+            '',
+            esc(input.order.items.map((i) => `• ${i.title}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join('\n')),
+            '',
+            esc('The shop will confirm it shortly and send the total and how to pay here.'),
+          ].join('\n'),
+        )
+      : Promise.resolve(false);
   const telegramOwner = ownerChatId && botConfigured()
     ? sendMessage(
         ownerChatId,
@@ -178,6 +204,7 @@ export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
     deliver({ to: input.email, replyTo: ownerAddress(), ...customerPlaced(input) }),
     deliver({ to: ownerAddress(), replyTo: input.email, ...ownerPlaced(input) }),
     telegramOwner,
+    telegramCustomer,
   ]);
   for (const r of results) {
     if (r.status === 'rejected') console.error('[notify] placed channel failed', r.reason);
@@ -207,6 +234,14 @@ export interface ConfirmedInput {
 
 function confirmedEmail(input: ConfirmedInput) {
   const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
+
+  /*
+   * A cancellation usually has a reason, and the standing wording cannot know
+   * it - "your order has been cancelled" and nothing else invites a reply
+   * asking why. It goes into all three places the customer might look, so they
+   * cannot disagree with each other.
+   */
+  const note = (input.cancelNote ?? '').trim();
   // Nothing is owed yet on a cash order, so the message stops asking for money
   // and asks for a time instead. The figures still go, because the customer
   // wants to know what they are bringing. Cash is no longer collection-only,
@@ -318,6 +353,13 @@ function confirmedTelegram(input: ConfirmedInput): string {
     '',
     esc(cash ? `Quote ${input.ref} ${moment}.` : `Please quote ${input.ref} with your payment.`),
   );
+
+  // Only where there is a payment to prove. A cash order has nothing to send a
+  // screenshot of - the money changes hands in person.
+  if (!cash) {
+    lines.push('', esc('When you have paid, send a screenshot here and it will reach the shop.'));
+  }
+
   return lines.join('\n');
 }
 
@@ -408,6 +450,8 @@ export async function notifyStatusChange(input: {
   collectionAddress?: string;
   /** Collection orders only: they are paying cash when they arrive. */
   cashPayment?: boolean;
+  /** The owner's own words when cancelling. Shown wherever the customer looks. */
+  cancelNote?: string | null;
 }): Promise<void> {
   // The words come from lib/order-status so that email, the customer page, the
   // timeline and the portal cannot drift apart - which is exactly how collection
@@ -433,11 +477,17 @@ export async function notifyStatusChange(input: {
         `Reference ${input.ref}`,
         `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(input.name)},</p>
          <p style="margin:0;font-size:15px;line-height:1.6">${escapeHtml(copy.line)}</p>
+         ${
+           note
+             ? `<p style="margin:16px 0 0;font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(note)}</p>`
+             : ''
+         }
          ${copy.trackingLink ? button(copy.trackingLink, 'Track this parcel') : ''}
          ${button(link, 'View your order')}`,
       ),
       text:
         `${copy.subject}\n\nالسلام عليكم ${input.name},\n\n${copy.line}\n\n` +
+        (note ? `${note}\n\n` : '') +
         (copy.trackingLink ? `Track it here: ${copy.trackingLink}\n\n` : '') +
         `${link}\n`,
     }),
@@ -445,6 +495,7 @@ export async function notifyStatusChange(input: {
       ? sendMessage(
           input.telegramChatId,
           `*${esc(copy.subject)}*\n\n${esc(copy.line)}` +
+            (note ? `\n\n${esc(note)}` : '') +
             (copy.trackingLink ? `\n\n${mdLink('Track it here', copy.trackingLink)}` : ''),
         )
       : Promise.resolve(false),

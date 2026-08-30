@@ -350,14 +350,28 @@ export function nextActions(
             cancel,
           ];
 
+    /*
+     * A posted order is finished when it is posted.
+     *
+     * There used to be a "Mark as delivered" button here for every order, and
+     * on a paid one it carried no information: the money was in, the parcel
+     * was gone, and the click only told the portal something it already knew.
+     * Posting now closes it outright - see `closesOnDispatch`.
+     *
+     * Cash on delivery is the exception, and the reason this is not simply
+     * removed: there the second step is when the money actually arrives, so
+     * closing at dispatch would file an unpaid order as done.
+     */
     case 'dispatched':
-      return [
-        {
-          action: 'completed',
-          label: 'Mark as delivered',
-          hint: cash ? 'Closes the order - take the cash when you hand them over.' : 'Closes the order.',
-        },
-      ];
+      return cash
+        ? [
+            {
+              action: 'completed',
+              label: 'Cash received, close the order',
+              hint: 'Use once you have handed them over and been paid.',
+            },
+          ]
+        : [];
 
     // completed, cancelled, expired
     default:
@@ -373,6 +387,16 @@ export function nextActions(
  * collection order has no route to `dispatched` - there is nothing to post -
  * and this is what refuses a request crafted by hand.
  */
+/**
+ * Whether posting this order also finishes it.
+ *
+ * Only for orders that are already paid for. A cash order still owes money at
+ * the point it is sent, so it keeps its second step.
+ */
+export function closesOnDispatch(fulfilment: string, cashPayment = false): boolean {
+  return !isCollection(fulfilment) && !cashPayment;
+}
+
 export function canTransition(
   from: string,
   to: string,

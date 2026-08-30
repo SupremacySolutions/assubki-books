@@ -2,8 +2,8 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getOrderByRef } from '../../../../../lib/admin-db';
 import { notifyStatusChange } from '../../../../../lib/notify';
-import { canTransition, isPostageProvider } from '../../../../../lib/order-status';
-import { getSetting } from '../../../../../lib/settings';
+import { canTransition, closesOnDispatch, isPostageProvider } from '../../../../../lib/order-status';
+import { collectionAddress } from '../../../../../lib/settings';
 
 export const prerender = false;
 
@@ -23,6 +23,8 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   const submitted = String(form.get('postage_provider') ?? '').trim();
   const provider = isPostageProvider(submitted) ? submitted : null;
   const service = String(form.get('postage_service') ?? '').trim().slice(0, 60) || null;
+  // The owner's own words when cancelling. Empty means the standing wording.
+  const cancelNote = String(form.get('cancel_note') ?? '').trim().slice(0, 600) || null;
 
   // The permitted moves come from the same table that draws the buttons, so the
   // endpoint cannot accept something the portal never offered. This is also what
@@ -59,7 +61,27 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     binds.push(tracking, provider, service);
   }
 
-  if (next === 'completed') sets.push('completed_at = unixepoch()');
+  if (next === 'cancelled' && cancelNote) {
+    sets.push('cancel_note = ?');
+    binds.push(cancelNote);
+  }
+
+  /*
+   * Posting a paid order finishes it.
+   *
+   * The status the customer is told about is still 'dispatched' - that is what
+   * happened, and it is what the message says - but the order is filed as
+   * completed in the same write rather than waiting for a second click that
+   * carried no information. Cash on delivery is excluded: there the money has
+   * not arrived yet.
+   */
+  const finishesNow = next === 'dispatched' &&
+    closesOnDispatch(order.fulfilment, Boolean(order.cash_payment));
+
+  if (next === 'completed' || finishesNow) sets.push('completed_at = unixepoch()');
+  // `binds[0]` is what `status = ?` receives; nothing else has been bound to
+  // the front of the list, and order.id is pushed after this.
+  if (finishesNow) binds[0] = 'completed';
 
   binds.push(order.id);
 
@@ -111,9 +133,9 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   await env.DB.batch(statements);
 
   // A collection customer who has just paid needs to know where to come.
-  const collectionAddress =
+  const whereToCollect =
     next === 'paid' && order.fulfilment === 'collection'
-      ? await getSetting('collection_address')
+      ? await collectionAddress()
       : '';
 
   await notifyStatusChange({
@@ -122,12 +144,16 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     name: order.customer_name,
     email: order.email,
     telegramChatId: order.telegram_chat_id,
+    // Deliberately `next`, not the stored status: a posted order is filed as
+    // completed straight away, but what the customer needs to hear is that it
+    // has been sent, with the tracking number.
     status: next,
+    cancelNote,
     fulfilment: order.fulfilment,
     origin: url.origin,
     tracking,
     provider,
-    collectionAddress,
+    collectionAddress: whereToCollect,
     cashPayment: Boolean(order.cash_payment),
   }).catch((err) => console.error('[admin] status notification failed', ref, err));
 

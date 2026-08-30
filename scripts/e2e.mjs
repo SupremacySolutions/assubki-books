@@ -66,6 +66,29 @@ async function publicCatalogue() {
     'the hero shelf covers link to their books');
 
   /*
+   * The strip crops every cover to one size - that is what keeps it even and
+   * what takes off the white margin the scans carry. It only works because
+   * the covers offered to it are upright: a landscape photo cropped to 84x118
+   * loses most of itself, and one did, appearing at nearly twice the width of
+   * everything beside it.
+   */
+  const shelfImgs = [...home.matchAll(/<(?:a|span) class="shelf-book"[\s\S]*?<img[^>]*>/g)].map((m) => m[0]);
+  t.ok(shelfImgs.length > 0 && shelfImgs.every((tag) => /width="84"[^>]*height="118"/.test(tag)),
+    'every cover on the shelf is given the same box');
+
+  /*
+   * Both halves have to be links. The covers are laid out twice so the drift
+   * can wrap without a jump, and the second copy used to be plain spans - kept
+   * out of a screen reader's way, but also unclickable, which is half of what
+   * anyone sees drifting past.
+   */
+  const shelfSlots = [...home.matchAll(/<(a|span) class="shelf-book"/g)].map((m) => m[1]);
+  t.ok(shelfSlots.length > 0 && shelfSlots.every((tag) => tag === 'a'),
+    `every cover on the shelf is clickable, both copies (${shelfSlots.filter((x) => x !== 'a').length} were not)`);
+  t.ok((home.match(/aria-hidden="true"[^>]*tabindex="-1"|tabindex="-1"[^>]*aria-hidden="true"/g) ?? []).length > 0,
+    'and the duplicate half stays out of the keyboard and screen reader path');
+
+  /*
    * A t.me link does nothing for someone without Telegram and the page cannot
    * tell, so every route is offered at once behind one tap.
    */
@@ -837,6 +860,36 @@ async function integrity() {
   const uploadedBody = uploaded.body;
   t.ok(uploaded.status === 200 && uploadedBody.key, 'a photo can be uploaded');
 
+  /*
+   * Reporting a bad cut-out. Kept for diagnosis, not for training - fine-tuning
+   * would need hand-painted correct masks and a GPU, and a handful of examples
+   * would only overfit. What these answer is which of three things was at
+   * fault: the edge handling, the thresholds, or the model.
+   */
+  const reportForm = new FormData();
+  reportForm.append('original', new File([png], 'original.webp', { type: 'image/webp' }));
+  reportForm.append('result', new File([png], 'result.webp', { type: 'image/webp' }));
+  reportForm.append('note', JSON.stringify({ erased: true, quality: 'quick' }));
+  const reported = await adminUpload('/api/admin/report-cover', reportForm);
+  t.ok(reported.status === 200 && reported.body?.id, 'a bad cut-out can be reported');
+
+  // The id is the folder it was kept in - both pictures and the note, so the
+  // interesting part is there to look at: the difference between what went in
+  // and what came out.
+  t.ok(typeof reported.body?.id === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(reported.body.id),
+    'and comes back with a timestamped id naming where it was kept');
+
+  // Reporting must not need a signed-in session to be *skipped* - it is behind
+  // the same guard as every other admin route, and a stranger must not be able
+  // to fill the bucket with it.
+  const strangerReport = await fetch(`${SITE}/api/admin/report-cover`, {
+    method: 'POST',
+    headers: ORIGIN,
+    body: new FormData(),
+    redirect: 'manual',
+  });
+  t.ok(strangerReport.status !== 200, 'and a stranger cannot post one');
+
   if (uploadedBody.key) {
     const key = uploadedBody.key;
 
@@ -1093,6 +1146,26 @@ async function integrity() {
   t.ok(clean.checkMask(sliver, fitAll) === sliver,
     'a book filling only a tenth of a loose crop is still erased around');
 
+  /*
+   * The fringe. A soft mask edge is where the trailing colour came from: a
+   * band of half-claimed pixels, each one part book and part table, kept
+   * because a nearest-neighbour read smeared them across two or three of the
+   * image's own pixels.
+   */
+  const softEdge = new Float32Array(clean.MASK_EDGE * clean.MASK_EDGE);
+  for (let y = 0; y < clean.MASK_EDGE; y++) {
+    for (let x = 0; x < clean.MASK_EDGE; x++) {
+      const d = Math.hypot(x - 160, y - 160);
+      softEdge[y * clean.MASK_EDGE + x] = d < 77 ? 1 : d > 83 ? 0 : (83 - d) / 6;
+    }
+  }
+  const fringe = (m) => m.reduce((n, v) => n + (v > 0.05 && v < 0.95 ? 1 : 0), 0);
+  const tightened = clean.refineMask(softEdge);
+  t.ok(fringe(tightened) < fringe(softEdge) * 0.3,
+    `tightening the mask drops the fringe that carried the trailing colour (${fringe(softEdge)} -> ${fringe(tightened)})`);
+  t.ok(tightened[160 * clean.MASK_EDGE + 160] === 1,
+    'and leaves the middle of the book completely alone');
+
   // And the erase keeps what the mask claims and whitens the rest. The mask
   // covers the top-left quarter of the fit, so one corner survives and the
   // opposite one does not.
@@ -1338,11 +1411,36 @@ async function lifecycle() {
   t.ok(Boolean(dRow.pa) && Boolean(dRow.da), 'delivery: both timestamps are stamped together');
   t.ok(dRow.pp === 'Evri', 'delivery: the carrier is recorded');
 
+  /*
+   * Posting a paid order finishes it. The second click that used to be here -
+   * "Mark as delivered" - told the portal nothing it did not already know: the
+   * money was in and the parcel had gone.
+   */
+  t.ok(dRow.status === 'completed', 'delivery: posting a paid order closes it in one action');
+  t.ok((await html(`/admin/orders/${d.ref}`)).includes('Mark as delivered') === false,
+    'and there is no second button left asking to confirm it');
+
   // The combined action must still take the copies off the shelf - skipping
   // 'paid' cannot mean skipping the sale.
   const sold = await one(`SELECT reserved r, stock s FROM books WHERE id=${dBook.id}`);
   t.ok(sold.s === held.s - 1 && sold.r === held.r - 1,
     'delivery: the combined action still converts the hold into a sale');
+
+  /*
+   * Cash on delivery is the exception, and the reason dispatch is not simply
+   * terminal for everyone: the money has not arrived when the parcel leaves,
+   * so closing it there would file an unpaid order as done.
+   */
+  const codBook = await makeBook();
+  const cod = await placeOrder(codBook.id, 'delivery');
+  await admin(`/api/admin/orders/${cod.ref}/cash-payment`, { cash_payment: '1' });
+  await admin(`/api/admin/orders/${cod.ref}/confirm`, { postage: '3.95', payment_message: 'Cash on the door.' });
+  await admin(`/api/admin/orders/${cod.ref}/status`, { status: 'dispatched', tracking: 'C00987654321' });
+  const codRow = await one(`SELECT status FROM orders WHERE ref='${cod.ref}'`);
+  t.ok(codRow.status === 'dispatched',
+    `cash on delivery stays open when it is posted (was ${codRow.status})`);
+  t.ok((await html(`/admin/orders/${cod.ref}`)).includes('Cash received'),
+    'and still offers the step where the money actually arrives');
 
   const dPage = await html(`/order?ref=${d.ref}&t=${d.token}`);
   t.ok(dPage.includes('H00123456789'), 'delivery: the tracking number reaches the customer');
@@ -1411,8 +1509,12 @@ async function lifecycle() {
   t.ok(blank.p === null, 'leaving the carrier unset records no carrier, not Royal Mail');
   t.ok(!dPage.includes('Total to pay'), 'delivery: a paid order stops asking to be paid');
 
+  // Already closed by the posting, so there is nothing left to move it to -
+  // and the endpoint refuses, because the buttons no longer offer it. This
+  // used to assert the opposite; the second click is the thing that went.
   const dDone = await admin(`/api/admin/orders/${d.ref}/status`, { status: 'completed' });
-  t.ok(dDone.status === 302 && !dDone.location.includes('e=state'), 'delivery: can be marked delivered');
+  t.ok(dDone.location.includes('e=state'),
+    'delivery: a posted order is already closed, so it cannot be closed again');
   t.ok((await html(`/order?ref=${d.ref}&t=${d.token}`)).includes('Delivered'),
     'delivery: final state reads Delivered');
 }

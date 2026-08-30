@@ -22,6 +22,7 @@ import {
   maskFit,
   toTensor,
   checkMask,
+  refineMask,
   eraseBackground,
 } from './cover-clean';
 
@@ -34,6 +35,7 @@ export function mountCoverReview(): void {
   const note = document.querySelector<HTMLElement>('#cleanNote');
   const erase = document.querySelector<HTMLInputElement>('#cleanErase');
   const eraseNote = document.querySelector<HTMLElement>('#cleanEraseNote');
+  const qualityRow = document.querySelector<HTMLElement>('#cleanQualityRow');
 
   /** How big the photo is drawn while it is being adjusted. */
   const STAGE_EDGE = 420;
@@ -57,13 +59,29 @@ export function mountCoverReview(): void {
       const pts = corners.map(toStage);
       const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join(' ') + ' Z';
       overlay.setAttribute('viewBox', `0 0 ${sourceCanvas.width} ${sourceCanvas.height}`);
+      /*
+       * Two circles per corner: the one that is seen, and a bigger invisible
+       * one that catches the touch. A 9px handle is comfortable under a mouse
+       * and far too small under a fingertip, and this is mostly used on a
+       * phone.
+       *
+       * The hit radius is worked back from how large the canvas is actually
+       * drawn, so it stays about 40 real pixels whatever the screen. Fixed in
+       * the viewBox it shrank with the stage - 32px on a phone, which is where
+       * it mattered most.
+       */
+      const drawnWidth = sourceCanvas.getBoundingClientRect().width || sourceCanvas.width;
+      const perPixel = sourceCanvas.width / drawnWidth;
+      const grab = Math.max(12, 20 * perPixel);
       overlay.innerHTML =
         `<path d="${d}" fill="rgba(24,68,133,0.12)" stroke="#184485" stroke-width="2"/>` +
         pts
           .map(
             (p, i) =>
+              `<circle data-corner="${i}" cx="${p.x}" cy="${p.y}" r="${grab.toFixed(1)}" ` +
+              `fill="transparent" style="cursor:grab"/>` +
               `<circle data-corner="${i}" cx="${p.x}" cy="${p.y}" r="9" fill="#fff" ` +
-              `stroke="#184485" stroke-width="2.5" style="cursor:grab"/>`,
+              `stroke="#184485" stroke-width="2.5" style="cursor:grab;pointer-events:none"/>`,
           )
           .join('');
     };
@@ -102,11 +120,63 @@ export function mountCoverReview(): void {
      * does not know how to read. The preprocessing it needs is four lines and
      * it is written down in the model's own config.
      */
+    /**
+     * Which weights to use.
+     *
+     * The two are the same network at two sizes - identical input, output and
+     * preprocessing, so switching is only a different file. Quick is 4MB and
+     * good enough for a cover on a plain surface; Better is 168MB and worth it
+     * when the first one leaves a mess. Remembered, so it is answered once
+     * rather than on every photo, and defaulting to Quick because 168MB over a
+     * phone connection is not something to spend on somebody's behalf.
+     */
+    const MODELS: Record<string, string> = {
+      quick: '/model/models/u2netp/model.onnx',
+      better: '/model/models/u2net/model.onnx',
+    };
+
+    const chosenQuality = (): string => {
+      const picked = document.querySelector<HTMLInputElement>('input[name="cleanQuality"]:checked');
+      return picked?.value === 'better' ? 'better' : 'quick';
+    };
+
+    try {
+      const remembered = localStorage.getItem('coverEraseQuality');
+      if (remembered === 'better') {
+        const better = document.querySelector<HTMLInputElement>('input[name="cleanQuality"][value="better"]');
+        if (better) better.checked = true;
+      }
+    } catch {
+      // Private browsing, or storage refused. The default is fine.
+    }
+
+    for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="cleanQuality"]')) {
+      radio.addEventListener('change', () => {
+        try {
+          localStorage.setItem('coverEraseQuality', chosenQuality());
+        } catch {
+          /* not worth failing over */
+        }
+        // A different model means a different mask, so redo it rather than
+        // leaving the picture from the one they just switched away from.
+        if (erase?.checked) void applyErase();
+      });
+    }
+
+    // One session per model, so switching back and forth does not re-download.
+    const sessions: Record<string, unknown> = {};
     let session: unknown = null;
     let loading: Promise<unknown> | null = null;
+    let loadedQuality: string | null = null;
 
-    const loadModel = () => {
-      if (!loading) {
+    const loadModel = (quality: string) => {
+      if (sessions[quality]) {
+        session = sessions[quality];
+        loadedQuality = quality;
+        return Promise.resolve(session);
+      }
+      if (!loading || loadedQuality !== quality) {
+        loadedQuality = quality;
         loading = (async () => {
           // The wasm-only entry point, not the default one: the default
           // bundles WebGPU and asks for a separate JSEP build of the runtime,
@@ -119,7 +189,8 @@ export function mountCoverReview(): void {
           // Threads need cross-origin isolation headers the site does not send;
           // without this it would try, fail, and fall back noisily.
           ort.env.wasm.numThreads = 1;
-          session = await ort.InferenceSession.create('/model/models/u2netp/model.onnx');
+          session = await ort.InferenceSession.create(MODELS[quality]);
+          sessions[quality] = session;
           return session;
         })().catch((err) => {
           loading = null; // let them try again rather than being stuck
@@ -144,10 +215,17 @@ export function mountCoverReview(): void {
         eraseNote.textContent = text;
       };
 
+      const quality = chosenQuality();
       try {
-        showing(session ? 'Working…' : 'Fetching the model, about 18MB - this happens once…');
+        showing(
+          sessions[quality]
+            ? 'Working…'
+            : quality === 'better'
+              ? 'Fetching the better model, 168MB - this happens once…'
+              : 'Fetching the model, a few megabytes - this happens once…',
+        );
         const ort = await import('onnxruntime-web/wasm');
-        await loadModel();
+        await loadModel(quality);
 
         // The crop, letterboxed into the square the model expects.
         const fit = maskFit(cropped.width, cropped.height);
@@ -188,7 +266,9 @@ export function mountCoverReview(): void {
           cropped.width,
           cropped.height,
         );
-        eraseBackground(out, mask, fit);
+        // Tightened before it is applied, or the soft boundary leaves a fringe
+        // of whatever was behind the book smeared along every edge.
+        eraseBackground(out, refineMask(mask), fit);
         resultCanvas.getContext('2d')!.putImageData(out, 0, 0);
         eraseNote.hidden = true;
       } catch (err) {
@@ -200,6 +280,7 @@ export function mountCoverReview(): void {
     };
 
     erase?.addEventListener('change', () => {
+      if (qualityRow) qualityRow.hidden = !erase.checked;
       if (erase.checked) {
         void applyErase();
       } else if (cropped) {
@@ -297,6 +378,52 @@ export function mountCoverReview(): void {
 
     document.querySelector('#cleanCancel')?.addEventListener('click', () => close(null));
 
+    /*
+     * Keeps a copy of one that came out wrong, and changes nothing else.
+     *
+     * Deliberately not an exit: the dialog stays open on the same photo with
+     * the same three choices, because reporting a bad cut-out is not the same
+     * as giving up on the upload - the owner may still want the crop, or the
+     * photo as it is.
+     */
+    const report = document.querySelector<HTMLButtonElement>('#cleanReport');
+    report?.addEventListener('click', async () => {
+      if (!full || !note) return;
+      const label = report.textContent;
+      report.disabled = true;
+      report.textContent = 'Saving…';
+      try {
+        const asBlob = (canvas: HTMLCanvasElement) =>
+          new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/webp', 0.9));
+        const [before, after] = await Promise.all([asBlob(full), asBlob(resultCanvas)]);
+        if (!before || !after) throw new Error('could not read the pictures back');
+
+        const body = new FormData();
+        body.append('original', new File([before], 'original.webp', { type: 'image/webp' }));
+        body.append('result', new File([after], 'result.webp', { type: 'image/webp' }));
+        body.append(
+          'note',
+          JSON.stringify({
+            photo: { width: full.width, height: full.height },
+            result: { width: resultCanvas.width, height: resultCanvas.height },
+            corners,
+            erased: Boolean(erase?.checked),
+            quality: chosenQuality(),
+          }),
+        );
+
+        const res = await fetch('/api/admin/report-cover', { method: 'POST', body });
+        if (!res.ok) throw new Error(await res.text());
+        note.textContent = 'Saved, thank you - this one will be looked at.';
+        report.textContent = 'Reported';
+      } catch (err) {
+        console.error('report failed', err);
+        note.textContent = 'Could not save that report. The photo is unaffected.';
+        report.textContent = label ?? 'Report this one';
+        report.disabled = false;
+      }
+    });
+
     document.querySelector('#cleanRaw')?.addEventListener('click', () => {
       // Their photo untouched, straight from the canvas it was drawn on.
       full?.toBlob((blob) => {
@@ -372,10 +499,22 @@ export function mountCoverReview(): void {
       // straighten the next one.
       if (erase) erase.checked = false;
       if (eraseNote) eraseNote.hidden = true;
+      if (qualityRow) qualityRow.hidden = true;
+      if (report) {
+        report.disabled = false;
+        report.textContent = 'Report this one';
+      }
 
       paintOverlay();
       paintResult();
       panel.showModal();
+
+      // Painted again now it is on screen. The handles size themselves from
+      // how large the canvas is actually drawn, and before `showModal` it has
+      // no layout to measure - so the first paint fell back to a fixed size
+      // and the touch targets came out smaller on a phone, which is the one
+      // place they had to be bigger.
+      paintOverlay();
 
       return new Promise<File | null>((resolve) => {
         settle = resolve;

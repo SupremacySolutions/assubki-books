@@ -440,6 +440,43 @@ export function checkMask(mask: Float32Array, fit: MaskFit): Float32Array | null
 }
 
 /**
+ * Tightens a mask before it is applied.
+ *
+ * This is where the trailing colour came from. The mask is 320px and the crop
+ * can be 800, and the model's boundary is soft - so around the whole cover
+ * there is a band of half-claimed pixels that are part book, part table.
+ * Keeping them keeps a fringe of the table, smeared along every edge.
+ *
+ * Two passes fix it. **Shrink** takes the smallest alpha in a small
+ * neighbourhood, which pulls the boundary inwards so the half-and-half band
+ * falls outside it. **Harden** then pushes what is left away from the middle,
+ * so a pixel is the book or it is not, rather than a blend of the book and
+ * what was behind it.
+ */
+export function refineMask(mask: Float32Array, shrink = 1, harden = 6): Float32Array {
+  const eroded = new Float32Array(mask.length);
+  for (let y = 0; y < MASK_EDGE; y++) {
+    for (let x = 0; x < MASK_EDGE; x++) {
+      let lowest = 1;
+      for (let dy = -shrink; dy <= shrink; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= MASK_EDGE) continue;
+        for (let dx = -shrink; dx <= shrink; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= MASK_EDGE) continue;
+          const v = mask[yy * MASK_EDGE + xx];
+          if (v < lowest) lowest = v;
+        }
+      }
+      // Steepened about the middle, then clamped.
+      const pushed = (lowest - 0.5) * harden + 0.5;
+      eroded[y * MASK_EDGE + x] = pushed < 0 ? 0 : pushed > 1 ? 1 : pushed;
+    }
+  }
+  return eroded;
+}
+
+/**
  * Paints everything the mask does not claim white, in place.
  *
  * The mask is 320x320 with the photo occupying only `fit` of it, so sampling
@@ -454,12 +491,25 @@ export function eraseBackground(
 ): void {
   const { width: w, height: h } = image;
   for (let y = 0; y < h; y++) {
-    // Nearest neighbour: the mask is soft to begin with and a bilinear read
-    // buys nothing visible at this size.
-    const my = Math.min(fit.height - 1, Math.floor((y / h) * fit.height));
+    // Sampled bilinearly. Nearest neighbour stretched each mask pixel across
+    // two or three of the image's, so the boundary came out as steps and each
+    // step carried a little of the background with it.
+    const fy = Math.min(fit.height - 1, (y / h) * fit.height);
+    const y0 = Math.floor(fy);
+    const y1 = Math.min(fit.height - 1, y0 + 1);
+    const wy = fy - y0;
+
     for (let x = 0; x < w; x++) {
-      const mx = Math.min(fit.width - 1, Math.floor((x / w) * fit.width));
-      const alpha = mask[my * MASK_EDGE + mx];
+      const fx = Math.min(fit.width - 1, (x / w) * fit.width);
+      const x0 = Math.floor(fx);
+      const x1 = Math.min(fit.width - 1, x0 + 1);
+      const wx = fx - x0;
+
+      const alpha =
+        mask[y0 * MASK_EDGE + x0] * (1 - wx) * (1 - wy) +
+        mask[y0 * MASK_EDGE + x1] * wx * (1 - wy) +
+        mask[y1 * MASK_EDGE + x0] * (1 - wx) * wy +
+        mask[y1 * MASK_EDGE + x1] * wx * wy;
       const p = (y * w + x) * 4;
       for (let c = 0; c < 3; c++) {
         image.data[p + c] = image.data[p + c] * alpha + 255 * (1 - alpha);

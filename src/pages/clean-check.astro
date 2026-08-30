@@ -15,7 +15,13 @@ import CoverReview from '../components/CoverReview.astro';
 if (!import.meta.env.DEV) return Astro.rewrite('/404');
 ---
 <html lang="en">
-  <head><title>Cover review bench</title></head>
+  <head>
+    <meta charset="utf-8" />
+    {/* Without this the bench renders at 980px and a phone check proves
+        nothing. The real portal gets it from the Admin layout. */}
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cover review bench</title>
+  </head>
   <body class="p-6 bg-white">
     <CoverReview />
     <script>
