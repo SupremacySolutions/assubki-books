@@ -123,6 +123,15 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   out which of the edge handling, the thresholds or the model was at fault -
   not for training: that would need hand-painted correct masks and a GPU, and a
   handful of examples would overfit.
+- **A set sold in parts is several ordinary listings, not one clever one.**
+  Each way of buying it is its own `books` row linked by `set_id`, so holds,
+  the ledger, cancellation and the expiry sweep never learned about sets. Only
+  two things know: `applySetAvailability` in lib/db reads it, and the payment
+  branch of orders/[ref]/status decrements it.
+- **Set stock is a count per volume, not a number of sets.** Sell volumes 1-2
+  out of three sets and you hold two complete sets *and three* of volumes 3-4;
+  no single number says both. Availability of an option is the smallest count
+  among the volumes it covers, minus what any overlapping option is holding.
 - **Never roll a category tree up in SQL here.** `categoryCounts` used
   `JOIN categories d ON d.path = c.path OR d.path LIKE c.path || '/%'`, which
   cannot use an index, so it nested-looped categories against categories

@@ -36,6 +36,10 @@ export interface BookRow {
   height: number | null;
   /** Only set when the listing is a set, so the card can say "4 volumes". */
   volumes: number | null;
+  /** Set only for a listing that is one option of a splittable set. */
+  set_id: number | null;
+  set_from: number | null;
+  set_to: number | null;
   cat_slugs: string | null;
 }
 
@@ -52,6 +56,7 @@ const db = () => env.DB;
 
 const BOOK_SELECT = `
   SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved, b.volumes,
+         b.set_id, b.set_from, b.set_to,
          (b.stock - b.reserved) AS available,
          i.image_key, i.width, i.height,
          (SELECT group_concat(c2.slug) FROM book_categories bc2
@@ -260,7 +265,7 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
 
   const total = countRow?.n ?? 0;
   return {
-    books: listRes.results,
+    books: await applySetAvailability(listRes.results),
     total,
     page,
     pages: Math.max(1, Math.ceil(total / perPage)),
@@ -282,6 +287,11 @@ export async function bookBySlug(slug: string): Promise<BookDetail | null> {
     .bind(slug)
     .first<BookDetail>();
   if (!book) return null;
+
+  // A listing that is one option of a set has no stock of its own worth
+  // reading; what it can sell depends on the volumes and on what the other
+  // options have taken.
+  if (book.set_id) await applySetAvailability([book]);
 
   const [images, cats] = await Promise.all([
     db()
@@ -330,7 +340,7 @@ export async function relatedBooks(bookId: number, limit = 6): Promise<BookRow[]
     )
     .bind(bookId, limit)
     .all<BookRow>();
-  return results;
+  return applySetAvailability(results);
 }
 
 /**
@@ -351,7 +361,79 @@ export async function shelfBooks(limit = 18): Promise<BookRow[]> {
     )
     .bind(limit)
     .all<BookRow>();
-  return results;
+  return applySetAvailability(results);
+}
+
+/**
+ * Fills in `available` for any listing that is part of a set.
+ *
+ * An ordinary listing keeps `stock - reserved`, which is what the select
+ * already returned. A listing in a set has no stock of its own worth reading:
+ * what it can sell is decided by the volumes it covers and by what everyone
+ * else has taken.
+ *
+ *     available = min over the volumes it covers of
+ *                   (how many of that volume are on the shelf
+ *                    − how many are held by *any* option covering it)
+ *
+ * The sibling part is the point. Somebody holding volumes 1-2 has spoken for
+ * one set's first half, so the complete set can no longer be sold that many
+ * times either - which is exactly the behaviour the owner described.
+ *
+ * Deliberately a second query rather than a subquery inside `BOOK_SELECT`:
+ * that select runs on every catalogue page, and a correlated join in it is
+ * precisely what cost this database 95% of its read budget once already. Sets
+ * are rare, so this runs only when one is actually on the page.
+ */
+async function applySetAvailability<T extends BookRow>(books: T[]): Promise<T[]> {
+  const inSets = books.filter((b) => b.set_id);
+  if (inSets.length === 0) return books;
+
+  const ids = [...new Set(inSets.map((b) => b.set_id))];
+  const { results } = await db()
+    .prepare(
+      `SELECT m.id AS bookId,
+              MIN(v.have - COALESCE((
+                SELECT SUM(o.reserved) FROM books o
+                 WHERE o.set_id = m.set_id
+                   AND v.volume BETWEEN o.set_from AND o.set_to
+              ), 0)) AS available
+         FROM books m
+         JOIN book_set_stock v
+           ON v.set_id = m.set_id AND v.volume BETWEEN m.set_from AND m.set_to
+        WHERE m.set_id IN (${ids.map(() => '?').join(',')})
+        GROUP BY m.id`,
+    )
+    .bind(...ids)
+    .all<{ bookId: number; available: number }>();
+
+  const byId = new Map(results.map((r) => [r.bookId, r.available]));
+  for (const book of books) {
+    if (!book.set_id) continue;
+    // Never negative: an owner who lowers the shelf count below what is
+    // already held should read as "none left", not as a negative number.
+    book.available = Math.max(0, byId.get(book.id) ?? 0);
+  }
+  return books;
+}
+
+/**
+ * The other ways this set can be bought.
+ *
+ * Every option is an ordinary listing, so this is just its siblings, ordered
+ * widest first - the complete set reads as the headline and the parts as ways
+ * of breaking it up, which is how the owner thinks of them.
+ */
+export async function setOptions(setId: number): Promise<BookRow[]> {
+  const { results } = await db()
+    .prepare(
+      `${BOOK_SELECT}
+        WHERE b.set_id = ? AND b.status = 'live'
+        ORDER BY (b.set_to - b.set_from) DESC, b.set_from`,
+    )
+    .bind(setId)
+    .all<BookRow>();
+  return applySetAvailability(results);
 }
 
 export async function catalogueStats(): Promise<{ titles: number; inStock: number }> {
@@ -373,5 +455,5 @@ export async function booksByIds(ids: number[]): Promise<BookRow[]> {
     .prepare(`${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND b.status = 'live'`)
     .bind(...ids)
     .all<BookRow>();
-  return results;
+  return applySetAvailability(results);
 }

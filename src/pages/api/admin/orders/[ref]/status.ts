@@ -104,6 +104,37 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     );
   }
 
+  /*
+   * A sold set option comes off the shelf a volume at a time.
+   *
+   * The listing's own `stock` is not what decides a set option's availability -
+   * the per-volume counts are - so the sale has to reach them. Selling volumes
+   * 1-2 takes one off volumes 1 and 2 and leaves 3 and 4 alone, which is what
+   * makes the other half stay available while the complete set cannot be.
+   *
+   * Only here. Holds are still just `reserved` on the listing row, and the
+   * availability sum reads those live, so nothing else in ordering changed.
+   */
+  if (recordsPayment) {
+    statements.push(
+      env.DB.prepare(
+        `UPDATE book_set_stock
+            SET have = MAX(0, have - COALESCE((
+                  SELECT SUM(oi.qty) FROM order_items oi
+                    JOIN books b ON b.id = oi.book_id
+                   WHERE oi.order_id = ?1
+                     AND b.set_id = book_set_stock.set_id
+                     AND book_set_stock.volume BETWEEN b.set_from AND b.set_to
+                ), 0))
+          WHERE set_id IN (
+                  SELECT DISTINCT b.set_id FROM order_items oi
+                    JOIN books b ON b.id = oi.book_id
+                   WHERE oi.order_id = ?1 AND b.set_id IS NOT NULL
+                )`,
+      ).bind(order.id),
+    );
+  }
+
   // Payment received converts the hold into a real reduction in stock: the
   // copies are leaving the shop, so they come off both counters.
   if (recordsPayment) {

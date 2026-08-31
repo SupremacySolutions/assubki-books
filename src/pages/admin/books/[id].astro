@@ -2,7 +2,7 @@
 import Admin from '../../../layouts/Admin.astro';
 import CoverReview from '../../../components/CoverReview.astro';
 import { getBookAdmin } from '../../../lib/admin-db';
-import { allCategories } from '../../../lib/db';
+import { allCategories, setOptions } from '../../../lib/db';
 import { imageUrl, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
 import { botConfigured, listingCaption } from '../../../lib/telegram';
 
@@ -13,6 +13,9 @@ const bookId = isNew ? null : Number.parseInt(id ?? '', 10);
 if (!isNew && (!bookId || Number.isNaN(bookId))) return Astro.rewrite('/404');
 
 const book = bookId ? await getBookAdmin(bookId) : null;
+
+// The other options, when this listing is already part of a set.
+const siblings = book?.set_id ? await setOptions(book.set_id) : [];
 if (!isNew && !book) return Astro.rewrite('/404');
 
 const categories = await allCategories();
@@ -357,6 +360,108 @@ const previewCaption = book
               <p class="text-[13px] text-[var(--color-ink-faint)]">
                 Add TELEGRAM_BOT_TOKEN to enable posting.
               </p>
+            )}
+          </section>
+        )
+      }
+
+      {/* Only reached when it is wanted. A single book, and a set sold only as
+          a whole, stay one ordinary listing with one price and never meet any
+          of this. */}
+      {
+        book && (
+          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+            <h2 class="eyebrow mb-3">Sold in parts</h2>
+
+            {siblings.length > 0 ? (
+              <>
+                <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3">
+                  This is one way of buying the set. Each way is
+                  its own listing with its own price and cover; the shelf count is shared.
+                </p>
+                <ul class="space-y-1.5 mb-3">
+                  {siblings.map((o) => (
+                    <li class="flex items-baseline justify-between gap-3 text-[13.5px]">
+                      <a
+                        href={`/admin/books/${o.id}`}
+                        class:list={[
+                          'truncate',
+                          o.id === book.id ? 'font-medium' : 'text-[var(--color-navy)] underline underline-offset-2',
+                        ]}
+                      >
+                        {o.set_from === o.set_to ? `Volume ${o.set_from}` : `Volumes ${o.set_from}-${o.set_to}`}
+                        {o.id === book.id ? ' (this one)' : ''}
+                      </a>
+                      <span class="text-[var(--color-ink-faint)] shrink-0 tabular-nums">
+                        {o.available} left
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <form method="post" action={`/api/admin/books/${book.id}/set`} class="flex items-end gap-2">
+                  <input type="hidden" name="action" value="restock" />
+                  <label class="block">
+                    <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                      Complete sets on the shelf
+                    </span>
+                    <input
+                      type="number"
+                      name="sets"
+                      min="0"
+                      max="999"
+                      required
+                      class="field !py-2 !text-[14px] !w-40"
+                    />
+                  </label>
+                  <button type="submit" class="btn btn-ghost !py-2 !text-[13.5px]">Set count</button>
+                </form>
+                <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                  Sets every volume to that number. Use it when a delivery arrives - a half sold on
+                  its own already came off the volumes it contained.
+                </p>
+              </>
+            ) : (
+              <>
+                <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3">
+                  For a set that can also be bought in parts - four volumes sold whole, or as two
+                  halves at their own prices. Each part becomes its own listing, linked to this one,
+                  sharing one shelf count.
+                </p>
+                <form method="post" action={`/api/admin/books/${book.id}/set`} class="space-y-3">
+                  <input type="hidden" name="action" value="create" />
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="block">
+                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">Volumes in all</span>
+                      <input type="number" name="volumes" min="2" max="200" required
+                        class="field !py-2 !text-[14px]" />
+                    </label>
+                    <label class="block">
+                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">Complete sets held</span>
+                      <input type="number" name="sets" min="0" max="999" required
+                        class="field !py-2 !text-[14px]" />
+                    </label>
+                  </div>
+                  <div>
+                    <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                      The parts, one per line: name, volumes, price
+                    </span>
+                    <textarea
+                      name="parts"
+                      rows="3"
+                      required
+                      placeholder={'Volumes 1-2, 1-2, 17.00\nVolumes 3-4, 3-4, 17.00'}
+                      class="field font-[family-name:var(--font-body)] !text-[14px]"
+                    />
+                    <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                      This listing becomes the complete set. Each line adds another listing for
+                      those volumes at that price.
+                    </p>
+                  </div>
+                  <button type="submit" class="btn btn-primary !py-2 !text-[13.5px]">
+                    Build the parts
+                  </button>
+                </form>
+              </>
             )}
           </section>
         )

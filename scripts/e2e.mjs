@@ -1249,6 +1249,108 @@ async function integrity() {
   t.ok(/Syllabus[\s\S]{0,80}?10[0-9]/.test(counted.replace(/<[^>]+>/g, ' ')),
     'a parent shelf still counts what sits beneath it');
 
+  /*
+   * A set sold whole or in parts.
+   *
+   * The owner's rule, in their words: three sets of four, sell volumes 1-2,
+   * and the full set drops to two, that half drops to two, and the other half
+   * stays at three. It only works from a count per volume - after that sale
+   * the shop holds two whole sets plus an orphaned second half, and no single
+   * "sets in stock" number says both things at once.
+   */
+  await db(`DELETE FROM books WHERE slug LIKE 'e2eset-%'`);
+  await db(`DELETE FROM book_sets WHERE name = 'E2E set'`);
+  await db(`INSERT INTO book_sets (id, name, volumes) VALUES (9100, 'E2E set', 4)`);
+  await db(`INSERT INTO book_set_stock (set_id, volume, have)
+            VALUES (9100,1,3),(9100,2,3),(9100,3,3),(9100,4,3)`);
+  await db(`INSERT INTO books (slug,title,price_pence,stock,reserved,status,set_id,set_from,set_to)
+            VALUES ('e2eset-full','E2E full set',3200,3,0,'live',9100,1,4),
+                   ('e2eset-a','E2E volumes 1-2',1700,3,0,'live',9100,1,2),
+                   ('e2eset-b','E2E volumes 3-4',1700,3,0,'live',9100,3,4)`);
+
+  const setAvail = async () => {
+    const rows = await db(
+      `SELECT m.slug,
+              MIN(v.have - COALESCE((
+                SELECT SUM(o.reserved) FROM books o
+                 WHERE o.set_id = m.set_id AND v.volume BETWEEN o.set_from AND o.set_to
+              ),0)) AS n
+         FROM books m
+         JOIN book_set_stock v ON v.set_id = m.set_id AND v.volume BETWEEN m.set_from AND m.set_to
+        WHERE m.set_id = 9100 GROUP BY m.id`,
+    );
+    return Object.fromEntries(rows.map((r) => [r.slug.replace('e2eset-', ''), r.n]));
+  };
+
+  let av = await setAvail();
+  t.ok(av.full === 3 && av.a === 3 && av.b === 3, 'a set starts with every option at the shelf count');
+
+  // Someone holds one of volumes 1-2. The complete set cannot be sold three
+  // times any more, but volumes 3-4 are untouched.
+  await db(`UPDATE books SET reserved = 1 WHERE slug = 'e2eset-a'`);
+  av = await setAvail();
+  t.ok(av.a === 2 && av.full === 2 && av.b === 3,
+    `holding a half holds the whole set with it (a=${av.a} full=${av.full} b=${av.b})`);
+
+  // That hold becomes a sale: the volumes leave the shelf.
+  await db(`UPDATE books SET reserved = 0 WHERE slug = 'e2eset-a'`);
+  await db(`UPDATE book_set_stock SET have = have - 1 WHERE set_id = 9100 AND volume BETWEEN 1 AND 2`);
+  av = await setAvail();
+  t.ok(av.a === 2 && av.full === 2 && av.b === 3,
+    `and selling it leaves the other half alone (a=${av.a} full=${av.full} b=${av.b})`);
+
+  // Now a whole set goes too. One complete set left, plus the spare half.
+  await db(`UPDATE book_set_stock SET have = have - 1 WHERE set_id = 9100 AND volume BETWEEN 1 AND 4`);
+  av = await setAvail();
+  t.ok(av.full === 1 && av.a === 1 && av.b === 2,
+    `a spare half outlives the set it came from (full=${av.full} a=${av.a} b=${av.b})`);
+
+  // And the catalogue reports the same numbers the arithmetic does.
+  const setPage = await html('/book/e2eset-b');
+  t.ok(setPage.includes('E2E volumes 3-4'), 'a set option has an ordinary book page');
+  t.ok(setPage.includes('This set can be bought as') && setPage.includes('Volumes 1-2'),
+    'and offers the other ways of buying it');
+
+  await db(`DELETE FROM books WHERE slug LIKE 'e2eset-%'`);
+  await db(`DELETE FROM book_sets WHERE id = 9100`);
+
+  /*
+   * The builder. One ordinary listing becomes the complete set and each part
+   * becomes another - so nothing in ordering has to learn a new kind of thing.
+   */
+  const setBook = await makeBook();
+  const built = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'create',
+    volumes: '4',
+    sets: '3',
+    parts: 'First half, 1-2, 17.00\nSecond half, 3-4, 17.00',
+  });
+  t.ok(built.status === 302 && !built.location.includes('e='),
+    `a set can be built from a listing (${built.location})`);
+
+  const madeRows = await db(
+    `SELECT slug, set_from AS f, set_to AS t, price_pence AS p FROM books
+      WHERE set_id = (SELECT set_id FROM books WHERE id = ${setBook.id}) ORDER BY set_from, set_to`,
+  );
+  t.ok(madeRows.length === 3, `it makes one listing per way of buying it (${madeRows.length})`);
+  t.ok(madeRows.some((r) => r.f === 1 && r.t === 4) && madeRows.some((r) => r.f === 3 && r.t === 4 && r.p === 1700),
+    'the original becomes the whole set and each part carries its own price');
+
+  const shelf = await db(
+    `SELECT volume, have FROM book_set_stock
+      WHERE set_id = (SELECT set_id FROM books WHERE id = ${setBook.id}) ORDER BY volume`,
+  );
+  t.ok(shelf.length === 4 && shelf.every((r) => r.have === 3),
+    'and every volume starts at the number of complete sets held');
+
+  // A part that runs off the end of the set is a typo, and is refused rather
+  // than clamped - a quietly corrected listing would go on the shop front.
+  const other = await makeBook();
+  const offEnd = await admin(`/api/admin/books/${other.id}/set`, {
+    action: 'create', volumes: '4', sets: '1', parts: 'Too far, 3-9, 5.00',
+  });
+  t.ok(offEnd.location.includes('e=parts'), 'a part reaching past the last volume is refused');
+
   // The book page has to say when it could not take what was asked for; the
   // basket page always did, and the two disagreeing is the actual complaint.
   const bookSource = readFileSync('src/pages/book/[slug].astro', 'utf8');
