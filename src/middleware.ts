@@ -178,6 +178,9 @@ function withSecurityHeaders(response: Response, secure: boolean, nonce: string)
     'Content-Security-Policy',
     [
       "default-src 'self'",
+      // Our own `is:inline` blocks carry the nonce. Astro's bundles are
+      // separate files (see assetsInlineLimit in astro.config), so 'self'
+      // covers them - which is why nothing here needs 'unsafe-inline'.
       `script-src 'self' 'nonce-${nonce}'`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
