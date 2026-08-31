@@ -1,16 +1,20 @@
 ---
 import Admin from '../../layouts/Admin.astro';
-import { orderCounts, listOrders, backlog } from '../../lib/admin-db';
+import { orderCounts, listOrders } from '../../lib/admin-db';
 import { price } from '../../lib/format';
 import { botConfigured } from '../../lib/telegram';
 import { emailConfigured, lastEmailError, fromAddress } from '../../lib/email';
+import { dashboard } from '../../lib/dashboard';
 
-const [counts, pending, work, emailError] = await Promise.all([
+const [counts, pending, emailError] = await Promise.all([
   orderCounts(),
   listOrders('requested'),
-  backlog(),
   lastEmailError(),
 ]);
+
+const days = Astro.url.searchParams.get('d') === '90' ? 90 : 30;
+const d = await dashboard(days);
+const work = d.backlog;
 
 // A key being present is not the same as email working: an unverified sending
 // domain rejects every message. `emailError` is what the provider last said.
@@ -40,9 +44,6 @@ const jobs = [
 
 const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0);
 
-import { dashboard } from '../../lib/dashboard';
-const days = Astro.url.searchParams.get('d') === '90' ? 90 : 30;
-const d = await dashboard(days);
 // The chart is drawn from the days that actually have orders, padded out so a
 // quiet week does not compress the shape of a busy one.
 const span = Array.from({ length: days }, (_, i) => {

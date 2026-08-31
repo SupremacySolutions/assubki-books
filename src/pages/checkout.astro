@@ -23,161 +23,239 @@ import { COUNTRIES } from '../lib/address';
         out of the way. Otherwise the customer meets two different kinds of
         error message - a native popup on the name, an inline note on the
         postcode - depending on which field they got wrong. */}
-    <form id="form" novalidate hidden class="mt-8 grid gap-8 md:grid-cols-[1fr_280px] md:gap-10 items-start">
-      <div class="grid gap-5">
-        <div>
-          <label for="name" class="block text-[14.5px] font-medium mb-1.5">Your name</label>
-          <input id="name" name="name" required autocomplete="name" maxlength="120" class="field"
-            aria-describedby="name-error" />
-          <p id="name-error" data-error-for="name" hidden class="field-error"></p>
-        </div>
+    <form id="form" novalidate class="mt-8 grid gap-8 md:grid-cols-[1fr_280px] md:gap-10 items-start">
+      <div class="grid gap-6">
+        {/* Three steps, each short enough to fit a phone screen. Every field is
+            in the DOM the whole time and in one form, so the submit, the stock
+            conflict handling and the group basket know nothing about steps. */}
+        <ol id="steps" class="flex items-center gap-2 text-[13px]" aria-label="Progress">
+          {[
+            { n: 1, label: 'You' },
+            { n: 2, label: 'Delivery' },
+            { n: 3, label: 'Check' },
+          ].map((s, i) => (
+            <>
+              {i > 0 && <li aria-hidden="true" class="h-px flex-1 bg-[var(--color-rule)]"></li>}
+              <li data-dot={s.n} class="flex items-center gap-1.5">
+                <span
+                  data-dot-mark
+                  class="grid place-items-center w-[22px] h-[22px] rounded-full border text-[12px] font-semibold tabular-nums"
+                >{s.n}</span>
+                <span data-dot-label class="hidden sm:inline">{s.label}</span>
+              </li>
+            </>
+          ))}
+        </ol>
 
-        <div>
-          <label for="email" class="block text-[14.5px] font-medium mb-1.5">Email</label>
-          <input id="email" name="email" type="email" required autocomplete="email" maxlength="254"
-            class="field" aria-describedby="email-error" />
-          <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-            Your confirmation and payment details come here.
-          </p>
-          <p id="email-error" data-error-for="email" hidden class="field-error"></p>
-        </div>
-
-        <div>
-          <label for="phone" class="block text-[14.5px] font-medium mb-1.5">Phone</label>
-          <input
-            id="phone"
-            name="phone"
-            type="tel"
-            inputmode="tel"
-            required
-            autocomplete="tel"
-            maxlength="40"
-            class="field"
-            aria-describedby="phone-error"
-          />
-          <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-            In case we need to reach you about the books or a collection time.
-          </p>
-          <p id="phone-error" data-error-for="phone" hidden class="field-error"></p>
-        </div>
-
-        <fieldset>
-          <legend class="block text-[14.5px] font-medium mb-2">How would you like the books?</legend>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
-              <input type="radio" name="fulfilment" value="delivery" checked class="accent-[var(--color-navy)]" />
-              <span class="text-[15px]">Post them to me</span>
-            </label>
-            <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
-              <input type="radio" name="fulfilment" value="collection" class="accent-[var(--color-navy)]" />
-              <span class="text-[15px]">I will collect</span>
-            </label>
-          </div>
-        </fieldset>
-
-        {/* The parts, not a paragraph: a courier's label needs fields, and a
-            form can only say which bit is missing if it asked for it. Country
-            first, because it decides what the rest are called and whether a
-            postcode exists at all. */}
-        {/* Optional on purpose: neither is preselected, so leaving it alone is
-            a valid answer. It is a request the shop sees, not a decision - the
-            owner sets what actually happens when they confirm. */}
-        <fieldset>
-          <legend class="block text-[14.5px] font-medium mb-1.5">
-            How would you like to pay?
-            <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
-          </legend>
-          <p class="text-[13px] text-[var(--color-ink-faint)] mb-2 leading-relaxed">
-            Tell us what suits you and we will confirm when we reply. Nothing is paid on this
-            website either way.
-          </p>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
-              <input type="radio" name="paymentPreference" value="transfer" class="accent-[var(--color-navy)]" />
-              <span class="text-[15px]">Bank transfer</span>
-            </label>
-            <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
-              <input type="radio" name="paymentPreference" value="cash" class="accent-[var(--color-navy)]" />
-              <span class="text-[15px]">Cash in person</span>
-            </label>
-          </div>
-          <p id="paymentPreference-error" data-error-for="paymentPreference" hidden class="field-error"></p>
-        </fieldset>
-
-        <div id="addressWrap" class="grid gap-4">
-          <p class="text-[14.5px] font-medium">Delivery address</p>
-
+        {/* ---------------------------------------------------------- step 1 */}
+        <section data-step="1" class="grid gap-5">
           <div>
-            <label for="country" class="block text-[14px] mb-1.5">Country</label>
-            <select id="country" name="country" class="field" autocomplete="country"
-              aria-describedby="country-error">
-              {COUNTRIES.map((c) => (
-                <option value={c.code} selected={c.code === 'GB'}>{c.name}</option>
-              ))}
-            </select>
-            <p id="country-error" data-error-for="country" hidden class="field-error"></p>
+            <label for="name" class="block text-[14.5px] font-medium mb-1.5">Your name</label>
+            <input id="name" name="name" required autocomplete="name" maxlength="120" class="field"
+              aria-describedby="name-error" />
+            <p id="name-error" data-error-for="name" hidden class="field-error"></p>
           </div>
 
           <div>
-            <label for="line1" class="block text-[14px] mb-1.5">Street address</label>
-            <input id="line1" name="line1" maxlength="120" autocomplete="address-line1"
-              class="field" aria-describedby="line1-error" />
-            <p id="line1-error" data-error-for="line1" hidden class="field-error"></p>
+            <label for="email" class="block text-[14.5px] font-medium mb-1.5">Email</label>
+            <input id="email" name="email" type="email" required autocomplete="email" maxlength="254"
+              class="field" aria-describedby="email-error" />
+            <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+              Your confirmation and payment details come here.
+            </p>
+            <p id="email-error" data-error-for="email" hidden class="field-error"></p>
           </div>
 
           <div>
-            <label for="line2" class="block text-[14px] mb-1.5">
-              Flat, building or company <span class="text-[var(--color-ink-faint)]">(optional)</span>
-            </label>
-            <input id="line2" name="line2" maxlength="120" autocomplete="address-line2" class="field" />
+            <label for="phone" class="block text-[14.5px] font-medium mb-1.5">Phone</label>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              inputmode="tel"
+              required
+              autocomplete="tel"
+              maxlength="40"
+              class="field"
+              aria-describedby="phone-error"
+            />
+            <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+              In case we need to reach you about the books or a collection time.
+            </p>
+            <p id="phone-error" data-error-for="phone" hidden class="field-error"></p>
           </div>
+        </section>
 
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label for="city" class="block text-[14px] mb-1.5" data-label="city">Town or city</label>
-              <input id="city" name="city" maxlength="80" autocomplete="address-level2"
-                class="field" aria-describedby="city-error" />
-              <p id="city-error" data-error-for="city" hidden class="field-error"></p>
-            </div>
-            <div>
-              <label for="region" class="block text-[14px] mb-1.5" data-label="region">
-                County <span class="text-[var(--color-ink-faint)]">(optional)</span>
+        {/* ---------------------------------------------------------- step 2 */}
+        <section data-step="2" hidden class="grid gap-5">
+          <fieldset>
+            <legend class="block text-[14.5px] font-medium mb-2">How would you like the books?</legend>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="fulfilment" value="delivery" checked class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">Post them to me</span>
               </label>
-              <input id="region" name="region" maxlength="80" autocomplete="address-level1"
-                class="field" aria-describedby="region-error" />
-              <p id="region-error" data-error-for="region" hidden class="field-error"></p>
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="fulfilment" value="collection" class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">I will collect</span>
+              </label>
+            </div>
+            <p id="fulfilment-error" data-error-for="fulfilment" hidden class="field-error"></p>
+          </fieldset>
+
+          {/* The parts, not a paragraph: a courier's label needs fields, and a
+              form can only say which bit is missing if it asked for it. Country
+              first, because it decides what the rest are called and whether a
+              postcode exists at all. */}
+          <div id="addressWrap" class="grid gap-4">
+            <p class="text-[14.5px] font-medium">Delivery address</p>
+
+            {/* A combobox, not a select: the 62 countries are ordered by where
+                customers actually are, which makes the native type-ahead worse
+                than useless - typing "u" for United Kingdom lands on Uganda.
+                The hidden input is what gets submitted, so the server still
+                receives a code and validates it exactly as before. */}
+            <div class="relative">
+              <label for="country" class="block text-[14px] mb-1.5">Country</label>
+              <input
+                id="country"
+                type="text"
+                role="combobox"
+                aria-expanded="false"
+                aria-controls="countryList"
+                aria-autocomplete="list"
+                autocomplete="off"
+                spellcheck="false"
+                class="field"
+                aria-describedby="country-error"
+              />
+              <input type="hidden" name="country" id="countryCode" value="GB" />
+              <ul
+                id="countryList"
+                role="listbox"
+                aria-label="Countries"
+                hidden
+                class="absolute z-20 left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-white border border-[var(--color-navy)] rounded-[3px] shadow-lg py-1"
+              ></ul>
+              <p id="country-error" data-error-for="country" hidden class="field-error"></p>
+            </div>
+
+            <div id="postcodeWrap" class="max-w-[14rem]">
+              <label for="postcode" class="block text-[14px] mb-1.5" data-label="postcode">Postcode</label>
+              <input id="postcode" name="postcode" maxlength="24" autocomplete="postal-code"
+                class="field" aria-describedby="postcode-error postcode-hint" />
+              <p id="postcode-hint" aria-live="polite" class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]"></p>
+              <p id="postcode-error" data-error-for="postcode" hidden class="field-error"></p>
+            </div>
+
+            <div>
+              <label for="line1" class="block text-[14px] mb-1.5">Street address</label>
+              <input id="line1" name="line1" maxlength="120" autocomplete="address-line1"
+                class="field" aria-describedby="line1-error" />
+              <p id="line1-error" data-error-for="line1" hidden class="field-error"></p>
+            </div>
+
+            <div>
+              <label for="line2" class="block text-[14px] mb-1.5">
+                Flat, building or company <span class="text-[var(--color-ink-faint)]">(optional)</span>
+              </label>
+              <input id="line2" name="line2" maxlength="120" autocomplete="address-line2" class="field" />
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label for="city" class="block text-[14px] mb-1.5" data-label="city">Town or city</label>
+                <input id="city" name="city" maxlength="80" autocomplete="address-level2"
+                  class="field" aria-describedby="city-error" />
+                <p id="city-error" data-error-for="city" hidden class="field-error"></p>
+              </div>
+              <div>
+                <label for="region" class="block text-[14px] mb-1.5" data-label="region">
+                  County <span class="text-[var(--color-ink-faint)]">(optional)</span>
+                </label>
+                <input id="region" name="region" maxlength="80" autocomplete="address-level1"
+                  class="field" aria-describedby="region-error" />
+                <p id="region-error" data-error-for="region" hidden class="field-error"></p>
+              </div>
             </div>
           </div>
 
-          <div id="postcodeWrap" class="max-w-[12rem]">
-            <label for="postcode" class="block text-[14px] mb-1.5" data-label="postcode">Postcode</label>
-            <input id="postcode" name="postcode" maxlength="24" autocomplete="postal-code"
-              class="field" aria-describedby="postcode-error" />
-            <p id="postcode-error" data-error-for="postcode" hidden class="field-error"></p>
+          {/* Optional on purpose: neither is preselected, so leaving it alone is
+              a valid answer. It is a request the shop sees, not a decision - the
+              owner sets what actually happens when they confirm. */}
+          <fieldset>
+            <legend class="block text-[14.5px] font-medium mb-1.5">
+              How would you like to pay?
+              <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
+            </legend>
+            <p class="text-[13px] text-[var(--color-ink-faint)] mb-2 leading-relaxed">
+              Tell us what suits you and we will confirm when we reply. Nothing is paid on this
+              website either way.
+            </p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="paymentPreference" value="transfer" class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">Bank transfer</span>
+              </label>
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="paymentPreference" value="cash" class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">Cash in person</span>
+              </label>
+            </div>
+            <p id="paymentPreference-error" data-error-for="paymentPreference" hidden class="field-error"></p>
+          </fieldset>
+        </section>
+
+        {/* ---------------------------------------------------------- step 3 */}
+        <section data-step="3" hidden class="grid gap-5">
+          {/* What they typed, read back. Cheaper to fix a wrong postcode here
+              than after the books have been packed. */}
+          <div class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
+            <div class="p-4 flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <p class="eyebrow">Who you are</p>
+                <p id="recapWho" class="mt-1.5 text-[14.5px] leading-relaxed break-words"></p>
+              </div>
+              <button type="button" data-goto="1"
+                class="shrink-0 text-[13.5px] text-[var(--color-navy)] hover:underline underline-offset-2">Edit</button>
+            </div>
+            <div class="p-4 flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <p class="eyebrow">How you get them</p>
+                <p id="recapHow" class="mt-1.5 text-[14.5px] leading-relaxed break-words"></p>
+              </div>
+              <button type="button" data-goto="2"
+                class="shrink-0 text-[13.5px] text-[var(--color-navy)] hover:underline underline-offset-2">Edit</button>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label for="notes" class="block text-[14.5px] font-medium mb-1.5">
-            Anything else? <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
-          </label>
-          <textarea id="notes" name="notes" rows="3" maxlength="2000" class="field"
-            placeholder="A title we do not list, a preferred edition, or when you need these by."></textarea>
-        </div>
+          <div>
+            <label for="notes" class="block text-[14.5px] font-medium mb-1.5">
+              Anything else? <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
+            </label>
+            <textarea id="notes" name="notes" rows="3" maxlength="2000" class="field"
+              placeholder="A title we do not list, a preferred edition, or when you need these by."></textarea>
+          </div>
 
-        <div id="error" hidden role="alert"
-          class="p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
-        </div>
+          <div id="error" hidden role="alert"
+            class="p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+          </div>
 
-        <div>
-          <button type="submit" id="submit" class="btn btn-primary !py-3 !px-7">Send request</button>
-          <p class="mt-3 text-[13px] text-[var(--color-ink-faint)] max-w-md leading-relaxed">
+          <p class="text-[13px] text-[var(--color-ink-faint)] max-w-md leading-relaxed">
             Sending this does not commit you to buy. We reply with the total, and you decide.
           </p>
+        </section>
+
+        {/* One set of buttons for all three steps, so the customer's eye does
+            not have to find a new place to click on each one. */}
+        <div class="flex items-center gap-3">
+          <button type="button" id="back" hidden class="btn btn-ghost">Back</button>
+          <button type="button" id="next" class="btn btn-primary !py-3 !px-7">Continue</button>
+          <button type="submit" id="submit" hidden class="btn btn-primary !py-3 !px-7">Send request</button>
         </div>
       </div>
 
-      <aside class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 md:sticky md:top-[100px]">
+      <aside id="aside" class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 md:sticky md:top-[100px]">
         <h2 class="eyebrow mb-3">Your request</h2>
         <ul id="summary" class="space-y-2.5 text-[14.5px]"></ul>
         <div class="mt-4 pt-3 border-t border-[var(--color-rule)] flex items-baseline justify-between">
@@ -199,7 +277,8 @@ import { COUNTRIES } from '../lib/address';
     import { readGroup, leaveGroup } from '../scripts/group.ts';
     // The same rules the server applies, so the two cannot drift apart.
     import { checkOrder, type Field } from '../lib/validate.ts';
-    import { addressLabels, postcodeRequired } from '../lib/address.ts';
+    import { addressLabels, postcodeRequired, formatAddress, COUNTRIES } from '../lib/address.ts';
+    import { lookupPostcode, tidyPostcode, looksLikePostcode } from '../lib/postcode-lookup.ts';
 
     const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
     const form = document.querySelector<HTMLFormElement>('#form')!;
@@ -229,7 +308,11 @@ import { COUNTRIES } from '../lib/address';
     }
 
     const FIELDS = ['name', 'email', 'phone', 'line1', 'city', 'region', 'postcode', 'country'];
-    const clearFields = () => FIELDS.forEach((f) => markField(f, null));
+    /* Every field an error can be reported against. `fulfilment` and
+       `paymentPreference` are radio groups with no input of their own, so
+       until now a problem on either was marked nowhere and scrolled nowhere. */
+    const ERROR_SLOTS = [...FIELDS, 'fulfilment', 'paymentPreference'];
+    const clearFields = () => ERROR_SLOTS.forEach((f) => markField(f, null));
 
     /** Read the form as the API will receive it. */
     function currentValues() {
@@ -349,6 +432,7 @@ import { COUNTRIES } from '../lib/address';
       const ids = Object.keys(basket);
       if (!ids.length) {
         document.querySelector<HTMLElement>('#empty')!.hidden = false;
+        form.hidden = true;
         return false;
       }
 
@@ -378,6 +462,7 @@ import { COUNTRIES } from '../lib/address';
 
       if (!list.children.length) {
         document.querySelector<HTMLElement>('#empty')!.hidden = false;
+        form.hidden = true;
         return false;
       }
 
@@ -399,7 +484,6 @@ import { COUNTRIES } from '../lib/address';
       });
     }
 
-    document.querySelector('#country')?.addEventListener('change', paintCountry);
     paintCountry();
 
     // Checked as they leave a field, not as they type it: telling someone their
@@ -428,6 +512,235 @@ import { COUNTRIES } from '../lib/address';
     }
     syncFulfilment();
 
+
+    // ------------------------------------------------------------------
+    // Country: a box you can type into
+    // ------------------------------------------------------------------
+
+    const countryInput = document.querySelector<HTMLInputElement>('#country')!;
+    const countryCode = document.querySelector<HTMLInputElement>('#countryCode')!;
+    const countryList = document.querySelector<HTMLUListElement>('#countryList')!;
+    let active = -1;
+
+    const nameForCode = (code: string) =>
+      COUNTRIES.find((c) => c.code === code)?.name ?? '';
+
+    function closeList() {
+      countryList.hidden = true;
+      countryInput.setAttribute('aria-expanded', 'false');
+      active = -1;
+    }
+
+    /* Matched on the name *and* the code, so "GB", "UK" and "United" all find
+       the United Kingdom. Anything already typed that is not a country is
+       thrown away on blur rather than left looking accepted. */
+    function openList(query: string) {
+      const q = query.trim().toLowerCase();
+      const matches = COUNTRIES.filter(
+        (c) => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase() === q ||
+          (q === 'uk' && c.code === 'GB'),
+      ).slice(0, 40);
+
+      countryList.innerHTML = '';
+      for (const [i, c] of matches.entries()) {
+        const li = document.createElement('li');
+        li.id = `country-opt-${i}`;
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', String(c.code === countryCode.value));
+        li.dataset.code = c.code;
+        li.className =
+          'px-3 py-2 text-[14.5px] cursor-pointer hover:bg-[var(--color-paper)] aria-selected:font-medium';
+        li.textContent = c.name;
+        li.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // before blur, or the pick is lost
+          choose(c.code);
+        });
+        countryList.appendChild(li);
+      }
+      countryList.hidden = matches.length === 0;
+      countryInput.setAttribute('aria-expanded', String(!countryList.hidden));
+      active = -1;
+    }
+
+    function choose(code: string) {
+      countryCode.value = code;
+      countryInput.value = nameForCode(code);
+      closeList();
+      markField('country', null);
+      paintCountry();
+      maybeLookUpPostcode();
+    }
+
+    function highlight(delta: number) {
+      const items = [...countryList.querySelectorAll<HTMLLIElement>('[role="option"]')];
+      if (!items.length) return;
+      items[active]?.classList.remove('bg-[var(--color-paper)]');
+      active = (active + delta + items.length) % items.length;
+      items[active].classList.add('bg-[var(--color-paper)]');
+      items[active].scrollIntoView({ block: 'nearest' });
+      countryInput.setAttribute('aria-activedescendant', items[active].id);
+    }
+
+    countryInput.value = nameForCode(countryCode.value);
+    countryInput.addEventListener('input', () => openList(countryInput.value));
+    countryInput.addEventListener('focus', () => openList(''));
+    countryInput.addEventListener('blur', () => {
+      // Put back the chosen country's name: a half-typed "Unit" left in the box
+      // reads as an accepted answer when it is not.
+      countryInput.value = nameForCode(countryCode.value);
+      closeList();
+    });
+    countryInput.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown') { event.preventDefault(); if (countryList.hidden) openList(countryInput.value); else highlight(1); }
+      else if (event.key === 'ArrowUp') { event.preventDefault(); highlight(-1); }
+      else if (event.key === 'Enter') {
+        const items = [...countryList.querySelectorAll<HTMLLIElement>('[role="option"]')];
+        const pick = items[active] ?? (items.length === 1 ? items[0] : null);
+        if (pick) { event.preventDefault(); choose(pick.dataset.code!); }
+      } else if (event.key === 'Escape') closeList();
+    });
+
+    // ------------------------------------------------------------------
+    // Postcode: tidy it, and fill in the town
+    // ------------------------------------------------------------------
+
+    const postcodeEl = document.querySelector<HTMLInputElement>('#postcode')!;
+    const cityEl = document.querySelector<HTMLInputElement>('#city')!;
+    const regionEl = document.querySelector<HTMLInputElement>('#region')!;
+    const postcodeHint = document.querySelector<HTMLElement>('#postcode-hint')!;
+    let lookupRun: AbortController | null = null;
+    let lookupTimer = 0;
+
+    /*
+     * A convenience and nothing more. It never blocks, never complains, and
+     * never writes over something the customer typed themselves - filling in a
+     * town on top of the one they chose is worse than filling in nothing.
+     */
+    async function maybeLookUpPostcode() {
+      lookupRun?.abort();
+      postcodeHint.textContent = '';
+      if (countryCode.value !== 'GB') return;
+
+      const raw = postcodeEl.value;
+      if (!looksLikePostcode(raw)) return;
+      if (cityEl.value.trim() && regionEl.value.trim()) return;
+
+      const run = new AbortController();
+      lookupRun = run;
+      const place = await lookupPostcode(raw, run.signal);
+      if (run.signal.aborted || !place) return;
+
+      postcodeEl.value = place.postcode;
+      let filled = false;
+      if (!cityEl.value.trim() && place.city) { cityEl.value = place.city; filled = true; }
+      if (!regionEl.value.trim() && place.region) { regionEl.value = place.region; filled = true; }
+      if (filled) {
+        postcodeHint.textContent = `Found ${[place.city, place.region].filter(Boolean).join(', ')}.`;
+        markField('city', null);
+      }
+    }
+
+    postcodeEl.addEventListener('input', () => {
+      clearTimeout(lookupTimer);
+      lookupTimer = window.setTimeout(maybeLookUpPostcode, 400);
+    });
+    postcodeEl.addEventListener('blur', () => {
+      // Tidying needs no network: m14wb is M1 4WB whatever the API says.
+      if (postcodeEl.value.trim()) postcodeEl.value = tidyPostcode(postcodeEl.value);
+    });
+
+    // ------------------------------------------------------------------
+    // Three steps
+    // ------------------------------------------------------------------
+
+    const sections = [...form.querySelectorAll<HTMLElement>('[data-step]')];
+    const backBtn = document.querySelector<HTMLButtonElement>('#back')!;
+    const nextBtn = document.querySelector<HTMLButtonElement>('#next')!;
+    const aside = document.querySelector<HTMLElement>('#aside')!;
+    const LAST = 3;
+    let step = 1;
+
+    /** The step a field lives on, for sending someone back to fix it. */
+    const stepHolding = (field: string) =>
+      Number(Object.entries(STEP_FIELDS).find(([, f]) => f.includes(field))?.[0] ?? LAST);
+
+    /** Which problems belong to which step, so a step only gates on its own. */
+    const STEP_FIELDS: Record<number, string[]> = {
+      1: ['name', 'email', 'phone'],
+      2: ['fulfilment', 'line1', 'city', 'region', 'postcode', 'country', 'paymentPreference'],
+      3: [],
+    };
+
+    function paintSteps() {
+      for (const section of sections) section.hidden = Number(section.dataset.step) !== step;
+
+      for (const dot of document.querySelectorAll<HTMLElement>('[data-dot]')) {
+        const n = Number(dot.dataset.dot);
+        const mark = dot.querySelector<HTMLElement>('[data-dot-mark]')!;
+        const done = n < step;
+        const here = n === step;
+        mark.className =
+          'grid place-items-center w-[22px] h-[22px] rounded-full border text-[12px] font-semibold tabular-nums ' +
+          (here
+            ? 'bg-[var(--color-navy)] border-[var(--color-navy)] text-white'
+            : done
+              ? 'bg-white border-[var(--color-navy)] text-[var(--color-navy)]'
+              : 'bg-white border-[var(--color-rule)] text-[var(--color-ink-faint)]');
+        mark.textContent = done ? '✓' : String(n);
+        dot.querySelector<HTMLElement>('[data-dot-label]')!.className =
+          'hidden sm:inline ' + (here ? 'font-medium' : 'text-[var(--color-ink-faint)]');
+      }
+
+      backBtn.hidden = step === 1;
+      nextBtn.hidden = step === LAST;
+      submit.hidden = step !== LAST;
+
+      // On a phone the basket belongs on the last step, where they are checking
+      // it. On a desktop there is a column for it and it stays put throughout.
+      aside.classList.toggle('max-md:hidden', step !== LAST);
+    }
+
+    function goto(n: number) {
+      step = Math.min(LAST, Math.max(1, n));
+      paintSteps();
+      if (step === LAST) paintRecap();
+      form.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      const first = sections
+        .find((s) => Number(s.dataset.step) === step)
+        ?.querySelector<HTMLElement>('input:not([type="hidden"]), textarea');
+      if (step !== LAST) first?.focus({ preventScroll: true });
+    }
+
+    /** What they typed, read back before they send it. */
+    function paintRecap() {
+      const v = currentValues();
+      document.querySelector<HTMLElement>('#recapWho')!.textContent =
+        [v.name, v.email, v.phone].filter(Boolean).join(' · ');
+
+      const pay = v.paymentPreference === 'cash'
+        ? 'Cash in person'
+        : v.paymentPreference === 'transfer' ? 'Bank transfer' : '';
+      const how = v.fulfilment === 'collection'
+        ? 'Collecting in person'
+        : `Posted to:\n${formatAddress(v.address)}`;
+      document.querySelector<HTMLElement>('#recapHow')!.innerHTML =
+        [how, pay].filter(Boolean).join('\n').split('\n')
+          .map((l) => l.replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[ch]!))
+          .join('<br />');
+    }
+
+    backBtn.addEventListener('click', () => goto(step - 1));
+    nextBtn.addEventListener('click', () => {
+      const mine = new Set(STEP_FIELDS[step]);
+      const problems = checkOrder(currentValues()).filter((p) => mine.has(p.field));
+      if (!showProblems(problems)) return;
+      goto(step + 1);
+    });
+    for (const jump of document.querySelectorAll<HTMLButtonElement>('[data-goto]')) {
+      jump.addEventListener('click', () => goto(Number(jump.dataset.goto)));
+    }
+    paintSteps();
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       errorBox.hidden = true;
@@ -435,7 +748,12 @@ import { COUNTRIES } from '../lib/address';
       // The page checks first so the customer is not made to wait on a round
       // trip to be told their postcode is missing. The server checks again,
       // and it is the one that decides.
-      if (!showProblems(checkOrder(currentValues()))) return;
+      const problems = checkOrder(currentValues());
+      if (problems.length) {
+        showProblems(problems);
+        goto(stepHolding(problems[0].field));
+        return;
+      }
 
       submit.disabled = true;
       submit.textContent = 'Sending…';
@@ -481,6 +799,7 @@ import { COUNTRIES } from '../lib/address';
           // box at the bottom of the form.
           if (result.field && result.error) {
             showProblems([{ field: result.field, message: result.error }]);
+            goto(stepHolding(result.field));
             submit.disabled = false;
             submit.textContent = 'Send request';
             return;

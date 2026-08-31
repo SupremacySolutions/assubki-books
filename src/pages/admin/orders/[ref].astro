@@ -230,15 +230,30 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                   <label for="postage" class="block text-[14px] font-medium mb-1.5">
                     Postage (£)
                   </label>
-                  <input
-                    id="postage"
-                    name="postage"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={(suggestedPostage / 100).toFixed(2)}
-                    class="field !w-28 tabular-nums"
-                  />
+                  {/*
+                    * Buttons rather than the browser's own spinner, which
+                    * stepped by a penny. `step` cannot fix that: `step="1"`
+                    * would make £3.75 invalid and block the form, and
+                    * `step="any"` disables the spinner altogether - stepUp()
+                    * throws on it. These also work on a phone, where number
+                    * inputs have no spinner at all.
+                    */}
+                  <div class="flex items-stretch gap-1.5">
+                    <button type="button" data-postage="-1" aria-label="A pound less"
+                      class="w-9 shrink-0 border border-[var(--color-rule)] rounded-[3px] bg-white text-[18px] leading-none text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-40">−</button>
+                    <input
+                      id="postage"
+                      name="postage"
+                      type="number"
+                      step="0.01"
+                      inputmode="decimal"
+                      min="0"
+                      value={(suggestedPostage / 100).toFixed(2)}
+                      class="field !w-24 tabular-nums text-center"
+                    />
+                    <button type="button" data-postage="1" aria-label="A pound more"
+                      class="w-9 shrink-0 border border-[var(--color-rule)] rounded-[3px] bg-white text-[18px] leading-none text-[var(--color-navy)] hover:border-[var(--color-navy)]">+</button>
+                  </div>
                 </div>
                 <p class="text-[14.5px] text-[var(--color-ink-soft)] pb-2.5">
                   {isCash ? 'To pay in cash: ' : isCollection ? 'Total to pay is ' : 'Total becomes '}
@@ -714,10 +729,25 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
 
     const postage = document.querySelector('#postage');
     const total = document.querySelector('#total');
-    postage?.addEventListener('input', () => {
+    function paintTotal() {
       const pence = Math.round((Number(postage.value) || 0) * 100);
       total.textContent = `£${((subtotal + pence) / 100).toFixed(2)}`;
-    });
+      for (const b of document.querySelectorAll('[data-postage]')) {
+        if (b.dataset.postage === '-1') b.disabled = pence < 100;
+      }
+    }
+    postage?.addEventListener('input', paintTotal);
+
+    // A pound a click. Pence stay typeable in the box itself, and the value is
+    // rounded to whole pounds on the way so 3.75 + £1 gives 4.75, not 4.
+    for (const button of document.querySelectorAll('[data-postage]')) {
+      button.addEventListener('click', () => {
+        const now = Number(postage.value) || 0;
+        postage.value = Math.max(0, now + Number(button.dataset.postage)).toFixed(2);
+        paintTotal();
+      });
+    }
+    if (postage) paintTotal();
 
     // Cash on collection saves on the tick rather than behind a Save button,
     // so a failed save must put the box back: a checkbox showing a state the

@@ -38,6 +38,11 @@ export interface Dashboard {
   bestSellers: { title: string; qty: number }[];
   lowStock: { title: string; slug: string; left: number }[];
   byShelf: { name: string; pence: number }[];
+  /** The catalogue worklist - listings missing something. */
+  backlog: {
+    noImage: number; noDescription: number; noCategory: number;
+    unposted: number; outOfStock: number; lowStock: number;
+  };
 }
 
 /** Paid, sent, or done - an order whose money is real. */
@@ -48,7 +53,7 @@ async function read(days: number): Promise<Dashboard> {
   const from = now - days * DAY;
   const previousFrom = from - days * DAY;
 
-  const [waiting, money, daily, splits, best, low, repeat, shelves] = await env.DB.batch([
+  const [waiting, money, daily, splits, best, low, repeat, shelves, work] = await env.DB.batch([
     // Everything the owner might need to act on, counted in one pass.
     env.DB.prepare(
       `SELECT
@@ -114,6 +119,24 @@ async function read(days: number): Promise<Dashboard> {
         WHERE o.status IN ${EARNED} AND o.created_at > ?
         GROUP BY c.id ORDER BY pence DESC LIMIT 5`,
     ).bind(from),
+    /*
+     * The catalogue worklist. It used to be its own query on every portal home
+     * load - 1,786 rows a time, which was tolerable when nobody opened that
+     * page and is not now the dashboard lives there. Here it shares the cache.
+     */
+    env.DB.prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM books b WHERE b.status='live'
+            AND NOT EXISTS (SELECT 1 FROM book_images WHERE book_id = b.id)) AS noImage,
+         (SELECT COUNT(*) FROM books WHERE status='live'
+            AND (description_html IS NULL OR description_html='')) AS noDescription,
+         (SELECT COUNT(*) FROM books b WHERE b.status='live'
+            AND NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)) AS noCategory,
+         (SELECT COUNT(*) FROM books WHERE status='live' AND telegram_message_id IS NULL) AS unposted,
+         (SELECT COUNT(*) FROM books WHERE status='live' AND (stock - reserved) <= 0) AS outOfStock,
+         (SELECT COUNT(*) FROM books WHERE status='live'
+            AND (stock - reserved) > 0 AND (stock - reserved) <= 2) AS lowStock`,
+    ),
   ]);
 
   const w = (waiting.results[0] ?? {}) as Record<string, number | null>;
@@ -154,6 +177,14 @@ async function read(days: number): Promise<Dashboard> {
       const row = r as Record<string, unknown>;
       return { title: String(row.title), slug: String(row.slug), left: Number(row.left_) };
     }),
+    backlog: (() => {
+      const b = (work.results[0] ?? {}) as Record<string, number | null>;
+      return {
+        noImage: Number(b.noImage ?? 0), noDescription: Number(b.noDescription ?? 0),
+        noCategory: Number(b.noCategory ?? 0), unposted: Number(b.unposted ?? 0),
+        outOfStock: Number(b.outOfStock ?? 0), lowStock: Number(b.lowStock ?? 0),
+      };
+    })(),
     byShelf: shelves.results.map((r) => {
       const row = r as Record<string, unknown>;
       return { name: String(row.name), pence: Number(row.pence) };

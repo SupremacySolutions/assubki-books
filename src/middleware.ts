@@ -185,7 +185,14 @@ function withSecurityHeaders(response: Response, secure: boolean, nonce: string)
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self'",
-      "connect-src 'self'",
+      /*
+       * `api.postcodes.io` is the one exception, and it is a deliberate one:
+       * checkout offers to fill in a town from a UK postcode. It is Ordnance
+       * Survey open data, free and keyless, and only a postcode goes out - no
+       * name, no address, nothing that identifies anybody. Adding it does not
+       * change the site's position on cookies and consent.
+       */
+      "connect-src 'self' https://api.postcodes.io",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

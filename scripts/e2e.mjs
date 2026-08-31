@@ -1516,6 +1516,43 @@ async function integrity() {
   t.ok(dashText.includes(String(waitingNow.n)),
     `its "to confirm" count matches counting the orders directly (${waitingNow.n})`);
 
+  /*
+   * Carriers, the postage stepper, and the stepped checkout.
+   */
+  const statusSource = readFileSync('src/lib/order-status.ts', 'utf8');
+  const trackingMap = statusSource.slice(statusSource.indexOf('const TRACKING'));
+  t.ok(statusSource.includes("'InPost',"), 'InPost is offered as a carrier');
+  for (const carrier of ['Royal Mail', 'Evri', 'DPD', 'DHL', 'Parcelforce', 'Yodel', 'InPost']) {
+    // Every carrier but "Other" has to build a tracking link. The map is typed
+    // against the list, so a carrier with no entry is a build error - this
+    // catches the other direction, one quietly dropped from the map.
+    t.ok(new RegExp(`${carrier}'?:\\s*\\(n\\)`).test(trackingMap),
+      `${carrier} builds a tracking link`);
+  }
+  t.ok(!/\bOther'?:\s*\(n\)/.test(trackingMap),
+    'and "Other" deliberately has none, so the number shows unlinked');
+
+  const orderPage = readFileSync('src/pages/admin/orders/[ref].astro', 'utf8');
+  t.ok(orderPage.includes('data-postage="1"') && orderPage.includes('data-postage="-1"'),
+    'postage moves a pound at a time, by button');
+  t.ok(/id="postage"[^>]*step="0\.01"/s.test(orderPage.replace(/\n\s*/g, ' ')),
+    'while pence stay a valid amount to type');
+
+  const checkout = readFileSync('src/pages/checkout.astro', 'utf8');
+  for (const n of ['1', '2', '3']) {
+    t.ok(checkout.includes(`data-step="${n}"`), `checkout has step ${n}`);
+  }
+  t.ok(checkout.includes('role="combobox"') && checkout.includes('id="countryCode"'),
+    'the country box can be typed into and still submits a code');
+  t.ok(checkout.includes('data-error-for="fulfilment"'),
+    'a problem with post-or-collect now has somewhere to appear');
+  t.ok(readFileSync('src/middleware.ts', 'utf8').includes("connect-src 'self' https://api.postcodes.io"),
+    'the CSP allows the postcode lookup and nothing else outbound');
+
+  const lookup = readFileSync('src/lib/postcode-lookup.ts', 'utf8');
+  t.ok(lookup.includes('return null') && lookup.includes('catch'),
+    'a failed postcode lookup is silent rather than blocking');
+
   const dashSource = readFileSync('src/lib/dashboard.ts', 'utf8');
   t.ok(dashSource.includes('env.DB.batch'),
     'the figures come from one batch rather than a query per tile');

@@ -522,6 +522,7 @@ export const POSTAGE_PROVIDERS = [
   'DHL',
   'Parcelforce',
   'Yodel',
+  'InPost',
   'Other',
 ] as const;
 
@@ -540,6 +541,7 @@ const TRACKING: Partial<Record<PostageProvider, (n: string) => string>> = {
   DHL: (n) => `https://www.dhl.com/gb-en/home/tracking/tracking-express.html?submit=1&tracking-id=${n}`,
   Parcelforce: (n) => `https://www.parcelforce.com/track-trace?trackNumber=${n}`,
   Yodel: (n) => `https://www.yodel.co.uk/track/${n}`,
+  InPost: (n) => `https://inpost.co.uk/tracking/result/?trackingNumber=${n}`,
 };
 
 /** Null when the carrier is unknown - the number is still worth showing. */
