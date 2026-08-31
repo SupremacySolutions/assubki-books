@@ -34,6 +34,8 @@ export interface BookRow {
   image_key: string | null;
   width: number | null;
   height: number | null;
+  /** Only set when the listing is a set, so the card can say "4 volumes". */
+  volumes: number | null;
   cat_slugs: string | null;
 }
 
@@ -49,7 +51,7 @@ export interface BookDetail extends BookRow {
 const db = () => env.DB;
 
 const BOOK_SELECT = `
-  SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved,
+  SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved, b.volumes,
          (b.stock - b.reserved) AS available,
          i.image_key, i.width, i.height,
          (SELECT group_concat(c2.slug) FROM book_categories bc2

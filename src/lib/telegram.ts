@@ -231,6 +231,8 @@ export interface ListingPost {
   available: number;
   url: string;
   imageUrl?: string | null;
+  /** Only when it is a set, so the channel says the same as the card. */
+  volumes?: number | null;
 }
 
 /** The caption shown under a listing in the channel. */
@@ -238,6 +240,7 @@ export function listingCaption(post: ListingPost): string {
   const price = `£${(post.pricePence / 100).toFixed(2)}`;
   const lines = [`*${esc(post.title)}*`];
   if (post.titleAr) lines.push(esc(post.titleAr));
+  if (post.volumes && post.volumes > 1) lines.push(esc(`${post.volumes} volume set`));
   lines.push('');
   if (post.blurb) lines.push(esc(post.blurb), '');
   lines.push(`*${esc(price)}*`);

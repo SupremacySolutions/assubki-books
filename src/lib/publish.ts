@@ -31,6 +31,7 @@ export async function publishListing(bookId: number, origin: string): Promise<Pu
     pricePence: book.price_pence,
     blurb: truncate(stripTags(book.description_html), 180) || null,
     available: book.available,
+    volumes: book.volumes,
     url: `${origin}/book/${book.slug}`,
     // Telegram fetches the photo itself, so it has to be a public absolute URL.
     imageUrl: cover ? `${origin}${cover}` : null,

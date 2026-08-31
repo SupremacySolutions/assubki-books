@@ -6,6 +6,7 @@ import { bookBySlug, relatedBooks } from '../../lib/db';
 import { price, availability, imageUrl, stripTags, truncate, SITE } from '../../lib/format';
 import { classmark } from '../../lib/classmarks';
 import { IMAGE_PRESETS } from '../../lib/image-presets';
+import { cropsCleanly } from '../../lib/cover-fit';
 import MessageUs from '../../components/MessageUs.astro';
 
 const { slug } = Astro.params;
@@ -15,6 +16,8 @@ if (!book) return Astro.rewrite('/404');
 const related = await relatedBooks(book.id, 6);
 const avail = availability(book.available);
 const cover = imageUrl(book.images[0]?.image_key, 'detail');
+// Same rule as the catalogue card, so a book looks the same in both places.
+const coverFills = cropsCleanly(book.images[0]?.width, book.images[0]?.height);
 const plain = stripTags(book.description_html);
 
 // This is the description Telegram shows when the owner posts the link, so it
@@ -74,11 +77,11 @@ const jsonLd = {
                 id="cover"
                 src={cover}
                 alt={book.images[0]?.alt ?? book.title}
-                {/* The frame, not the stored image: covers are padded to one
-                    shape now, and an owner-uploaded photo has no stored size. */}
+                {/* The box, not the stored image: an owner-uploaded photo has
+                    no stored size at all. */}
                 width={IMAGE_PRESETS.detail.width}
                 height={IMAGE_PRESETS.detail.height}
-                class="h-full w-full object-contain p-4"
+                class:list={['h-full w-full', coverFills ? 'object-cover' : 'object-contain p-4']}
                 fetchpriority="high"
               />
             ) : (
@@ -98,6 +101,12 @@ const jsonLd = {
                     type="button"
                     class="thumb w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] p-1 grid place-items-center hover:border-[var(--color-navy)] transition-colors aria-pressed:border-[var(--color-navy)] aria-pressed:ring-1 aria-pressed:ring-[var(--color-navy)]"
                     data-src={imageUrl(img.image_key, 'detail')}
+                    {/* Each photo carries its own answer. The main image used
+                        to keep whichever fit the *first* one needed, so
+                        clicking a differently shaped photo - a back cover, a
+                        spine - would have cropped it to the first one's
+                        proportions. */}
+                    data-fit={cropsCleanly(img.width, img.height) ? 'cover' : 'contain'}
                     aria-pressed={i === 0 ? 'true' : 'false'}
                   >
                     <img src={imageUrl(img.image_key, 'thumb')} alt="" class="max-h-full max-w-full object-contain" loading="lazy" />
@@ -128,12 +137,24 @@ const jsonLd = {
         </h1>
         {book.title_ar && <p class="ar mt-2 text-[24px] text-[var(--color-ink-soft)]">{book.title_ar}</p>}
 
+        {/* Author, how many volumes, publisher - the three things a buyer
+            wants before the price. Each part is left out when it is not known,
+            so the separators cannot end up stranded. */}
         {
-          (book.author || book.publisher) && (
+          (book.author || book.publisher || (book.volumes ?? 0) > 1) && (
             <p class="mt-2 text-[15px] text-[var(--color-ink-soft)]">
-              {book.author}
-              {book.author && book.publisher && <span class="text-[var(--color-ink-faint)]"> · </span>}
-              {book.publisher && <span class="text-[var(--color-ink-faint)]">{book.publisher}</span>}
+              {[
+                book.author,
+                (book.volumes ?? 0) > 1 ? `${book.volumes} volume set` : null,
+                book.publisher,
+              ]
+                .filter(Boolean)
+                .map((part, i) => (
+                  <>
+                    {i > 0 && <span class="text-[var(--color-ink-faint)]"> · </span>}
+                    <span class:list={[i === 0 ? '' : 'text-[var(--color-ink-faint)]']}>{part}</span>
+                  </>
+                ))}
             </p>
           )
         }
@@ -222,7 +243,7 @@ const jsonLd = {
           </h2>
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-5 gap-y-8">
             {related.map((b) => (
-              <BookCard book={b} />
+              <BookCard book={b} quickAdd />
             ))}
           </div>
         </section>
@@ -372,11 +393,44 @@ const jsonLd = {
     });
 
     const cover = document.querySelector<HTMLImageElement>('#cover');
+    /*
+     * Adding from a suggestion.
+     *
+     * Deliberately thin. The main add button above re-checks live stock and
+     * knows about group baskets; duplicating that here would be a second copy
+     * of the rule that could drift from the first. So a group member is sent
+     * to the book's own page, where that flow lives, and everyone else adds
+     * against the count the card was rendered with - which `addChecked` caps,
+     * and which checkout re-checks properly before anything is held.
+     */
+    for (const add of document.querySelectorAll<HTMLButtonElement>('.quick-add')) {
+      add.addEventListener('click', () => {
+        const id = add.dataset.bookId;
+        if (!id) return;
+
+        if (readGroup()) {
+          window.location.href = `/book/${add.dataset.slug}`;
+          return;
+        }
+
+        const result = window.asbBasket.addChecked(id, 1, Number(add.dataset.max ?? '1'));
+        window.asbBasket.setBadge(window.asbBasket.count());
+        add.textContent = result.added > 0 ? 'Added' : 'Already in your basket';
+        add.disabled = true;
+      });
+    }
+
     for (const thumb of document.querySelectorAll<HTMLButtonElement>('.thumb')) {
       thumb.addEventListener('click', () => {
         const src = thumb.dataset.src;
         if (!src || !cover) return;
         cover.src = src;
+
+        // Follow the photo, not the one that happened to be first.
+        const fits = thumb.dataset.fit === 'cover';
+        cover.classList.toggle('object-cover', fits);
+        cover.classList.toggle('object-contain', !fits);
+        cover.classList.toggle('p-4', !fits);
         for (const t of document.querySelectorAll('.thumb')) t.setAttribute('aria-pressed', 'false');
         thumb.setAttribute('aria-pressed', 'true');
       });

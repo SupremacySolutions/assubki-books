@@ -123,6 +123,16 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   out which of the edge handling, the thresholds or the model was at fault -
   not for training: that would need hand-painted correct masks and a GPU, and a
   handful of examples would overfit.
+- **Covers crop sideways, never top to bottom.** `cropsCleanly` in
+  lib/cover-fit decides: a cover wider than 3:4 fills the box and is trimmed at
+  the sides, where these scans carry ~3.6% of white margin each side; a taller
+  one is never trimmed, because that is where a title sits. Its own module with
+  no imports so the suite can check it. Each photo on a book page carries its
+  own answer in `data-fit` - the main image used to keep whichever fit the
+  first one needed.
+- **Volume counts are suggested, never assumed.** `scripts/suggest-volumes.mjs`
+  reads the books that say how many volumes they are and *prints* the UPDATEs.
+  17 of the 38 that mention volumes give a usable number; the rest need reading.
 - **Posting a paid order closes it.** `closesOnDispatch` in lib/order-status:
   there is no second "mark as delivered" click, because on a paid order it told
   the portal nothing. Cash on delivery is excluded - there the second step is

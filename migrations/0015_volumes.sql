@@ -1,0 +1,11 @@
+-- How many volumes a listing is, when it is a set.
+--
+-- NULL, not 1, for an ordinary single book: the difference between "one
+-- volume" and "nobody has said" is worth keeping, because it decides whether
+-- the card says anything at all. A set of one is not a thing worth printing.
+--
+-- 36 of the 226 live books already say so somewhere in their title or
+-- description; scripts/suggest-volumes.mjs reads those and prints UPDATE
+-- statements to look at rather than writing a guess about what is in a box
+-- somebody is buying.
+ALTER TABLE books ADD COLUMN volumes INTEGER;

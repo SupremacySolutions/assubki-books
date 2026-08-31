@@ -127,6 +127,23 @@ const previewCaption = book
             </label>
             <input id="publisher" name="publisher" maxlength="160" value={book?.publisher ?? ''} class="field" />
           </div>
+          <div>
+            <label for="volumes" class="block text-[13px] text-[var(--color-ink-faint)] mb-1">
+              Volumes in the set
+            </label>
+            {/* Blank for an ordinary book. Only a number greater than one is
+                shown to anyone - "1 volume" is not worth printing. */}
+            <input
+              id="volumes"
+              name="volumes"
+              type="number"
+              min="1"
+              max="200"
+              placeholder="Leave blank unless it is a set"
+              value={book?.volumes ?? ''}
+              class="field"
+            />
+          </div>
         </div>
 
         <div>
