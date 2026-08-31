@@ -8,7 +8,11 @@ import { passwordFallbackActive } from '../../lib/admin-auth';
 if (!passwordFallbackActive()) return Astro.redirect('/admin', 302);
 
 const next = Astro.url.searchParams.get('next') ?? '/admin';
-const failed = Astro.url.searchParams.get('e') === '1';
+const err = Astro.url.searchParams.get('e');
+const failed = err === '1';
+const throttled = err === 'throttled';
+const signedOut = err === 'signedout';
+const waitMinutes = Math.max(1, Number(Astro.url.searchParams.get('wait')) || 15);
 ---
 
 <!doctype html>
@@ -49,6 +53,23 @@ const failed = Astro.url.searchParams.get('e') === '1';
           failed && (
             <p role="alert" class="mt-2.5 text-[14px] text-[var(--color-outstock)]">
               That password was not recognised.
+            </p>
+          )
+        }
+        {/* Said plainly rather than left as a silent refusal - if it is the
+            owner who has mistyped, they need to know waiting will fix it. */}
+        {
+          throttled && (
+            <p role="alert" class="mt-2.5 text-[14px] text-[var(--color-outstock)] leading-relaxed">
+              Too many wrong passwords from here. Try again in about {waitMinutes}{' '}
+              {waitMinutes === 1 ? 'minute' : 'minutes'}.
+            </p>
+          )
+        }
+        {
+          signedOut && (
+            <p class="mt-2.5 text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+              Every session was signed out. Sign in again to carry on.
             </p>
           )
         }

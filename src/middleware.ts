@@ -13,13 +13,25 @@ import { authenticate, adminLocked, passwordFallbackActive } from './lib/admin-a
 export const onRequest = defineMiddleware(async (context, next) => {
   const { pathname } = context.url;
 
-  // One canonical address. Both hostnames reach the Worker, so without this
-  // every page would exist at two URLs and each would name itself canonical.
-  if (context.url.hostname === 'www.assubkibooks.co.uk') {
-    return context.redirect(
-      `https://assubkibooks.co.uk${pathname}${context.url.search}`,
-      301,
-    );
+  /*
+   * One canonical address, and only one front door.
+   *
+   * Several hostnames reach this Worker - the apex, `www`, and the
+   * `workers.dev` address it was first deployed to. Left alone, the whole shop
+   * exists at each of them, each naming itself canonical, **and so does the
+   * portal**. That last part is the reason this is not merely an SEO tidy-up:
+   * anything bound to the custom domain - a firewall rule, a rate limit, and
+   * Cloudflare Access when it is switched on - is bound to a hostname, and the
+   * `workers.dev` address would go on serving `/admin` around all of it.
+   *
+   * Development hosts are left alone so `localhost` still works.
+   */
+  const host = context.url.hostname;
+  const canonical = 'assubkibooks.co.uk';
+  const isDev = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+
+  if (!isDev && host !== canonical) {
+    return context.redirect(`https://${canonical}${pathname}${context.url.search}`, 301);
   }
 
   // ---------------------------------------------------------------------
@@ -74,5 +86,67 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (/^\/(shop|my-account)\/?$/.test(pathname)) return context.redirect('/catalogue', 301);
   if (/^\/cart\/?$/.test(pathname)) return context.redirect('/basket', 301);
 
-  return next();
+  const response = await next();
+  return withSecurityHeaders(response, context.url.protocol === 'https:');
 });
+
+/**
+ * Headers every response carries. There were none at all.
+ *
+ * **What `script-src 'unsafe-inline'` costs, said plainly.** Eight pages ship
+ * inline scripts - the upload dialog, the order actions, the shelf tree, the
+ * structured data - so a policy without it would break the portal, and a
+ * broken policy gets removed rather than fixed. That means this CSP does *not*
+ * stop injected inline script, which is the thing a CSP is best known for.
+ *
+ * It is still worth having for the parts that do bite:
+ *
+ * - `frame-ancestors 'none'` - the site cannot be framed, so it cannot be
+ *   clickjacked. This is what replaces X-Frame-Options.
+ * - `form-action 'self'` - an injected form cannot post the owner's session
+ *   or a customer's address to somebody else's server.
+ * - `base-uri 'self'` - a `<base>` tag cannot be used to re-point every
+ *   relative URL on the page.
+ * - `object-src 'none'` - no plugins, ever.
+ * - `default-src`/`connect-src 'self'` - nothing loads or calls out to another
+ *   origin, which is true today: the site fetches nothing external.
+ *
+ * Moving to nonces would let `unsafe-inline` go, and is the obvious next step
+ * if this is ever tightened.
+ */
+function withSecurityHeaders(response: Response, secure: boolean): Response {
+  // Astro returns immutable responses for some routes; cloning the headers is
+  // the only way to add to them without throwing.
+  const headers = new Headers(response.headers);
+
+  headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self'",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; '),
+  );
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+
+  // Only over HTTPS - sent on a plain connection it is ignored, and in
+  // development it would pin localhost to a scheme it does not serve.
+  if (secure) {
+    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}

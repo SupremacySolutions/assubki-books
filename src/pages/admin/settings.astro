@@ -10,8 +10,13 @@ import {
 } from '../../lib/settings';
 import { botConfigured, botUsername, ownerOptInLink } from '../../lib/telegram';
 import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
+import { recentFailures } from '../../lib/login-throttle';
 
-const [settings, emailError] = await Promise.all([getSettings(), lastEmailError()]);
+const [settings, emailError, failedSignIns] = await Promise.all([
+  getSettings(),
+  lastEmailError(),
+  recentFailures(),
+]);
 const ownerTelegramLink = await ownerOptInLink();
 const saved = Astro.url.searchParams.get('saved');
 const unbound = Astro.url.searchParams.get('unbound');
@@ -136,6 +141,45 @@ const draftGroups = [
         </div>
       ))}
 
+    </section>
+
+    {/* Throttling silently would tell the owner nothing. This is how they find
+        out somebody has been trying the door. */}
+    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Getting in</h2>
+      <p class="mt-1.5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        Five wrong passwords from one place and it stops taking guesses from there for fifteen
+        minutes.
+      </p>
+
+      <dl class="mt-3 space-y-2 text-[14.5px]">
+        <div class="flex justify-between gap-4">
+          <dt class="text-[var(--color-ink-soft)]">Failed sign-ins, last 24 hours</dt>
+          <dd
+            class:list={[
+              'text-right tabular-nums',
+              failedSignIns.count > 20 ? 'text-[var(--color-outstock)] font-medium' : '',
+            ]}
+          >
+            {failedSignIns.count}
+            {failedSignIns.lastAt && (
+              <span class="block text-[13px] text-[var(--color-ink-faint)]">
+                last {new Date(failedSignIns.lastAt * 1000).toLocaleString('en-GB')}
+              </span>
+            )}
+          </dd>
+        </div>
+      </dl>
+
+      <form method="post" action="/api/admin/sign-out-everywhere" class="mt-4 pt-3 border-t border-[var(--color-rule)]">
+        <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">
+          Sign out everywhere
+        </button>
+        <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+          Ends every signed-in session, including this one. Use it if the password has been shared,
+          or a device was left signed in somewhere.
+        </p>
+      </form>
     </section>
 
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">

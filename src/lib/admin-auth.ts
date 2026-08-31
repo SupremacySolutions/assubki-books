@@ -121,8 +121,44 @@ async function verifyAccessJwt(token: string): Promise<AdminIdentity | null> {
 // Interim password session
 // ---------------------------------------------------------------------------
 
+/**
+ * Bumped to invalidate every live session at once.
+ *
+ * The cookie signs only its expiry, so a stolen one was good for its full
+ * twelve hours and there was no way to end it - changing the password did not,
+ * because the signing key is `ADMIN_SESSION_SECRET`, a different secret. The
+ * epoch is mixed into the key, so raising it changes every signature and the
+ * cookies that were valid a second ago no longer are.
+ *
+ * Cached for a minute rather than read on every admin request; the cost of
+ * being a minute late to a sign-out-everywhere is nothing next to a query per
+ * page view.
+ */
+let epochCache: { at: number; value: string } | null = null;
+
+async function sessionEpoch(): Promise<string> {
+  const now = Date.now();
+  if (epochCache && now - epochCache.at < 60_000) return epochCache.value;
+  let value = '0';
+  try {
+    const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'session_epoch'`)
+      .first<{ value: string }>();
+    value = row?.value ?? '0';
+  } catch {
+    // No database, or it is mid-migration: fall back to a constant rather than
+    // locking the owner out of their own portal.
+  }
+  epochCache = { at: now, value };
+  return value;
+}
+
+/** Called after signing out everywhere, so it takes effect immediately. */
+export function forgetSessionEpoch(): void {
+  epochCache = null;
+}
+
 const sessionKey = async (): Promise<CryptoKey> => {
-  const secret = cfg().ADMIN_SESSION_SECRET ?? cfg().ADMIN_PASSWORD ?? '';
+  const secret = `${cfg().ADMIN_SESSION_SECRET ?? cfg().ADMIN_PASSWORD ?? ''}:${await sessionEpoch()}`;
   return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),

@@ -1351,6 +1351,53 @@ async function integrity() {
   });
   t.ok(offEnd.location.includes('e=parts'), 'a part reaching past the last volume is refused');
 
+  /*
+   * The portal had no limit on password guesses at all, against a portal that
+   * can read every customer's name, address and phone number.
+   */
+  await db(`DELETE FROM login_attempts WHERE ip LIKE '203.0.113.%'`);
+  const guess = (ip, password) =>
+    fetch(`${SITE}/api/admin/login`, {
+      method: 'POST',
+      headers: { ...ORIGIN, 'CF-Connecting-IP': ip, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password, next: '/admin' }).toString(),
+      redirect: 'manual',
+    }).then((r) => r.headers.get('location') ?? '');
+
+  const tries = [];
+  for (let i = 0; i < 6; i++) tries.push(await guess('203.0.113.50', `wrong-${i}`));
+  t.ok(tries.slice(0, 5).every((l) => l.includes('e=1')), 'five wrong passwords are simply refused');
+  t.ok(tries[5].includes('throttled'), 'and the sixth is locked out');
+
+  // The *address* is throttled, not the account - otherwise anyone could lock
+  // the owner out of their own shop by failing on purpose.
+  t.ok(!(await guess('203.0.113.77', 'wrong')).includes('throttled'),
+    'a lockout does not reach a different address');
+
+  // Someone who mistypes four times and then gets it right should not be one
+  // slip from being locked out.
+  for (let i = 0; i < 4; i++) await guess('203.0.113.91', 'nope');
+  const good = await guess('203.0.113.91', vars.ADMIN_PASSWORD);
+  t.ok(!good.includes('e=1') && !good.includes('throttled'), 'a correct password still gets in');
+  const left = await db(`SELECT COUNT(*) AS n FROM login_attempts WHERE ip='203.0.113.91' AND ok=0`);
+  t.ok(left[0].n === 0, 'and clears the run of failures behind it');
+  await db(`DELETE FROM login_attempts WHERE ip LIKE '203.0.113.%'`);
+
+  // Headers. There were none at all before this.
+  const headed = await get('/');
+  for (const [header, why] of [
+    ['content-security-policy', 'a content policy'],
+    ['x-content-type-options', 'no MIME sniffing'],
+    ['referrer-policy', 'a referrer policy'],
+    ['permissions-policy', 'a permissions policy'],
+  ]) {
+    t.ok(Boolean(headed.headers.get(header)), `every response carries ${why}`);
+  }
+  t.ok((headed.headers.get('content-security-policy') ?? '').includes("frame-ancestors 'none'"),
+    'and cannot be framed, which is what stops clickjacking');
+  t.ok((headed.headers.get('content-security-policy') ?? '').includes("form-action 'self'"),
+    'nor can an injected form post a session somewhere else');
+
   // The book page has to say when it could not take what was asked for; the
   // basket page always did, and the two disagreeing is the actual complaint.
   const bookSource = readFileSync('src/pages/book/[slug].astro', 'utf8');
