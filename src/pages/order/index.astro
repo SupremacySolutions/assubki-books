@@ -436,7 +436,7 @@ if (offerTelegram && telegramLink) {
       Polling is therefore deliberately modest: only while the order is still
       live, only while the tab is actually being looked at, and only for an hour.
       A page left open overnight should not still be asking the server. */}
-  <script is:inline>
+  <script is:inline nonce={Astro.locals.cspNonce}>
     (() => {
       const container = document.querySelector('[data-order-status]');
       if (!container) return;
@@ -494,7 +494,7 @@ if (offerTelegram && telegramLink) {
 
       The reference and token are read from the address bar rather than passed
       in, so this stays a plain script with nothing interpolated into it. */}
-  <script is:inline>
+  <script is:inline nonce={Astro.locals.cspNonce}>
     (() => {
       const button = document.querySelector('[data-connect-telegram]');
       if (!button) return;

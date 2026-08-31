@@ -49,6 +49,18 @@ const draftGroups = [
     slots: COLLECTION_PLACES.map((p) => ({ ...p, cash: false })),
   },
 ];
+const SECTIONS = [
+  { id: 'messages', group: 'Orders', label: 'Payment wording' },
+  { id: 'contact', group: 'Shop', label: 'Where people reach you' },
+  { id: 'alerts', group: 'Shop', label: 'Owner alerts' },
+  { id: 'maintenance', group: 'Shop', label: 'Closing the shop' },
+  { id: 'security', group: 'Account', label: 'Getting in' },
+] as const;
+
+type SectionId = (typeof SECTIONS)[number]['id'];
+const asked = Astro.url.searchParams.get('s');
+const section = (SECTIONS.find((x) => x.id === asked)?.id ?? 'messages') as SectionId;
+const groups = [...new Set(SECTIONS.map((s) => s.group))];
 ---
 
 <Admin title="Settings">
@@ -59,10 +71,7 @@ const draftGroups = [
       </p>
     )
   }
-
   {
-    /* Said plainly, because it stops alerts arriving and nothing else on the
-       page would explain why. */
     unbound && (
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)] leading-relaxed">
         The Telegram handle changed, so owner alerts were disconnected - they were still going to
@@ -72,10 +81,45 @@ const draftGroups = [
     )
   }
 
-  <form method="post" action="/api/admin/settings" class="space-y-5 max-w-2xl">
-    {/* Several per journey, each named by the owner. The list lives in
-        lib/settings, so this renders whatever is defined there rather than
-        hard-coding six boxes. */}
+  {/*
+    One section at a time, chosen by ?s= rather than by script.
+
+    It was a single column of eight boxes, so the short ones - a handle, a
+    connection status, a button - each took a whole row and the page was mostly
+    scrolling past things nobody was changing. A list down the side also says
+    what the portal can do, which a long scroll never did.
+  */}
+  <div class="grid gap-6 lg:grid-cols-[13rem_1fr] items-start">
+    <nav aria-label="Settings sections" class="lg:sticky lg:top-[92px]">
+      <ul class="space-y-0.5">
+        {groups.map((group) => (
+          <>
+            <li class="eyebrow px-2 pt-3 pb-1">{group}</li>
+            {SECTIONS.filter((s) => s.group === group).map((s) => (
+              <li>
+                <a
+                  href={`/admin/settings?s=${s.id}`}
+                  aria-current={s.id === section ? 'page' : undefined}
+                  class:list={[
+                    'block px-2.5 py-1.5 rounded-[3px] text-[14px]',
+                    s.id === section
+                      ? 'bg-[var(--color-wash)] text-[var(--color-navy)] font-medium'
+                      : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-paper)]',
+                  ]}
+                >
+                  {s.label}
+                </a>
+              </li>
+            ))}
+          </>
+        ))}
+      </ul>
+    </nav>
+
+    <div class="min-w-0 max-w-2xl space-y-5">
+      {
+        section === 'messages' && (
+          <form method="post" action="/api/admin/settings" class="space-y-5">
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
         Payment drafts
@@ -142,9 +186,44 @@ const draftGroups = [
       ))}
 
     </section>
+            <button type="submit" class="btn btn-primary">Save wording</button>
+          </form>
+        )
+      }
 
-    {/* Throttling silently would tell the owner nothing. This is how they find
-        out somebody has been trying the door. */}
+      {
+        section === 'contact' && (
+          <form method="post" action="/api/admin/settings" class="space-y-5">
+    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+        Where people reach you
+      </h2>
+      <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        Every "Message us on Telegram" link on the site points here, and the bot sends anyone
+        asking about anything other than an order here too. Leave it blank and the site falls back
+        to the channel.
+      </p>
+      <label for="contact_telegram" class="block text-[14.5px] font-medium mb-1.5">
+        Telegram handle
+      </label>
+      <input
+        id="contact_telegram"
+        name="contact_telegram"
+        maxlength="80"
+        placeholder="@alsubkibooks"
+        value={settings.contact_telegram ?? ''}
+        class="field !w-64"
+      />
+    </section>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </form>
+        )
+      }
+
+      {/* Outside any form. It used to sit inside the settings form, which is
+          invalid HTML - a browser drops the inner form, so "Sign out
+          everywhere" was posting the settings instead of signing out. */}
+      {section === 'security' && (
     <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Getting in</h2>
       <p class="mt-1.5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
@@ -181,33 +260,39 @@ const draftGroups = [
         </p>
       </form>
     </section>
+      )}
 
-    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
-      <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
-        Where people reach you
-      </h2>
-      <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-        Every "Message us on Telegram" link on the site points here, and the bot sends anyone
-        asking about anything other than an order here too. Leave it blank and the site falls back
-        to the channel.
-      </p>
-      <label for="contact_telegram" class="block text-[14.5px] font-medium mb-1.5">
-        Telegram handle
-      </label>
-      <input
-        id="contact_telegram"
-        name="contact_telegram"
-        maxlength="80"
-        placeholder="@alsubkibooks"
-        value={settings.contact_telegram ?? ''}
-        class="field !w-64"
-      />
-    </section>
+      {
+        section === 'maintenance' && (
+          <form method="post" action="/api/admin/settings" class="space-y-5">
+            <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+              <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+                Closing the shop
+              </h2>
+              <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+                Write something here and the shop closes to customers with that message. Leave it
+                empty and it opens again. <strong>This portal stays open either way</strong>, and so
+                does every customer's own order page - somebody waiting on books they have paid for
+                should not hit a wall because the shop is being worked on.
+              </p>
+              <label for="maintenance" class="block text-[14.5px] font-medium mb-1.5">
+                What customers see
+              </label>
+              <textarea
+                id="maintenance"
+                name="maintenance"
+                rows="3"
+                maxlength="400"
+                placeholder="e.g. We are updating the catalogue this morning and will be back by midday, in shā Allāh."
+                class="field font-[family-name:var(--font-body)]">{settings.maintenance ?? ''}</textarea
+              >
+            </section>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </form>
+        )
+      }
 
-    <button type="submit" class="btn btn-primary">Save settings</button>
-  </form>
-
-  <!-- Read-only: these are secrets, set from the command line, not the browser. -->
+      {section === 'alerts' && (
   <section class="mt-8 max-w-2xl bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
     <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Connections</h2>
     <dl class="mt-4 space-y-3 text-[14.5px]">
@@ -272,34 +357,7 @@ const draftGroups = [
       </div>
     </dl>
   </section>
+      )}
+    </div>
+  </div>
 </Admin>
-<script>
-  /*
-   * The drafts are switched rather than stacked, so only one is in front of the
-   * owner at a time. Every box stays in the form while hidden - a hidden field
-   * still submits - so switching never costs an edit, and Save writes them all.
-   */
-  for (const group of document.querySelectorAll<HTMLElement>('[data-draft-group]')) {
-    const tabs = [...group.querySelectorAll<HTMLButtonElement>('[data-draft-tab]')];
-    const panels = [...group.querySelectorAll<HTMLElement>('[data-draft-panel]')];
-
-    const show = (slot: string) => {
-      for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.draftTab === slot));
-      for (const panel of panels) panel.hidden = panel.dataset.draftPanel !== slot;
-    };
-
-    for (const tab of tabs) {
-      tab.addEventListener('click', () => show(tab.dataset.draftTab ?? ''));
-    }
-
-    // Renaming one should rename its tab as you type, or the tabs and the names
-    // disagree until the page is saved and reloaded.
-    for (const input of group.querySelectorAll<HTMLInputElement>('[data-draft-name]')) {
-      input.addEventListener('input', () => {
-        const tab = tabs.find((b) => b.dataset.draftTab === input.dataset.draftName);
-        if (tab) tab.textContent = input.value.trim() || (input.placeholder ?? '');
-      });
-    }
-  }
-</script>
-

@@ -58,6 +58,14 @@ const year = new Date().getFullYear();
       class="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between text-[13px] text-[var(--color-wash)]/60"
     >
       <p>© {year} As-Subkī Books</p>
+      {/* Where a customer expects to find them, and where the law expects them
+          to be findable: on every page rather than only at checkout. */}
+      <nav aria-label="Policies" class="flex flex-wrap gap-x-5 gap-y-1">
+        <a href="/delivery" class="hover:text-white">Delivery &amp; collection</a>
+        <a href="/returns" class="hover:text-white">Returns</a>
+        <a href="/privacy" class="hover:text-white">Privacy</a>
+        <a href="/terms" class="hover:text-white">Terms</a>
+      </nav>
     </div>
   </div>
 </footer>

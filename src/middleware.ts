@@ -1,6 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
 import { slugForLegacy } from './lib/db';
 import { authenticate, adminLocked, passwordFallbackActive } from './lib/admin-auth';
+import { maintenanceNotice } from './lib/maintenance';
 
 /**
  * Old WooCommerce URLs keep working.
@@ -12,6 +13,17 @@ import { authenticate, adminLocked, passwordFallbackActive } from './lib/admin-a
  */
 export const onRequest = defineMiddleware(async (context, next) => {
   const { pathname } = context.url;
+
+  /*
+   * A fresh nonce per request, minted before anything renders so the pages can
+   * stamp it on their inline scripts and the header can name it afterwards.
+   *
+   * This is what lets the policy drop `'unsafe-inline'`. With it, the CSP did
+   * not stop injected inline script at all - the header looked like protection
+   * without being any. Script that arrives through an injection has no way to
+   * know this number, so it does not run.
+   */
+  context.locals.cspNonce = crypto.randomUUID().replace(/-/g, '');
 
   /*
    * One canonical address, and only one front door.
@@ -62,6 +74,48 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
   }
 
+  /*
+   * The shop can be closed without the portal closing with it.
+   *
+   * `/order` stays open on purpose: somebody waiting on books they have
+   * already paid for should not hit a wall because the shop is being worked
+   * on, and the link in their email and their Telegram must keep working. So
+   * does `/img`, or the order page would lose its covers.
+   *
+   * 503 with Retry-After rather than 200, so a crawler treats it as temporary
+   * and does not start dropping the shop from its index.
+   */
+  const stillOpen =
+    /*
+     * The portal by path, not by whether the request is already signed in.
+     * Keying it on `locals.admin` locked the sign-in page itself behind the
+     * closed sign - so closing the shop and then signing out left no way back
+     * in to open it again.
+     */
+    pathname === '/admin' ||
+    pathname.startsWith('/admin/') ||
+    pathname.startsWith('/api/admin/') ||
+    pathname.startsWith('/order') ||
+    pathname.startsWith('/api/orders') ||
+    pathname.startsWith('/img/') ||
+    pathname.startsWith('/_astro/') ||
+    pathname === '/favicon.svg' ||
+    pathname === '/robots.txt';
+
+  if (!stillOpen) {
+    const notice = await maintenanceNotice();
+    if (notice) {
+      return new Response(closedPage(notice), {
+        status: 503,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Retry-After': '3600',
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+  }
+
   const product = /^\/product\/([^/]+)\/?$/.exec(pathname);
   if (product) {
     // The stored legacy slug is percent-encoded exactly as WooCommerce had it,
@@ -87,19 +141,22 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (/^\/cart\/?$/.test(pathname)) return context.redirect('/basket', 301);
 
   const response = await next();
-  return withSecurityHeaders(response, context.url.protocol === 'https:');
+  return withSecurityHeaders(response, context.url.protocol === 'https:', context.locals.cspNonce);
 });
 
 /**
  * Headers every response carries. There were none at all.
  *
- * **What `script-src 'unsafe-inline'` costs, said plainly.** Eight pages ship
- * inline scripts - the upload dialog, the order actions, the shelf tree, the
- * structured data - so a policy without it would break the portal, and a
- * broken policy gets removed rather than fixed. That means this CSP does *not*
- * stop injected inline script, which is the thing a CSP is best known for.
+ * **Inline scripts run on a nonce, not on trust.** Every `is:inline` block in
+ * this codebase carries the per-request nonce minted above; a script that
+ * arrives through an injection cannot know that number, so the browser refuses
+ * it. That is the protection `'unsafe-inline'` was quietly giving up.
  *
- * It is still worth having for the parts that do bite:
+ * `style-src` keeps `'unsafe-inline'`, which is a far smaller thing: inline
+ * *style attributes* cannot take a nonce at all, and the worst an injected one
+ * does is make the page ugly.
+ *
+ * The rest:
  *
  * - `frame-ancestors 'none'` - the site cannot be framed, so it cannot be
  *   clickjacked. This is what replaces X-Frame-Options.
@@ -111,10 +168,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
  * - `default-src`/`connect-src 'self'` - nothing loads or calls out to another
  *   origin, which is true today: the site fetches nothing external.
  *
- * Moving to nonces would let `unsafe-inline` go, and is the obvious next step
- * if this is ever tightened.
  */
-function withSecurityHeaders(response: Response, secure: boolean): Response {
+function withSecurityHeaders(response: Response, secure: boolean, nonce: string): Response {
   // Astro returns immutable responses for some routes; cloning the headers is
   // the only way to add to them without throwing.
   const headers = new Headers(response.headers);
@@ -123,7 +178,7 @@ function withSecurityHeaders(response: Response, secure: boolean): Response {
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      `script-src 'self' 'nonce-${nonce}'`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self'",
@@ -149,4 +204,37 @@ function withSecurityHeaders(response: Response, secure: boolean): Response {
     statusText: response.statusText,
     headers,
   });
+}
+
+/**
+ * What a customer sees while the shop is closed.
+ *
+ * Written out here rather than as a page, because a page would go through the
+ * same rendering that may itself be what is being worked on - and a
+ * maintenance screen that cannot render is not much of a maintenance screen.
+ */
+function closedPage(message: string): string {
+  const safe = message
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Back shortly - As-Subkī Books</title>
+<style>
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:2rem;
+         background:#f5f4f0; color:#1a1a18;
+         font-family:ui-serif, Georgia, serif; }
+  main { max-width:34rem; text-align:center; }
+  h1 { font-size:1.7rem; font-weight:600; margin:0 0 .75rem; }
+  p { font-size:1.05rem; line-height:1.65; color:#4a4a45; margin:0 0 1rem;
+      font-family:ui-sans-serif, system-ui, sans-serif; white-space:pre-line; }
+  a { color:#184485; }
+</style>
+</head><body><main>
+<h1>مكتبة السبكي · As-Subkī Books</h1>
+<p>${safe}</p>
+<p style="font-size:.95rem">If you have an order with us, the link in your email still works.</p>
+</main></body></html>`;
 }

@@ -300,7 +300,7 @@ const jsonLd = {
     }
   </div>
 
-  <script is:inline set:html={JSON.stringify(jsonLd)} type="application/ld+json" />
+  <script is:inline nonce={Astro.locals.cspNonce} set:html={JSON.stringify(jsonLd)} type="application/ld+json" />
 
   <script>
     import { readGroup } from '../../scripts/group.ts';

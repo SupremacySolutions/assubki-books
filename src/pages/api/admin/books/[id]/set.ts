@@ -18,22 +18,36 @@ export const prerender = false;
  * 3-4, and no single number says both.
  */
 
-/** "Volumes 1-2, 1-2, 17.00" - a name, the volumes it covers, and a price. */
-function parsePart(line: string, volumes: number) {
-  const [name, range, price] = line.split(',').map((p) => p.trim());
-  if (!name || !range || !price) return null;
+/**
+ * One part, from its four fields.
+ *
+ * Four boxes rather than a line of comma-separated text: asking someone to
+ * type "Volumes 1-2, 1-2, 17.00" invites getting the punctuation wrong, and
+ * the name and the range read as the same thing said twice.
+ *
+ * A completely blank row is not an error - the form offers more rows than most
+ * sets need - but a half-filled one is, because it means something was meant
+ * and mistyped.
+ */
+function readPart(form: FormData, i: number, volumes: number) {
+  const name = String(form.get(`part_${i}_name`) ?? '').trim();
+  const fromRaw = String(form.get(`part_${i}_from`) ?? '').trim();
+  const toRaw = String(form.get(`part_${i}_to`) ?? '').trim();
+  const priceRaw = String(form.get(`part_${i}_price`) ?? '').trim();
 
-  const m = /^(\d+)\s*(?:-\s*(\d+))?$/.exec(range);
-  if (!m) return null;
-  const from = Number.parseInt(m[1], 10);
-  const to = m[2] ? Number.parseInt(m[2], 10) : from;
+  if (!name && !fromRaw && !toRaw && !priceRaw) return 'empty' as const;
+  if (!name || !fromRaw || !toRaw || !priceRaw) return null;
+
+  const from = Number.parseInt(fromRaw, 10);
+  const to = Number.parseInt(toRaw, 10);
 
   // Refused rather than clamped: a part that runs past the end of the set, or
   // backwards, is a typo, and quietly correcting it would put a listing on the
   // shop front that nobody meant.
+  if (!(Number.isInteger(from) && Number.isInteger(to))) return null;
   if (!(from >= 1 && to >= from && to <= volumes)) return null;
 
-  const pence = Math.round(Number(price.replace(/[^0-9.]/g, '')) * 100);
+  const pence = Math.round(Number(priceRaw.replace(/[^0-9.]/g, '')) * 100);
   if (!Number.isFinite(pence) || pence < 0) return null;
 
   return { name: name.slice(0, 200), from, to, pence };
@@ -78,12 +92,10 @@ export const POST: APIRoute = async ({ params, request }) => {
   if (!(volumes >= 2 && volumes <= 200)) return fail('volumes');
   const sets = Math.max(0, Math.min(999, Math.round(Number(form.get('sets')) || 0)));
 
-  const lines = String(form.get('parts') ?? '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-  const parts = lines.map((l) => parsePart(l, volumes));
-  if (parts.length === 0 || parts.some((p) => p === null)) return fail('parts');
+  const rows = [0, 1, 2, 3].map((i) => readPart(form, i, volumes));
+  if (rows.some((r) => r === null)) return fail('parts');
+  const parts = rows.filter((r): r is Exclude<typeof r, null | 'empty'> => r !== 'empty');
+  if (parts.length === 0) return fail('parts');
 
   const created = await env.DB.prepare(
     'INSERT INTO book_sets (name, volumes) VALUES (?, ?) RETURNING id',
@@ -109,8 +121,7 @@ export const POST: APIRoute = async ({ params, request }) => {
     ).bind(setId, volumes, volumes, sets, id),
   );
 
-  for (const part of parts) {
-    const p = part!;
+  for (const p of parts) {
     /*
      * `stock` is set on each part too, and it is not what decides availability
      * - the pool is. It is here because `books` carries CHECK (reserved <=

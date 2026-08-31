@@ -422,41 +422,75 @@ const previewCaption = book
               </>
             ) : (
               <>
-                <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3">
-                  For a set that can also be bought in parts - four volumes sold whole, or as two
-                  halves at their own prices. Each part becomes its own listing, linked to this one,
-                  sharing one shelf count.
-                </p>
+                <div class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3 space-y-2">
+                  <p>
+                    For a set that can also be bought in parts. <strong>This listing becomes the
+                    complete set</strong>, keeping its cover and description; each part you add
+                    below becomes a listing of its own.
+                  </p>
+                  <p class="p-2.5 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]">
+                    <span class="block font-medium text-[var(--color-ink)]">For example</span>
+                    A four volume set you hold 3 of. Add two parts: “Volumes 1 to 2” at £17 and
+                    “Volumes 3 to 4” at £17. A customer can then buy the whole set or either half.
+                    Sell one half and the shop still shows 3 of the other, but only 2 complete sets.
+                  </p>
+                </div>
+
                 <form method="post" action={`/api/admin/books/${book.id}/set`} class="space-y-3">
                   <input type="hidden" name="action" value="create" />
                   <div class="grid grid-cols-2 gap-3">
                     <label class="block">
-                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">Volumes in all</span>
+                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                        How many volumes altogether
+                      </span>
                       <input type="number" name="volumes" min="2" max="200" required
-                        class="field !py-2 !text-[14px]" />
+                        placeholder="4" class="field !py-2 !text-[14px]" />
                     </label>
                     <label class="block">
-                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">Complete sets held</span>
+                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                        Complete sets on the shelf
+                      </span>
                       <input type="number" name="sets" min="0" max="999" required
-                        class="field !py-2 !text-[14px]" />
+                        placeholder="3" class="field !py-2 !text-[14px]" />
                     </label>
                   </div>
+
+                  {/* Proper fields rather than a line of comma-separated text.
+                      Asking someone to type "Volumes 1-2, 1-2, 17.00" into a
+                      box invites getting the punctuation wrong, and the name
+                      and the range read as the same thing twice. */}
                   <div>
-                    <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
-                      The parts, one per line: name, volumes, price
+                    <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1.5">
+                      The parts it can be split into
                     </span>
-                    <textarea
-                      name="parts"
-                      rows="3"
-                      required
-                      placeholder={'Volumes 1-2, 1-2, 17.00\nVolumes 3-4, 3-4, 17.00'}
-                      class="field font-[family-name:var(--font-body)] !text-[14px]"
-                    />
-                    <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                      This listing becomes the complete set. Each line adds another listing for
-                      those volumes at that price.
+                    <div class="space-y-2">
+                      {[0, 1, 2, 3].map((i) => (
+                        <div class="grid grid-cols-[1fr_3.6rem_3.6rem_4.6rem] gap-1.5 items-center">
+                          <input
+                            type="text"
+                            name={`part_${i}_name`}
+                            maxlength="200"
+                            placeholder={i === 0 ? 'First half' : i === 1 ? 'Second half' : 'Name'}
+                            class="field !py-1.5 !text-[13.5px]"
+                          />
+                          <input type="number" name={`part_${i}_from`} min="1" max="200"
+                            placeholder={i === 0 ? '1' : i === 1 ? '3' : 'from'}
+                            class="field !py-1.5 !text-[13.5px] !px-2" />
+                          <input type="number" name={`part_${i}_to`} min="1" max="200"
+                            placeholder={i === 0 ? '2' : i === 1 ? '4' : 'to'}
+                            class="field !py-1.5 !text-[13.5px] !px-2" />
+                          <input type="text" name={`part_${i}_price`} inputmode="decimal"
+                            placeholder={i < 2 ? '17.00' : '£'}
+                            class="field !py-1.5 !text-[13.5px] !px-2" />
+                        </div>
+                      ))}
+                    </div>
+                    <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                      Name, first volume, last volume, price. Leave rows blank if you need fewer.
+                      One volume on its own is fine - put the same number in both.
                     </p>
                   </div>
+
                   <button type="submit" class="btn btn-primary !py-2 !text-[13.5px]">
                     Build the parts
                   </button>
@@ -520,7 +554,7 @@ const previewCaption = book
 
   {
     book && (
-      <script is:inline define:vars={{ bookId: book.id, bookTitle: book.title }}>
+      <script is:inline nonce={Astro.locals.cspNonce} define:vars={{ bookId: book.id, bookTitle: book.title }}>
         // ------------------------------------------------------------------
         // Save and post are ordered, not parallel. Posting sends whatever is
         // in the database, so offering it while the form has unsaved edits

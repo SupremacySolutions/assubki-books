@@ -1323,7 +1323,8 @@ async function integrity() {
     action: 'create',
     volumes: '4',
     sets: '3',
-    parts: 'First half, 1-2, 17.00\nSecond half, 3-4, 17.00',
+    part_0_name: 'First half', part_0_from: '1', part_0_to: '2', part_0_price: '17.00',
+    part_1_name: 'Second half', part_1_from: '3', part_1_to: '4', part_1_price: '17.00',
   });
   t.ok(built.status === 302 && !built.location.includes('e='),
     `a set can be built from a listing (${built.location})`);
@@ -1347,9 +1348,32 @@ async function integrity() {
   // than clamped - a quietly corrected listing would go on the shop front.
   const other = await makeBook();
   const offEnd = await admin(`/api/admin/books/${other.id}/set`, {
-    action: 'create', volumes: '4', sets: '1', parts: 'Too far, 3-9, 5.00',
+    action: 'create', volumes: '4', sets: '1',
+    part_0_name: 'Too far', part_0_from: '3', part_0_to: '9', part_0_price: '5.00',
   });
   t.ok(offEnd.location.includes('e=parts'), 'a part reaching past the last volume is refused');
+
+  /*
+   * Cleaned up by hand, and this is why: the builder creates a listing per
+   * part *server-side*, so the suite's own fixture registry never sees them.
+   * Left alone they accumulate run after run, inflate the catalogue and break
+   * the pagination and shelf assertions - and against --prod they would be
+   * real listings in the real shop.
+   */
+  const builtSet = await db(
+    `SELECT set_id AS id FROM books WHERE id = ${setBook.id}`,
+  );
+  if (builtSet[0]?.id) {
+    await db(`DELETE FROM books WHERE set_id = ${builtSet[0].id}`);
+    await db(`DELETE FROM book_sets WHERE id = ${builtSet[0].id}`);
+  }
+
+  const halfFilled = await admin(`/api/admin/books/${(await makeBook()).id}/set`, {
+    action: 'create', volumes: '4', sets: '1',
+    part_0_name: 'Missing its price', part_0_from: '1', part_0_to: '2',
+  });
+  t.ok(halfFilled.location.includes('e=parts'),
+    'and a half-filled row is refused rather than quietly dropped');
 
   /*
    * The portal had no limit on password guesses at all, against a portal that
@@ -1397,6 +1421,93 @@ async function integrity() {
     'and cannot be framed, which is what stops clickjacking');
   t.ok((headed.headers.get('content-security-policy') ?? '').includes("form-action 'self'"),
     'nor can an injected form post a session somewhere else');
+
+  /*
+   * What was already sent, on the order page.
+   *
+   * The portal showed only the *next* step, so once an order was confirmed
+   * there was no way to see what had gone out - the wording, the postage and
+   * the tracking were all stored and none of them displayed.
+   */
+  const histBook = await makeBook();
+  const histOrder = await placeOrder(histBook.id, 'delivery');
+  await admin(`/api/admin/orders/${histOrder.ref}/confirm`, {
+    postage: '3.95',
+    payment_message: 'Pay into the main account, quoting the reference.',
+  });
+  await admin(`/api/admin/orders/${histOrder.ref}/status`, {
+    status: 'dispatched', tracking: 'HIST12345', postage_provider: 'Evri',
+  });
+
+  const histPage = await html(`/admin/orders/${histOrder.ref}`);
+  const histText = visibleText(histPage);
+  t.ok(histPage.includes('Already sent'), 'the order page records what has happened');
+  t.ok(histText.includes('Request placed') && histText.includes('Confirmed'),
+    'each stage that happened is listed');
+  t.ok(histText.includes('Pay into the main account'),
+    'including the wording that was actually sent, which is the point of it');
+  t.ok(histText.includes('HIST12345') && histText.includes('Evri'),
+    'and the tracking number and carrier entered at the time');
+
+  /*
+   * Closing the shop must not close the portal, or the way back in.
+   *
+   * Keyed on the path rather than on whether the request is already signed in:
+   * the first version checked `locals.admin`, which put the sign-in page
+   * itself behind the closed sign - so closing the shop and then signing out
+   * left no way to open it again.
+   */
+  await admin('/api/admin/settings', { maintenance: 'Back shortly.' });
+  await new Promise((r) => setTimeout(r, 100));
+  const closed = {
+    home: (await get('/')).status,
+    catalogue: (await get('/catalogue')).status,
+    login: (await get('/admin/login')).status,
+    order: (await get('/order?ref=NOPE&t=NOPE')).status,
+  };
+  t.ok(closed.home === 503 && closed.catalogue === 503,
+    `the shop closes to customers (home ${closed.home}, catalogue ${closed.catalogue})`);
+  t.ok(closed.login === 200, 'the way back into the portal stays open');
+  t.ok(closed.order === 200,
+    'and so does a customer order page - somebody waiting on paid-for books is not shut out');
+
+  await admin('/api/admin/settings', { maintenance: '' });
+  await new Promise((r) => setTimeout(r, 100));
+  t.ok((await get('/')).status === 200, 'and clearing the message opens it again');
+
+  // The policies a shop selling at a distance has to publish.
+  for (const path of ['/privacy', '/returns', '/delivery', '/terms']) {
+    t.ok((await get(path)).status === 200, `${path} is published`);
+  }
+  const footer = await html('/');
+  t.ok(['privacy', 'returns', 'delivery', 'terms'].every((p) => footer.includes(`href="/${p}"`)),
+    'and every page links to them from the footer');
+
+  /*
+   * The dashboard.
+   *
+   * Its numbers are checked against counting the same things directly - a
+   * dashboard that quietly disagrees with the orders list is worse than none -
+   * and it is deliberately a single batch behind a cache, because this is the
+   * same shape as the query that once ate 95% of the read budget.
+   */
+  const dash = await html('/admin/dashboard');
+  const dashText = visibleText(dash);
+  for (const panel of ['To confirm', 'Awaiting payment', 'To post', 'Taken per day', 'Running low']) {
+    t.ok(dashText.includes(panel), `the dashboard shows "${panel}"`);
+  }
+  t.ok((await get('/admin/dashboard?d=90')).status === 200, 'and covers 90 days as well as 30');
+
+  const [waitingNow] = await db(
+    `SELECT SUM(CASE WHEN status='requested' THEN 1 ELSE 0 END) AS n FROM orders`,
+  );
+  t.ok(dashText.includes(String(waitingNow.n)),
+    `its "to confirm" count matches counting the orders directly (${waitingNow.n})`);
+
+  const dashSource = readFileSync('src/lib/dashboard.ts', 'utf8');
+  t.ok(dashSource.includes('env.DB.batch'),
+    'the figures come from one batch rather than a query per tile');
+  t.ok(/cache\.at < 60_?000/.test(dashSource), 'and are cached, like the shelf counts');
 
   // The book page has to say when it could not take what was asked for; the
   // basket page always did, and the two disagreeing is the actual complaint.
@@ -1944,6 +2055,10 @@ try {
   }
 } finally {
   console.log('\nTidying up');
+
+  // Sets are made server-side by the builder, so they are not in `created`.
+  await db(`DELETE FROM books WHERE set_id IN (SELECT id FROM book_sets)`).catch(() => {});
+  await db(`DELETE FROM book_sets`).catch(() => {});
   orphanedMessages = await teardown();
   const left = await one(
     `SELECT (SELECT COUNT(*) FROM books WHERE id > 226) AS fixtures,

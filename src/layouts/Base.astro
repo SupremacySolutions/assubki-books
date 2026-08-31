@@ -53,7 +53,7 @@ const ogImage = image ? new URL(image, origin).toString() : null;
 
     <meta name="theme-color" content="#184485" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <script is:inline>
+    <script is:inline nonce={Astro.locals.cspNonce}>
       try {
         if (sessionStorage.getItem('asb-internal-navigation') === '1') {
           document.documentElement.classList.add('skip-splash');
@@ -64,7 +64,7 @@ const ogImage = image ? new URL(image, origin).toString() : null;
   </head>
 
   <body class="min-h-screen flex flex-col">
-    <script is:inline>
+    <script is:inline nonce={Astro.locals.cspNonce}>
       // Set before paint so reveal styles only apply where JS can undo them.
       // Without this, a JS failure would leave the page permanently blank.
       document.documentElement.classList.add('js');

@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { forgetMaintenance } from '../../../lib/maintenance';
 import {
   setSetting,
   getSetting,
@@ -43,6 +44,10 @@ export const POST: APIRoute = async ({ request }) => {
     await text(form, partLabelKey(slot), partLabelKey(slot), 40);
   }
 
+
+  // Empty closes nothing; anything else is what customers are told.
+  await text(form, 'maintenance', 'maintenance', 400);
+  forgetMaintenance();
 
   const dropped = await retargetAlerts(form);
   await text(form, 'contact_telegram', 'contact_telegram', 80);

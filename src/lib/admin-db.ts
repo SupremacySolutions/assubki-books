@@ -21,10 +21,21 @@ export interface AdminOrderRow {
   postage_pence: number | null;
   total_pence: number | null;
   created_at: number;
+  updated_at: number;
   expires_at: number | null;
   confirmed_at: number | null;
+  /** Set when payment was recorded, and when the order was closed. */
+  paid_at: number | null;
+  dispatched_at: number | null;
+  completed_at: number | null;
   telegram_chat_id: string | null;
   tracking_number: string | null;
+  postage_provider: string | null;
+  postage_service: string | null;
+  /** The wording that was actually sent, kept so it can be looked back at. */
+  payment_message: string | null;
+  /** The owner's own words when cancelling. */
+  cancel_note: string | null;
   /** The customer is paying cash when the books change hands. */
   cash_payment: number;
   /** What they asked for at checkout: 'transfer', 'cash', or nothing. */

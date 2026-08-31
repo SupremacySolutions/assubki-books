@@ -1,0 +1,37 @@
+---
+import Base from '../layouts/Base.astro';
+
+interface Props { title: string; intro: string; }
+const { title, intro } = Astro.props;
+
+/*
+ * The shared shell for the shop's written policies.
+ *
+ * Every specific the owner must supply is left as a marked blank rather than
+ * invented. A plausible-looking returns address that nobody has agreed to is
+ * worse than an obvious gap: the gap gets filled, the invention gets trusted.
+ */
+---
+
+<Base title={title} description={intro}>
+  <div class="py-10 md:py-14 max-w-2xl">
+    <h1 class="font-[family-name:var(--font-display)] text-[30px] md:text-[36px] font-semibold">
+      {title}
+    </h1>
+    <p class="mt-3 text-[16px] text-[var(--color-ink-soft)] leading-relaxed">{intro}</p>
+    <div class="policy mt-8 space-y-6 text-[15.5px] leading-relaxed">
+      <slot />
+    </div>
+  </div>
+</Base>
+
+<style is:global>
+  .policy h2 { font-family: var(--font-display); font-size: 20px; font-weight: 600; margin-top: 1.6rem; }
+  .policy p { margin-top: .6rem; color: var(--color-ink-soft); }
+  .policy ul { margin-top: .6rem; padding-left: 1.1rem; list-style: disc; color: var(--color-ink-soft); }
+  .policy li { margin-top: .3rem; }
+  .policy .blank {
+    background: #fdf3e3; border-bottom: 1px dashed #c8a24a; padding: 0 .25rem;
+    font-style: italic; color: #7a5a1e;
+  }
+</style>

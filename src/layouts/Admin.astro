@@ -15,6 +15,7 @@ const path = Astro.url.pathname;
 
 const NAV = [
   { href: '/admin', label: 'Dashboard' },
+  { href: '/admin/dashboard', label: 'Dashboard' },
   { href: '/admin/orders', label: 'Orders' },
   { href: '/admin/books', label: 'Listings' },
   { href: '/admin/shelves', label: 'Shelves' },
@@ -23,6 +24,8 @@ const NAV = [
 
 const active = (href: string) =>
   href === '/admin' ? path === '/admin' : path.startsWith(href);
+import { maintenanceNotice } from '../lib/maintenance';
+const closed = await maintenanceNotice();
 ---
 
 <!doctype html>
@@ -33,7 +36,7 @@ const active = (href: string) =>
     <title>{title} - As-Subkī Books portal</title>
     <meta name="robots" content="noindex, nofollow" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <script is:inline>
+    <script is:inline nonce={Astro.locals.cspNonce}>
       try {
         if (sessionStorage.getItem('asb-internal-navigation') === '1') {
           document.documentElement.classList.add('skip-splash');
@@ -44,7 +47,7 @@ const active = (href: string) =>
   </head>
 
   <body class="min-h-screen bg-[var(--color-paper)]">
-    <script is:inline>
+    <script is:inline nonce={Astro.locals.cspNonce}>
       document.documentElement.classList.add('js');
     </script>
     <div id="pageTransition" class="page-transition is-loading" aria-hidden="true">
@@ -84,6 +87,14 @@ const active = (href: string) =>
       </div>
     </header>
 
+    {
+      closed && (
+        <p class="bg-[var(--color-outstock)] text-white text-[13.5px] px-5 md:px-8 py-2 text-center">
+          The shop is closed to customers.{' '}
+          <a href="/admin/settings?s=maintenance" class="underline underline-offset-2">Open it again</a>
+        </p>
+      )
+    }
     <main class="page-enter mx-auto max-w-5xl px-5 md:px-8 py-8">
       {
         back && (

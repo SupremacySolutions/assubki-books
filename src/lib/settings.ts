@@ -60,7 +60,11 @@ export type SettingKey =
   | 'owner_telegram_label'
   // Who the shop is reached at: the handle the bot points people to, and the
   // one behind every "Message us on Telegram" link on the site.
-  | 'contact_telegram';
+  | 'contact_telegram'
+  // Non-empty closes the shop to customers. The value is what they are told.
+  | 'maintenance'
+  // Bumped to end every portal session at once.
+  | 'session_epoch';
 
 export async function getSetting(key: SettingKey, fallback = ''): Promise<string> {
   const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?')

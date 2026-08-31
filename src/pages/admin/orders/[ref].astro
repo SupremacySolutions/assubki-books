@@ -40,6 +40,66 @@ const openPayment = isCash
 const activePayment = openPayment?.slot ?? null;
 const activePlace = places[0]?.slot ?? null;
 const suggestedPostage = order.postage_pence ?? (isCollection ? 0 : postageDefault);
+
+/*
+ * Each stage that has already happened, with what was captured at the time.
+ * Built from the timestamps the order already carries, so nothing new is
+ * recorded to make this work.
+ */
+const history: { at: number; what: string; detail?: string; body?: string }[] = [];
+
+history.push({
+  at: order.created_at,
+  what: 'Request placed',
+  detail: `${order.item_count} ${order.item_count === 1 ? 'book' : 'books'} · ${price(order.subtotal_pence)}`,
+});
+
+if (order.confirmed_at) {
+  history.push({
+    at: order.confirmed_at,
+    what: isCash ? 'Confirmed, paying in cash' : 'Confirmed and payment details sent',
+    detail:
+      order.total_pence !== null
+        ? `Total ${price(order.total_pence)}${
+            !isCollection && order.postage_pence ? ` · postage ${price(order.postage_pence)}` : ''
+          }`
+        : undefined,
+    // The message exactly as it went out, which is the thing most worth being
+    // able to look back at.
+    body: order.payment_message ?? undefined,
+  });
+}
+
+if (order.paid_at) {
+  history.push({
+    at: order.paid_at,
+    what: isCash ? 'Set aside for collection' : 'Payment received',
+  });
+}
+
+if (order.dispatched_at) {
+  history.push({
+    at: order.dispatched_at,
+    what: 'Posted',
+    detail: [order.postage_provider, order.postage_service, order.tracking_number]
+      .filter(Boolean)
+      .join(' · ') || undefined,
+  });
+}
+
+if (order.completed_at) {
+  history.push({ at: order.completed_at, what: isCollection ? 'Collected' : 'Closed' });
+}
+
+if (order.status === 'cancelled') {
+  history.push({
+    at: order.updated_at,
+    what: 'Cancelled',
+    body: order.cancel_note ?? undefined,
+  });
+}
+
+history.sort((a, b) => a.at - b.at);
 const canConfirm = order.status === 'requested';
 const hoursLeft = order.expires_at
   ? Math.max(0, Math.round((order.expires_at * 1000 - Date.now()) / 3_600_000))
@@ -312,6 +372,44 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                 Confirm and send
               </button>
             </form>
+          </section>
+        )
+      }
+
+      {/* What has already been done, and what was typed at the time.
+          The page used to show only the *next* step, so once an order was
+          confirmed there was no way to see what had been sent - the wording,
+          the postage, the tracking number were all stored and none displayed.
+          Read-only on purpose: it is a record, not a second place to edit. */}
+      {
+        history.length > 0 && (
+          <section class="bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px] p-5">
+            <h2 class="eyebrow mb-4">Already sent</h2>
+            <ol class="space-y-4">
+              {history.map((h) => (
+                <li class="grid grid-cols-[7.5rem_1fr] gap-x-4 gap-y-1 text-[14px]">
+                  <div class="text-[13px] text-[var(--color-ink-faint)] tabular-nums">
+                    {new Date(h.at * 1000).toLocaleDateString('en-GB', {
+                      day: 'numeric', month: 'short',
+                    })}
+                    <span class="block">
+                      {new Date(h.at * 1000).toLocaleTimeString('en-GB', {
+                        hour: '2-digit', minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <div>
+                    <p class="font-medium text-[var(--color-ink-soft)]">{h.what}</p>
+                    {h.detail && (
+                      <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-faint)]">{h.detail}</p>
+                    )}
+                    {h.body && (
+                      <pre class="mt-1.5 p-2.5 bg-white border border-[var(--color-rule)] rounded-[2px] text-[12.5px] text-[var(--color-ink-faint)] whitespace-pre-wrap font-[family-name:var(--font-body)] max-h-40 overflow-y-auto">{h.body}</pre>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
           </section>
         )
       }
@@ -594,7 +692,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
     </aside>
   </div>
 
-  <script is:inline define:vars={{ subtotal: order.subtotal_pence, orderRef: order.ref }}>
+  <script is:inline nonce={Astro.locals.cspNonce} define:vars={{ subtotal: order.subtotal_pence, orderRef: order.ref }}>
     document.querySelector('#deleteOrderForm')?.addEventListener('submit', (event) => {
       if (!confirm(`Delete order ${orderRef} for good?\n\nThis cannot be undone.`)) {
         event.preventDefault();
