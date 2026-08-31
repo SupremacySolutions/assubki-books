@@ -27,6 +27,8 @@ export interface Dashboard {
   previousPence: number;
   orders: number;
   averagePence: number;
+  /** Share of customers who have ordered more than once, all time. */
+  repeatPct: number;
   /** One point per day, oldest first. */
   daily: { day: string; pence: number; orders: number }[];
   collection: number;
@@ -46,7 +48,7 @@ async function read(days: number): Promise<Dashboard> {
   const from = now - days * DAY;
   const previousFrom = from - days * DAY;
 
-  const [waiting, money, daily, splits, best, low, shelves] = await env.DB.batch([
+  const [waiting, money, daily, splits, best, low, repeat, shelves] = await env.DB.batch([
     // Everything the owner might need to act on, counted in one pass.
     env.DB.prepare(
       `SELECT
@@ -91,6 +93,18 @@ async function read(days: number): Promise<Dashboard> {
          FROM books WHERE status = 'live' AND (stock - reserved) BETWEEN 1 AND 2
         ORDER BY left_, title LIMIT 6`,
     ),
+    /*
+     * All time, not this period: over thirty days almost nobody has had the
+     * chance to come back twice, and a number that is always near zero says
+     * nothing. Counted by email, which is the only identity an order has.
+     */
+    env.DB.prepare(
+      `SELECT
+         COUNT(*) AS customers,
+         SUM(CASE WHEN n > 1 THEN 1 ELSE 0 END) AS came_back
+       FROM (SELECT email, COUNT(*) AS n FROM orders
+              WHERE status IN ${EARNED} GROUP BY lower(email))`,
+    ),
     env.DB.prepare(
       `SELECT c.name AS name, SUM(oi.price_pence_snapshot * oi.qty) AS pence
          FROM order_items oi
@@ -119,6 +133,11 @@ async function read(days: number): Promise<Dashboard> {
     previousPence: Number(m.before ?? 0),
     orders,
     averagePence: orders > 0 ? Math.round(revenuePence / orders) : 0,
+    repeatPct: (() => {
+      const r = (repeat.results[0] ?? {}) as Record<string, number | null>;
+      const customers = Number(r.customers ?? 0);
+      return customers > 0 ? Math.round((Number(r.came_back ?? 0) / customers) * 100) : 0;
+    })(),
     daily: daily.results.map((r) => {
       const row = r as Record<string, unknown>;
       return { day: String(row.day), pence: Number(row.pence), orders: Number(row.orders) };

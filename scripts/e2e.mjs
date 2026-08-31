@@ -1491,12 +1491,24 @@ async function integrity() {
    * and it is deliberately a single batch behind a cache, because this is the
    * same shape as the query that once ate 95% of the read budget.
    */
-  const dash = await html('/admin/dashboard');
+  const dash = await html('/admin');
   const dashText = visibleText(dash);
-  for (const panel of ['To confirm', 'Awaiting payment', 'To post', 'Taken per day', 'Running low']) {
+  for (const panel of [
+    'To confirm', 'Awaiting payment', 'To post', 'Taken per day', 'How it goes out',
+    'Selling best', 'Taken per shelf', 'Running low', 'Repeat customers', 'Average order',
+  ]) {
     t.ok(dashText.includes(panel), `the dashboard shows "${panel}"`);
   }
-  t.ok((await get('/admin/dashboard?d=90')).status === 200, 'and covers 90 days as well as 30');
+  t.ok((await get('/admin?d=90')).status === 200, 'and covers 90 days as well as 30');
+
+  // There is one dashboard. There were briefly two, both in the nav, both
+  // called Dashboard - so the old address has to land on the real one.
+  const moved = await get('/admin/dashboard');
+  t.ok(moved.status === 301 && (moved.headers.get('location') ?? '').endsWith('/admin'),
+    'the second dashboard is gone and its address redirects to /admin');
+  const adminNav = readFileSync('src/layouts/Admin.astro', 'utf8');
+  t.ok((adminNav.match(/label: 'Dashboard'/g) ?? []).length === 1,
+    'and the portal nav lists Dashboard once');
 
   const [waitingNow] = await db(
     `SELECT SUM(CASE WHEN status='requested' THEN 1 ELSE 0 END) AS n FROM orders`,
