@@ -1210,6 +1210,45 @@ async function integrity() {
   t.ok(volumesIn('1 volume') === null && volumesIn('the volumes of the sea') === null,
     'and nothing is guessed from a bare mention');
 
+  /*
+   * The shelf counts must not go back to being rolled up in SQL.
+   *
+   * `JOIN categories d ON d.path = c.path OR d.path LIKE c.path || '/%'`
+   * cannot use an index, so it nested-looped categories against categories
+   * against every book link: ~34,700 rows read per call, on the home page and
+   * every catalogue page, which was 95% of the database's entire read budget
+   * and put it over the daily allowance.
+   */
+  // Comments stripped first: the fix documents the query it replaced by
+  // quoting it, and a bare search finds the explanation as readily as a
+  // relapse would be found.
+  const dbSource = readFileSync('src/lib/db.ts', 'utf8');
+  const dbCode = dbSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  t.ok(!/d\.path LIKE c\.path/.test(dbCode),
+    'the shelf counts are not rolled up with an unindexable self-join');
+  t.ok(dbSource.includes('forgetCategoryCounts'),
+    'and the cache can be cleared when the owner changes something');
+
+  // Every route that moves a book or a shelf has to clear it, or the owner
+  // waits a minute to see their own edit.
+  for (const route of [
+    'src/pages/api/admin/books/save.ts',
+    'src/pages/api/admin/books/[id]/delete.ts',
+    'src/pages/api/admin/shelves/create.ts',
+    'src/pages/api/admin/shelves/delete.ts',
+    'src/pages/api/admin/shelves/move.ts',
+    'src/pages/api/admin/shelves/update.ts',
+  ]) {
+    t.ok(readFileSync(route, 'utf8').includes('forgetCategoryCounts()'),
+      `${route.split('/').slice(-2).join('/')} clears the shelf counts`);
+  }
+
+  // And the counts themselves still have to be right: a shelf counts its
+  // descendants, and a book filed under two children counts once.
+  const counted = await html('/catalogue');
+  t.ok(/Syllabus[\s\S]{0,80}?10[0-9]/.test(counted.replace(/<[^>]+>/g, ' ')),
+    'a parent shelf still counts what sits beneath it');
+
   // The book page has to say when it could not take what was asked for; the
   // basket page always did, and the two disagreeing is the actual complaint.
   const bookSource = readFileSync('src/pages/book/[slug].astro', 'utf8');

@@ -123,6 +123,15 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   out which of the edge handling, the thresholds or the model was at fault -
   not for training: that would need hand-painted correct masks and a GPU, and a
   handful of examples would overfit.
+- **Never roll a category tree up in SQL here.** `categoryCounts` used
+  `JOIN categories d ON d.path = c.path OR d.path LIKE c.path || '/%'`, which
+  cannot use an index, so it nested-looped categories against categories
+  against every book link: ~34,700 rows read per call on the home page and
+  every catalogue page. That was **95% of the whole database read budget** and
+  put it over D1's 5M rows/day. It reads the 441 links once and rolls them up
+  in JS now, cached for a minute; `forgetCategoryCounts()` is called by every
+  route that moves a book or a shelf. `npx wrangler d1 insights assubki-books`
+  is how this was found and how to check it again.
 - **Covers crop sideways, never top to bottom.** `cropsCleanly` in
   lib/cover-fit decides: a cover wider than 3:4 fills the box and is trimmed at
   the sides, where these scans carry ~3.6% of white margin each side; a taller

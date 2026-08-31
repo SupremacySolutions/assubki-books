@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { deleteChannelMessage } from '../../../../../lib/telegram';
+import { forgetCategoryCounts } from '../../../../../lib/db';
 
 export const prerender = false;
 
@@ -58,6 +59,10 @@ export const POST: APIRoute = async ({ params, request }) => {
 
   // book_images, book_categories and stock_ledger cascade; order_items null out.
   await env.DB.prepare('DELETE FROM books WHERE id = ?').bind(id).run();
+
+  // The shelf counts are cached for a minute; the owner should see their own
+  // change now rather than in a minute.
+  forgetCategoryCounts();
 
   const url = new URL(request.url);
   const flag = channelCleared ? 'deleted' : 'deleted-orphan';

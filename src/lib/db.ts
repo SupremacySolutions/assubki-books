@@ -72,19 +72,68 @@ export async function allCategories(): Promise<Category[]> {
   return results;
 }
 
-/** Live book count per category, counting descendants into their parent. */
+/**
+ * Live book count per category, counting descendants into their parent.
+ *
+ * **This was 95% of the database's entire read budget.** It used to roll the
+ * descendants up in SQL:
+ *
+ *     JOIN categories d ON d.path = c.path OR d.path LIKE c.path || '/%'
+ *
+ * An `OR` with a `LIKE` in a join condition cannot use an index, so SQLite
+ * nested-loops categories against categories against every book link - about
+ * 34,700 rows read *per call*, on the home page and on every catalogue page.
+ * At 164 calls a day that was 5.7 million rows against an allowance of five.
+ *
+ * The same answer comes from reading the 441 links once and rolling them up
+ * here, where a string prefix costs nothing. Distinct book ids per ancestor,
+ * so a book filed under two children of one parent still counts once.
+ */
+async function readCategoryCounts(): Promise<Map<number, number>> {
+  const [cats, links] = await Promise.all([
+    allCategories(),
+    db()
+      .prepare(
+        `SELECT c.path AS path, bc.book_id AS bookId
+           FROM book_categories bc
+           JOIN categories c ON c.id = bc.category_id
+           JOIN books b ON b.id = bc.book_id AND b.status = 'live'`,
+      )
+      .all<{ path: string; bookId: number }>(),
+  ]);
+
+  const counts = new Map<number, number>();
+  for (const cat of cats) {
+    const seen = new Set<number>();
+    for (const link of links.results) {
+      if (link.path === cat.path || link.path.startsWith(`${cat.path}/`)) seen.add(link.bookId);
+    }
+    counts.set(cat.id, seen.size);
+  }
+  return counts;
+}
+
+/**
+ * Cached for a minute, like the contact handle.
+ *
+ * The shelves and what is on them change when the owner edits a listing, which
+ * is a few times a day; this is read on the two busiest pages of the site. A
+ * minute of staleness in a book count is worth nothing to anyone and saves
+ * almost every call.
+ */
+let countsCache: { at: number; value: Map<number, number> } | null = null;
+
 export async function categoryCounts(): Promise<Map<number, number>> {
-  const { results } = await db()
-    .prepare(
-      `SELECT c.id, COUNT(DISTINCT b.id) AS n
-         FROM categories c
-         JOIN categories d ON d.path = c.path OR d.path LIKE c.path || '/%'
-         JOIN book_categories bc ON bc.category_id = d.id
-         JOIN books b ON b.id = bc.book_id AND b.status = 'live'
-        GROUP BY c.id`,
-    )
-    .all<{ id: number; n: number }>();
-  return new Map(results.map((r) => [r.id, r.n]));
+  const now = Date.now();
+  if (countsCache && now - countsCache.at < 60_000) return countsCache.value;
+  const value = await readCategoryCounts();
+  countsCache = { at: now, value };
+  return value;
+}
+
+/** Called after a listing changes, so the owner sees their own edit at once. */
+export function forgetCategoryCounts(): void {
+  countsCache = null;
 }
 
 export async function categoryTree(): Promise<CategoryNode[]> {
