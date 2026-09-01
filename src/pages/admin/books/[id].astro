@@ -2,9 +2,9 @@
 import { VAGUE, monthOptions, whenText } from '../../../lib/incoming';
 import Admin from '../../../layouts/Admin.astro';
 import CoverReview from '../../../components/CoverReview.astro';
-import { getBookAdmin } from '../../../lib/admin-db';
+import { getBookAdmin, partCandidates } from '../../../lib/admin-db';
 import { allCategories, setOptionsForOwner } from '../../../lib/db';
-import { imageUrl, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
+import { imageUrl, price, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
 import { botConfigured, listingCaption } from '../../../lib/telegram';
 
 const { id } = Astro.params;
@@ -18,6 +18,11 @@ const book = bookId ? await getBookAdmin(bookId) : null;
 
 // The other options, when this listing is already part of a set.
 const siblings = book?.set_id ? await setOptionsForOwner(book.set_id) : [];
+
+/* Listings that already exist and look like parts of this one. Only worth
+   asking about for a listing that says it has volumes and is not yet a set. */
+const candidates =
+  book && !book.set_id && (book.volumes ?? 0) > 1 ? await partCandidates(book) : [];
 
 
 if (!isNew && !book) return Astro.rewrite('/404');
@@ -692,6 +697,68 @@ const previewCaption = book
                   * It does not scroll away and does not vanish on focus, which
                   * is what a placeholder does exactly when it is needed.
                   */}
+                {candidates.length > 0 && (
+                  <div class="mb-5 pb-5 border-b border-[var(--color-rule-faint)]">
+                    <p class="text-[13px] font-medium mb-1">These look like parts of this set</p>
+                    <p class="text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed mb-3">
+                      Already in the catalogue with their own covers and descriptions. Linking them
+                      keeps all of that - nothing is created and nothing comes down.
+                    </p>
+
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                      <label class="block">
+                        <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                          Volumes altogether
+                        </span>
+                        <input type="number" name="volumes" min="2" max="200" required
+                          value={book.volumes ?? ''} form="adoptForm"
+                          class="field !py-2 !text-[14px]" />
+                      </label>
+                      <label class="block">
+                        <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                          Complete sets on the shelf
+                        </span>
+                        <input type="number" name="sets" min="0" max="999" required
+                          value={book.stock} form="adoptForm"
+                          class="field !py-2 !text-[14px]" />
+                      </label>
+                    </div>
+
+                    <div class="grid grid-cols-[auto_1fr_3.6rem_3.6rem] gap-2 pb-1.5 mb-1.5 border-b border-[var(--color-rule-soft)]">
+                      <span />
+                      {['Listing', 'First', 'Last'].map((h) => (
+                        <span class="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div class="space-y-2">
+                      {candidates.map((c) => (
+                        <label class="grid grid-cols-[auto_1fr_3.6rem_3.6rem] gap-2 items-center cursor-pointer">
+                          <input type="checkbox" name={`adopt_${c.id}`} form="adoptForm"
+                            class="w-4 h-4 accent-[var(--color-navy)]" />
+                          <span class="min-w-0 truncate text-[13.5px]">
+                            {c.title}
+                            <span class="ml-1.5 text-[var(--color-ink-faint)]">{price(c.price_pence)}</span>
+                          </span>
+                          <input type="number" name={`from_${c.id}`} min="1" max="200" placeholder="1"
+                            form="adoptForm" class="field !py-1.5 !text-[13.5px] !px-2 tabular-nums" />
+                          <input type="number" name={`to_${c.id}`} min="1" max="200" placeholder="2"
+                            form="adoptForm" class="field !py-1.5 !text-[13.5px] !px-2 tabular-nums" />
+                        </label>
+                      ))}
+                    </div>
+
+                    <button type="submit" form="adoptForm" class="btn btn-primary !py-2 !text-[13.5px] mt-3">
+                      Link these as the parts
+                    </button>
+                    <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                      Tick the ones that belong, and say which volumes each covers.
+                    </p>
+                  </div>
+                )}
+
                 <div class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3">
                   <p>
                     <strong class="text-[var(--color-ink)]">This listing becomes the complete set</strong>,
@@ -873,6 +940,9 @@ const previewCaption = book
         <form id="restockForm" method="post" action={`/api/admin/books/${book.id}/set`} />
         <form id="arrivedForm" method="post" action={`/api/admin/books/${book.id}/arrived`} />
         <form id="partsForm" method="post" action={`/api/admin/books/${book.id}/set`} />
+        <form id="adoptForm" method="post" action={`/api/admin/books/${book.id}/set`}>
+          <input type="hidden" name="action" value="adopt" />
+        </form>
         <form id="unsplitForm" method="post" action={`/api/admin/books/${book.id}/set`}>
           <input type="hidden" name="action" value="unsplit" />
         </form>

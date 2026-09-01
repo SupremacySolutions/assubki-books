@@ -177,6 +177,38 @@ export interface BookListResult {
   perPage: number;
 }
 
+/**
+ * Listings that look like parts of this one.
+ *
+ * The set builder creates part listings from nothing, which is right for a set
+ * being set up for the first time and wrong when the parts are already in the
+ * catalogue with their own covers, descriptions and channel posts. Adopting
+ * them needs candidates, and the honest way to find them is the title: a shop
+ * names "Al-Hidayah ...: (1 & 2)" and "... (3 & 4)" off the same stem.
+ *
+ * The stem is whatever comes before the first colon, falling back to the first
+ * few words. Anything already in a set is excluded, and so is this listing.
+ */
+export async function partCandidates(book: {
+  id: number;
+  title: string;
+}): Promise<{ id: number; title: string; volumes: number | null; price_pence: number }[]> {
+  const stem = (book.title.split(':')[0] ?? book.title).trim().slice(0, 40);
+  if (stem.length < 6) return [];
+
+  const { results } = await env.DB.prepare(
+    `SELECT id, title, volumes, price_pence
+       FROM books
+      WHERE id <> ? AND set_id IS NULL AND status <> 'archived'
+        AND title LIKE ? || '%'
+      ORDER BY title
+      LIMIT 12`,
+  )
+    .bind(book.id, stem)
+    .all<{ id: number; title: string; volumes: number | null; price_pence: number }>();
+  return results;
+}
+
 export async function listBooksAdmin(opts: {
   q?: string | null;
   filter?: BookFilter;

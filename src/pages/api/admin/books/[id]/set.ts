@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { forgetCategoryCounts } from '../../../../../lib/db';
+import { partCandidates } from '../../../../../lib/admin-db';
 
 export const prerender = false;
 
@@ -80,6 +81,91 @@ export const POST: APIRoute = async ({ params, request }) => {
     await env.DB.prepare('UPDATE book_set_stock SET have = ? WHERE set_id = ?')
       .bind(sets, book.set_id)
       .run();
+    forgetCategoryCounts();
+    return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
+  }
+
+  // -------------------------------------------------------------------- adopt
+  if (action === 'adopt') {
+    if (book.set_id) return fail('alreadyset');
+
+    const volumes = Math.round(Number(form.get('volumes')) || 0);
+    if (!(volumes >= 2 && volumes <= 200)) return fail('volumes');
+
+    /*
+     * Take listings that already exist and make them the parts of this set.
+     *
+     * The create path builds part listings from nothing, which is right the
+     * first time and wrong when the parts are already in the catalogue - they
+     * carry their own covers, descriptions and channel posts, and rebuilding
+     * them would strand all of it on rows nobody links to.
+     */
+    /*
+     * The same candidates the page offered, worked out again here.
+     *
+     * A form field is a claim, not a fact: `adopt_<id>` names any row in the
+     * table, and without asking the question a second time the endpoint would
+     * fold an unrelated listing into the set - one the page never showed and
+     * the owner never saw. The `set_id IS NULL` guard on the UPDATE only stops
+     * a listing already spoken for; it says nothing about whether this one
+     * belongs.
+     */
+    const offered = new Set((await partCandidates(book)).map((c) => c.id));
+
+    const adopted: { id: number; from: number; to: number }[] = [];
+    for (const key of [...form.keys()]) {
+      const match = key.match(/^adopt_(\d+)$/);
+      if (!match || form.get(key) === null) continue;
+      const partId = Number(match[1]);
+      if (!offered.has(partId)) return fail('parts');
+      const from = Number.parseInt(String(form.get(`from_${partId}`) ?? ''), 10);
+      const to = Number.parseInt(String(form.get(`to_${partId}`) ?? ''), 10);
+      // Refused rather than guessed, the same as the builder's own rows.
+      if (!(Number.isInteger(from) && Number.isInteger(to))) return fail('parts');
+      if (!(from >= 1 && to >= from && to <= volumes)) return fail('parts');
+      adopted.push({ id: partId, from, to });
+    }
+    if (adopted.length === 0) return fail('parts');
+
+    // Everything the set can supply comes from the whole set's own stock: it is
+    // the count of complete sets on the shelf, which is what a volume count is.
+    const sets = Math.max(0, Math.min(999, Math.round(Number(form.get('sets')) || 0)));
+
+    const created = await env.DB.prepare(
+      'INSERT INTO book_sets (name, volumes) VALUES (?, ?) RETURNING id',
+    )
+      .bind(book.title.slice(0, 200), volumes)
+      .first<{ id: number }>();
+    const setId = created!.id;
+
+    const statements = [];
+    for (let v = 1; v <= volumes; v++) {
+      statements.push(
+        env.DB.prepare('INSERT INTO book_set_stock (set_id, volume, have) VALUES (?, ?, ?)')
+          .bind(setId, v, sets),
+      );
+    }
+    // This listing is the complete set.
+    statements.push(
+      env.DB.prepare(
+        'UPDATE books SET set_id = ?, set_from = 1, set_to = ?, volumes = ?, updated_at = unixepoch() WHERE id = ?',
+      ).bind(setId, volumes, volumes, id),
+    );
+    for (const part of adopted) {
+      /*
+       * Only the set columns are written. Title, price, cover, description and
+       * telegram_message_id are left exactly as they are - that is the whole
+       * point of adopting rather than creating.
+       */
+      statements.push(
+        env.DB.prepare(
+          `UPDATE books SET set_id = ?, set_from = ?, set_to = ?, volumes = ?, updated_at = unixepoch()
+            WHERE id = ? AND set_id IS NULL`,
+        ).bind(setId, part.from, part.to, part.to - part.from + 1, part.id),
+      );
+    }
+
+    await env.DB.batch(statements);
     forgetCategoryCounts();
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
