@@ -1565,6 +1565,60 @@ async function integrity() {
   t.ok(lookup.includes('return null') && lookup.includes('catch'),
     'a failed postcode lookup is silent rather than blocking');
 
+  /*
+   * A status change must actually notify.
+   *
+   * `notifyStatusChange` threw ReferenceError on every call for two days -
+   * `note` was declared in a different function - and the only trace was a
+   * console line, because the caller swallowed it. It now records the failure
+   * where the portal can see it, so this clears the record, moves a real order
+   * along, and asserts nothing came back.
+   */
+  await db(`DELETE FROM settings WHERE key = 'last_notify_error'`);
+  const notifyBook = await makeBook({ stock: '2' });
+  const notifyOrder = await placeOrder(notifyBook.id, 'delivery');
+  await admin(`/api/admin/orders/${notifyOrder.ref}/confirm`, { postage: '3.50' });
+  await admin(`/api/admin/orders/${notifyOrder.ref}/status`, { status: 'paid' });
+  const notifyFailure = await db(`SELECT value FROM settings WHERE key = 'last_notify_error'`);
+  t.ok(notifyFailure.length === 0,
+    `a status change notifies without throwing${notifyFailure[0] ? ` - ${notifyFailure[0].value}` : ''}`);
+
+  /*
+   * The set builder must not be nested inside the listing form.
+   *
+   * It was, for as long as it has existed. A browser discards a nested <form>
+   * and its submit button posts the outer one, so "Build the parts" and "Set
+   * count" saved the listing instead. The suite never noticed because it posts
+   * to the API directly, which is exactly the blind spot.
+   */
+  const editorSource = readFileSync('src/pages/admin/books/[id].astro', 'utf8');
+  const opensAt = editorSource.indexOf('<form id="bookForm"');
+  // From after the opening tag, so the form's own tag is not counted as nested.
+  const mainForm = editorSource.slice(
+    editorSource.indexOf('>', opensAt) + 1,
+    editorSource.indexOf('</form>', opensAt),
+  );
+  t.ok(!/<form\b/.test(mainForm), 'no form is nested inside the listing form');
+  for (const id of ['restockForm', 'partsForm']) {
+    t.ok(new RegExp(`<form id="${id}"`).test(editorSource), `${id} exists outside it`);
+  }
+
+  // Every input in the builder has to name its form, or it travels with the
+  // listing save instead. The four part columns are one `.map`, so the source
+  // carries far fewer tags than the page renders.
+  const builder = editorSource.slice(
+    editorSource.indexOf('name="action" value="create"'),
+    editorSource.indexOf('form="partsForm" class="btn btn-primary'),
+  );
+  const strays = [...builder.matchAll(/<input(?:(?!>)[\s\S])*?>/g)]
+    .filter((m) => !m[0].includes('form="partsForm"'));
+  t.ok(strays.length === 0,
+    `every field of the parts builder names that form (${strays.length} did not)`);
+
+  const notifySource = readFileSync('src/lib/notify.ts', 'utf8');
+  t.ok(/catch \(err\)[^]{0,240}recordNotifyFailure/.test(notifySource),
+    'and a notification failure is recorded rather than swallowed');
+
   const dashSource = readFileSync('src/lib/dashboard.ts', 'utf8');
   t.ok(dashSource.includes('env.DB.batch'),
     'the figures come from one batch rather than a query per tile');

@@ -399,8 +399,8 @@ const previewCaption = book
                     </li>
                   ))}
                 </ul>
-                <form method="post" action={`/api/admin/books/${book.id}/set`} class="flex items-end gap-2">
-                  <input type="hidden" name="action" value="restock" />
+                <div class="flex items-end gap-2">
+                  <input type="hidden" name="action" value="restock" form="restockForm" />
                   <label class="block">
                     <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
                       Complete sets on the shelf
@@ -412,10 +412,10 @@ const previewCaption = book
                       max="999"
                       required
                       class="field !py-2 !text-[14px] !w-40"
-                    />
+                    form="restockForm" />
                   </label>
-                  <button type="submit" class="btn btn-ghost !py-2 !text-[13.5px]">Set count</button>
-                </form>
+                  <button type="submit" form="restockForm" class="btn btn-ghost !py-2 !text-[13.5px]">Set count</button>
+                </div>
                 <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
                   Sets every volume to that number. Use it when a delivery arrives - a half sold on
                   its own already came off the volumes it contained.
@@ -437,22 +437,22 @@ const previewCaption = book
                   </p>
                 </div>
 
-                <form method="post" action={`/api/admin/books/${book.id}/set`} class="space-y-3">
-                  <input type="hidden" name="action" value="create" />
+                <div class="space-y-3">
+                  <input type="hidden" name="action" value="create" form="partsForm" />
                   <div class="grid grid-cols-2 gap-3">
                     <label class="block">
                       <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
                         How many volumes altogether
                       </span>
                       <input type="number" name="volumes" min="2" max="200" required
-                        placeholder="4" class="field !py-2 !text-[14px]" />
+                        placeholder="4" class="field !py-2 !text-[14px]" form="partsForm" />
                     </label>
                     <label class="block">
                       <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
                         Complete sets on the shelf
                       </span>
                       <input type="number" name="sets" min="0" max="999" required
-                        placeholder="3" class="field !py-2 !text-[14px]" />
+                        placeholder="3" class="field !py-2 !text-[14px]" form="partsForm" />
                     </label>
                   </div>
 
@@ -473,16 +473,16 @@ const previewCaption = book
                             maxlength="200"
                             placeholder={i === 0 ? 'First half' : i === 1 ? 'Second half' : 'Name'}
                             class="field !py-1.5 !text-[13.5px]"
-                          />
+                          form="partsForm" />
                           <input type="number" name={`part_${i}_from`} min="1" max="200"
                             placeholder={i === 0 ? '1' : i === 1 ? '3' : 'from'}
-                            class="field !py-1.5 !text-[13.5px] !px-2" />
+                            class="field !py-1.5 !text-[13.5px] !px-2" form="partsForm" />
                           <input type="number" name={`part_${i}_to`} min="1" max="200"
                             placeholder={i === 0 ? '2' : i === 1 ? '4' : 'to'}
-                            class="field !py-1.5 !text-[13.5px] !px-2" />
+                            class="field !py-1.5 !text-[13.5px] !px-2" form="partsForm" />
                           <input type="text" name={`part_${i}_price`} inputmode="decimal"
                             placeholder={i < 2 ? '17.00' : '£'}
-                            class="field !py-1.5 !text-[13.5px] !px-2" />
+                            class="field !py-1.5 !text-[13.5px] !px-2" form="partsForm" />
                         </div>
                       ))}
                     </div>
@@ -492,10 +492,10 @@ const previewCaption = book
                     </p>
                   </div>
 
-                  <button type="submit" class="btn btn-primary !py-2 !text-[13.5px]">
+                  <button type="submit" form="partsForm" class="btn btn-primary !py-2 !text-[13.5px]">
                     Build the parts
                   </button>
-                </form>
+                </div>
               </>
             )}
           </section>
@@ -548,6 +548,8 @@ const previewCaption = book
     book && (
       <>
         <form id="telegramForm" method="post" action={`/api/admin/books/${book.id}/telegram`} />
+        <form id="restockForm" method="post" action={`/api/admin/books/${book.id}/set`} />
+        <form id="partsForm" method="post" action={`/api/admin/books/${book.id}/set`} />
         <form id="deleteForm" method="post" action={`/api/admin/books/${book.id}/delete`} />
       </>
     )

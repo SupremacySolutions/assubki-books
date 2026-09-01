@@ -4,12 +4,14 @@ import { orderCounts, listOrders } from '../../lib/admin-db';
 import { price } from '../../lib/format';
 import { botConfigured } from '../../lib/telegram';
 import { emailConfigured, lastEmailError, fromAddress } from '../../lib/email';
+import { lastNotifyError } from '../../lib/notify';
 import { dashboard } from '../../lib/dashboard';
 
-const [counts, pending, emailError] = await Promise.all([
+const [counts, pending, emailError, notifyError] = await Promise.all([
   orderCounts(),
   listOrders('requested'),
   lastEmailError(),
+  lastNotifyError(),
 ]);
 
 const days = Astro.url.searchParams.get('d') === '90' ? 90 : 30;
@@ -23,6 +25,8 @@ const warnings = [
   emailConfigured() && emailError &&
     `Email is failing, so customers are not being reached. Sending as ${fromAddress()} was rejected: “${emailError}”`,
   !botConfigured() && 'Telegram is not configured, so new listings cannot be posted to the channel. Add TELEGRAM_BOT_TOKEN.',
+  // A message that never left is invisible unless something says so.
+  notifyError && `A customer was not told their order changed: ${notifyError}`,
 ].filter(Boolean) as string[];
 
 const CARDS = [

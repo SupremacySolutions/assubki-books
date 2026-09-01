@@ -17,6 +17,7 @@
  * and the stock already held before any of this runs.
  */
 
+import { env } from 'cloudflare:workers';
 import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml } from './email';
@@ -235,13 +236,6 @@ export interface ConfirmedInput {
 function confirmedEmail(input: ConfirmedInput) {
   const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
 
-  /*
-   * A cancellation usually has a reason, and the standing wording cannot know
-   * it - "your order has been cancelled" and nothing else invites a reply
-   * asking why. It goes into all three places the customer might look, so they
-   * cannot disagree with each other.
-   */
-  const note = (input.cancelNote ?? '').trim();
   // Nothing is owed yet on a cash order, so the message stops asking for money
   // and asks for a time instead. The figures still go, because the customer
   // wants to know what they are bringing. Cash is no longer collection-only,
@@ -435,7 +429,41 @@ export async function notifyGroupStarted(input: {
 }
 
 /** Plain status nudges - dispatched, cancelled. */
-export async function notifyStatusChange(input: {
+/**
+ * Why the last status notification failed, and a way to clear it.
+ *
+ * `deliver()` already records send failures so the portal can say "email is
+ * failing" rather than "email is configured". Nothing recorded a failure
+ * *before* the send - so when notifyStatusChange threw on a bad reference, the
+ * caller's .catch wrote a line to a log nobody reads and the portal went on
+ * saying everything was fine for two days.
+ */
+export async function lastNotifyError(): Promise<string | null> {
+  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'last_notify_error'`)
+    .first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+async function recordNotifyFailure(reason: string): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('last_notify_error', ?, unixepoch())
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()`,
+    ).bind(reason.slice(0, 500)).run();
+  } catch {
+    /* never let health-reporting break the caller */
+  }
+}
+
+async function clearNotifyFailure(): Promise<void> {
+  try {
+    await env.DB.prepare(`DELETE FROM settings WHERE key = 'last_notify_error'`).run();
+  } catch {
+    /* ignore */
+  }
+}
+
+async function sendStatusChange(input: {
   ref: string;
   token: string;
   name: string;
@@ -453,6 +481,20 @@ export async function notifyStatusChange(input: {
   /** The owner's own words when cancelling. Shown wherever the customer looks. */
   cancelNote?: string | null;
 }): Promise<void> {
+  /*
+   * A cancellation usually has a reason, and the standing wording cannot know
+   * it - "your order has been cancelled" and nothing else invites a reply
+   * asking why. It goes into all three places the customer might look, so they
+   * cannot disagree with each other.
+   *
+   * This was declared inside confirmedEmail, which is a different function that
+   * never used it and is not even given one. Every status message therefore
+   * threw ReferenceError on the way out, and the throw was swallowed by the
+   * caller's .catch - so nobody was told their payment had arrived, their books
+   * had been posted, or that their order was cancelled.
+   */
+  const note = (input.cancelNote ?? '').trim();
+
   // The words come from lib/order-status so that email, the customer page, the
   // timeline and the portal cannot drift apart - which is exactly how collection
   // orders ended up being described as posted in three of those four places.
@@ -501,3 +543,24 @@ export async function notifyStatusChange(input: {
       : Promise.resolve(false),
   ]);
 }
+
+/**
+ * Tells the customer their order moved, and records it if that fails.
+ *
+ * The recording is the point. This threw on every call for two days and the
+ * only trace was a console line in a Worker log; the portal went on reporting
+ * that email was healthy, because a send that never happened cannot fail.
+ */
+export async function notifyStatusChange(
+  input: Parameters<typeof sendStatusChange>[0],
+): Promise<void> {
+  try {
+    await sendStatusChange(input);
+    await clearNotifyFailure();
+  } catch (err) {
+    const reason = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    await recordNotifyFailure(`${input.status} for ${input.ref} - ${reason}`);
+    throw err;
+  }
+}
+
