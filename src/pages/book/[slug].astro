@@ -442,33 +442,6 @@ const jsonLd = {
     });
 
     const cover = document.querySelector<HTMLImageElement>('#cover');
-    /*
-     * Adding from a suggestion.
-     *
-     * Deliberately thin. The main add button above re-checks live stock and
-     * knows about group baskets; duplicating that here would be a second copy
-     * of the rule that could drift from the first. So a group member is sent
-     * to the book's own page, where that flow lives, and everyone else adds
-     * against the count the card was rendered with - which `addChecked` caps,
-     * and which checkout re-checks properly before anything is held.
-     */
-    for (const add of document.querySelectorAll<HTMLButtonElement>('.quick-add')) {
-      add.addEventListener('click', () => {
-        const id = add.dataset.bookId;
-        if (!id) return;
-
-        if (readGroup()) {
-          window.location.href = `/book/${add.dataset.slug}`;
-          return;
-        }
-
-        const result = window.asbBasket.addChecked(id, 1, Number(add.dataset.max ?? '1'));
-        window.asbBasket.setBadge(window.asbBasket.count());
-        add.textContent = result.added > 0 ? 'Added' : 'Already in your basket';
-        add.disabled = true;
-      });
-    }
-
     for (const thumb of document.querySelectorAll<HTMLButtonElement>('.thumb')) {
       thumb.addEventListener('click', () => {
         const src = thumb.dataset.src;

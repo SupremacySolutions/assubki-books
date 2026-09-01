@@ -1519,6 +1519,18 @@ async function integrity() {
   /*
    * Carriers, the postage stepper, and the stepped checkout.
    */
+  /*
+   * The Add button on a card was wired inside book/[slug].astro only, so the
+   * first page to use `quickAdd` elsewhere shipped buttons that looked exactly
+   * like working ones and did nothing. It is shared now, and stays shared.
+   */
+  t.ok(readFileSync('src/layouts/Base.astro', 'utf8').includes('wireQuickAdd'),
+    'the card Add button is wired for every page, not one');
+  t.ok(!/quick-add[\s\S]{0,200}addEventListener/.test(readFileSync('src/pages/book/[slug].astro', 'utf8')),
+    'and the book page no longer keeps its own copy');
+  const homeGrid = await html('/');
+  t.ok(homeGrid.includes('quick-add'), 'the home grid offers Add on its cards');
+
   const statusSource = readFileSync('src/lib/order-status.ts', 'utf8');
   const trackingMap = statusSource.slice(statusSource.indexOf('const TRACKING'));
   t.ok(statusSource.includes("'InPost',"), 'InPost is offered as a carrier');

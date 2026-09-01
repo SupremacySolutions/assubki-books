@@ -87,6 +87,11 @@ const ogImage = image ? new URL(image, origin).toString() : null;
       import '../scripts/reveal.ts';
       import '../scripts/page-transition.ts';
       import '../scripts/shelf.ts';
+      import { wireQuickAdd } from '../scripts/quick-add.ts';
+
+      // Any page can render a BookCard, so the Add button is wired here rather
+      // than on the one page that happened to use it first.
+      wireQuickAdd();
     </script>
 
     <style>
