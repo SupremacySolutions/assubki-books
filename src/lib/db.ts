@@ -250,13 +250,19 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   // a shop whose first row is unavailable reads as abandoned.
   const order = ` ORDER BY (b.stock - b.reserved) > 0 DESC, ${orderBy}`;
 
+  /*
+   * How many are in stock comes off the same scan as how many there are, so
+   * "42 titles · 38 in stock" costs nothing beyond the count we already ran.
+   */
   const countSql =
-    `SELECT COUNT(DISTINCT b.id) AS n FROM books b` +
+    `SELECT COUNT(DISTINCT b.id) AS n,
+            COUNT(DISTINCT CASE WHEN (b.stock - b.reserved) > 0 THEN b.id END) AS inStock
+       FROM books b` +
     (match ? ' JOIN books_fts f ON f.rowid = b.id' : '') +
     whereSql;
 
   const [countRow, listRes] = await Promise.all([
-    db().prepare(countSql).bind(...binds).first<{ n: number }>(),
+    db().prepare(countSql).bind(...binds).first<{ n: number; inStock: number }>(),
     db()
       .prepare(`${from}${whereSql}${order} LIMIT ? OFFSET ?`)
       .bind(...binds, perPage, (page - 1) * perPage)
@@ -267,6 +273,7 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   return {
     books: await applySetAvailability(listRes.results),
     total,
+    inStock: countRow?.inStock ?? 0,
     page,
     pages: Math.max(1, Math.ceil(total / perPage)),
     perPage,

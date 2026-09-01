@@ -45,6 +45,30 @@ const sortOptions: { value: Sort; label: string }[] = [
 const pageUrl = (n: number) =>
   `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery(base, { page: n > 1 ? n : null })}`;
 
+/*
+ * What is currently narrowing the list, and the link that drops just that one.
+ * The shelf is a chip too: it is the filter people forget is on.
+ */
+const chips: { label: string; without: string }[] = [];
+if (category) {
+  const parent = category.path.includes('/')
+    ? `/catalogue/${category.path.slice(0, category.path.lastIndexOf('/'))}`
+    : '/catalogue';
+  chips.push({ label: category.name, without: `${parent}${keep}` });
+}
+if (q) {
+  chips.push({
+    label: `“${q}”`,
+    without: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, q: null })}`,
+  });
+}
+if (inStockOnly) {
+  chips.push({
+    label: 'In stock',
+    without: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, stock: null })}`,
+  });
+}
+
 const title = q ? `“${q}”` : heading;
 const description = category
   ? `${result.total} ${category.name} titles at As-Subkī Books.`
@@ -73,16 +97,7 @@ const description = category
       }
     </nav>
 
-    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h1 class="font-[family-name:var(--font-display)] text-[30px] md:text-[36px] font-semibold">
-        {q ? <>Results for “{q}”</> : heading}
-      </h1>
-      <p class="text-[15px] text-[var(--color-ink-faint)] tabular-nums">
-        {result.total} {result.total === 1 ? 'title' : 'titles'}
-      </p>
-    </div>
-
-    <div class="mt-8 grid gap-8 lg:grid-cols-[220px_1fr] lg:gap-10">
+    <div class="mt-7 grid gap-8 lg:grid-cols-[246px_1fr] lg:gap-11">
       <!-- Books come first on a phone. As a sidebar, the 26-entry subject tree
            filled the whole first screen and pushed every book below the fold;
            on mobile it moves below the grid, with the select above standing in
@@ -90,7 +105,33 @@ const description = category
       <aside
         class="order-2 lg:order-1 lg:sticky lg:top-[92px] lg:self-start lg:max-h-[calc(100vh-110px)] lg:overflow-y-auto"
       >
-        <CategoryNav tree={tree} activePath={categoryPath} query={keep} />
+        <p class="eyebrow !text-[10.5px] mb-2.5">Browse by subject</p>
+        <div class="bg-white border border-[var(--color-rule-soft)] rounded-[10px] p-2">
+          <CategoryNav tree={tree} activePath={categoryPath} query={keep} />
+        </div>
+
+        {/*
+          * One filter, because one is what the shop can actually do. The
+          * handoff also drew "Multi-volume sets" and "Under £20"; neither
+          * exists, and a checkbox that does nothing is worse than no checkbox.
+          */}
+        <form method="get" class="mt-4 bg-white border border-[var(--color-rule-soft)] rounded-[10px] p-4">
+          {q && <input type="hidden" name="q" value={q} />}
+          {sort && <input type="hidden" name="sort" value={sort} />}
+          <p class="eyebrow !text-[10.5px] mb-2.5">Refine</p>
+          <label class="flex items-center gap-2.5 text-[14.5px] text-[var(--color-ink-soft)] cursor-pointer select-none">
+            <input
+              type="checkbox"
+              name="stock"
+              value="in"
+              checked={inStockOnly}
+              onchange="this.form.submit()"
+              class="w-4 h-4 accent-[var(--color-navy)]"
+            />
+            In stock only
+          </label>
+          <noscript><button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px] mt-3">Apply</button></noscript>
+        </form>
       </aside>
 
       <div class="order-1 lg:order-2">
@@ -122,30 +163,29 @@ const description = category
           </select>
         </label>
 
-        <div
-          class="flex flex-wrap items-center gap-3 pb-4 mb-6 border-b border-[var(--color-rule)]"
-        >
-          <form method="get" class="flex flex-wrap items-center gap-3">
+        {/* Head and sort on one line, then what is currently applied as chips
+            underneath - each one removable on its own, which "Clear filters"
+            never allowed. */}
+        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 class="font-[family-name:var(--font-display)] text-[30px] md:text-[34px] font-semibold">
+              {q ? <>Results for “{q}”</> : heading}
+            </h1>
+            <p class="text-[14.5px] text-[var(--color-ink-faint)] tabular-nums">
+              {result.total} {result.total === 1 ? 'title' : 'titles'}
+              {result.total > 0 && <> · {result.inStock} in stock</>}
+            </p>
+          </div>
+
+          <form method="get" class="shrink-0">
             {q && <input type="hidden" name="q" value={q} />}
-
-            <label class="flex items-center gap-2 text-[14.5px] text-[var(--color-ink-soft)] cursor-pointer select-none">
-              <input
-                type="checkbox"
-                name="stock"
-                value="in"
-                checked={inStockOnly}
-                onchange="this.form.submit()"
-                class="w-4 h-4 accent-[var(--color-navy)]"
-              />
-              In stock only
-            </label>
-
-            <label class="flex items-center gap-2 text-[14.5px] text-[var(--color-ink-soft)]">
-              <span class="sr-only sm:not-sr-only">Sort</span>
+            {inStockOnly && <input type="hidden" name="stock" value="in" />}
+            <label class="flex items-center gap-2 text-[14px] text-[var(--color-ink-faint)]">
+              <span>Sort</span>
               <select
                 name="sort"
                 onchange="this.form.submit()"
-                class="field !py-1.5 !w-auto !text-[14px]"
+                class="field !py-1.5 !w-auto !text-[14px] !rounded-[var(--radius-pill)] !px-3.5"
               >
                 {q && <option value="relevance" selected={!sort}>Best match</option>}
                 {
@@ -157,21 +197,37 @@ const description = category
                 }
               </select>
             </label>
-
-            <noscript><button type="submit" class="btn btn-ghost !py-1.5">Apply</button></noscript>
+            <noscript><button type="submit" class="btn btn-ghost !py-1.5 mt-2">Apply</button></noscript>
           </form>
-
-          {
-            (q || inStockOnly) && (
-              <a
-                href={`/catalogue${categoryPath ? `/${categoryPath}` : ''}`}
-                class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2 ml-auto"
-              >
-                Clear filters
-              </a>
-            )
-          }
         </div>
+
+        {
+          chips.length > 0 && (
+            <div class="mt-4 flex flex-wrap items-center gap-2">
+              {chips.map((chip) => (
+                <a
+                  href={chip.without}
+                  class="inline-flex items-center gap-2 rounded-[var(--radius-pill)] bg-[var(--color-navy)] pl-3.5 pr-2 py-1.5 text-[13px] font-medium text-white hover:bg-[var(--color-navy-hover)] transition-colors"
+                >
+                  {chip.label}
+                  <span
+                    aria-hidden="true"
+                    class="grid place-items-center w-4 h-4 rounded-full bg-white/20 text-[11px] leading-none"
+                  >×</span>
+                  <span class="sr-only">— remove this filter</span>
+                </a>
+              ))}
+              {chips.length > 1 && (
+                <a
+                  href="/catalogue"
+                  class="text-[13.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
+                >Clear all</a>
+              )}
+            </div>
+          )
+        }
+
+        <div class="mt-6 mb-6 border-b border-[var(--color-rule-soft)]"></div>
 
         {
           result.books.length === 0 ? (

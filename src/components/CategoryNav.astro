@@ -21,8 +21,10 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
       <a
         href={href('')}
         class:list={[
-          'flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm hover:bg-white',
-          !activePath ? 'bg-white font-medium text-[var(--color-navy)]' : 'text-[var(--color-ink-soft)]',
+          'flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm hover:bg-[var(--color-paper)]',
+          !activePath
+            ? 'bg-[#f4f6fa] font-medium text-[var(--color-navy)]'
+            : 'text-[var(--color-ink-soft)]',
         ]}
       >
         <span>All titles</span>
@@ -41,8 +43,10 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
               <a
                 href={href(cat.path)}
                 class:list={[
-                  'flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm hover:bg-white flex-1 min-w-0',
-                  open ? 'bg-white font-medium text-[var(--color-navy)]' : 'text-[var(--color-ink-soft)]',
+                  'flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm hover:bg-[var(--color-paper)] flex-1 min-w-0',
+                  open
+                    ? 'bg-[#f4f6fa] font-medium text-[var(--color-navy)]'
+                    : 'text-[var(--color-ink-soft)]',
                 ]}
               >
                 <span class="flex items-center gap-2 min-w-0">
@@ -57,7 +61,7 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
               {cat.children.length > 0 ? (
                 <button
                   type="button"
-                  class="shelf-toggle w-6 grid place-items-center rounded-sm text-[var(--color-ink-faint)] hover:bg-white hover:text-[var(--color-navy)] shrink-0"
+                  class="shelf-toggle w-6 grid place-items-center rounded-sm text-[var(--color-ink-faint)] hover:bg-[var(--color-paper)] hover:text-[var(--color-navy)] shrink-0"
                   aria-expanded={open ? 'true' : 'false'}
                   aria-controls={panelId}
                 >
@@ -88,16 +92,16 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
               <ul
                 id={panelId}
                 hidden={!open}
-                class="ml-3 mt-0.5 mb-1 space-y-0.5 border-l border-[var(--color-rule)] pl-2"
+                class="ml-3 mt-0.5 mb-1 space-y-0.5 border-l border-[var(--color-wash-soft)] pl-3"
               >
                 {cat.children.map((child) => (
                   <li>
                     <a
                       href={href(child.path)}
                       class:list={[
-                        'flex items-center justify-between gap-2 px-2 py-1 rounded-sm hover:bg-white',
+                        'flex items-center justify-between gap-2 px-2 py-1 rounded-sm hover:bg-[var(--color-paper)]',
                         isActive(child.path)
-                          ? 'bg-white font-medium text-[var(--color-navy)]'
+                          ? 'bg-[#f4f6fa] font-medium text-[var(--color-navy)]'
                           : 'text-[var(--color-ink-soft)]',
                       ]}
                     >

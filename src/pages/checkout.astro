@@ -180,30 +180,6 @@ import { COUNTRIES } from '../lib/address';
             </div>
           </div>
 
-          {/* Optional on purpose: neither is preselected, so leaving it alone is
-              a valid answer. It is a request the shop sees, not a decision - the
-              owner sets what actually happens when they confirm. */}
-          <fieldset>
-            <legend class="block text-[14.5px] font-medium mb-1.5">
-              How would you like to pay?
-              <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
-            </legend>
-            <p class="text-[13px] text-[var(--color-ink-faint)] mb-2 leading-relaxed">
-              Tell us what suits you and we will confirm when we reply. Nothing is paid on this
-              website either way.
-            </p>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
-                <input type="radio" name="paymentPreference" value="transfer" class="accent-[var(--color-navy)]" />
-                <span class="text-[15px]">Bank transfer</span>
-              </label>
-              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
-                <input type="radio" name="paymentPreference" value="cash" class="accent-[var(--color-navy)]" />
-                <span class="text-[15px]">Cash in person</span>
-              </label>
-            </div>
-            <p id="paymentPreference-error" data-error-for="paymentPreference" hidden class="field-error"></p>
-          </fieldset>
         </section>
 
         {/* ---------------------------------------------------------- step 3 */}
@@ -229,6 +205,30 @@ import { COUNTRIES } from '../lib/address';
             </div>
           </div>
 
+          {/* Optional on purpose: neither is preselected, so leaving it alone is
+              a valid answer. It is a request the shop sees, not a decision - the
+              owner sets what actually happens when they confirm. */}
+          <fieldset>
+            <legend class="block text-[14.5px] font-medium mb-1.5">
+              How would you like to pay?
+              <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
+            </legend>
+            <p class="text-[13px] text-[var(--color-ink-faint)] mb-2 leading-relaxed">
+              Tell us what suits you and we will confirm when we reply. Nothing is paid on this
+              website either way.
+            </p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="paymentPreference" value="transfer" class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">Bank transfer</span>
+              </label>
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="paymentPreference" value="cash" class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">Cash in person</span>
+              </label>
+            </div>
+            <p id="paymentPreference-error" data-error-for="paymentPreference" hidden class="field-error"></p>
+          </fieldset>
           <div>
             <label for="notes" class="block text-[14.5px] font-medium mb-1.5">
               Anything else? <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
@@ -667,8 +667,8 @@ import { COUNTRIES } from '../lib/address';
     /** Which problems belong to which step, so a step only gates on its own. */
     const STEP_FIELDS: Record<number, string[]> = {
       1: ['name', 'email', 'phone'],
-      2: ['fulfilment', 'line1', 'city', 'region', 'postcode', 'country', 'paymentPreference'],
-      3: [],
+      2: ['fulfilment', 'line1', 'city', 'region', 'postcode', 'country'],
+      3: ['paymentPreference'],
     };
 
     function paintSteps() {

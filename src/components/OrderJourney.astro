@@ -29,7 +29,20 @@ const cancelled = order.status === 'cancelled' || order.status === 'expired';
 const when = (t: number | null) =>
   t ? new Date(t * 1000).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : null;
 
-type Step = { title: string; done: boolean; at: string | null; note?: string };
+type Step = {
+  title: string;
+  /**
+   * One or two words, for under a bar segment.
+   *
+   * "Confirmed, payment details sent" is the right thing to read when it is
+   * the step you are on, and far too long to sit under a 90px segment on a
+   * phone. The full title still shows for the current step.
+   */
+  short: string;
+  done: boolean;
+  at: string | null;
+  note?: string;
+};
 
 const reached = {
   confirmed:
@@ -46,12 +59,14 @@ const reached = {
 
 const opening: Step[] = [
   {
+    short: 'Requested',
     title: 'Request received',
     done: true,
     at: when(order.created_at),
     note: 'Your books were set aside for you.',
   },
   {
+    short: 'Confirmed',
     title: cash
       ? isCollection
         ? 'Confirmed, collection to arrange'
@@ -75,6 +90,7 @@ const steps: Step[] = isCollection
   ? [
       ...opening,
       {
+        short: 'Ready',
         title: 'Ready to collect',
         done: reached.paid,
         at: when(order.paid_at),
@@ -89,6 +105,7 @@ const steps: Step[] = isCollection
               : 'Once your payment reaches us your books will be set aside.',
       },
       {
+        short: 'Collected',
         title: 'Collected',
         done: reached.finished,
         at: when(order.completed_at),
@@ -100,6 +117,7 @@ const steps: Step[] = isCollection
       {
         // Nothing has been received on a cash order, so this step cannot claim
         // it has - what it marks is the books being ready.
+        short: cash ? 'Packed' : 'Paid',
         title: cash ? 'Packed and ready' : 'Payment received',
         done: reached.paid,
         at: when(order.paid_at),
@@ -110,12 +128,14 @@ const steps: Step[] = isCollection
             : 'Once your payment reaches us we will confirm here.',
       },
       {
+        short: cash ? 'On its way' : 'Posted',
         title: cash ? 'On its way' : 'Posted',
         done: reached.posted,
         at: when(order.dispatched_at),
         note: reached.posted ? undefined : 'We will post your books and note it here.',
       },
       {
+        short: cash ? 'Handed over' : 'Delivered',
         title: cash ? 'Handed over' : 'Delivered',
         done: reached.finished,
         at: when(order.completed_at),
@@ -129,6 +149,20 @@ const steps: Step[] = isCollection
 
 // The first step not yet done is the one being waited on.
 const currentIndex = steps.findIndex((s) => !s.done);
+
+/*
+ * What to say under the bar.
+ *
+ * Not just the current step's note: a collection order that has been paid is
+ * *waiting to be collected*, and "Come and collect - you can pay when you
+ * arrive" hangs off the step that is already done. The vertical timeline
+ * printed every note, so it never had to choose; a bar does, and choosing only
+ * the current one loses the single most actionable line on the page.
+ */
+const lastDone = currentIndex === -1 ? steps.length - 1 : currentIndex - 1;
+const notes = [steps[lastDone]?.note, steps[currentIndex]?.note].filter(
+  (n, i, all): n is string => Boolean(n) && all.indexOf(n) === i,
+);
 
 // The link used to be hardcoded to Royal Mail, so an Evri number sent the
 // customer to a page that could not find it.
@@ -153,45 +187,33 @@ const carrier =
       Nothing was charged.
     </p>
   ) : (
-    <ol class="relative">
-      {steps.map((step, i) => {
-        const isCurrent = i === currentIndex;
-        return (
-          <li class="relative flex gap-4 pb-6 last:pb-0">
-            {/* The line joins a step to the next, so it stops at the last. */}
-            {i < steps.length - 1 && (
+    <div>
+      {/*
+        * A bar rather than a vertical list. The whole journey is four or five
+        * steps, and a horizontal run of segments shows at a glance how far
+        * along it is - which is the question someone coming back days later is
+        * actually asking. The full title and the note belong to whichever step
+        * is current; the rest carry a short label and their date.
+        */}
+      <ol class="grid gap-x-2" style={`grid-template-columns: repeat(${steps.length}, minmax(0, 1fr))`}>
+        {steps.map((step, i) => {
+          const isCurrent = i === currentIndex;
+          return (
+            <li>
               <span
                 class:list={[
-                  'absolute left-[9px] top-6 bottom-0 w-px',
-                  step.done ? 'bg-[var(--color-instock)]/40' : 'bg-[var(--color-rule)]',
+                  'block h-1 rounded-full',
+                  step.done
+                    ? 'bg-[var(--color-instock)]'
+                    : isCurrent
+                      ? 'bg-[var(--color-navy)]'
+                      : 'bg-[var(--color-rule-soft)]',
                 ]}
                 aria-hidden="true"
               />
-            )}
-
-            <span
-              class:list={[
-                'relative z-10 mt-0.5 w-[19px] h-[19px] rounded-full grid place-items-center shrink-0 border-2',
-                step.done
-                  ? 'bg-[var(--color-instock)] border-[var(--color-instock)]'
-                  : isCurrent
-                    ? 'bg-white border-[var(--color-navy)]'
-                    : 'bg-white border-[var(--color-rule)]',
-              ]}
-              aria-hidden="true"
-            >
-              {step.done && (
-                <svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M2 6.5l2.5 2.5L10 3.5" />
-                </svg>
-              )}
-              {isCurrent && <span class="w-[7px] h-[7px] rounded-full bg-[var(--color-navy)]" />}
-            </span>
-
-            <div class="min-w-0 -mt-0.5">
               <p
                 class:list={[
-                  'text-[15.5px]',
+                  'mt-2 text-[12.5px] leading-tight',
                   step.done
                     ? 'text-[var(--color-ink)] font-medium'
                     : isCurrent
@@ -199,20 +221,45 @@ const carrier =
                       : 'text-[var(--color-ink-faint)]',
                 ]}
               >
-                {step.title}
-                {isCurrent && <span class="ml-2 text-[12.5px] font-normal">in progress</span>}
+                {step.short}
+                <span class="sr-only">
+                  {' — '}{step.title}{step.done ? ', done' : isCurrent ? ', in progress' : ', still to come'}
+                </span>
               </p>
               {step.at && (
-                <p class="text-[13px] text-[var(--color-ink-faint)] tabular-nums">{step.at}</p>
+                <p class="mt-0.5 text-[11.5px] text-[var(--color-ink-faint)] tabular-nums leading-tight">
+                  {step.at.split(',')[0]}
+                </p>
               )}
-              {step.note && (
-                <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-soft)]">{step.note}</p>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+            </li>
+          );
+        })}
+      </ol>
+
+      {/* What is happening now, spelled out under the bar where there is room
+          for a whole sentence. */}
+      {currentIndex >= 0 && (
+        <div class="mt-5 pt-4 border-t border-[var(--color-rule-faint)]">
+          <p class="text-[15.5px] font-medium text-[var(--color-navy)]">
+            {steps[currentIndex].title}
+            <span class="ml-2 text-[12.5px] font-normal text-[var(--color-ink-faint)]">in progress</span>
+          </p>
+          {notes.map((note) => (
+            <p class="mt-1 text-[14px] text-[var(--color-ink-soft)]">{note}</p>
+          ))}
+        </div>
+      )}
+      {currentIndex < 0 && (
+        <div class="mt-5 pt-4 border-t border-[var(--color-rule-faint)]">
+          <p class="text-[15.5px] font-medium text-[var(--color-instock)]">
+            {steps[steps.length - 1].title} — this order is complete.
+          </p>
+          {notes.map((note) => (
+            <p class="mt-1 text-[14px] text-[var(--color-ink-soft)]">{note}</p>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -221,7 +268,7 @@ const carrier =
      but never touched the card below it, so a cancelled order that had once
      been posted still advertised its tracking number. */
   order.tracking_number && !isCollection && !cancelled && (
-    <div class="mt-4 p-4 bg-white border border-[var(--color-rule)] rounded-[3px]">
+    <div class="mt-4 p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
       <p class="eyebrow">Tracking number</p>
       <p class="mt-1 text-[17px] font-medium tabular-nums select-all">{order.tracking_number}</p>
       {order.postage_service && (

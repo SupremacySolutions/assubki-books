@@ -4,7 +4,7 @@ import Rosette from '../components/Rosette.astro';
 ---
 
 <Base title="Your basket" noindex>
-  <div class="mx-auto w-full max-w-3xl py-10 md:py-14">
+  <div class="mx-auto w-full max-w-[900px] py-10 md:py-14">
     <h1 class="text-center font-[family-name:var(--font-display)] text-[32px] md:text-[38px] font-semibold">
       Your basket
     </h1>
@@ -93,13 +93,23 @@ import Rosette from '../components/Rosette.astro';
     </section>
 
     <div id="basket" hidden>
-      <ul id="rows" class="divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)]"></ul>
+      <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden">
+        <ul id="rows" class="divide-y divide-[var(--color-rule-faint)]"></ul>
+      </div>
 
       <div class="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <p class="text-[15px] text-[var(--color-ink-soft)]">
-          Subtotal <span id="subtotal" class="price text-[22px] ml-2"></span>
+        <div class="flex items-center gap-4 text-[14.5px]">
+          <a href="/catalogue" class="text-[var(--color-navy)] hover:underline underline-offset-2">Keep browsing</a>
+          <button
+            type="button"
+            id="groupstart2"
+            class="text-[var(--color-navy)] hover:underline underline-offset-2"
+          >Start a group order</button>
+        </div>
+        <p class="text-[15px] text-[var(--color-ink-soft)] sm:ml-auto">
+          Subtotal <span id="subtotal" class="price text-[24px] ml-2"></span>
         </p>
-        <a href="/checkout" id="tocheckout" class="btn btn-primary">Continue to request</a>
+        <a href="/checkout" id="tocheckout" class="btn btn-primary !py-3 !px-6">Continue to request →</a>
         {/* One person owns the address and the conversation with the shop, so
             only they can send it. */}
         <p id="organiserwill" hidden class="text-[14px] text-[var(--color-ink-soft)] max-w-xs">
@@ -391,6 +401,23 @@ import Rosette from '../components/Rosette.astro';
     // ------------------------------------------------------------------
     // Wiring
     // ------------------------------------------------------------------
+
+    /*
+     * The footer's "Start a group order" is a way in to the panel that already
+     * exists, not a second mechanism - it ticks the same checkbox and scrolls
+     * to it, so there is one flow and one place the state lives.
+     */
+    el('#groupstart2')?.addEventListener('click', () => {
+      const panel = el('#grouppanel');
+      panel.hidden = false;
+      const on = el<HTMLInputElement>('#groupon');
+      if (!on.checked) {
+        on.checked = true;
+        on.dispatchEvent(new Event('change'));
+      }
+      panel.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el<HTMLInputElement>('#groupname')?.focus({ preventScroll: true });
+    });
 
     el('#groupon').addEventListener('change', () => {
       const on = el<HTMLInputElement>('#groupon').checked;

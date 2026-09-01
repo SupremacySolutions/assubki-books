@@ -88,8 +88,8 @@ const marks = (book.cat_slugs ?? '')
       }
       {
         avail.state === 'low' && (
-          <span class="absolute top-2 right-2 bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-wide uppercase px-1.5 py-1 rounded-sm">
-            {book.available} left
+          <span class="absolute top-2.5 left-2.5 bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-[0.08em] uppercase px-2.5 py-1 rounded-[var(--radius-pill)]">
+            Only {book.available} left
           </span>
         )
       }
