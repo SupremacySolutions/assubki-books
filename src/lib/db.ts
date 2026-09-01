@@ -40,6 +40,14 @@ export interface BookRow {
   set_id: number | null;
   set_from: number | null;
   set_to: number | null;
+  /** Copies on their way to the shop, and how many are already claimed. */
+  incoming: number;
+  reserved_incoming: number;
+  /** Free to claim now: `incoming - reserved_incoming`, never negative. */
+  reservable: number;
+  /** How the arrival is described: a vagueness word and a month, never a date. */
+  incoming_vague: string | null;
+  incoming_month: string | null;
   cat_slugs: string | null;
 }
 
@@ -57,7 +65,13 @@ const db = () => env.DB;
 const BOOK_SELECT = `
   SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved, b.volumes,
          b.set_id, b.set_from, b.set_to,
+         b.incoming, b.reserved_incoming, b.incoming_vague, b.incoming_month,
          (b.stock - b.reserved) AS available,
+         /* Free to claim from a delivery. Deliberately a separate number from
+            available: one is a copy you can have now, the other is a promise
+            about one that is not here yet, and a card that added them together
+            would be telling the customer something untrue. */
+         MAX(0, b.incoming - b.reserved_incoming) AS reservable,
          i.image_key, i.width, i.height,
          (SELECT group_concat(c2.slug) FROM book_categories bc2
             JOIN categories c2 ON c2.id = bc2.category_id
@@ -287,8 +301,9 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
 export async function bookBySlug(slug: string): Promise<BookDetail | null> {
   const book = await db()
     .prepare(
-      `SELECT b.*, (b.stock - b.reserved) AS available, NULL AS image_key,
-              NULL AS width, NULL AS height, NULL AS cat_slugs
+      `SELECT b.*, (b.stock - b.reserved) AS available,
+              MAX(0, b.incoming - b.reserved_incoming) AS reservable,
+              NULL AS image_key, NULL AS width, NULL AS height, NULL AS cat_slugs
          FROM books b WHERE b.slug = ? AND b.status != 'archived'`,
     )
     .bind(slug)

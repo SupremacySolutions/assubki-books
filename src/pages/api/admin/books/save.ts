@@ -84,6 +84,23 @@ export const POST: APIRoute = async ({ request }) => {
       .bind(title, titleAr, author, publisher, volumes, description, pricePence, status, bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
+
+  /*
+   * The delivery. Floored at what customers have already claimed, the same way
+   * stock is floored at what is reserved - lowering it below that would strand
+   * people holding a promise the shop has withdrawn.
+   */
+  const incomingWanted = Math.max(0, Math.min(999, Math.round(Number(form.get('incoming')) || 0)));
+  const vague = String(form.get('incoming_vague') ?? 'mid').trim() || 'mid';
+  const month = String(form.get('incoming_month') ?? '').trim() || null;
+  await env.DB.prepare(
+    `UPDATE books
+        SET incoming = MAX(?, reserved_incoming),
+            incoming_vague = ?, incoming_month = ?, updated_at = unixepoch()
+      WHERE id = ?`,
+  )
+    .bind(incomingWanted, vague, month, bookId)
+    .run();
   } else {
     const slug = await uniqueSlug(slugify(title), null);
     const created = await env.DB.prepare(

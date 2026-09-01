@@ -262,6 +262,13 @@ import { COUNTRIES } from '../lib/address';
           <span class="text-[14.5px]">Subtotal</span>
           <span id="subtotal" class="price text-[18px]"></span>
         </div>
+        {/* Said in the basket and again here. Whichever one they skim, they
+            meet the other before pressing Send. */}
+        <p
+          id="waitingNote"
+          hidden
+          class="mt-3 -mx-5 -mb-5 px-5 py-3 bg-[var(--color-paper-raised)] border-t border-[var(--color-rule-soft)] rounded-b-[var(--radius-panel)] text-[12.5px] text-[var(--color-brass)] leading-relaxed"
+        ></p>
         <p id="postageNote" class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
           Postage confirmed when we reply.
         </p>
@@ -438,7 +445,10 @@ import { COUNTRIES } from '../lib/address';
 
       const res = await fetch(`/api/basket?ids=${ids.join(',')}`);
       const { books } = (await res.json()) as {
-        books: { id: number; title: string; pricePence: number; available: number }[];
+        books: {
+          id: number; title: string; pricePence: number; available: number;
+          reservable?: number; expected?: string | null;
+        }[];
       };
 
       const list = document.querySelector<HTMLUListElement>('#summary')!;
@@ -464,6 +474,17 @@ import { COUNTRIES } from '../lib/address';
         document.querySelector<HTMLElement>('#empty')!.hidden = false;
         form.hidden = true;
         return false;
+      }
+
+      const waiting = books.filter((b) => b.available <= 0 && (b.reservable ?? 0) > 0);
+      const waitingNote = document.querySelector<HTMLElement>('#waitingNote');
+      if (waitingNote) {
+        const when = waiting.find((b) => b.expected)?.expected;
+        waitingNote.hidden = waiting.length === 0;
+        waitingNote.textContent =
+          `Your order goes out in one parcel once everything has arrived` +
+          (when ? `, expected ${when}.` : '.') +
+          ' Tell us in the box below if you would rather have the in-stock books now and pay postage twice.';
       }
 
       document.querySelector<HTMLElement>('#subtotal')!.textContent = gbp(subtotal);

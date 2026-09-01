@@ -1658,6 +1658,71 @@ async function integrity() {
   const untouched = await one(`SELECT status FROM orders WHERE ref='${forged.ref}'`);
   t.ok(untouched.status === 'requested', 'a wrong token cancels nothing');
 
+  /*
+   * Reserving from a delivery that has not arrived.
+   *
+   * The two numbers must never be added together, the promise must never be
+   * oversold, and a short delivery must not quietly cancel anyone.
+   */
+  const rb = await makeBook({ stock: '0' });
+  await db(`UPDATE books SET incoming = 3, incoming_vague = 'mid', incoming_month = '2026-10' WHERE id = ${rb.id}`);
+
+  // makeBook returns no slug, and the page is reached by slug.
+  const rbSlug = (await one(`SELECT slug FROM books WHERE id = ${rb.id}`)).slug;
+  const bookPage = visibleText(await html(`/book/${rbSlug}`));
+  t.ok(bookPage.includes('3 copies expected mid-October'), 'the book page says what is coming and when');
+  t.ok(bookPage.includes('3 still free to reserve'), 'and how many are left to claim');
+
+  const claimA = await placeOrder(rb.id, 'collection');
+  const claimed = await one(
+    `SELECT reserved AS r, reserved_incoming AS ri FROM books WHERE id = ${rb.id}`,
+  );
+  t.ok(claimed.ri === 1 && claimed.r === 0,
+    'a claim counts against the delivery, never against shelf stock');
+  const claimLine = await one(
+    `SELECT from_incoming AS fi FROM order_items
+      WHERE order_id = (SELECT id FROM orders WHERE ref = '${claimA.ref}')`,
+  );
+  t.ok(claimLine.fi === 1, 'and the line is marked as a claim');
+
+  // The promise cannot be oversold, whatever the read said.
+  await db(`UPDATE books SET reserved_incoming = 3 WHERE id = ${rb.id}`);
+  const oversold = await json('/api/orders', {
+    name: 'Too Late', email: 'late@example.com', phone: '07700 900999',
+    fulfilment: 'collection', items: [{ bookId: rb.id, qty: 1 }],
+  });
+  t.ok(oversold.body.ok === false, 'a fully reserved delivery refuses another claim');
+  await db(`UPDATE books SET reserved_incoming = 1 WHERE id = ${rb.id}`);
+
+  // A short delivery fills the oldest claims and leaves the rest waiting.
+  const claimB = await placeOrder(rb.id, 'collection');
+  await db(`UPDATE books SET reserved_incoming = 2 WHERE id = ${rb.id}`);
+  await admin(`/api/admin/books/${rb.id}/arrived`, { arrived: '1' });
+  const afterArrival = await one(
+    `SELECT stock AS s, reserved AS r, incoming AS inc, reserved_incoming AS ri
+       FROM books WHERE id = ${rb.id}`,
+  );
+  t.ok(afterArrival.s === 1 && afterArrival.r === 1,
+    'an arrival puts copies on the shelf and turns a claim into a hold');
+  t.ok(afterArrival.ri === 1 && afterArrival.inc === 2,
+    'and what did not arrive stays claimed rather than being cancelled');
+  const stillWaiting = await one(
+    `SELECT from_incoming AS fi FROM order_items
+      WHERE order_id = (SELECT id FROM orders WHERE ref = '${claimB.ref}')`,
+  );
+  t.ok(stillWaiting.fi === 1, 'the later claim keeps its place in the queue');
+
+  const journey = visibleText(await html(`/order?ref=${claimB.ref}&t=${claimB.token}`));
+  t.ok(journey.includes('Waiting on a delivery'),
+    'the customer sees waiting as its own step, not a stalled Posted');
+
+  // Cancelling a reservation gives the claim back, not shelf stock.
+  const beforeCancel = await one(`SELECT reserved_incoming AS ri FROM books WHERE id = ${rb.id}`);
+  await cancelForm(claimB.ref, claimB.token, '');
+  const afterCancel2 = await one(`SELECT reserved_incoming AS ri FROM books WHERE id = ${rb.id}`);
+  t.ok(beforeCancel.ri === 1 && afterCancel2.ri === 0,
+    'cancelling a reservation returns the claim to the delivery');
+
   const editorSource = readFileSync('src/pages/admin/books/[id].astro', 'utf8');
   const opensAt = editorSource.indexOf('<form id="bookForm"');
   // From after the opening tag, so the form's own tag is not counted as nested.

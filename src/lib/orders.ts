@@ -105,11 +105,15 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   const ids = input.items.map((i) => i.bookId);
   const placeholders = ids.map(() => '?').join(',');
   const { results: books } = await env.DB.prepare(
-    `SELECT id, title, price_pence, (stock - reserved) AS available
+    `SELECT id, title, price_pence, (stock - reserved) AS available,
+            MAX(0, incoming - reserved_incoming) AS reservable
        FROM books WHERE id IN (${placeholders}) AND status = 'live'`,
   )
     .bind(...ids)
-    .all<{ id: number; title: string; price_pence: number; available: number }>();
+    .all<{
+      id: number; title: string; price_pence: number;
+      available: number; reservable: number;
+    }>();
 
   const byId = new Map(books.map((b) => [b.id, b]));
 
@@ -120,12 +124,17 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     const book = byId.get(item.bookId);
     if (!book) {
       problems.push({ bookId: item.bookId, title: 'Unavailable title', wanted: item.qty, available: 0 });
-    } else if (book.available < item.qty) {
+    } else if (book.available < item.qty && book.reservable < item.qty) {
+      /*
+       * Neither on the shelf nor claimable from a delivery. The two are checked
+       * separately and never added together: a line is one or the other, so a
+       * customer is never sold "two, one of which is imaginary".
+       */
       problems.push({
         bookId: item.bookId,
         title: book.title,
         wanted: item.qty,
-        available: Math.max(0, book.available),
+        available: Math.max(0, Math.max(book.available, book.reservable)),
       });
     }
   }
@@ -133,7 +142,14 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
 
   const items = input.items.map((item) => {
     const book = byId.get(item.bookId)!;
-    return { bookId: book.id, title: book.title, qty: item.qty, pricePence: book.price_pence };
+    return {
+      bookId: book.id,
+      title: book.title,
+      qty: item.qty,
+      pricePence: book.price_pence,
+      // On the shelf if it can be; a claim on the delivery only when it cannot.
+      fromIncoming: book.available < item.qty,
+    };
   });
   const subtotalPence = items.reduce((n, i) => n + i.pricePence * i.qty, 0);
 
@@ -192,22 +208,47 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     for (const item of items) {
       statements.push(
         env.DB.prepare(
-          `INSERT INTO order_items (order_id, book_id, title_snapshot, price_pence_snapshot, qty)
-           VALUES ((SELECT id FROM orders WHERE ref = ?), ?, ?, ?, ?)`,
-        ).bind(ref, item.bookId, item.title, item.pricePence, item.qty),
-        // If this pushes reserved past stock the CHECK constraint fails, the
-        // statement errors, and D1 rolls the whole batch back. That - not the
-        // read above - is what makes two simultaneous requests for the last
-        // copy safe.
-        env.DB.prepare(`UPDATE books SET reserved = reserved + ? WHERE id = ?`).bind(
-          item.qty,
-          item.bookId,
-        ),
-        env.DB.prepare(
-          `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
-           VALUES (?, ?, 'reserved', 'order requested', (SELECT id FROM orders WHERE ref = ?))`,
-        ).bind(item.bookId, item.qty, ref),
+          `INSERT INTO order_items (order_id, book_id, title_snapshot, price_pence_snapshot, qty, from_incoming)
+           VALUES ((SELECT id FROM orders WHERE ref = ?), ?, ?, ?, ?, ?)`,
+        ).bind(ref, item.bookId, item.title, item.pricePence, item.qty, item.fromIncoming ? 1 : 0),
       );
+
+      if (item.fromIncoming) {
+        /*
+         * A claim on a delivery. It cannot use `reserved`, which counts copies
+         * held out of `stock` and is bounded by CHECK (reserved <= stock) -
+         * there is nothing on the shelf to hold.
+         *
+         * Safe against two people claiming the last free copy at once for the
+         * same reason shelf stock is: the books_incoming_not_oversold trigger
+         * aborts the statement and D1 rolls the whole batch back. The read
+         * above is for a readable message, not for correctness.
+         *
+         * No ledger row - stock_ledger.field is CHECK (field IN
+         * ('stock','reserved')) and a claim moved neither. Nothing has come
+         * off any shelf yet.
+         */
+        statements.push(
+          env.DB.prepare(
+            `UPDATE books SET reserved_incoming = reserved_incoming + ? WHERE id = ?`,
+          ).bind(item.qty, item.bookId),
+        );
+      } else {
+        statements.push(
+          // If this pushes reserved past stock the CHECK constraint fails, the
+          // statement errors, and D1 rolls the whole batch back. That - not the
+          // read above - is what makes two simultaneous requests for the last
+          // copy safe.
+          env.DB.prepare(`UPDATE books SET reserved = reserved + ? WHERE id = ?`).bind(
+            item.qty,
+            item.bookId,
+          ),
+          env.DB.prepare(
+            `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
+             VALUES (?, ?, 'reserved', 'order requested', (SELECT id FROM orders WHERE ref = ?))`,
+          ).bind(item.bookId, item.qty, ref),
+        );
+      }
     }
 
     try {
@@ -290,7 +331,13 @@ export interface OrderView {
   cancel_requested_at: number | null;
   /** The order's own id, for routes that act on it. */
   id: number;
-  items: { title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null }[];
+  items: {
+    title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null;
+    /** This line is a claim on a delivery, not a copy off the shelf. */
+    from_incoming: number;
+    incoming_vague: string | null;
+    incoming_month: string | null;
+  }[];
 }
 
 /** Token-checked so a guessed reference cannot expose someone else's order. */
@@ -319,7 +366,8 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
   if (diff !== 0) return null;
 
   const { results: items } = await env.DB.prepare(
-    `SELECT oi.title_snapshot, oi.price_pence_snapshot, oi.qty, b.slug
+    `SELECT oi.title_snapshot, oi.price_pence_snapshot, oi.qty, b.slug,
+            oi.from_incoming, b.incoming_vague, b.incoming_month
        FROM order_items oi LEFT JOIN books b ON b.id = oi.book_id
       WHERE oi.order_id = (SELECT id FROM orders WHERE ref = ?)`,
   )

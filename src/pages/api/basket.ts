@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { booksByIds } from '../../lib/db';
+import { whenText } from '../../lib/incoming';
 
 export const prerender = false;
 
@@ -28,6 +29,11 @@ export const GET: APIRoute = async ({ url }) => {
         titleAr: b.title_ar,
         pricePence: b.price_pence,
         available: Math.max(0, b.available),
+        // A line the shelf cannot cover but a delivery can. Kept separate from
+        // `available` so the basket can say which it is rather than quietly
+        // treating a promise as a copy in hand.
+        reservable: b.reservable,
+        expected: whenText(b.incoming_vague, b.incoming_month),
         imageKey: b.image_key,
       })),
     },

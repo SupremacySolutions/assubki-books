@@ -4,6 +4,7 @@ import BookCard from '../../components/BookCard.astro';
 import Rosette from '../../components/Rosette.astro';
 import { bookBySlug, relatedBooks, setOptions } from '../../lib/db';
 import { price, availability, imageUrl, stripTags, truncate, SITE } from '../../lib/format';
+import { delivery } from '../../lib/incoming';
 import { classmark } from '../../lib/classmarks';
 import { IMAGE_PRESETS } from '../../lib/image-presets';
 import { cropsCleanly } from '../../lib/cover-fit';
@@ -15,6 +16,25 @@ if (!book) return Astro.rewrite('/404');
 
 const related = await relatedBooks(book.id, 6);
 const avail = availability(book.available);
+
+/*
+ * A delivery on its way, and whether this customer already has one of it.
+ *
+ * `mine` cannot be known on the server - there is no customer session - so the
+ * page renders the unreserved state and the client swaps it, the same way the
+ * basket count is hydrated. It stays correct without JavaScript; it just does
+ * not know this particular customer yet.
+ */
+const coming = delivery(book);
+const mine: string | null = null;
+
+const pillLabel = mine
+  ? 'Reserved for you'
+  : coming && book.available <= 0
+    ? coming.free > 0
+      ? 'On its way'
+      : 'Fully reserved'
+    : avail.label;
 const cover = imageUrl(book.images[0]?.image_key, 'detail');
 // Same rule as the catalogue card, so a book looks the same in both places.
 const coverFills = cropsCleanly(book.images[0]?.width, book.images[0]?.height);
@@ -220,9 +240,34 @@ const jsonLd = {
                 avail.state === 'in' && 'text-[var(--color-instock)] bg-[var(--color-instock)]/10',
                 avail.state === 'low' && 'text-[var(--color-outstock)] bg-[var(--color-outstock)]/10',
                 avail.state === 'out' && 'text-[var(--color-ink-faint)] bg-[var(--color-rule)]/60',
-              ]}>{avail.label}</span
+              ]}>{pillLabel}</span
             >
           </div>
+
+          {/*
+            * A delivery on its way.
+            *
+            * Its own panel rather than a line in the availability pill: a copy
+            * you can have today and a copy that is three weeks away are not
+            * two shades of the same fact, and a customer who reads them as one
+            * will be waiting for a parcel nobody has sent.
+            */}
+          {coming && book.available <= 0 && (
+            <div class="mt-4 bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[10px] p-4">
+              <p class="eyebrow !text-[10.5px] mb-1.5">Delivery on its way</p>
+              <p class="text-[15px]">
+                {coming.coming} {coming.coming === 1 ? 'copy' : 'copies'} expected
+                {coming.when ? ` ${coming.when}` : ' shortly'}.
+              </p>
+              <p class="mt-0.5 text-[14px] text-[var(--color-ink-faint)]">
+                {mine
+                  ? `1 copy reserved for you on order ${mine}`
+                  : coming.free > 0
+                    ? `${coming.free} still free to reserve`
+                    : `All ${coming.coming} are already spoken for`}
+              </p>
+            </div>
+          )}
 
           {
             book.available > 0 ? (
@@ -276,6 +321,33 @@ const jsonLd = {
                   do not notice until the parcel arrives. */}
               <p id="addnote" role="status" class="mt-2 text-[13.5px] text-[var(--color-outstock)]" hidden />
               </>
+            ) : mine ? (
+              <p class="mt-4 text-[15px] text-[var(--color-ink-soft)]">
+                It will be sent with the rest of that order once the delivery arrives.
+              </p>
+            ) : coming && coming.free > 0 ? (
+              <>
+                {/* Brass, not navy. Reserving is a different act from buying
+                    something that is on the shelf, and the button should not
+                    pretend otherwise. */}
+                <button
+                  type="button"
+                  id="reserve"
+                  class="mt-5 w-full sm:w-auto rounded-[var(--radius-pill)] bg-[var(--color-brass)] px-6 py-[13px] text-[16px] font-medium text-white hover:brightness-110 transition-[filter]"
+                  data-book-id={book.id}
+                  data-max={coming.free}
+                  data-slug={book.slug}
+                >
+                  Reserve a copy
+                </button>
+                <p id="addnote" role="status" class="mt-2 text-[13.5px] text-[var(--color-outstock)]" hidden />
+              </>
+            ) : coming ? (
+              <p class="mt-4 text-[15px] text-[var(--color-ink-soft)]">
+                Every copy of this delivery is spoken for.{' '}
+                <MessageUs variant="inline" label="Ask us" subject={`Next delivery: ${book.title}`} />{' '}
+                and we will add you to the one after.
+              </p>
             ) : (
               <p class="mt-4 text-[15px] text-[var(--color-ink-soft)]">
                 This title is out of stock.{' '}
@@ -285,8 +357,9 @@ const jsonLd = {
             )
           }
           <p class="mt-4 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-            Adding to the basket reserves nothing yet. You send a request, we confirm, then we send
-            payment details - no card details are taken on this site.
+            {coming && book.available <= 0 && !mine
+              ? 'A reservation is not a hold that runs out - it stands until the delivery lands. Nothing is paid now.'
+              : 'Adding to the basket reserves nothing yet. You send a request, we confirm, then we send payment details - no card details are taken on this site.'}
           </p>
         </div>
 

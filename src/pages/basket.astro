@@ -93,6 +93,18 @@ import Rosette from '../components/Rosette.astro';
     </section>
 
     <div id="basket" hidden>
+      {/* Brass, not navy: this is a fact about the order, not the site telling
+          the customer off. It is repeated at the last step of the request,
+          because missing it means waiting for a parcel nobody has sent. */}
+      <div
+        id="waiting"
+        hidden
+        class="mb-4 flex items-start gap-3 bg-white border border-[var(--color-rule-soft)] border-l-[3px] border-l-[var(--color-brass)] rounded-[var(--radius-panel)] p-4"
+      >
+        <span class="shrink-0 text-[var(--color-brass)] text-[15px] leading-none mt-0.5" aria-hidden="true">!</span>
+        <p data-waiting-text class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed"></p>
+      </div>
+
       <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden">
         <ul id="rows" class="divide-y divide-[var(--color-rule-faint)]"></ul>
       </div>
@@ -347,8 +359,15 @@ import Rosette from '../components/Rosette.astro';
       let subtotal = 0;
 
       for (const book of live) {
-        const qty = Math.min(basket[String(book.id)], Math.max(book.available, 0));
-        const overrun = basket[String(book.id)] > book.available;
+        /*
+         * A line the shelf cannot cover but a delivery can. It is capped
+         * against whichever number applies, never their sum - a customer must
+         * never be sold "two, one of which is imaginary".
+         */
+        const onOrder = book.available <= 0 && book.reservable > 0;
+        const ceiling = onOrder ? book.reservable : book.available;
+        const qty = Math.min(basket[String(book.id)], Math.max(ceiling, 0));
+        const overrun = basket[String(book.id)] > ceiling;
         subtotal += book.pricePence * qty;
 
         const li = document.createElement('li');
@@ -362,22 +381,35 @@ import Rosette from '../components/Rosette.astro';
             ${book.titleAr ? `<p class="ar text-[14.5px] text-[var(--color-ink-soft)]">${book.titleAr}</p>` : ''}
             <p class="price text-[15px] mt-1">${gbp(book.pricePence)}</p>
             ${
-              book.available <= 0
-                ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Out of stock - removed from your request</p>`
-                : overrun
-                  ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Only ${book.available} available - quantity reduced</p>`
-                  : ''
+              onOrder
+                ? `<p class="mt-1 text-[13px] font-medium text-[var(--color-brass)]">Reserved${book.expected ? ` - expected ${book.expected}` : ''}</p>`
+                : book.available <= 0
+                  ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Out of stock - removed from your request</p>`
+                  : overrun
+                    ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Only ${book.available} available - quantity reduced</p>`
+                    : ''
             }
           </div>
           <div class="col-start-2 flex items-center justify-between gap-3 sm:ml-auto sm:shrink-0">
             <label class="sr-only" for="q${book.id}">Quantity for ${book.title}</label>
-            <input id="q${book.id}" type="number" min="0" max="${Math.max(book.available, 0)}" value="${qty}"
+            <input id="q${book.id}" type="number" min="0" max="${Math.max(ceiling, 0)}" value="${qty}"
                    class="field !w-16 !py-1.5 tabular-nums" data-id="${book.id}">
             <button type="button" class="text-[13.5px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] underline underline-offset-2" data-remove="${book.id}">Remove</button>
           </div>`;
         rows.appendChild(li);
 
         if (qty !== basket[String(book.id)]) setQty(book.id, qty);
+      }
+
+      const waiting = live.filter((b) => b.available <= 0 && b.reservable > 0);
+      const notice = document.querySelector<HTMLElement>('#waiting');
+      if (notice) {
+        const when = waiting.find((b) => b.expected)?.expected;
+        notice.hidden = waiting.length === 0;
+        notice.querySelector('[data-waiting-text]')!.textContent =
+          `${waiting.length === 1 ? 'One book in your basket has' : `${waiting.length} books in your basket have`} not arrived yet, ` +
+          `so the whole order goes out in one parcel once everything is here` +
+          (when ? ` - expected ${when}.` : '.');
       }
 
       document.querySelector<HTMLElement>('#subtotal')!.textContent = gbp(subtotal);

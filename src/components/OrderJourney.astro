@@ -12,6 +12,7 @@
  */
 import type { OrderView } from '../lib/orders';
 import { trackingUrl } from '../lib/order-status';
+import { whenText } from '../lib/incoming';
 
 interface Props {
   order: OrderView;
@@ -57,6 +58,16 @@ const reached = {
     order.status === 'completed' || (isCollection && order.status === 'dispatched'),
 };
 
+/*
+ * An order can be paid and still not postable, because one of its lines is on
+ * a lorry. That is a real step with a real duration, not a stalled "Posted" -
+ * so it gets its own segment rather than leaving the bar looking stuck.
+ */
+const waitingOn = order.items.find((i) => i.from_incoming);
+const waitingWhen = waitingOn
+  ? whenText(waitingOn.incoming_vague, waitingOn.incoming_month)
+  : null;
+
 const opening: Step[] = [
   {
     short: 'Requested',
@@ -89,6 +100,19 @@ const opening: Step[] = [
 const steps: Step[] = isCollection
   ? [
       ...opening,
+      ...(waitingOn
+        ? [
+            {
+              short: 'Waiting',
+              title: 'Waiting on a delivery',
+              done: reached.paid,
+              at: null,
+              note: reached.paid
+                ? undefined
+                : `One of your books has not reached us yet${waitingWhen ? `, expected ${waitingWhen}` : ''}. We will let you know the moment it is in.`,
+            } as Step,
+          ]
+        : []),
       {
         short: 'Ready',
         title: 'Ready to collect',
@@ -127,6 +151,19 @@ const steps: Step[] = isCollection
             ? 'We will pack these and be in touch to arrange handing them over.'
             : 'Once your payment reaches us we will confirm here.',
       },
+      ...(waitingOn
+        ? [
+            {
+              short: 'Waiting',
+              title: 'Waiting on a delivery',
+              done: reached.posted,
+              at: null,
+              note: reached.posted
+                ? undefined
+                : `One of your books has not reached us yet${waitingWhen ? `, expected ${waitingWhen}` : ''}. The whole order goes out together once it does.`,
+            } as Step,
+          ]
+        : []),
       {
         short: cash ? 'On its way' : 'Posted',
         title: cash ? 'On its way' : 'Posted',
@@ -195,7 +232,12 @@ const carrier =
         * actually asking. The full title and the note belong to whichever step
         * is current; the rest carry a short label and their date.
         */}
-      <ol class="grid gap-x-2" style={`grid-template-columns: repeat(${steps.length}, minmax(0, 1fr))`}>
+      {/* The waiting step gets more room than the others, because it is the
+          one with no known length and the label has more to say. */}
+      <ol
+        class="grid gap-x-2"
+        style={`grid-template-columns: ${steps.map((s) => (s.short === 'Waiting' ? '1.5fr' : '1fr')).join(' ')}`}
+      >
         {steps.map((step, i) => {
           const isCurrent = i === currentIndex;
           return (
@@ -206,7 +248,9 @@ const carrier =
                   step.done
                     ? 'bg-[var(--color-instock)]'
                     : isCurrent
-                      ? 'bg-[var(--color-navy)]'
+                      ? step.short === 'Waiting'
+                        ? 'bg-[var(--color-brass)]'
+                        : 'bg-[var(--color-navy)]'
                       : 'bg-[var(--color-rule-soft)]',
                 ]}
                 aria-hidden="true"
@@ -217,7 +261,9 @@ const carrier =
                   step.done
                     ? 'text-[var(--color-ink)] font-medium'
                     : isCurrent
-                      ? 'text-[var(--color-navy)] font-medium'
+                      ? step.short === 'Waiting'
+                        ? 'text-[var(--color-brass)] font-medium'
+                        : 'text-[var(--color-navy)] font-medium'
                       : 'text-[var(--color-ink-faint)]',
                 ]}
               >
@@ -240,7 +286,14 @@ const carrier =
           for a whole sentence. */}
       {currentIndex >= 0 && (
         <div class="mt-5 pt-4 border-t border-[var(--color-rule-faint)]">
-          <p class="text-[15.5px] font-medium text-[var(--color-navy)]">
+          <p
+            class:list={[
+              'text-[15.5px] font-medium',
+              steps[currentIndex].short === 'Waiting'
+                ? 'text-[var(--color-brass)]'
+                : 'text-[var(--color-navy)]',
+            ]}
+          >
             {steps[currentIndex].title}
             <span class="ml-2 text-[12.5px] font-normal text-[var(--color-ink-faint)]">in progress</span>
           </p>
