@@ -1685,6 +1685,28 @@ async function integrity() {
   );
   t.ok(claimLine.fi === 1, 'and the line is marked as a claim');
 
+  /*
+   * A reservation must not be swept.
+   *
+   * The 48-hour sweep releases anything still `requested` with an expiry, and
+   * a reservation was being given one - so a customer promised a copy would
+   * have quietly lost it two days later, before the delivery had a chance to
+   * arrive. A null expiry is what keeps it out of that query.
+   */
+  const claimOrder = await one(`SELECT expires_at AS e FROM orders WHERE ref = '${claimA.ref}'`);
+  t.ok(claimOrder.e === null, 'an order waiting on a delivery is given no expiry to lapse at');
+
+  const resPage = visibleText(await html(`/order?ref=${claimA.ref}&t=${claimA.token}`));
+  t.ok(!resPage.includes('Held until'), 'and is not told its books are held for 48 hours');
+  t.ok(resPage.includes('Reserved for you until the delivery arrives'),
+    'but is told what it is actually waiting for');
+
+  const notifySrc = readFileSync('src/lib/notify.ts', 'utf8');
+  t.ok(/reserved: `Thank you[^]{0,120}reserved for you from our next delivery/.test(notifySrc),
+    'the confirmation has its own wording for a reservation');
+  t.ok(/mixed: 'Your whole order goes out in one parcel/.test(notifySrc),
+    'and a third for an order that is part shelf, part delivery');
+
   // The promise cannot be oversold, whatever the read said.
   await db(`UPDATE books SET reserved_incoming = 3 WHERE id = ${rb.id}`);
   const oversold = await json('/api/orders', {

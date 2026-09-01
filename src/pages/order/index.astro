@@ -18,6 +18,7 @@ import { price } from '../../lib/format';
 import { statusLabel, isSettled, moneyReceived, trackingUrl, cashMoment } from '../../lib/order-status';
 import { collectionAddress } from '../../lib/settings';
 import { cancelRight, REASON_MAX } from '../../lib/cancellation';
+import { whenText } from '../../lib/incoming';
 import QRCode from 'qrcode';
 
 const params = Astro.url.searchParams;
@@ -48,6 +49,12 @@ const whereToCollect =
 const status = order ? statusLabel(order.status, order.fulfilment, whereToCollect, cashPayment) : null;
 const placed = order ? new Date(order.created_at * 1000) : null;
 const expires = order?.expires_at ? new Date(order.expires_at * 1000) : null;
+
+/* Roughly when the delivery this order is waiting on is due, if it is. */
+const waitingLine = order?.items.find((i) => i.from_incoming);
+const waitingWhen = waitingLine
+  ? whenText(waitingLine.incoming_vague, waitingLine.incoming_month)
+  : null;
 const stillHeld = order?.status === 'requested' && expires && expires.getTime() > Date.now();
 
 // Once they have paid, the page states what the order came to rather than
@@ -140,9 +147,18 @@ if (offerTelegram && telegramLink) {
           {status.blurb}
         </div>
 
+        {/* A reservation has no expiry to print - `expires_at` is null for one,
+            so `stillHeld` is already false. It gets its own line instead, or the
+            page would say nothing at all about how long the customer is
+            waiting. */}
         {stillHeld && (
           <p class="mt-3 text-[14px] text-[var(--color-ink-faint)]">
             Held until {expires!.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}.
+          </p>
+        )}
+        {!stillHeld && waitingWhen && !dropped && (
+          <p class="mt-3 text-[14px] text-[var(--color-brass)]">
+            Reserved for you until the delivery arrives, expected {waitingWhen}.
           </p>
         )}
 

@@ -46,7 +46,36 @@ function customerPlaced(input: PlacedInput) {
   const { order, name, origin } = input;
   const link = `${origin}/order?ref=${order.ref}&t=${order.token}`;
   const optIn = optInLink(order.ref, order.token);
-  const expires = new Date(order.expiresAt * 1000).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  const expires = order.expiresAt
+    ? new Date(order.expiresAt * 1000).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+    : null;
+
+  /*
+   * Three different things can have happened, and the standing wording is only
+   * true for one of them.
+   *
+   * A reservation is not "held for 48 hours" - the books are not here to hold,
+   * and there is no deadline for the customer to meet. A mixed order is neither
+   * one nor the other: part of it is on the shelf and part of it is on a lorry,
+   * and the only thing that matters is that it all travels together.
+   */
+  const waiting = order.items.filter((i) => i.fromIncoming);
+  const onShelf = order.items.filter((i) => !i.fromIncoming);
+  const kind: 'held' | 'mixed' | 'reserved' =
+    waiting.length === 0 ? 'held' : onShelf.length === 0 ? 'reserved' : 'mixed';
+  const due = order.waitingWhen ? ` expected ${order.waitingWhen}` : '';
+
+  const opening = {
+    held: 'Thank you - we have your request and these books are held for you.',
+    reserved: `Thank you - we have your request and ${waiting.length === 1 ? 'this copy is' : 'these copies are'} reserved for you from our next delivery,${due || ' due shortly'}.`,
+    mixed: `Thank you - we have your request. Some of it is on the shelf, and the rest is reserved for you from our next delivery,${due || ' due shortly'}.`,
+  }[kind];
+
+  const closing = {
+    held: `We hold these copies until ${escapeHtml(expires ?? '')}. If we have not heard from you by then the hold lapses and the books return to the shelf - nothing is charged and there is nothing to cancel. No payment is taken on our website at any point.`,
+    reserved: 'Your reservation does not run out - it stands until the delivery arrives, however long that takes. We will write again the moment it is in. No payment is taken on our website at any point.',
+    mixed: 'Your whole order goes out in one parcel once everything has arrived, so nothing is sent before then. The reservation does not run out, and we will write again the moment the delivery is in. No payment is taken on our website at any point.',
+  }[kind];
 
   // Offered to everyone, as on the order page: checkout no longer asks for a
   // username, and the deep link is the only way the bot is allowed to open a
@@ -67,7 +96,7 @@ function customerPlaced(input: PlacedInput) {
     `Reference ${order.ref}`,
     `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(name)},</p>
      <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
-       Thank you - we have your request and these books are held for you.
+       ${escapeHtml(opening)}
        <strong>We will reply with the total including postage and how to pay.</strong>
      </p>
      ${itemRows(order.items, order.subtotalPence)}
@@ -80,16 +109,13 @@ function customerPlaced(input: PlacedInput) {
      ${telegramBlock}
      ${button(link, 'View your request')}
      <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
-       We hold these copies until ${escapeHtml(expires)}. If we have not heard from you by then the
-       hold lapses and the books return to the shelf - nothing is charged and there is nothing to
-       cancel. No payment is taken on our website at any point.
+       ${closing}
      </p>`,
   );
 
   const text =
     `Request received - ${order.ref}\n\nالسلام عليكم ${name},\n\n` +
-    `We have your request and these books are held for you. We will reply with the total ` +
-    `including postage and how to pay.\n\n` +
+    `${opening} We will reply with the total including postage and how to pay.\n\n` +
     order.items
       .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
       .join('\n') +
@@ -98,13 +124,21 @@ function customerPlaced(input: PlacedInput) {
       ? 'For collection.\n\n'
       : `To be posted to:\n${input.address ?? ''}\n\n`) +
     (optIn && !order.telegramChatId ? `Get payment details on Telegram: ${optIn}\n\n` : '') +
-    `View your request: ${link}\n\nHeld until ${expires}. No payment is taken on our website.\n`;
+    `View your request: ${link}\n\n${closing}\n`;
 
-  return { subject: `Your request ${order.ref} - ${SITE.name}`, html, text };
+  return {
+    subject:
+      kind === 'reserved'
+        ? `Reserved for you ${order.ref} - ${SITE.name}`
+        : `Your request ${order.ref} - ${SITE.name}`,
+    html,
+    text,
+  };
 }
 
 function ownerPlaced(input: PlacedInput) {
   const { order, name, email, origin } = input;
+  const ownerWaiting = order.items.filter((i) => i.fromIncoming);
 
   const contact = [
     `Email: ${escapeHtml(email)}`,
@@ -132,9 +166,23 @@ function ownerPlaced(input: PlacedInput) {
          : escapeHtml(input.address ?? '')
      }</p>
      ${input.notes ? `<p style="margin:12px 0 0;font-size:14px"><strong>Note:</strong> ${escapeHtml(input.notes)}</p>` : ''}
+     ${
+       ownerWaiting.length > 0
+         ? `<p style="margin:14px 0 0;padding:12px 14px;background:#fbfaf7;border-left:3px solid #8a6714;font-size:14px;color:#4a5568;line-height:1.6">
+              <strong style="color:#101828">Do not pack this yet.</strong><br>
+              ${escapeHtml(ownerWaiting.map((i) => `${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}`).join(', '))}
+              ${ownerWaiting.length === 1 ? 'is' : 'are'} reserved from a delivery that has not arrived.
+              The whole order goes out together once it is in.
+            </p>`
+         : ''
+     }
      ${button(`${origin}/admin/orders/${order.ref}`, 'Confirm and send payment details')}
      <p style="margin:18px 0 0;font-size:13.5px;color:#8b93a1">
-       Stock is held for 48 hours from now, then released automatically.
+       ${
+         ownerWaiting.length > 0
+           ? 'This order has no 48-hour hold - a reservation stands until the delivery lands.'
+           : 'Stock is held for 48 hours from now, then released automatically.'
+       }
      </p>`,
   );
 

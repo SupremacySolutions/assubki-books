@@ -7,6 +7,7 @@
  */
 
 import { env } from 'cloudflare:workers';
+import { whenText } from './incoming';
 import { releaseHold } from './stock-release';
 import type { AddressParts } from './address';
 
@@ -39,10 +40,19 @@ export interface CreatedOrder {
   ref: string;
   token: string;
   subtotalPence: number;
-  expiresAt: number;
+  /**
+   * When the hold lapses, or null for an order waiting on a delivery.
+   *
+   * A reservation cannot be given 48 hours to complete: the thing it is for
+   * does not exist yet. Null keeps it out of the expiry sweep, which is already
+   * written to skip it - see the WHERE clause in expireStaleHolds.
+   */
+  expiresAt: number | null;
+  /** Roughly when the delivery is due, for an order that is waiting on one. */
+  waitingWhen: string | null;
   /** Carried over from an earlier order by the same customer, if any. */
   telegramChatId: string | null;
-  items: { bookId: number; title: string; qty: number; pricePence: number }[];
+  items: { bookId: number; title: string; qty: number; pricePence: number; fromIncoming: boolean }[];
 }
 
 export class StockConflict extends Error {
@@ -163,7 +173,24 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   )
     .bind(input.email)
     .first<{ telegram_chat_id: string }>();
-  const expiresAt = Math.floor(Date.now() / 1000) + HOLD_HOURS * 3600;
+  /*
+   * An order containing a claim on a delivery is never given an expiry. The
+   * customer cannot complete it inside 48 hours because the books are not here
+   * - sweeping it would release a copy somebody was promised.
+   */
+  const waitsForStock = items.some((i) => i.fromIncoming);
+  const expiresAt = waitsForStock ? null : Math.floor(Date.now() / 1000) + HOLD_HOURS * 3600;
+
+  const waitingWhen = waitsForStock
+    ? await (async () => {
+        const row = await env.DB.prepare(
+          `SELECT incoming_vague AS v, incoming_month AS m FROM books WHERE id = ?`,
+        )
+          .bind(items.find((i) => i.fromIncoming)!.bookId)
+          .first<{ v: string | null; m: string | null }>();
+        return whenText(row?.v ?? null, row?.m ?? null);
+      })()
+    : null;
   const token = randomToken();
 
   // A ref collision is a 1-in-a-million event, not an error worth surfacing.
@@ -258,6 +285,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
         token,
         subtotalPence,
         expiresAt,
+        waitingWhen,
         telegramChatId: priorLink?.telegram_chat_id ?? null,
         items,
       };
