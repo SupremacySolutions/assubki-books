@@ -282,6 +282,16 @@ const previewCaption = book
             }
           </div>
 
+          <div>
+            <label for="status" class="block text-[14.5px] font-medium mb-1.5">Visibility</label>
+            <select id="status" name="status" class="field">
+              <option value="live" selected={(book?.status ?? 'live') === 'live'}>Live in shop</option>
+              <option value="draft" selected={book?.status === 'draft'}>Draft (hidden)</option>
+              <option value="archived" selected={book?.status === 'archived'}>Archived</option>
+            </select>
+          </div>
+        </div>
+
           {/*
             * A delivery on its way.
             *
@@ -290,13 +300,33 @@ const previewCaption = book
             * be. Customers can claim against it, and the two numbers are never
             * added together anywhere.
             */}
-          <div class="sm:col-span-2 pt-4 mt-1 border-t border-[var(--color-rule-faint)]">
-            <p class="text-[14.5px] font-medium">A delivery on its way</p>
-            <p class="mt-1 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-              Leave the count at zero and customers are offered nothing.
-            </p>
+          {/*
+            * Behind a tick, because almost no listing has a delivery coming and
+            * an always-visible "How many coming: 0" reads as something nobody
+            * filled in rather than something switched off.
+            *
+            * The dimming is CSS on the group, not JavaScript, so it behaves
+            * with scripting off - and the save route reads the tick first, so
+            * clearing it is also how a delivery gets cancelled.
+            */}
+          <div class="group pt-4 mt-4 border-t border-[var(--color-rule-faint)]">
+            <label class="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                name="has_incoming"
+                checked={(book?.incoming ?? 0) > 0}
+                class="w-4 h-4 mt-0.5 accent-[var(--color-navy)]"
+              />
+              <span>
+                <span class="block text-[14.5px] font-medium">A delivery is on its way</span>
+                <span class="block mt-0.5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                  Tick this to let customers reserve copies before they arrive.
+                </span>
+              </span>
+            </label>
 
-            <div class="mt-3 flex flex-wrap items-end gap-3">
+            <div class="mt-4 delivery-fields">
+            <div class="flex flex-wrap items-end gap-3">
               <label class="block">
                 <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">How many coming</span>
                 <input
@@ -353,17 +383,8 @@ const previewCaption = book
                 )}
               </div>
             )}
+            </div>
           </div>
-
-          <div>
-            <label for="status" class="block text-[14.5px] font-medium mb-1.5">Visibility</label>
-            <select id="status" name="status" class="field">
-              <option value="live" selected={(book?.status ?? 'live') === 'live'}>Live in shop</option>
-              <option value="draft" selected={book?.status === 'draft'}>Draft (hidden)</option>
-              <option value="archived" selected={book?.status === 'archived'}>Archived</option>
-            </select>
-          </div>
-        </div>
       </section>
 
       <section id="s-subjects" class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
@@ -1106,3 +1127,24 @@ const previewCaption = book
     )
   }
 </Admin>
+
+<style>
+  /*
+   * The delivery fields are dimmed and unreachable until the tick is on.
+   *
+   * Written here rather than as a Tailwind variant for two reasons: the
+   * selector has to be `input:checked` and not `:checked`, because a selected
+   * <option> in the month dropdown matches the latter and held the gate
+   * permanently open; and utility ordering made the opacity half of it lose to
+   * the resting class while the pointer-events half won, which is the sort of
+   * disagreement a plain rule does not have.
+   */
+  .delivery-fields {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .group:has(input[name='has_incoming']:checked) .delivery-fields {
+    opacity: 1;
+    pointer-events: auto;
+  }
+</style>

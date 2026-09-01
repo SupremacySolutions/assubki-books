@@ -90,7 +90,12 @@ export const POST: APIRoute = async ({ request }) => {
    * stock is floored at what is reserved - lowering it below that would strand
    * people holding a promise the shop has withdrawn.
    */
-  const incomingWanted = Math.max(0, Math.min(999, Math.round(Number(form.get('incoming')) || 0)));
+  // The tick decides. Clearing it is how a delivery is cancelled - there was no
+  // other way to say "this is not coming after all" except typing a zero.
+  const hasIncoming = form.get('has_incoming') !== null;
+  const incomingWanted = hasIncoming
+    ? Math.max(0, Math.min(999, Math.round(Number(form.get('incoming')) || 0)))
+    : 0;
   const vague = String(form.get('incoming_vague') ?? 'mid').trim() || 'mid';
   const month = String(form.get('incoming_month') ?? '').trim() || null;
   await env.DB.prepare(
