@@ -2,11 +2,17 @@
 import Base from '../layouts/Base.astro';
 import BookCard from '../components/BookCard.astro';
 import Rosette from '../components/Rosette.astro';
-import { categoryTree, shelfBooks, catalogueStats } from '../lib/db';
+import { categoryTree, shelfBooks, catalogueStats, setBooks, backInStock } from '../lib/db';
 import { classmark } from '../lib/classmarks';
 import { SITE, imageUrl } from '../lib/format';
 
-const [tree, shelf, stats] = await Promise.all([categoryTree(), shelfBooks(24), catalogueStats()]);
+const [tree, shelf, stats, sets, restocked] = await Promise.all([
+  categoryTree(),
+  shelfBooks(24),
+  catalogueStats(),
+  setBooks(10),
+  backInStock(10),
+]);
 const top = tree.slice(0, 8);
 /*
  * How many shelves there are in total, not how many are shown - and that means
@@ -210,6 +216,47 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
       ))}
     </div>
   </section>
+
+
+  {
+    sets.length > 0 && (
+      <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pb-16 reveal">
+        <div class="flex items-baseline justify-between gap-4 mb-5">
+          <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Syllabus sets</h2>
+          <a href="/catalogue?sort=title" class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
+            >All sets →</a
+          >
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11">
+          {sets.slice(0, 5).map((book, i) => (
+            <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
+              <BookCard book={book} quickAdd />
+            </div>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  {
+    restocked.length > 0 && (
+      <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pb-16 reveal">
+        <div class="flex items-baseline justify-between gap-4 mb-5">
+          <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Back in stock</h2>
+          <a href="/catalogue" class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
+            >All titles →</a
+          >
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11">
+          {restocked.slice(0, 5).map((book, i) => (
+            <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
+              <BookCard book={book} quickAdd />
+            </div>
+          ))}
+        </div>
+      </section>
+    )
+  }
 
   <!-- Ordering here is unusual enough that it needs saying plainly and early. -->
   <section class="border-t border-[var(--color-rule-soft)] bg-white">

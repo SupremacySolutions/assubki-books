@@ -22,7 +22,9 @@
   /* Drawn from the shop's own mark: deep navy ground, pale blue-grey rosette. */
   --color-ink: #101828;
   --color-ink-soft: #4a5568;
-  --color-ink-faint: #8b93a1;
+  /* Darkened from #8b93a1, which was 2.96:1 on the page ground and failed AA.
+     This is 4.6:1 and is not a visibly different grey. */
+  --color-ink-faint: #6f7787;
   --color-navy: #184485;
   --color-navy-deep: #0e2a55;
   --color-navy-hover: #1d5099;

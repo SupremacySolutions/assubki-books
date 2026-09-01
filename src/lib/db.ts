@@ -372,6 +372,72 @@ export async function shelfBooks(limit = 18): Promise<BookRow[]> {
 }
 
 /**
+ * Multi-volume sets in stock.
+ *
+ * The thing this shop is actually known for, and the reason people travel to
+ * it - a syllabus set is a decision, not an impulse, so it earns a row of its
+ * own rather than being scattered through "recently added".
+ *
+ * `volumes > 1` rather than a join on the sets tables: a set that is sold only
+ * as a whole never gets a `set_id`, and it is still a set to the customer.
+ */
+export async function setBooks(limit = 10): Promise<BookRow[]> {
+  const { results } = await db()
+    .prepare(
+      `${BOOK_SELECT}
+        WHERE b.status = 'live' AND (b.stock - b.reserved) > 0
+          AND b.volumes > 1 AND i.image_key IS NOT NULL
+        ORDER BY b.volumes DESC, b.created_at DESC LIMIT ?`,
+    )
+    .bind(limit)
+    .all<BookRow>();
+  return applySetAvailability(results);
+}
+
+/**
+ * Titles that have recently come back onto the shelf.
+ *
+ * Read from the ledger rather than a new column, because the ledger already
+ * records every movement with a reason and a time - a book coming back is a
+ * positive `stock` delta, and that is a fact the shop already stores rather
+ * than one it has to start keeping.
+ *
+ * A listing being created is not a restock, and neither is a stocktake: both
+ * move many books at once and would drown the row in titles that never went
+ * anywhere. What is left is a book that genuinely came back.
+ *
+ * Cached like the shelf counts. This is a public page, and a join across the
+ * ledger on every home view is exactly the shape of thing that once ate most
+ * of the daily read budget.
+ */
+let restockedCache: { at: number; value: BookRow[] } | null = null;
+
+export async function backInStock(limit = 10): Promise<BookRow[]> {
+  const now = Date.now();
+  if (restockedCache && now - restockedCache.at < 60_000) return restockedCache.value;
+
+  const since = Math.floor(now / 1000) - 60 * 60 * 24 * 30;
+  const { results } = await db()
+    .prepare(
+      `${BOOK_SELECT}
+         JOIN (SELECT book_id, MAX(at) AS back
+                 FROM stock_ledger
+                WHERE field = 'stock' AND delta > 0
+                  AND reason NOT IN ('listing created', 'stocktake')
+                  AND at > ?
+                GROUP BY book_id) r ON r.book_id = b.id
+        WHERE b.status = 'live' AND (b.stock - b.reserved) > 0 AND i.image_key IS NOT NULL
+        ORDER BY r.back DESC LIMIT ?`,
+    )
+    .bind(since, limit)
+    .all<BookRow>();
+
+  const value = await applySetAvailability(results);
+  restockedCache = { at: now, value };
+  return value;
+}
+
+/**
  * Fills in `available` for any listing that is part of a set.
  *
  * An ordinary listing keeps `stock - reserved`, which is what the select
