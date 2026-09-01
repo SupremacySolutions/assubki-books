@@ -84,6 +84,46 @@ export const POST: APIRoute = async ({ params, request }) => {
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
+  // ------------------------------------------------------------------ unsplit
+  if (action === 'unsplit') {
+    if (!book.set_id) return fail('notaset');
+
+    /*
+     * The parts come down; the complete set stays and goes back to being an
+     * ordinary listing with its own stock.
+     *
+     * Part listings are archived rather than deleted. An order that bought
+     * "volumes 1-2" has to keep pointing at something - order_items snapshots
+     * the title and price, but the link back to the listing is what the portal
+     * uses to show what was sold, and deleting the row would cascade the stock
+     * ledger with it.
+     */
+    const pool = await env.DB.prepare(
+      'SELECT MIN(have) AS sets FROM book_set_stock WHERE set_id = ?',
+    )
+      .bind(book.set_id)
+      .first<{ sets: number | null }>();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE books SET status = 'archived', set_id = NULL, set_from = NULL, set_to = NULL,
+                          updated_at = unixepoch()
+          WHERE set_id = ? AND id <> ?`,
+      ).bind(book.set_id, id),
+      // The whole set keeps selling, now on a count of its own.
+      env.DB.prepare(
+        `UPDATE books SET set_id = NULL, set_from = NULL, set_to = NULL,
+                          stock = MAX(?, reserved), updated_at = unixepoch()
+          WHERE id = ?`,
+      ).bind(Math.max(0, pool?.sets ?? 0), id),
+      env.DB.prepare('DELETE FROM book_set_stock WHERE set_id = ?').bind(book.set_id),
+      env.DB.prepare('DELETE FROM book_sets WHERE id = ?').bind(book.set_id),
+    ]);
+
+    forgetCategoryCounts();
+    return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
+  }
+
   // ------------------------------------------------------------------- create
   if (action !== 'create') return fail('badaction');
   if (book.set_id) return fail('alreadyset');

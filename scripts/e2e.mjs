@@ -1762,12 +1762,51 @@ async function integrity() {
   // carries far fewer tags than the page renders.
   const builder = editorSource.slice(
     editorSource.indexOf('name="action" value="create"'),
-    editorSource.indexOf('form="partsForm" class="btn btn-primary'),
+    editorSource.indexOf('id="buildParts"'),
   );
   const strays = [...builder.matchAll(/<input(?:(?!>)[\s\S])*?>/g)]
     .filter((m) => !m[0].includes('form="partsForm"'));
   t.ok(strays.length === 0,
     `every field of the parts builder names that form (${strays.length} did not)`);
+
+  /*
+   * The listing editor, in sections.
+   *
+   * Still one form with one Save - the sections are same-page anchors, so no
+   * navigation happens and the unsaved-changes tracking is untouched. A
+   * wizard here would have meant either losing that or saving per section.
+   */
+  const editorPage = await html('/admin/books/new');
+  for (const id of ['s-identity', 's-description', 's-commerce', 's-subjects', 's-photos', 's-telegram', 's-parts']) {
+    t.ok(editorPage.includes(`id="${id}"`), `the editor has a ${id.slice(2)} section`);
+  }
+  t.ok((editorPage.match(/href="#s-/g) ?? []).length >= 7, 'and a jump nav of same-page anchors');
+  t.ok(!/href="\/admin\/books\/new\?step/.test(editorPage), 'which never navigates');
+  t.ok((editorPage.match(/id="saveBtn"/g) ?? []).length === 1, 'one Save covers the whole form');
+
+  // What cannot be used yet says so rather than vanishing.
+  t.ok((editorPage.match(/border-dashed/g) ?? []).length >= 3,
+    'photos, Telegram and parts are locked on a new listing');
+  for (const why of ['needs something to attach to', 'page to link to', 'split it into parts']) {
+    t.ok(editorPage.includes(why), `and each says why (${why.slice(0, 24)})`);
+  }
+
+  const existingEditor = await html(`/admin/books/${cx.id}`);
+  t.ok(!/id="s-(photos|telegram|parts)"[^>]*border-dashed/.test(existingEditor),
+    'an existing listing has no locked sections');
+
+  /*
+   * Sold in parts. The column headers are the fix that matters: the only
+   * labelling used to be placeholder text, which disappears exactly when
+   * somebody is typing into the column it labels.
+   */
+  for (const head of ['Name of the part', 'First volume', 'Last volume']) {
+    t.ok(existingEditor.includes(head), `the parts grid labels "${head}"`);
+  }
+  const placeholders = [...existingEditor.matchAll(/name="part_\d_name"[^>]*placeholder="([^"]*)"/g)]
+    .map((m) => m[1]);
+  t.ok(placeholders.length === 4 && new Set(placeholders).size === 1,
+    'and all four rows are the same shape');
 
   const notifySource = readFileSync('src/lib/notify.ts', 'utf8');
   t.ok(/catch \(err\)[^]{0,240}recordNotifyFailure/.test(notifySource),

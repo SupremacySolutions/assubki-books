@@ -512,6 +512,26 @@ async function applySetAvailability<T extends BookRow>(books: T[]): Promise<T[]>
  * widest first - the complete set reads as the headline and the parts as ways
  * of breaking it up, which is how the owner thinks of them.
  */
+/**
+ * The same, for the portal, where a draft counts.
+ *
+ * `setOptions` is what the shop front reads and so is filtered to live
+ * listings. The owner splitting a draft set needs to see the parts they just
+ * made, and filtering them out left the page still offering to build them - a
+ * second set, on top of the one that already existed.
+ */
+export async function setOptionsForOwner(setId: number): Promise<BookRow[]> {
+  const { results } = await db()
+    .prepare(
+      `${BOOK_SELECT}
+        WHERE b.set_id = ? AND b.status <> 'archived'
+        ORDER BY (b.set_to - b.set_from) DESC, b.set_from`,
+    )
+    .bind(setId)
+    .all<BookRow>();
+  return applySetAvailability(results);
+}
+
 export async function setOptions(setId: number): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(

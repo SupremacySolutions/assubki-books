@@ -3,7 +3,7 @@ import { VAGUE, monthOptions, whenText } from '../../../lib/incoming';
 import Admin from '../../../layouts/Admin.astro';
 import CoverReview from '../../../components/CoverReview.astro';
 import { getBookAdmin } from '../../../lib/admin-db';
-import { allCategories, setOptions } from '../../../lib/db';
+import { allCategories, setOptionsForOwner } from '../../../lib/db';
 import { imageUrl, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
 import { botConfigured, listingCaption } from '../../../lib/telegram';
 
@@ -17,11 +17,46 @@ if (!isNew && (!bookId || Number.isNaN(bookId))) return Astro.rewrite('/404');
 const book = bookId ? await getBookAdmin(bookId) : null;
 
 // The other options, when this listing is already part of a set.
-const siblings = book?.set_id ? await setOptions(book.set_id) : [];
+const siblings = book?.set_id ? await setOptionsForOwner(book.set_id) : [];
+
+
 if (!isNew && !book) return Astro.rewrite('/404');
 
 const categories = await allCategories();
 const selected = new Set(book?.categoryIds ?? []);
+
+/*
+ * The nav, and what each entry has to say for itself.
+ *
+ * Photos, Telegram and the set builder all need a listing that exists, so on a
+ * new one they are locked rather than hidden - a section that vanishes reads
+ * as missing, one that says why reads as waiting.
+ */
+const chosenCount = book ? selected.size : 0;
+
+/* A section that cannot be used yet is shown dashed and says why, rather than
+   being hidden - a section that vanishes reads as missing, one that explains
+   itself reads as waiting. */
+const OPEN_PANEL =
+  'bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 scroll-mt-24';
+const LOCKED_PANEL =
+  'bg-[#faf9f6] border border-dashed border-[var(--color-rule)] rounded-[var(--radius-panel)] p-5 scroll-mt-24';
+const SECTIONS = [
+  { id: 's-identity', label: 'Identity', badge: null, locked: false, warn: false },
+  { id: 's-description', label: 'Description', badge: null, locked: false, warn: false },
+  { id: 's-commerce', label: 'Price and stock', badge: null, locked: false, warn: false },
+  {
+    id: 's-subjects',
+    label: 'Subjects',
+    badge: chosenCount > 0 ? String(chosenCount) : 'none yet',
+    locked: false,
+    warn: chosenCount === 0,
+  },
+  { id: 's-photos', label: 'Photos', badge: isNew ? 'after saving' : String(book?.images.length ?? 0), locked: isNew, warn: false },
+  { id: 's-telegram', label: 'Telegram', badge: isNew ? 'after saving' : null, locked: isNew, warn: false },
+  { id: 's-parts', label: 'Sold in parts', badge: isNew ? 'after saving' : (siblings.length ? String(siblings.length) : null), locked: isNew, warn: false },
+  { id: 's-delete', label: 'Delete', badge: null, locked: isNew, warn: false },
+].filter((sec) => !(isNew && sec.id === 's-delete'));
 const posted = Astro.url.searchParams.get('posted');
 const error = Astro.url.searchParams.get('e');
 
@@ -95,11 +130,53 @@ const previewCaption = book
     )
   }
 
-  <form id="bookForm" method="post" action="/api/admin/books/save" class="grid gap-6 lg:grid-cols-[1fr_300px] items-start">
+  <form id="bookForm" method="post" action="/api/admin/books/save" class="grid gap-6 lg:grid-cols-[14rem_1fr] items-start">
     <input type="hidden" name="id" value={book?.id ?? ''} />
 
-    <div class="space-y-5">
-      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 space-y-4">
+    {/*
+      * A jump nav, not a wizard.
+      *
+      * These are same-page anchors: nothing navigates, so the unsaved-changes
+      * warning keeps working untouched. Splitting this into real steps would
+      * have meant either losing that or saving per section, and the page has
+      * one Save for a reason.
+      */}
+    <nav class="hidden lg:block lg:sticky lg:top-[84px] lg:self-start" aria-label="Sections">
+      <ul class="space-y-0.5">
+        {
+          SECTIONS.map((sec) => (
+            <li>
+              <a
+                href={`#${sec.id}`}
+                class:list={[
+                  'flex items-baseline justify-between gap-2 px-3 py-2 rounded-[var(--radius-field)] text-[14px]',
+                  sec.locked
+                    ? 'text-[var(--color-ink-faint)]'
+                    : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]/50 hover:text-[var(--color-navy)]',
+                ]}
+              >
+                <span>{sec.label}</span>
+                {sec.badge && (
+                  <span
+                    class:list={[
+                      'shrink-0 text-[11.5px]',
+                      sec.warn ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-faint)]',
+                    ]}
+                  >{sec.badge}</span>
+                )}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="mt-3 px-3 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+        These jump down the page. It is all one form - one Save at the bottom covers everything.
+      </p>
+    </nav>
+
+    <div class="space-y-5 min-w-0">
+      <section id="s-identity" class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 space-y-4 scroll-mt-24">
+        <h2 class="eyebrow mb-1">Identity</h2>
         <div>
           <label for="title" class="block text-[14.5px] font-medium mb-1.5">Title</label>
           <input id="title" name="title" required maxlength="200" value={book?.title ?? ''} class="field" />
@@ -151,6 +228,10 @@ const previewCaption = book
           </div>
         </div>
 
+        </section>
+
+        <section id="s-description" class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
+          <h2 class="eyebrow mb-3">Description</h2>
         <div>
           <label for="description" class="block text-[14.5px] font-medium mb-1.5">Description</label>
           <textarea id="description" name="description" rows="7" maxlength="6000" class="field"
@@ -162,6 +243,10 @@ const previewCaption = book
           </p>
         </div>
 
+        </section>
+
+        <section id="s-commerce" class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
+          <h2 class="eyebrow mb-3">Price, stock and visibility</h2>
         <div class="grid gap-4 sm:grid-cols-3">
           <div>
             <label for="price" class="block text-[14.5px] font-medium mb-1.5">Price (£)</label>
@@ -281,7 +366,7 @@ const previewCaption = book
         </div>
       </section>
 
-      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <section id="s-subjects" class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
         <h2 class="eyebrow mb-3">Subjects</h2>
         <div class="grid gap-1.5 sm:grid-cols-2 max-h-64 overflow-y-auto">
           {
@@ -303,18 +388,12 @@ const previewCaption = book
         </div>
       </section>
 
-      <div>
-        <button type="submit" id="saveBtn" class="btn btn-primary">
-          {isNew ? 'Create listing' : 'Save changes'}
-        </button>
-        <p id="saveHint" class="mt-2 text-[13px] text-[var(--color-ink-faint)]">
-          {isNew ? '' : 'No unsaved changes.'}
-        </p>
-      </div>
-    </div>
-
-    <aside class="space-y-4">
-      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      {/* Everything below was a sidebar. One column now, so the page reads top
+          to bottom in the order the work actually happens. */}
+      <section
+        id="s-photos"
+        class:list={[isNew ? LOCKED_PANEL : OPEN_PANEL]}
+      >
         <h2 class="eyebrow mb-3">Photos</h2>
 
         {
@@ -341,8 +420,9 @@ const previewCaption = book
 
         {
           isNew ? (
-            <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">
-              Save the listing first, then photos can be added here.
+            <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed flex items-start gap-2">
+              <span aria-hidden="true" class="shrink-0">🔒</span>
+              Available once the listing is saved - a photo needs something to attach to.
             </p>
           ) : (
             <div>
@@ -368,11 +448,11 @@ const previewCaption = book
           beats leaving a gap where the panels will later appear. */}
       {
         isNew && (
-          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+          <section id="s-telegram" class="bg-[#faf9f6] border border-dashed border-[var(--color-rule)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
             <h2 class="eyebrow mb-2">Telegram channel</h2>
-            <p class="text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed">
-              Create the listing first. Posting to the channel appears here once it exists, along
-              with a preview of exactly what the channel will see.
+            <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed flex items-start gap-2">
+              <span aria-hidden="true" class="shrink-0">&#128274;</span>
+              You can announce it after saving, when there is a page to link to.
             </p>
           </section>
         )
@@ -380,7 +460,7 @@ const previewCaption = book
 
       {
         book && (
-          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+          <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
             <h2 class="eyebrow mb-2">Telegram channel</h2>
             {book.telegram_message_id ? (
               <p class="text-[13.5px] text-[var(--color-instock)] mb-3">
@@ -446,6 +526,18 @@ const previewCaption = book
           a whole, stay one ordinary listing with one price and never meet any
           of this. */}
       {
+        isNew && (
+          <section id="s-parts" class="bg-[#faf9f6] border border-dashed border-[var(--color-rule)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
+            <h2 class="eyebrow mb-2">Sold in parts</h2>
+            <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed flex items-start gap-2">
+              <span aria-hidden="true" class="shrink-0">&#128274;</span>
+              Set the listing up first, then split it into parts.
+            </p>
+          </section>
+        )
+      }
+
+      {
         book && (
           <>
       {/* The delivery has landed. Green rule: this is the finishing of
@@ -491,16 +583,25 @@ const previewCaption = book
         </section>
       )}
 
-          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+          <section id="s-parts" class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
             <h2 class="eyebrow mb-3">Sold in parts</h2>
-
             {siblings.length > 0 ? (
               <>
+                <div class="flex items-center gap-2.5 mb-3">
+                  <span class="rounded-[var(--radius-pill)] bg-[var(--color-navy)]/10 px-3 py-1 text-[12.5px] font-medium text-[var(--color-navy)]">
+                    {siblings.length} {siblings.length === 1 ? 'part' : 'parts'} live
+                  </span>
+                  <span class="text-[13px] text-[var(--color-ink-faint)]">
+                    {book.volumes} volumes altogether
+                  </span>
+                </div>
+
                 <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3">
-                  This is one way of buying the set. Each way is
-                  its own listing with its own price and cover; the shelf count is shared.
+                  Each of these is its own listing with its own price and cover. The shelf count is
+                  shared between them.
                 </p>
-                <ul class="space-y-1.5 mb-3">
+
+                <ul class="space-y-1.5 mb-4">
                   {siblings.map((o) => (
                     <li class="flex items-baseline justify-between gap-3 text-[13.5px]">
                       <a
@@ -519,100 +620,163 @@ const previewCaption = book
                     </li>
                   ))}
                 </ul>
-                <div class="flex items-end gap-2">
-                  <input type="hidden" name="action" value="restock" form="restockForm" />
-                  <label class="block">
-                    <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
-                      Complete sets on the shelf
-                    </span>
-                    <input
-                      type="number"
-                      name="sets"
-                      min="0"
-                      max="999"
-                      required
-                      class="field !py-2 !text-[14px] !w-40"
-                    form="restockForm" />
-                  </label>
-                  <button type="submit" form="restockForm" class="btn btn-ghost !py-2 !text-[13.5px]">Set count</button>
+
+                <div class="bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[10px] p-4">
+                  <p class="text-[13px] font-medium mb-2">A delivery has come in</p>
+                  <div class="flex items-end gap-2">
+                    <label class="block">
+                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                        Complete sets on the shelf
+                      </span>
+                      <input
+                        type="number"
+                        name="sets"
+                        min="0"
+                        max="999"
+                        required
+                        form="restockForm"
+                        class="field !py-2 !text-[14px] !w-40"
+                      />
+                    </label>
+                    <button type="submit" form="restockForm" class="btn btn-ghost !py-2 !text-[13.5px]">
+                      Update
+                    </button>
+                  </div>
+                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                    Sets every volume to that number and every part recalculates from it. A half sold
+                    on its own already came off the volumes it contained.
+                  </p>
                 </div>
-                <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                  Sets every volume to that number. Use it when a delivery arrives - a half sold on
-                  its own already came off the volumes it contained.
-                </p>
+
+                <div class="mt-4 pt-4 border-t border-[var(--color-rule-faint)]">
+                  <button
+                    type="submit"
+                    form="unsplitForm"
+                    class="rounded-[var(--radius-pill)] border border-[var(--color-outstock)]/40 px-4 py-2 text-[13.5px] text-[var(--color-outstock)] hover:bg-[var(--color-outstock)]/5 transition-colors"
+                    onclick="return confirm('Stop selling this set in parts? The part listings come down. The complete set stays, and orders that already contain a part keep their record.')"
+                  >
+                    Stop selling in parts
+                  </button>
+                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                    The part listings come down and the complete set stays. Orders that already
+                    contain a part keep their record.
+                  </p>
+                </div>
               </>
             ) : (
               <>
-                <div class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3 space-y-2">
+                {/*
+                  * The example sits above the grid and uses the same four
+                  * columns, so each value is under the header it belongs to.
+                  * It does not scroll away and does not vanish on focus, which
+                  * is what a placeholder does exactly when it is needed.
+                  */}
+                <div class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3">
                   <p>
-                    For a set that can also be bought in parts. <strong>This listing becomes the
-                    complete set</strong>, keeping its cover and description; each part you add
-                    below becomes a listing of its own.
+                    <strong class="text-[var(--color-ink)]">This listing becomes the complete set</strong>,
+                    keeping its cover and description. Each part below becomes a listing of its own,
+                    drawing on one shared count.
                   </p>
-                  <p class="p-2.5 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]">
-                    <span class="block font-medium text-[var(--color-ink)]">For example</span>
-                    A four volume set you hold 3 of. Add two parts: “Volumes 1 to 2” at £17 and
-                    “Volumes 3 to 4” at £17. A customer can then buy the whole set or either half.
-                    Sell one half and the shop still shows 3 of the other, but only 2 complete sets.
+                </div>
+
+                <div class="bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[10px] p-3 mb-4">
+                  <p class="text-[12px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)] mb-2">
+                    For example
+                  </p>
+                  <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 text-[13px]">
+                    <span class="text-[var(--color-ink)]">Volumes 1-2</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">1</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">2</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">17.00</span>
+                    <span class="text-[var(--color-ink)]">Volumes 3-4</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">3</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">4</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">17.00</span>
+                  </div>
+                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                    A four volume set, sold whole or as either half. Parts may overlap or leave gaps
+                    - it is your shelf.
                   </p>
                 </div>
 
                 <div class="space-y-3">
                   <input type="hidden" name="action" value="create" form="partsForm" />
+
                   <div class="grid grid-cols-2 gap-3">
                     <label class="block">
                       <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
-                        How many volumes altogether
+                        Volumes altogether
                       </span>
                       <input type="number" name="volumes" min="2" max="200" required
-                        placeholder="4" class="field !py-2 !text-[14px]" form="partsForm" />
+                        placeholder="4" form="partsForm" class="field !py-2 !text-[14px]" />
                     </label>
                     <label class="block">
                       <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
                         Complete sets on the shelf
                       </span>
                       <input type="number" name="sets" min="0" max="999" required
-                        placeholder="3" class="field !py-2 !text-[14px]" form="partsForm" />
+                        placeholder="3" form="partsForm" class="field !py-2 !text-[14px]" />
                     </label>
                   </div>
 
-                  {/* Proper fields rather than a line of comma-separated text.
-                      Asking someone to type "Volumes 1-2, 1-2, 17.00" into a
-                      box invites getting the punctuation wrong, and the name
-                      and the range read as the same thing twice. */}
+                  {/* Headers that stay. The only labelling used to be placeholder
+                      text, which disappears the moment anyone types into it. */}
                   <div>
-                    <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1.5">
-                      The parts it can be split into
-                    </span>
-                    <div class="space-y-2">
+                    <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 pb-1.5 mb-1.5 border-b border-[var(--color-rule-soft)]">
+                      {['Name of the part', 'First volume', 'Last volume', 'Price'].map((h) => (
+                        <span class="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div class="space-y-1.5">
                       {[0, 1, 2, 3].map((i) => (
-                        <div class="grid grid-cols-[1fr_3.6rem_3.6rem_4.6rem] gap-1.5 items-center">
+                        <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 items-center">
                           <input
                             type="text"
                             name={`part_${i}_name`}
                             maxlength="200"
-                            placeholder={i === 0 ? 'First half' : i === 1 ? 'Second half' : 'Name'}
+                            placeholder="Volumes 1-2"
+                            form="partsForm"
                             class="field !py-1.5 !text-[13.5px]"
-                          form="partsForm" />
+                          />
                           <input type="number" name={`part_${i}_from`} min="1" max="200"
-                            placeholder={i === 0 ? '1' : i === 1 ? '3' : 'from'}
-                            class="field !py-1.5 !text-[13.5px] !px-2" form="partsForm" />
+                            placeholder="1" form="partsForm"
+                            class="field !py-1.5 !text-[13.5px] !px-2 tabular-nums" />
                           <input type="number" name={`part_${i}_to`} min="1" max="200"
-                            placeholder={i === 0 ? '2' : i === 1 ? '4' : 'to'}
-                            class="field !py-1.5 !text-[13.5px] !px-2" form="partsForm" />
-                          <input type="text" name={`part_${i}_price`} inputmode="decimal"
-                            placeholder={i < 2 ? '17.00' : '£'}
-                            class="field !py-1.5 !text-[13.5px] !px-2" form="partsForm" />
+                            placeholder="2" form="partsForm"
+                            class="field !py-1.5 !text-[13.5px] !px-2 tabular-nums" />
+                          {/* The £ lives inside the field shell, so the border,
+                              background and radius stay one object. */}
+                          <div class="flex items-center rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white focus-within:border-[var(--color-navy)]">
+                            <span class="pl-2.5 text-[13.5px] text-[var(--color-ink-faint)]">£</span>
+                            <input
+                              type="text"
+                              name={`part_${i}_price`}
+                              inputmode="decimal"
+                              placeholder="0.00"
+                              form="partsForm"
+                              class="w-full bg-transparent border-0 outline-none py-1.5 pl-1 pr-2 text-[13.5px] tabular-nums"
+                            />
+                          </div>
                         </div>
                       ))}
                     </div>
+
+                    <p id="partsError" hidden role="alert"
+                      class="mt-2 flex items-start gap-1.5 text-[12.5px] text-[var(--color-outstock)]">
+                      <span aria-hidden="true">!</span><span data-parts-message></span>
+                    </p>
+
                     <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                      Name, first volume, last volume, price. Leave rows blank if you need fewer.
-                      One volume on its own is fine - put the same number in both.
+                      Leave rows blank if you need fewer. One volume on its own is fine - put the
+                      same number in both.
                     </p>
                   </div>
 
-                  <button type="submit" form="partsForm" class="btn btn-primary !py-2 !text-[13.5px]">
+                  <button type="submit" form="partsForm" id="buildParts"
+                    class="btn btn-primary !py-2 !text-[13.5px]">
                     Build the parts
                   </button>
                 </div>
@@ -625,7 +789,7 @@ const previewCaption = book
 
       {
         book && (
-          <section class="border border-[var(--color-outstock)]/30 rounded-[3px] p-5">
+          <section id="s-delete" class="border border-[var(--color-outstock)]/30 rounded-[var(--radius-panel)] p-5 scroll-mt-24">
             <h2 class="eyebrow !text-[var(--color-outstock)] mb-2">Delete</h2>
             <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed">
               Removes this listing for good, with any photos you uploaded
@@ -660,7 +824,23 @@ const previewCaption = book
           </a>
         )
       }
-    </aside>
+      {/*
+        * One Save for the whole page.
+        *
+        * The sections are same-page anchors, so no navigation happens and the
+        * unsaved-changes warning keeps working exactly as it did.
+        */}
+      <div class="sticky bottom-0 -mx-1 px-1 pb-1 pt-3 bg-gradient-to-t from-[var(--color-paper-raised)] via-[var(--color-paper-raised)] to-transparent">
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] shadow-[var(--shadow-panel)] px-4 py-3">
+          <p id="saveHint" class="text-[13px] text-[var(--color-ink-faint)]">
+            {isNew ? 'Nothing saved yet.' : 'No unsaved changes.'}
+          </p>
+          <button type="submit" id="saveBtn" class="btn btn-primary !py-2.5">
+            {isNew ? 'Create listing' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
   </form>
 
   {/* Outside the main form: forms cannot nest, so the sidebar buttons reach
@@ -672,6 +852,9 @@ const previewCaption = book
         <form id="restockForm" method="post" action={`/api/admin/books/${book.id}/set`} />
         <form id="arrivedForm" method="post" action={`/api/admin/books/${book.id}/arrived`} />
         <form id="partsForm" method="post" action={`/api/admin/books/${book.id}/set`} />
+        <form id="unsplitForm" method="post" action={`/api/admin/books/${book.id}/set`}>
+          <input type="hidden" name="action" value="unsplit" />
+        </form>
         <form id="deleteForm" method="post" action={`/api/admin/books/${book.id}/delete`} />
       </>
     )
@@ -687,6 +870,58 @@ const previewCaption = book
         // changed. Save is offered only when there is something to save;
         // posting only once there is nothing outstanding.
         // ------------------------------------------------------------------
+        /*
+         * A half-filled part row is refused, never guessed at. Filling in a
+         * missing price or inferring a range would put a listing on the shop
+         * front at a number nobody chose.
+         *
+         * The server refuses it too - this only saves a round trip and names
+         * the row, which a redirect with ?e=parts cannot.
+         */
+        const partsForm = document.querySelector('#partsForm');
+        const partsError = document.querySelector('#partsError');
+        const buildBtn = document.querySelector('#buildParts');
+
+        function checkParts() {
+          if (!partsError || !buildBtn) return true;
+          let problem = null;
+          for (let i = 0; i < 4 && !problem; i++) {
+            const cells = ['name', 'from', 'to', 'price'].map((k) =>
+              document.querySelector('[name="part_' + i + '_' + k + '"]'),
+            );
+            const filled = cells.map((el) => (el && el.value.trim() ? 1 : 0));
+            const count = filled.reduce((a, b) => a + b, 0);
+            if (count === 0 || count === 4) {
+              for (const el of cells) el && el.classList.remove('!border-[var(--color-outstock)]');
+              continue;
+            }
+            const missing = ['a name', 'a first volume', 'a last volume', 'a price'];
+            const first = filled.indexOf(0);
+            problem = 'Row ' + (i + 1) + ' needs ' + missing[first] +
+              '. We will not guess one - fill it in or clear the row.';
+            for (const [n, el] of cells.entries()) {
+              if (!el) continue;
+              el.classList.toggle('!border-[var(--color-outstock)]', filled[n] === 0);
+            }
+          }
+          partsError.hidden = !problem;
+          if (problem) partsError.querySelector('[data-parts-message]').textContent = problem;
+          buildBtn.classList.toggle('opacity-50', Boolean(problem));
+          return !problem;
+        }
+
+        if (partsForm) {
+          for (let i = 0; i < 4; i++) {
+            for (const k of ['name', 'from', 'to', 'price']) {
+              const el = document.querySelector('[name="part_' + i + '_' + k + '"]');
+              el && el.addEventListener('input', checkParts);
+            }
+          }
+          partsForm.addEventListener('submit', (event) => {
+            if (!checkParts()) event.preventDefault();
+          });
+        }
+
         const bookForm = document.querySelector('#bookForm');
         const saveBtn = document.querySelector('#saveBtn');
         const saveHint = document.querySelector('#saveHint');
