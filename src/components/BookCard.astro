@@ -47,10 +47,11 @@ const marks = (book.cat_slugs ?? '')
   .slice(0, 3);
 ---
 
-<article class="group h-full">
+<article class="group h-full flex flex-col">
+  <div class="flex-1">
   <a href={`/book/${book.slug}`} class="flex h-full flex-col focus:outline-none">
     <div
-      class="book-well relative overflow-hidden bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] aspect-[3/4] grid place-items-center group-focus-visible:outline group-focus-visible:outline-2 group-focus-visible:outline-[var(--color-navy)]"
+      class="book-well relative overflow-hidden bg-white rounded-[var(--radius-card)] shadow-[var(--shadow-cover)] aspect-[3/4] grid place-items-center group-focus-visible:outline group-focus-visible:outline-2 group-focus-visible:outline-[var(--color-navy)]"
     >
       {
         img ? (
@@ -94,7 +95,7 @@ const marks = (book.cat_slugs ?? '')
       }
     </div>
 
-    <div class="pt-3 flex flex-1 flex-col">
+    <div class="pt-3.5 flex flex-1 flex-col">
       {
         marks.length > 0 && (
           <div class="flex flex-wrap gap-1 mb-1.5">
@@ -106,46 +107,48 @@ const marks = (book.cat_slugs ?? '')
       }
 
       <h3
-        class="font-[family-name:var(--font-display)] text-[16.5px] leading-snug text-[var(--color-ink)] group-hover:text-[var(--color-navy)] transition-colors"
+        class="font-[family-name:var(--font-display)] font-medium text-[17px] leading-[1.3] text-[var(--color-ink)] group-hover:text-[var(--color-navy)] transition-colors"
       >
         {book.title}
       </h3>
 
-      {book.title_ar && <p class="ar mt-0.5 text-[15px] text-[var(--color-ink-soft)]">{book.title_ar}</p>}
+      {book.title_ar && <p class="ar mt-0.5 text-[14.5px] text-[var(--color-ink-soft)]">{book.title_ar}</p>}
 
       {/* Said before anyone clicks: a set and a single book cost differently
           and arrive differently, and that is worth knowing from the grid. */}
       {book.volumes && book.volumes > 1 && (
         <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">{book.volumes} volumes</p>
       )}
-
-      <div class="mt-auto pt-2.5 flex items-baseline justify-between gap-2">
-        <span class="price text-[16px]">{price(book.price_pence)}</span>
-        <span
-          class:list={[
-            'text-[12px] font-medium',
-            avail.state === 'in' && 'text-[var(--color-instock)]',
-            avail.state === 'low' && 'text-[var(--color-outstock)]',
-            avail.state === 'out' && 'text-[var(--color-ink-faint)]',
-          ]}>{avail.label}</span
-        >
       </div>
-    </div>
-  </a>
+    </a>
+  </div>
 
-  {/* Outside the anchor: a button inside a link is not a button anyone can
-      use, and nesting them is invalid besides. */}
-  {
-    quickAdd && book.available > 0 && (
+  {/*
+    * The price row sits outside the anchor, because the Add pill belongs on it
+    * and a button inside a link is not a button anyone can use. That also puts
+    * availability on its own line under the price, where it has room to say
+    * "Only 2 left" without fighting the pill for space.
+    */}
+  <div class="pt-2.5 flex items-center justify-between gap-2">
+    <span class="price text-[16.5px]">{price(book.price_pence)}</span>
+    {quickAdd && book.available > 0 && (
       <button
         type="button"
-        class="quick-add mt-2 w-full btn btn-ghost !py-1.5 !text-[13.5px]"
+        class="quick-add shrink-0 rounded-[var(--radius-pill)] border border-[var(--color-rule)] bg-white px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-navy)] hover:border-[var(--color-navy)] transition-colors"
         data-book-id={book.id}
         data-max={book.available}
         data-slug={book.slug}
       >
-        Add to basket
+        Add
       </button>
-    )
-  }
+    )}
+  </div>
+  <p
+    class:list={[
+      'mt-1.5 text-[12.5px] font-medium',
+      avail.state === 'in' && 'text-[var(--color-instock)]',
+      avail.state === 'low' && 'text-[var(--color-outstock)]',
+      avail.state === 'out' && 'text-[var(--color-ink-faint)]',
+    ]}
+  >{avail.label}</p>
 </article>

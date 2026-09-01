@@ -11,6 +11,8 @@ interface Props {
   /** Absolute or root-relative image for link previews (Telegram, WhatsApp). */
   image?: string | null;
   noindex?: boolean;
+  /** Off on the home page, whose hero carries the search. */
+  headerSearch?: boolean;
   wide?: boolean;
 }
 
@@ -19,6 +21,7 @@ const {
   description = SITE.tagline,
   image = null,
   noindex = false,
+  headerSearch = true,
   wide = false,
 } = Astro.props;
 
@@ -73,8 +76,8 @@ const ogImage = image ? new URL(image, origin).toString() : null;
     <div id="pageTransition" class="page-transition is-loading" aria-hidden="true">
       <div class="page-transition-mark"><Rosette size={34} />As-Subki Books</div>
     </div>
-    <Header />
-    <main id="main" class:list={[wide ? 'flex-1' : 'flex-1 mx-auto w-full max-w-6xl px-5 md:px-8', 'page-enter']}>
+    <Header search={headerSearch} />
+    <main id="main" class:list={[wide ? 'flex-1' : 'flex-1 mx-auto w-full max-w-[var(--width-shop)] px-5 md:px-10', 'page-enter']}>
       <slot />
     </main>
     <Footer />

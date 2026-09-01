@@ -7,6 +7,7 @@
    Noto Naskh Arabic for Arabic titles: naskh is the appropriate register for
    classical texts, where a geometric sans would read as signage. */
 @import "@fontsource/spectral/latin-400.css";
+@import "@fontsource/spectral/latin-500.css";
 @import "@fontsource/spectral/latin-600.css";
 @import "@fontsource/spectral/latin-ext-400.css";
 @import "@fontsource/spectral/latin-400-italic.css";
@@ -28,11 +29,22 @@
   --color-wash: #c3ccde;
   --color-wash-soft: #dde3ee;
   --color-paper: #f5f4f0;
+  /* The page ground. Lighter than --color-paper, which stays for the sunken
+     wells and bands that now need something to sit against. */
+  --color-paper-raised: #fbfaf7;
   --color-card: #ffffff;
   --color-rule: #ddd9d1;
+  /* Two softer hairlines. --color-rule is the visible border of a control;
+     these are for the lines between rows, which should be felt, not read. */
+  --color-rule-soft: #e6e2d9;
+  --color-rule-faint: #f0eee9;
   /* Brass earns exactly one job on this site: price. Nothing else uses it, so
      the eye learns it instantly in a dense list. */
   --color-brass: #8a6714;
+  /* Brass has to change value to survive a change of ground: the price gold is
+     unreadable on navy, and the chart gold is too light on paper. */
+  --color-brass-on-navy: #f0d68a;
+  --color-brass-chart: #c8a24a;
   --color-instock: #2f6b46;
   --color-outstock: #9a3412;
 
@@ -43,7 +55,26 @@
      scholarly transliteration intact rather than showing tofu. */
   --font-arabic: "Noto Naskh Arabic", "Geeza Pro", "Times New Roman", serif;
 
+  /* Kept for classmark chips and cover corners, where a sharp edge reads as
+     printed matter. Panels are rounder now and use --radius-panel. */
   --radius-card: 3px;
+  --radius-field: 8px;
+  --radius-panel: 12px;
+  --radius-pill: 999px;
+
+  /* Shadows were inline literals in three places and nowhere else. A book on a
+     shelf casts a long soft shadow downwards and catches a line of shade at
+     the spine; that is what these describe, at four distances. */
+  --shadow-cover: 0 16px 24px -14px rgba(16, 24, 40, 0.55);
+  --shadow-cover-hero: 0 22px 30px -16px rgba(0, 0, 0, 0.75);
+  --shadow-cover-detail: 0 34px 50px -26px rgba(16, 24, 40, 0.5);
+  --shadow-panel: 0 2px 8px rgba(16, 24, 40, 0.05);
+  --shadow-search: 0 18px 40px -18px rgba(0, 0, 0, 0.6);
+
+  /* The shop runs a little wider than the portal: a catalogue wants five
+     covers across, a worklist wants a readable line length. */
+  --width-shop: 1160px;
+  --width-portal: 1100px;
 }
 
 @layer base {
@@ -62,7 +93,7 @@
   }
 
   body {
-    background: var(--color-paper);
+    background: var(--color-paper-raised);
     color: var(--color-ink);
     font-family: var(--font-body);
     font-size: 16px;
@@ -126,7 +157,7 @@
   .eyebrow {
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--color-ink-faint);
   }
@@ -144,9 +175,9 @@
     justify-content: center;
     gap: 0.5rem;
     font-weight: 500;
-    font-size: 15px;
-    padding: 0.7rem 1.4rem;
-    border-radius: 2px;
+    font-size: 15.5px;
+    padding: 0.7rem 1.5rem;
+    border-radius: var(--radius-pill);
     border: 1px solid transparent;
     cursor: pointer;
     transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
@@ -232,10 +263,10 @@
     width: 100%;
     font-family: var(--font-body);
     font-size: 15px;
-    padding: 0.65rem 0.85rem;
+    padding: 0.65rem 0.9rem;
     background: var(--color-card);
     border: 1px solid var(--color-rule);
-    border-radius: 2px;
+    border-radius: var(--radius-field);
     color: var(--color-ink);
   }
   /* A message about one field, under that field. */
@@ -325,8 +356,8 @@
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
-    mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
   }
   .shelf-strip::-webkit-scrollbar {
     display: none;
@@ -334,8 +365,21 @@
 
   .shelf-track {
     display: flex;
-    gap: 1.15rem;
+    gap: 30px;
     width: max-content;
+  }
+
+  /*
+   * The board the books stand on.
+   *
+   * Without it the covers float in the navy and read as a carousel. A 14px
+   * lit-to-shadow gradient with its own cast shadow is the whole difference
+   * between "images in a row" and "a shelf", and it costs one element.
+   */
+  .shelf-board {
+    height: 14px;
+    background: linear-gradient(var(--color-wash), #8e9ab4);
+    box-shadow: 0 16px 34px -14px rgba(0, 0, 0, 0.8);
   }
 
   /*
@@ -352,16 +396,18 @@
    */
   .shelf-book {
     display: block;
-    width: 84px;
+    width: 118px;
     flex: none;
-    border-radius: 2px;
+    /* Square at the spine, rounded at the fore-edge - the way a closed book
+       actually presents when you look along a shelf. */
+    border-radius: 2px 4px 4px 2px;
     overflow: hidden;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--shadow-cover-hero), inset 3px 0 0 rgba(14, 42, 85, 0.18);
     transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .shelf-book img {
     width: 100%;
-    height: 118px;
+    height: 166px;
     object-fit: cover;
     display: block;
   }

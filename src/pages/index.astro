@@ -8,6 +8,12 @@ import { SITE, imageUrl } from '../lib/format';
 
 const [tree, shelf, stats] = await Promise.all([categoryTree(), shelfBooks(24), catalogueStats()]);
 const top = tree.slice(0, 8);
+/*
+ * How many shelves there are in total, not how many are shown - and that means
+ * counting the children too, since a subject one level down is still a shelf a
+ * customer can browse.
+ */
+const shelfCount = tree.reduce((n, c) => n + 1 + (c.children?.length ?? 0), 0);
 
 /*
  * The drifting shelf behind the hero uses the same covers as the grid below,
@@ -15,7 +21,7 @@ const top = tree.slice(0, 8);
  *
  * Upright covers only, because the strip crops every one of them to a single
  * size. Cropping is what keeps it even and what removes the white margin the
- * scans carry - but a landscape photo cropped to 84x118 loses most of itself
+ * scans carry - but a landscape photo cropped to 118x166 loses most of itself
  * and a spine loses nearly all of it, so those are simply not offered a slot.
  * The grid below is unaffected and shows them at their own shape.
  *
@@ -27,7 +33,7 @@ const upright = (b: { width: number | null; height: number | null }) =>
 const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
 ---
 
-<Base wide description={`${stats.titles} Islamic titles - classical texts, Dars Nizami and Maktab syllabus sets, hadith, fiqh and tafsir. ${SITE.tagline}.`}>
+<Base wide headerSearch={false} description={`${stats.titles} Islamic titles - classical texts, Dars Nizami and Maktab syllabus sets, hadith, fiqh and tafsir. ${SITE.tagline}.`}>
   <!-- The hero is the catalogue, not a slogan. People arrive knowing the text
        they want, so the search field is the first thing they meet. -->
   <section class="bg-[var(--color-navy-deep)] text-white relative overflow-hidden">
@@ -38,38 +44,59 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
       <Rosette size={420} />
     </div>
 
-    <div class="mx-auto max-w-6xl px-5 md:px-8 py-14 md:py-20 relative">
-      <p class="eyebrow !text-[var(--color-wash)]/70">{SITE.nameAr} · Leicester</p>
+    <div class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pt-14 md:pt-[76px] relative text-center">
+      <p class="eyebrow !text-[10.5px] !tracking-[0.2em] !text-[var(--color-wash)]/65">
+        {SITE.nameAr} · Leicester
+      </p>
       <h1
-        class="mt-3 font-[family-name:var(--font-display)] text-[34px] leading-[1.1] sm:text-[46px] md:text-[54px] font-semibold max-w-3xl tracking-[-0.02em]"
+        class="mt-3 mx-auto font-[family-name:var(--font-display)] font-semibold max-w-[16ch] text-[34px] leading-[1.08] sm:text-[46px] md:text-[62px] md:leading-[1.06] tracking-[-0.025em]"
       >
         The books on your syllabus, in stock and priced plainly.
       </h1>
-      <p class="mt-4 text-[17px] leading-relaxed text-[var(--color-wash)] max-w-xl">
-        Browse hadith, fiqh and tafsir as well as the Dars Nizami and Maktab syllabus.
-        Request whatever you require and we will communicate with you directly.
-      </p>
 
-      <form action="/catalogue" method="get" class="mt-8 max-w-xl" role="search">
+      {/* The search pill. The white ground and the long soft shadow lift it off
+          the navy, which is the one thing the hero is for: people arrive
+          knowing the text they want. */}
+      <form action="/catalogue" method="get" class="mt-8 mx-auto max-w-xl" role="search">
         <label for="hero-q" class="sr-only">Search the catalogue</label>
-        <div class="flex gap-2">
+        <div
+          class="flex items-center gap-2 bg-white rounded-[var(--radius-pill)] pl-[22px] pr-2.5 py-2.5 shadow-[var(--shadow-search)]"
+        >
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--color-ink-faint)"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+            class="shrink-0"
+          >
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="m20 20-3.5-3.5"></path>
+          </svg>
           <input
             id="hero-q"
             type="search"
             name="q"
             placeholder="Try “Nahw” or “النحو”"
-            class="field !py-3 !text-[16px] flex-1"
+            class="flex-1 min-w-0 bg-transparent border-0 outline-none text-[17px] text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)]"
             autocomplete="off"
           />
-          <button type="submit" class="btn btn-primary !bg-white !text-[var(--color-navy-deep)] !py-3 hover:!bg-[var(--color-wash)]">
+          <button type="submit" class="btn btn-primary !py-2 !px-5 !text-[14.5px] shrink-0">
             Search
           </button>
         </div>
       </form>
 
-      <p class="mt-4 text-[14px] text-[var(--color-wash)]/70">
-        {stats.inStock} of {stats.titles} titles available now{' · '}
-        <a href="/catalogue" class="underline underline-offset-2 hover:text-white">browse everything</a>
+      {/* The prototype promises results as you type and a live count beside the
+          box. This search posts to /catalogue, so it says what it does. */}
+      <p class="mt-4 text-[13.5px] text-[var(--color-wash)]/70">
+        Search in English or Arabic{' · '}
+        <a href="/catalogue" class="underline underline-offset-2 hover:text-white">
+          {stats.inStock} of {stats.titles} titles in stock
+        </a>
       </p>
     </div>
 
@@ -79,7 +106,8 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
         // straight to it instead of hunting for it again below. The strip
         // scrolls natively, so it can be swiped or flicked past rather than
         // waited on.
-        <div class="shelf-strip relative pb-9" data-shelf aria-label="A few of the books in stock">
+        <div class="mt-11">
+          <div class="shelf-strip relative" data-shelf aria-label="A few of the books in stock">
           <div class="shelf-track">
             {drifting.map((book) => (
               <a class="shelf-book" href={`/book/${book.slug}`}>
@@ -88,8 +116,8 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
                   alt={book.title}
                   loading="lazy"
                   decoding="async"
-                  width="84"
-                  height="118"
+                  width="118"
+                  height="166"
                 />
               </a>
             ))}
@@ -114,36 +142,51 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
                   alt=""
                   loading="lazy"
                   decoding="async"
-                  width="84"
-                  height="118"
+                  width="118"
+                  height="166"
                 />
               </a>
             ))}
+            </div>
           </div>
+          {/* The board, and a line saying the drift can be stopped - it moves
+              on its own, and a moving thing you cannot catch is a nuisance. */}
+          <div class="shelf-board" aria-hidden="true"></div>
+          <p class="mt-4 pb-11 text-center text-[12.5px] text-[var(--color-wash)]/55">
+            On the shelf this week · hover or swipe to stop it
+          </p>
         </div>
       )
     }
   </section>
 
   <!-- Subjects as shelf classmarks: how a madrasah student actually navigates. -->
-  <section class="mx-auto max-w-6xl px-5 md:px-8 py-12 md:py-16 reveal">
-    <h2 class="eyebrow">Shelves</h2>
-    <ul class="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+  <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-12 md:py-16 reveal">
+    <div class="flex items-baseline justify-between gap-4 pb-3.5 border-b border-[var(--color-rule-soft)]">
+      <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Browse the shelves</h2>
+      <a
+        href="/catalogue"
+        class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2 whitespace-nowrap"
+      >All {shelfCount} subjects →</a>
+    </div>
+
+    {/* Rows on hairlines, not boxes. A boxed grid gives twenty-six shelves the
+        same visual weight as twenty-six products; a ruled list reads as an
+        index, which is what it is. The classmark sits in a fixed column so the
+        codes line up down the page and can be scanned without reading. */}
+    <ul class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-10">
       {
         top.map((cat) => (
-          <li>
-            <a
-              href={`/catalogue/${cat.path}`}
-              class="flex items-center gap-3 p-3.5 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] hover:border-[var(--color-navy)] transition-colors group"
-            >
-              <span class="classmark shrink-0">{classmark(cat.slug)}</span>
-              <span class="min-w-0 flex-1">
-                <span class="block text-[15px] font-medium text-[var(--color-ink)] truncate group-hover:text-[var(--color-navy)]">
-                  {cat.name}
-                </span>
-                <span class="block text-[12.5px] text-[var(--color-ink-faint)] tabular-nums">
-                  {cat.count} {cat.count === 1 ? 'title' : 'titles'}
-                </span>
+          <li class="border-b border-[var(--color-rule-faint)]">
+            <a href={`/catalogue/${cat.path}`} class="group flex items-center gap-3 py-[13px]">
+              <span class="w-[38px] shrink-0 text-[10.5px] font-semibold tracking-[0.12em] uppercase text-[var(--color-navy)]">
+                {classmark(cat.slug)}
+              </span>
+              <span class="min-w-0 flex-1 text-[15.5px] font-medium truncate group-hover:text-[var(--color-navy)]">
+                {cat.name}
+              </span>
+              <span class="shrink-0 text-[13px] text-[var(--color-ink-faint)] tabular-nums">
+                {cat.count}
               </span>
             </a>
           </li>
@@ -152,55 +195,61 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
     </ul>
   </section>
 
-  <section class="mx-auto max-w-6xl px-5 md:px-8 pb-16 reveal">
+  <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pb-16 reveal">
     <div class="flex items-baseline justify-between gap-4 mb-5">
       <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Recently added</h2>
       <a href="/catalogue?sort=newest" class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
         >All new arrivals →</a
       >
     </div>
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-x-5 gap-y-8">
-      {shelf.slice(0, 12).map((book, i) => (
-        <div class="reveal" data-delay={String(Math.min(i % 6, 5))}>
-          <BookCard book={book} eager={i < 6} />
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11">
+      {shelf.slice(0, 10).map((book, i) => (
+        <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
+          <BookCard book={book} eager={i < 5} quickAdd />
         </div>
       ))}
     </div>
   </section>
 
   <!-- Ordering here is unusual enough that it needs saying plainly and early. -->
-  <section class="border-t border-[var(--color-rule)] bg-white">
-    <div class="mx-auto max-w-6xl px-5 md:px-8 py-14 reveal">
-      <div class="rosette-rule mb-9">
-        <Rosette size={26} />
-      </div>
-      <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">How ordering works</h2>
-      <ol class="mt-7 grid gap-7 md:grid-cols-3 md:gap-10">
-        <li>
-          <span class="eyebrow">Step one</span>
-          <h3 class="mt-1.5 text-[18px]">Add what you need</h3>
+  <section class="border-t border-[var(--color-rule-soft)] bg-white">
+    <div class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-14 md:py-16 reveal">
+      {/* The heading sits beside the steps rather than above them, so the three
+          columns line up on one rule and read as a single sequence. */}
+      <div class="grid gap-9 md:grid-cols-[260px_1fr] md:gap-14">
+        <div>
+          <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">How ordering works</h2>
+          <p class="mt-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+            No card details are taken on this website at any point.
+          </p>
+        </div>
+      <ol class="grid gap-7 md:grid-cols-3 md:gap-9">
+        <li class="border-t-2 border-[var(--color-navy-deep)] pt-4">
+          <span class="eyebrow !text-[10.5px]">Step one</span>
+          <h3 class="mt-2 text-[19px]">Add what you need</h3>
           <p class="mt-1.5 text-[15px] text-[var(--color-ink-soft)] leading-relaxed">
             Build a basket from the catalogue. Stock counts are live, so what you see is what is on
             the shelf.
           </p>
         </li>
-        <li>
-          <span class="eyebrow">Step two</span>
-          <h3 class="mt-1.5 text-[18px]">Send your request</h3>
+        <li class="border-t-2 border-[var(--color-rule-soft)] pt-4">
+          <span class="eyebrow !text-[10.5px]">Step two</span>
+          <h3 class="mt-2 text-[19px]">Send your request</h3>
           <p class="mt-1.5 text-[15px] text-[var(--color-ink-soft)] leading-relaxed">
             You get an itemised confirmation by email with a reference. Your books are held for 48
             hours while we reply.
           </p>
         </li>
-        <li>
-          <span class="eyebrow">Step three</span>
-          <h3 class="mt-1.5 text-[18px]">We send payment details</h3>
+        <li class="border-t-2 border-[var(--color-rule-soft)] pt-4">
+          <span class="eyebrow !text-[10.5px]">Step three</span>
+          <h3 class="mt-2 text-[19px]">We send payment details</h3>
           <p class="mt-1.5 text-[15px] text-[var(--color-ink-soft)] leading-relaxed">
             Payment is arranged directly with us. No card details are taken on this website at any
             point.
           </p>
         </li>
       </ol>
+      </div>
     </div>
   </section>
 </Base>
