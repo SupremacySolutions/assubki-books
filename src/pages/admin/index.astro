@@ -134,19 +134,19 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
             : `oldest ${d.oldestWaitingHours}h ago`}
       </p>
     </a>
-    <a href="/admin/orders?status=awaiting_payment" class="block bg-white border border-[var(--color-rule)] rounded-[3px] p-4 hover:border-[var(--color-navy)] transition-colors">
+    <a href="/admin/orders?status=awaiting_payment" class="block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors">
       <p class="eyebrow">Awaiting payment</p>
       <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.awaitingPence)}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
         across {d.awaitingPayment} {d.awaitingPayment === 1 ? 'order' : 'orders'}
       </p>
     </a>
-    <a href="/admin/orders?status=paid" class="block bg-white border border-[var(--color-rule)] rounded-[3px] p-4 hover:border-[var(--color-navy)] transition-colors">
+    <a href="/admin/orders?status=paid" class="block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors">
       <p class="eyebrow">To post</p>
       <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toPost}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">paid, not sent</p>
     </a>
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] p-4">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow">Taken</p>
       <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.revenuePence)}</p>
       <p class="mt-1.5 text-[12.5px]">
@@ -162,7 +162,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
   </div>
 
   <div class="grid gap-3 lg:grid-cols-[1.9fr_1fr] mt-3">
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] p-4">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-1">Taken per day</p>
       {d.revenuePence > 0 ? (
         <>
@@ -199,7 +199,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       )}
     </div>
 
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] p-4">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-1">How it goes out</p>
       {fulfilled > 0 ? (
         <>
@@ -228,7 +228,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
   </div>
 
   <div class="grid gap-3 lg:grid-cols-3 mt-3">
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] p-4">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-2.5">Selling best</p>
       {d.bestSellers.length > 0 ? (
         <ul class="space-y-2">
@@ -249,7 +249,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       )}
     </div>
 
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] p-4">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-2.5">Taken per shelf</p>
       {d.byShelf.length > 0 ? (
         <ul class="space-y-2">
@@ -270,7 +270,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       )}
     </div>
 
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] p-4">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-2.5">Running low</p>
       {d.lowStock.length > 0 ? (
         <ul class="space-y-1.5 text-[13px]">
@@ -299,17 +299,17 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     * nobody has had the chance to.
     */}
   <div class="grid gap-3 sm:grid-cols-3 mt-3">
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] px-4 py-3">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
       <p class="eyebrow">Orders</p>
       <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{d.orders}</p>
       <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">paid in the last {days} days</p>
     </div>
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] px-4 py-3">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
       <p class="eyebrow">Average order</p>
       <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{price(d.averagePence)}</p>
       <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">across those orders</p>
     </div>
-    <div class="bg-white border border-[var(--color-rule)] rounded-[3px] px-4 py-3">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
       <p class="eyebrow">Repeat customers</p>
       <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{d.repeatPct}%</p>
       <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">have ordered more than once</p>
@@ -333,13 +333,13 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
 
     {
       pending.length === 0 ? (
-        <p class="p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-[15px] text-[var(--color-ink-soft)]">
+        <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
           {totalOrders === 0
             ? 'No orders yet. When someone sends a request it appears here and in your inbox.'
             : 'Nothing waiting on you. New requests appear here and in your inbox.'}
         </p>
       ) : (
-        <ul class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
+        <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
           {pending.map((o) => {
             const hoursLeft = o.expires_at
               ? Math.max(0, Math.round((o.expires_at * 1000 - Date.now()) / 3_600_000))
@@ -401,7 +401,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
               <li>
                 <a
                   href={job.href}
-                  class="flex items-baseline gap-3 p-3.5 bg-white border border-[var(--color-rule)] rounded-[3px] hover:border-[var(--color-navy)] transition-colors"
+                  class="flex items-baseline gap-3 p-3.5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] hover:border-[var(--color-navy)] transition-colors"
                 >
                   <span class="text-[22px] font-semibold tabular-nums">{job.n}</span>
                   <span class="text-[14.5px] text-[var(--color-ink-soft)]">{job.label}</span>

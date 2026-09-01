@@ -53,7 +53,7 @@ const closed = await maintenanceNotice();
       <div class="page-transition-mark"><Rosette size={34} />As-Subki Books</div>
     </div>
     <header class="bg-[var(--color-navy-deep)] text-white">
-      <div class="mx-auto max-w-5xl px-5 md:px-8">
+      <div class="mx-auto max-w-[var(--width-portal)] px-5 md:px-8">
         <div class="flex items-center gap-3 py-3">
           <span class="text-[var(--color-wash)]"><Rosette size={24} /></span>
           <span class="font-[family-name:var(--font-display)] text-[16px] font-semibold">
@@ -94,7 +94,7 @@ const closed = await maintenanceNotice();
         </p>
       )
     }
-    <main class="page-enter mx-auto max-w-5xl px-5 md:px-8 py-8">
+    <main class="page-enter mx-auto max-w-[var(--width-portal)] px-5 md:px-8 py-8">
       {
         back && (
           <a
@@ -108,7 +108,7 @@ const closed = await maintenanceNotice();
       {
         showHeading && (
           <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-6">
-            <h1 class="font-[family-name:var(--font-display)] text-[28px] md:text-[32px] font-semibold">
+            <h1 class="font-[family-name:var(--font-display)] text-[30px] md:text-[34px] font-semibold">
               {title}
             </h1>
             {sub && <p class="text-[15px] text-[var(--color-ink-faint)]">{sub}</p>}

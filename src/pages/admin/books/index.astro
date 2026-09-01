@@ -127,10 +127,10 @@ const windowed = () => {
           <a
             href={filterUrl(f.key)}
             class:list={[
-              'px-3 py-1.5 rounded-full text-[13.5px] border transition-colors',
+              'px-3.5 py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors',
               filter === f.key
                 ? 'bg-[var(--color-navy)] text-white border-[var(--color-navy)]'
-                : 'bg-white border-[var(--color-rule)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
+                : 'bg-white border-[var(--color-rule-soft)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
             ]}
           >
             {f.label}
@@ -167,11 +167,11 @@ const windowed = () => {
 
   {
     result.books.length === 0 ? (
-      <p class="p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-[15px] text-[var(--color-ink-soft)]">
+      <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
         Nothing matches that. <a href="/admin/books" class="text-[var(--color-navy)] underline underline-offset-2">Show everything</a>.
       </p>
     ) : (
-      <ul class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
+      <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
         {result.books.map((b) => (
           <li class="flex items-center gap-3 p-3">
             <a

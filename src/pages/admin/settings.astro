@@ -101,9 +101,9 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
                   href={`/admin/settings?s=${s.id}`}
                   aria-current={s.id === section ? 'page' : undefined}
                   class:list={[
-                    'block px-2.5 py-1.5 rounded-[3px] text-[14px]',
+                    'block px-3 py-2 rounded-[var(--radius-field)] text-[14px]',
                     s.id === section
-                      ? 'bg-[var(--color-wash)] text-[var(--color-navy)] font-medium'
+                      ? 'bg-[var(--color-wash-soft)] text-[var(--color-navy)] font-medium'
                       : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-paper)]',
                   ]}
                 >
@@ -120,7 +120,7 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
       {
         section === 'messages' && (
           <form method="post" action="/api/admin/settings" class="space-y-5">
-    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+    <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
         Payment drafts
       </h2>
@@ -146,7 +146,7 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
                 role="tab"
                 data-draft-tab={slot.slot}
                 aria-selected={i === 0 ? 'true' : 'false'}
-                class="px-3 py-1.5 text-[13.5px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-selected:border-[var(--color-navy)] aria-selected:bg-[var(--color-navy)] aria-selected:text-white"
+                class="px-3.5 py-1.5 text-[13.5px] rounded-[var(--radius-pill)] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-navy)] aria-selected:border-[var(--color-navy)] aria-selected:bg-[var(--color-navy)] aria-selected:text-white"
               >
                 {settings[partLabelKey(slot.slot)]?.trim() || slot.label}
               </button>
@@ -194,7 +194,7 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
       {
         section === 'contact' && (
           <form method="post" action="/api/admin/settings" class="space-y-5">
-    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+    <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
         Where people reach you
       </h2>
@@ -224,7 +224,7 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
           invalid HTML - a browser drops the inner form, so "Sign out
           everywhere" was posting the settings instead of signing out. */}
       {section === 'security' && (
-    <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+    <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Getting in</h2>
       <p class="mt-1.5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
         Five wrong passwords from one place and it stops taking guesses from there for fifteen
@@ -265,7 +265,7 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
       {
         section === 'maintenance' && (
           <form method="post" action="/api/admin/settings" class="space-y-5">
-            <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+            <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
               <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
                 Closing the shop
               </h2>
@@ -293,7 +293,7 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
       }
 
       {section === 'alerts' && (
-  <section class="mt-8 max-w-2xl bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+  <section class="mt-8 max-w-2xl bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
     <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Connections</h2>
     <dl class="mt-4 space-y-3 text-[14.5px]">
       <div class="flex justify-between gap-4">

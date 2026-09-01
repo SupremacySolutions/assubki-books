@@ -45,7 +45,7 @@ for (const top of tree) {
     address too, so links to it stop working. The order here is the order customers see.
   </p>
 
-  <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 mb-8">
+  <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 mb-8">
     <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold mb-3">Add a shelf</h2>
     <form method="post" action="/api/admin/shelves/create" class="flex flex-wrap gap-3 items-end">
       <div class="flex-1 min-w-[200px]">
@@ -70,7 +70,7 @@ for (const top of tree) {
   <div class="space-y-4">
     {
       tree.map((top, topIndex) => (
-        <section class="bg-white border border-[var(--color-rule)] rounded-[3px] overflow-hidden">
+        <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden">
           {/* Top-level shelf: tinted header band, so a parent never reads as
               just another row in a flat list. */}
           <div class="bg-[var(--color-paper)] border-b border-[var(--color-rule)] p-4">
@@ -84,7 +84,7 @@ for (const top of tree) {
           </div>
 
           {top.children.length > 0 && (
-            <ul class="divide-y divide-[var(--color-rule)]">
+            <ul class="divide-y divide-[var(--color-rule-faint)]">
               {top.children.map((child, childIndex) => (
                 <li class="p-4 ps-8 relative">
                   {/* A rule down the left ties children to their parent. */}

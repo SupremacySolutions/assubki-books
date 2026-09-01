@@ -159,9 +159,9 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
   <div class="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
     <div class="space-y-6">
       <!-- Everything needed to pack and post, in one block. -->
-      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
         <h2 class="eyebrow mb-3">Books to pack</h2>
-        <ul class="divide-y divide-[var(--color-rule)]">
+        <ul class="divide-y divide-[var(--color-rule-faint)]">
           {
             items.map((item) => (
               <li class="py-2.5 flex justify-between gap-4 text-[15px]">
@@ -431,7 +431,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
 
       {
         steps.length > 0 && (
-          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+          <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
             <h2 class="eyebrow mb-4">Next steps</h2>
             <div class="space-y-4">
               {steps.map((step, i) => (
@@ -540,7 +540,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
     <aside class="space-y-4">
       {/* Deliberately one order at a time. The bulk clear cannot reach a
           completed order, and should not be able to. */}
-      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+      <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
         <h2 class="eyebrow mb-3">{isCollection ? 'Collecting' : 'Send to'}</h2>
         <p class="text-[15px] font-medium">{order.customer_name}</p>
         <p class="mt-2 text-[14.5px] text-[var(--color-ink-soft)] whitespace-pre-line leading-relaxed">
@@ -605,14 +605,14 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
 
       {
         order.notes && (
-          <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5">
+          <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
             <h2 class="eyebrow mb-2">Their note</h2>
             <p class="text-[14.5px] text-[var(--color-ink-soft)] whitespace-pre-line">{order.notes}</p>
           </section>
         )
       }
 
-      <section class="bg-white border border-[var(--color-rule)] rounded-[3px] p-5 text-[14px] space-y-2">
+      <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 text-[14px] space-y-2">
         <div class="flex justify-between gap-3">
           <span class="text-[var(--color-ink-faint)]">Status</span>
           <span class="font-medium">{portalLabel(order.status, order.fulfilment, isCash)}</span>

@@ -31,13 +31,51 @@ const TONE: Record<string, string> = {
   cancelled: 'bg-[var(--color-rule)] text-[var(--color-ink-faint)]',
 };
 
+/*
+ * Two lists, not one.
+ *
+ * An order that needs doing and an order that is finished are different kinds
+ * of thing, and mixing them meant the four that mattered sat in a run of
+ * eighteen that did not. The queue carries a spine coloured by how pressing it
+ * is; everything settled drops to a compact row below.
+ */
+const OPEN = ['requested', 'awaiting_payment', 'paid', 'dispatched'];
+const queue = orders.filter((o) => OPEN.includes(o.status));
+const settled = orders.filter((o) => !OPEN.includes(o.status));
+
+/** Waiting on the owner is the urgent one; the rest are waiting on someone else. */
+const SPINE: Record<string, string> = {
+  requested: 'bg-[var(--color-outstock)]',
+  awaiting_payment: 'bg-[var(--color-brass)]',
+  paid: 'bg-[var(--color-navy)]',
+  dispatched: 'bg-[var(--color-navy)]',
+};
+
+const hours = (from: number) => Math.max(0, Math.floor((Date.now() / 1000 - from) / 3600));
+const until = (at: number | null) =>
+  at ? Math.max(0, Math.floor((at - Date.now() / 1000) / 3600)) : null;
+
+/*
+ * The line under the name. Only facts that tell two orders apart earn a place:
+ * the postcode says where it is going, "group order" says why it is large, and
+ * a note attached says there is something to read before replying.
+ */
+function facts(o: (typeof orders)[number]): string[] {
+  const bits = [`${o.item_count} ${o.item_count === 1 ? 'book' : 'books'}`, o.fulfilment];
+  const postcode = o.address?.trim().split('\n').pop()?.trim();
+  if (o.fulfilment !== 'collection' && postcode) bits.push(postcode);
+  if (o.cash_payment) bits.push('cash in person');
+  else if (o.payment_preference === 'transfer') bits.push('bank transfer preferred');
+  if (o.notes?.trim()) bits.push('note attached');
+  return bits;
+}
 
 ---
 
-<Admin title="Orders" sub={`${orders.length} shown`}>
+<Admin title="Orders" sub={`${orders.length} shown${counts.requested ? ` · ${counts.requested} need a reply` : ''}`}>
   {
     cleared && (
-      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[var(--radius-field)] text-[14.5px] text-[var(--color-instock)]">
         Cleared {cleared} {cleared === '1' ? 'order' : 'orders'}.
       </p>
     )
@@ -45,7 +83,7 @@ const TONE: Record<string, string> = {
 
   {
     deleted && (
-      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[var(--radius-field)] text-[14.5px] text-[var(--color-instock)]">
         Deleted order {deleted}.
       </p>
     )
@@ -57,10 +95,10 @@ const TONE: Record<string, string> = {
         <a
           href={tab.key ? `/admin/orders?status=${tab.key}` : '/admin/orders'}
           class:list={[
-            'px-3 py-1.5 rounded-full text-[13.5px] border transition-colors',
+            'px-3.5 py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors',
             status === tab.key || (!status && !tab.key)
               ? 'bg-[var(--color-navy)] text-white border-[var(--color-navy)]'
-              : 'bg-white border-[var(--color-rule)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
+              : 'bg-white border-[var(--color-rule-soft)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
           ]}
         >
           {tab.label}
@@ -75,7 +113,7 @@ const TONE: Record<string, string> = {
       <form
         method="post"
         action="/api/admin/orders/clear"
-        class="mb-5 flex flex-wrap items-center gap-3 p-3.5 bg-white border border-[var(--color-rule)] rounded-[3px]"
+        class="mt-8 flex flex-wrap items-center gap-3 p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]"
         onsubmit="return confirm('Delete every cancelled and lapsed order? Orders that were quoted or paid are kept.')"
       >
         <p class="text-[14px] text-[var(--color-ink-soft)] flex-1 min-w-[220px]">
@@ -89,37 +127,98 @@ const TONE: Record<string, string> = {
 
   {
     orders.length === 0 ? (
-      <p class="p-5 bg-white border border-[var(--color-rule)] rounded-[3px] text-[15px] text-[var(--color-ink-soft)]">
+      <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
         No orders with that status.
       </p>
     ) : (
-      <ul class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
-        {orders.map((o) => (
-          <li>
-            <a href={`/admin/orders/${o.ref}`} class="flex items-center gap-4 p-4 hover:bg-[var(--color-paper)]">
-              <div class="min-w-0 flex-1">
-                <p class="text-[15px] font-medium truncate">
-                  {o.customer_name}
-                  <span class="ml-2 text-[13px] font-normal text-[var(--color-ink-faint)]">{o.ref}</span>
-                </p>
-                <p class="text-[13.5px] text-[var(--color-ink-faint)] truncate">
-                  {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment} ·{' '}
-                  {new Date(o.created_at * 1000).toLocaleDateString('en-GB', {
-                    day: 'numeric',
-                    month: 'short',
-                  })}
-                </p>
-              </div>
-              <span class:list={['px-2 py-1 rounded-sm text-[12px] font-medium shrink-0', TONE[o.status]]}>
-                {portalLabel(o.status, o.fulfilment, Boolean(o.cash_payment))}
-              </span>
-              <span class="price text-[15px] shrink-0 w-16 text-right">
-                {price(o.total_pence ?? o.subtotal_pence)}
-              </span>
-            </a>
-          </li>
-        ))}
-      </ul>
+      <>
+      {queue.length > 0 && (
+        <ul class="space-y-2.5">
+          {queue.map((o) => {
+            const waited = hours(o.created_at);
+            const left = o.status === 'requested' ? until(o.expires_at) : null;
+            return (
+              <li class="flex bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden">
+                <span class:list={['w-1.5 shrink-0', SPINE[o.status]]} aria-hidden="true" />
+                <div class="flex-1 min-w-0 flex flex-wrap items-center gap-x-5 gap-y-2 p-4">
+                  <div class="min-w-0 flex-1 basis-[15rem]">
+                    <p class="text-[15.5px] font-medium truncate">
+                      {o.customer_name}
+                      <span class="ml-2 font-[family-name:var(--font-body)] text-[13px] font-normal tracking-wide text-[var(--color-ink-faint)]">
+                        {o.ref}
+                      </span>
+                    </p>
+                    <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-faint)] truncate">
+                      {facts(o).join(' · ')}
+                    </p>
+                  </div>
+
+                  <div class="text-right shrink-0">
+                    <p class="eyebrow !text-[10px]">Waiting {waited}h</p>
+                    {left !== null && (
+                      <p class:list={[
+                        'text-[13px] tabular-nums',
+                        left <= 6 ? 'text-[var(--color-outstock)] font-medium' : 'text-[var(--color-ink-faint)]',
+                      ]}>
+                        hold expires in {left}h
+                      </p>
+                    )}
+                  </div>
+
+                  <span class="price text-[16px] shrink-0 w-[5.5rem] text-right">
+                    {price(o.total_pence ?? o.subtotal_pence)}
+                  </span>
+
+                  <a
+                    href={`/admin/orders/${o.ref}`}
+                    class:list={[
+                      'btn shrink-0 !py-2 !px-5 !text-[14px]',
+                      o.status === 'requested' ? 'btn-primary' : 'btn-ghost',
+                    ]}
+                  >
+                    {o.status === 'requested' ? 'Confirm' : 'Open'}
+                  </a>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {settled.length > 0 && (
+        <section class:list={[queue.length > 0 && 'mt-10']}>
+          <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold mb-3">
+            Settled and closed
+          </h2>
+          <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
+            {settled.map((o) => (
+              <li>
+                <a href={`/admin/orders/${o.ref}`} class="flex items-center gap-4 px-4 py-3 hover:bg-[var(--color-paper)]">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-[14.5px] font-medium truncate">
+                      {o.customer_name}
+                      <span class="ml-2 text-[12.5px] font-normal tracking-wide text-[var(--color-ink-faint)]">
+                        {o.ref}
+                      </span>
+                    </p>
+                    <p class="text-[13px] text-[var(--color-ink-faint)] truncate">
+                      {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment} ·{' '}
+                      {new Date(o.created_at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </p>
+                  </div>
+                  <span class:list={['px-2.5 py-1 rounded-[var(--radius-pill)] text-[12px] font-medium shrink-0', TONE[o.status]]}>
+                    {portalLabel(o.status, o.fulfilment, Boolean(o.cash_payment))}
+                  </span>
+                  <span class="price text-[14.5px] shrink-0 w-[4.5rem] text-right">
+                    {price(o.total_pence ?? o.subtotal_pence)}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      </>
     )
   }
 </Admin>
