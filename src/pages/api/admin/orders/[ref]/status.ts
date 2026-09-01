@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import { releaseHold } from '../../../../../lib/stock-release';
 import { getOrderByRef } from '../../../../../lib/admin-db';
 import { notifyStatusChange } from '../../../../../lib/notify';
 import { canTransition, closesOnDispatch, isPostageProvider } from '../../../../../lib/order-status';
@@ -91,16 +92,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
 
   if (RELEASES_STOCK.has(next) && ['requested', 'awaiting_payment'].includes(order.status)) {
     statements.push(
-      env.DB.prepare(
-        `UPDATE books SET reserved = MAX(0, reserved - COALESCE(
-           (SELECT SUM(qty) FROM order_items WHERE order_id = ?1 AND book_id = books.id), 0))
-          WHERE id IN (SELECT book_id FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL)`,
-      ).bind(order.id),
-      env.DB.prepare(
-        `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
-         SELECT book_id, -SUM(qty), 'reserved', 'order cancelled', ?1
-           FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL GROUP BY book_id`,
-      ).bind(order.id),
+      ...releaseHold(order.id, 'order cancelled'),
     );
   }
 

@@ -36,6 +36,10 @@ export interface AdminOrderRow {
   payment_message: string | null;
   /** The owner's own words when cancelling. */
   cancel_note: string | null;
+  /** The customer's own words, which are not the same fact. */
+  customer_cancel_note: string | null;
+  /** Set while a customer is waiting to hear back about cancelling. */
+  cancel_requested_at: number | null;
   /** The customer is paying cash when the books change hands. */
   cash_payment: number;
   /** What they asked for at checkout: 'transfer', 'cash', or nothing. */

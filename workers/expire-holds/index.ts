@@ -6,11 +6,16 @@
  * that window the hold has to lapse, or a browsing customer who abandons a
  * basket quietly takes the last copy off sale forever.
  *
+ * The release itself is shared with the site through releaseHold() rather than
+ * written out again here, which is what it used to be.
+ *
  * This mirrors expireStaleHolds() in src/lib/orders.ts, which the order API
  * also calls inline - whether a customer can buy the last copy must not depend
  * on when this job last fired. This Worker is the safety net that keeps the
  * catalogue's *displayed* availability honest between orders.
  */
+
+import { releaseHold } from '../../src/lib/stock-release';
 
 interface Env {
   DB: D1Database;
@@ -34,18 +39,7 @@ export async function expireHolds(db: D1Database): Promise<{ orders: number; cop
   const statements = [];
   for (const { id } of stale) {
     statements.push(
-      // MAX(0, …) so a hold released twice can never drive reserved negative
-      // and trip the CHECK constraint.
-      db.prepare(
-        `UPDATE books SET reserved = MAX(0, reserved - COALESCE(
-           (SELECT SUM(qty) FROM order_items WHERE order_id = ?1 AND book_id = books.id), 0))
-          WHERE id IN (SELECT book_id FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL)`,
-      ).bind(id),
-      db.prepare(
-        `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
-         SELECT book_id, -SUM(qty), 'reserved', 'hold expired', ?1
-           FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL GROUP BY book_id`,
-      ).bind(id),
+      ...releaseHold(id, 'hold expired', db),
       db.prepare(`UPDATE orders SET status = 'expired', updated_at = unixepoch() WHERE id = ?`).bind(id),
     );
   }

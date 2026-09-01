@@ -430,6 +430,103 @@ export async function notifyGroupStarted(input: {
 
 /** Plain status nudges - dispatched, cancelled. */
 /**
+ * Tells the owner a customer wants out of an order.
+ *
+ * The same two channels a new order uses, for the same reason: this needs an
+ * answer, and the owner is not sitting in the portal waiting for one. It is
+ * only an alert - the request is already recorded on the order, so a failure
+ * here loses a nudge, not the fact.
+ */
+export async function notifyCancelRequest(input: {
+  ref: string;
+  name: string;
+  email: string;
+  reason: string | null;
+  origin: string;
+}): Promise<void> {
+  const link = `${input.origin}/admin/orders/${input.ref}`;
+  const ownerChatId = await getSetting('owner_telegram_chat_id');
+
+  await Promise.allSettled([
+    deliver({
+      to: ownerAddress(),
+      replyTo: input.email,
+      subject: `Cancellation asked for - ${input.ref}`,
+      html: shell(
+        `Cancellation asked for`,
+        `Reference ${input.ref}`,
+        `<p style="margin:0;font-size:15px;line-height:1.6">${escapeHtml(input.name)} has asked to cancel this order. It is still live until you answer.</p>` +
+          (input.reason
+            ? `<p style="margin:16px 0 0;font-size:15px;line-height:1.6;white-space:pre-line"><strong>Their reason:</strong><br>${escapeHtml(input.reason)}</p>`
+            : `<p style="margin:16px 0 0;font-size:15px;color:#6f7787">They did not give a reason.</p>`) +
+          button(link, 'Open the order'),
+      ),
+      text:
+        `${input.name} has asked to cancel ${input.ref}. It is still live until you answer.\n\n` +
+        (input.reason ? `Their reason:\n${input.reason}\n\n` : 'They did not give a reason.\n\n') +
+        `${link}\n`,
+    }),
+    ownerChatId && botConfigured()
+      ? sendMessage(
+          ownerChatId,
+          `*${esc(`Cancellation asked for - ${input.ref}`)}*\n\n` +
+            esc(`${input.name} has asked to cancel. It is still live until you answer.`) +
+            (input.reason ? `\n\n${esc(input.reason)}` : '') +
+            `\n\n${mdLink(`Open ${input.ref}`, link)}`,
+        )
+      : Promise.resolve(false),
+  ]);
+}
+
+/**
+ * Tells a customer the shop is keeping their order after all.
+ *
+ * Without this they sit on a page that says "still live until we reply" with
+ * no reply ever coming, which is worse than never having offered to ask.
+ */
+export async function notifyCancelDeclined(input: {
+  ref: string;
+  token: string;
+  name: string;
+  email: string;
+  telegramChatId?: string | null;
+  note: string | null;
+  origin: string;
+}): Promise<void> {
+  const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
+  const line = 'We have looked at your order and it is going ahead as it stands.';
+
+  await Promise.allSettled([
+    deliver({
+      to: input.email,
+      replyTo: ownerAddress(),
+      subject: `Your order stands - ${input.ref}`,
+      html: shell(
+        'Your order stands',
+        `Reference ${input.ref}`,
+        `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(input.name)},</p>
+         <p style="margin:0;font-size:15px;line-height:1.6">${escapeHtml(line)}</p>` +
+          (input.note
+            ? `<p style="margin:16px 0 0;font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(input.note)}</p>`
+            : '') +
+          button(link, 'View your order'),
+      ),
+      text:
+        `Your order stands - ${input.ref}\n\nالسلام عليكم ${input.name},\n\n${line}\n\n` +
+        (input.note ? `${input.note}\n\n` : '') +
+        `${link}\n`,
+    }),
+    input.telegramChatId && botConfigured()
+      ? sendMessage(
+          input.telegramChatId,
+          `*${esc(`Your order stands - ${input.ref}`)}*\n\n${esc(line)}` +
+            (input.note ? `\n\n${esc(input.note)}` : ''),
+        )
+      : Promise.resolve(false),
+  ]);
+}
+
+/**
  * Why the last status notification failed, and a way to clear it.
  *
  * `deliver()` already records send failures so the portal can say "email is

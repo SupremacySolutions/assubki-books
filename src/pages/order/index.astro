@@ -17,6 +17,7 @@ import Dialog from '../../components/Dialog.astro';
 import { price } from '../../lib/format';
 import { statusLabel, isSettled, moneyReceived, trackingUrl, cashMoment } from '../../lib/order-status';
 import { collectionAddress } from '../../lib/settings';
+import { cancelRight, REASON_MAX } from '../../lib/cancellation';
 import QRCode from 'qrcode';
 
 const params = Astro.url.searchParams;
@@ -57,6 +58,20 @@ const settled = order ? isSettled(order.status) : false;
 // true until they have been and gone. See lib/order-status.
 const paidFor = order ? moneyReceived(order.status, cashPayment) : false;
 const dropped = order?.status === 'cancelled' || order?.status === 'expired';
+
+/*
+ * Cancelling: which of the three this customer is entitled to, and whether
+ * they have asked for the confirmation panel. Both server-side, because the
+ * whole flow is form posts and this page must work without JavaScript.
+ */
+const right = order ? cancelRight(order.status, Boolean(order.cancel_requested_at)) : 'none';
+const confirming = params.get('confirm') === 'cancel' && right !== 'none';
+const bookCount = order?.items.reduce((n, i) => n + i.qty, 0) ?? 0;
+const askedOn = order?.cancel_requested_at
+  ? new Date(order.cancel_requested_at * 1000).toLocaleString('en-GB', {
+      day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+    })
+  : null;
 
 // Shown at the top of the page rather than only inside the timeline. Never for
 // a collection (there is nothing to track) and never once cancelled.
@@ -288,10 +303,25 @@ if (offerTelegram && telegramLink) {
           {/* The shop's own reason, when it gave one. Without it a cancellation
               is a bare fact with no explanation, which only invites a reply
               asking why. */}
-          {dropped && order.cancel_note && (
-            <p class="mt-3 p-3 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px] text-[14px] leading-relaxed whitespace-pre-line">
-              {order.cancel_note}
-            </p>
+          {/* Two facts from two people. Whichever is missing is dropped
+              entirely rather than left as an empty box, and they are never
+              run together into one paragraph - the shop would end up
+              appearing to say what the customer said. */}
+          {dropped && (order.cancel_note || order.customer_cancel_note) && (
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 text-left">
+              {order.customer_cancel_note && (
+                <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
+                  <p class="eyebrow mb-1.5">What you told us</p>
+                  <p class="text-[14px] leading-relaxed whitespace-pre-line">{order.customer_cancel_note}</p>
+                </div>
+              )}
+              {order.cancel_note && (
+                <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
+                  <p class="eyebrow mb-1.5">Note from the shop</p>
+                  <p class="text-[14px] leading-relaxed whitespace-pre-line">{order.cancel_note}</p>
+                </div>
+              )}
+            </div>
           )}
           <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
             {dropped
@@ -330,6 +360,116 @@ if (offerTelegram && telegramLink) {
             <h2 class="eyebrow mb-1.5">Your note</h2>
             <p class="text-[14.5px] text-[var(--color-ink-soft)] whitespace-pre-line">{order.notes}</p>
           </section>
+        )}
+
+
+        {/*
+          * Cancelling.
+          *
+          * At the very foot of the page and never beside "Message the shop":
+          * it is the quietest thing here, not an alternative to getting in
+          * touch. Everything is a form post and a server-rendered panel - the
+          * customer has no login, only the token in this URL, and the page has
+          * to work with JavaScript off.
+          */}
+        {right !== 'none' && (
+          <div class="mt-10">
+            {confirming ? (
+              <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] border-l-[3px] border-l-[var(--color-outstock)] p-5 md:p-6 text-left">
+                <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+                  {right === 'outright' ? `Cancel order ${order.ref}?` : `Ask us to cancel ${order.ref}?`}
+                </h2>
+                <p class="mt-2 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+                  {right === 'outright'
+                    ? `This cannot be undone. The ${bookCount === 1 ? 'book goes' : `${bookCount} books go`} back on the shelf for someone else, and you would need to request ${bookCount === 1 ? 'it' : 'them'} again.`
+                    : 'We will reply to confirm - nothing changes until we do.'}
+                </p>
+
+                <form method="post" action="/api/orders/cancel" class="mt-5">
+                  <input type="hidden" name="ref" value={order.ref} />
+                  <input type="hidden" name="t" value={token} />
+
+                  <label for="reason" class="block text-[14.5px] font-medium">
+                    Why are you cancelling?{' '}
+                    <span class="font-normal text-[var(--color-ink-faint)]">
+                      - optional, and we will not chase you for an answer
+                    </span>
+                  </label>
+                  <textarea
+                    id="reason"
+                    name="reason"
+                    rows="3"
+                    maxlength={REASON_MAX}
+                    placeholder="Only if you want to tell us."
+                    class="field mt-2"
+                  ></textarea>
+
+                  <div class="mt-5 flex flex-wrap gap-3">
+                    <button
+                      type="submit"
+                      class="btn !bg-[var(--color-outstock)] !text-white hover:!bg-[var(--color-outstock)]/90"
+                    >
+                      {right === 'outright' ? 'Yes, cancel it' : 'Send the request'}
+                    </button>
+                    <a href={`/order?ref=${order.ref}&t=${token}`} class="btn btn-ghost">Keep my order</a>
+                  </div>
+                </form>
+              </div>
+            ) : right === 'outright' ? (
+              <div class="border-t border-[var(--color-rule-soft)] pt-5 flex flex-wrap items-center justify-between gap-3 text-left">
+                <p class="text-[14px] text-[var(--color-ink-faint)] leading-relaxed max-w-md">
+                  Changed your mind? Nothing has been arranged yet, so you can cancel this straight
+                  away and the copies go back on the shelf.
+                </p>
+                <a
+                  href={`/order?ref=${order.ref}&t=${token}&confirm=cancel`}
+                  class="shrink-0 rounded-[var(--radius-pill)] border border-[var(--color-rule)] px-[18px] py-2.5 text-[14px] text-[var(--color-ink-faint)] hover:border-[var(--color-outstock)] hover:text-[var(--color-outstock)] transition-colors"
+                >
+                  Cancel this order
+                </a>
+              </div>
+            ) : (
+              <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 md:p-[22px] text-left">
+                <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+                  Need to cancel?
+                </h2>
+                <p class="mt-2 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-lg">
+                  We have already quoted you and set these books aside, so cancelling now is
+                  something we do together. Ask, and we will confirm - your order stays live until
+                  we do.
+                </p>
+                <a
+                  href={`/order?ref=${order.ref}&t=${token}&confirm=cancel`}
+                  class="mt-4 inline-block rounded-[var(--radius-pill)] border border-[var(--color-rule)] bg-[var(--color-paper-raised)] px-[18px] py-2.5 text-[14px] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] transition-colors"
+                >
+                  Ask us to cancel
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Asked, and waiting. A fact on the order, so it survives a reload. */}
+        {order.cancel_requested_at && !dropped && (
+          <div class="mt-10 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] border-l-[3px] border-l-[var(--color-brass)] p-5 md:p-[22px] text-left">
+            <div class="flex items-start gap-3">
+              <span
+                class="shrink-0 grid place-items-center w-[22px] h-[22px] rounded-full bg-[var(--color-brass)]/15 text-[var(--color-brass)] text-[13px] font-semibold"
+                aria-hidden="true"
+              >?</span>
+              <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+                Asked on {askedOn}.{' '}
+                <strong class="text-[var(--color-ink)]">Your order is still live until we reply</strong>{' '}
+                - the shop will get back to you.
+              </p>
+            </div>
+            {order.customer_cancel_note && (
+              <div class="mt-4 pt-4 border-t border-[var(--color-rule-faint)]">
+                <p class="eyebrow mb-1.5">Your reason</p>
+                <p class="text-[14px] leading-relaxed whitespace-pre-line">{order.customer_cancel_note}</p>
+              </div>
+            )}
+          </div>
         )}
 
         <div class="mt-10 border-t border-[var(--color-rule)] pt-6 text-center">

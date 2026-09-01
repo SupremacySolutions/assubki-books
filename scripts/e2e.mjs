@@ -1591,6 +1591,73 @@ async function integrity() {
    * count" saved the listing instead. The suite never noticed because it posts
    * to the API directly, which is exactly the blind spot.
    */
+  /*
+   * Customer cancellation, both sides of the line.
+   *
+   * Before payment details go out the customer decides and the copies come
+   * straight back. After, it is a request that changes nothing until the owner
+   * answers - and the two must not be confusable, because one is irreversible.
+   */
+  const cancelForm = (ref, token, reason) =>
+    fetch(`${SITE}/api/orders/cancel`, {
+      method: 'POST',
+      // Origin, because Astro's checkOrigin refuses a form POST without one -
+      // which is the point of it, and a browser always sends it.
+      headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ref, t: token, reason }).toString(),
+      redirect: 'manual',
+    });
+
+  const cx = await makeBook({ stock: '4' });
+  const cancelled = await placeOrder(cx.id, 'collection');
+  const heldBefore = await one(`SELECT reserved AS r FROM books WHERE id=${cx.id}`);
+  await cancelForm(cancelled.ref, cancelled.token, 'Wrong edition');
+  const afterCancel = await one(
+    `SELECT status, customer_cancel_note AS note FROM orders WHERE ref='${cancelled.ref}'`,
+  );
+  const releasedTo = await one(`SELECT reserved AS r FROM books WHERE id=${cx.id}`);
+  t.ok(afterCancel.status === 'cancelled', 'a customer can cancel before payment details go out');
+  t.ok(heldBefore.r === 1 && releasedTo.r === 0, 'and the copies go straight back on the shelf');
+  t.ok(afterCancel.note === 'Wrong edition', 'their reason is kept as their own, not the owner\'s');
+  const cancelLedger = await db(
+    `SELECT reason, delta FROM stock_ledger
+      WHERE order_id=(SELECT id FROM orders WHERE ref='${cancelled.ref}') AND field='reserved'`,
+  );
+  t.ok(cancelLedger.reduce((n, r) => n + r.delta, 0) === 0,
+    'and the ledger nets back to zero');
+  t.ok(cancelLedger.some((r) => r.reason === 'customer cancelled'),
+    'recorded as the customer cancelling, not the owner');
+
+  // Past the line: a request, and nothing else.
+  const asked = await placeOrder(cx.id, 'collection');
+  await admin(`/api/admin/orders/${asked.ref}/confirm`, { postage: '0' });
+  const heldWhenAsked = await one(`SELECT reserved AS r FROM books WHERE id=${cx.id}`);
+  await cancelForm(asked.ref, asked.token, 'Found it cheaper');
+  const afterAsk = await one(
+    `SELECT status, cancel_requested_at AS at, customer_cancel_note AS note
+       FROM orders WHERE ref='${asked.ref}'`,
+  );
+  const heldAfterAsk = await one(`SELECT reserved AS r FROM books WHERE id=${cx.id}`);
+  t.ok(afterAsk.status === 'awaiting_payment', 'after payment details, cancelling only asks');
+  t.ok(Boolean(afterAsk.at) && afterAsk.note === 'Found it cheaper', 'and the ask is recorded');
+  t.ok(heldWhenAsked.r === heldAfterAsk.r, 'the copies stay held while the owner decides');
+
+  const askedPage = visibleText(await html(`/order?ref=${asked.ref}&t=${asked.token}`));
+  t.ok(askedPage.includes('still live until we reply'),
+    'the customer is told their order is still live');
+
+  // The owner says no, and the customer has to hear about it.
+  await admin(`/api/admin/orders/${asked.ref}/cancel-request`);
+  const declined = await one(`SELECT status, cancel_requested_at AS at FROM orders WHERE ref='${asked.ref}'`);
+  t.ok(declined.status === 'awaiting_payment' && declined.at === null,
+    'declining leaves the order untouched and clears the request');
+
+  // A wrong token must not be able to cancel anything.
+  const forged = await placeOrder(cx.id, 'collection');
+  await cancelForm(forged.ref, 'deadbeefdeadbeefdeadbeefdeadbeef', 'nope');
+  const untouched = await one(`SELECT status FROM orders WHERE ref='${forged.ref}'`);
+  t.ok(untouched.status === 'requested', 'a wrong token cancels nothing');
+
   const editorSource = readFileSync('src/pages/admin/books/[id].astro', 'utf8');
   const opensAt = editorSource.indexOf('<form id="bookForm"');
   // From after the opening tag, so the form's own tag is not counted as nested.

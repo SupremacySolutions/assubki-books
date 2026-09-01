@@ -429,6 +429,55 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
         )
       }
 
+      {/*
+        * A customer has asked to cancel.
+        *
+        * Above "Next steps", because it changes what the next step should be.
+        * Saying yes is the ordinary cancel action below - it already releases
+        * the copies and messages them - so only saying no needs its own form.
+        */}
+      {order.cancel_requested_at && !['cancelled', 'expired'].includes(order.status) && (
+        <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] border-l-[3px] border-l-[var(--color-brass)] p-5">
+          <div class="flex items-start gap-3">
+            <span
+              class="shrink-0 grid place-items-center w-[22px] h-[22px] rounded-full bg-[var(--color-brass)]/15 text-[var(--color-brass)] text-[13px] font-semibold"
+              aria-hidden="true"
+            >?</span>
+            <div class="min-w-0">
+              <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+                {order.customer_name} asked to cancel
+              </h2>
+              <p class="mt-1 text-[14px] text-[var(--color-ink-faint)]">
+                {new Date(order.cancel_requested_at * 1000).toLocaleString('en-GB', {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })}
+                {' · their order is still live until you answer'}
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-4 pt-4 border-t border-[var(--color-rule-faint)]">
+            <p class="eyebrow mb-1.5">Their reason</p>
+            <p class="text-[14.5px] leading-relaxed whitespace-pre-line">
+              {order.customer_cancel_note ?? (
+                <span class="text-[var(--color-ink-faint)]">They did not give one.</span>
+              )}
+            </p>
+          </div>
+
+          <div class="mt-5 flex flex-wrap items-center gap-3">
+            <p class="text-[14px] text-[var(--color-ink-soft)] flex-1 min-w-[16rem]">
+              To agree, cancel it in <strong class="text-[var(--color-ink)]">Next steps</strong> below -
+              that is what puts the books back and tells them.
+            </p>
+            <form method="post" action={`/api/admin/orders/${order.ref}/cancel-request`} class="shrink-0">
+              <button type="submit" class="btn btn-ghost !py-2 !text-[14px]">Keep the order</button>
+            </form>
+          </div>
+        </section>
+      )}
+
       {
         steps.length > 0 && (
           <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">

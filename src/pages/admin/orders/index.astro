@@ -44,6 +44,10 @@ const queue = orders.filter((o) => OPEN.includes(o.status));
 const settled = orders.filter((o) => !OPEN.includes(o.status));
 
 /** Waiting on the owner is the urgent one; the rest are waiting on someone else. */
+/** A customer waiting on an answer outranks whatever the status would say. */
+const spineFor = (o: (typeof orders)[number]) =>
+  o.cancel_requested_at ? 'bg-[var(--color-brass)]' : SPINE[o.status];
+
 const SPINE: Record<string, string> = {
   requested: 'bg-[var(--color-outstock)]',
   awaiting_payment: 'bg-[var(--color-brass)]',
@@ -67,6 +71,8 @@ function facts(o: (typeof orders)[number]): string[] {
   if (o.cash_payment) bits.push('cash in person');
   else if (o.payment_preference === 'transfer') bits.push('bank transfer preferred');
   if (o.notes?.trim()) bits.push('note attached');
+  // The one fact that changes what the owner should do next.
+  if (o.cancel_requested_at) bits.push('asked to cancel');
   return bits;
 }
 
@@ -144,7 +150,7 @@ function facts(o: (typeof orders)[number]): string[] {
                     did nothing - and the settled list below was already a
                     single anchor, so the page taught two different rules. */}
                 <a href={`/admin/orders/${o.ref}`} class="flex hover:bg-[var(--color-paper)]">
-                  <span class:list={['w-1.5 shrink-0', SPINE[o.status]]} aria-hidden="true" />
+                  <span class:list={['w-1.5 shrink-0', spineFor(o)]} aria-hidden="true" />
                   <div class="flex-1 min-w-0 flex flex-wrap items-center gap-x-5 gap-y-2 p-4">
                     <div class="min-w-0 flex-1 basis-[15rem]">
                       <p class="text-[15.5px] font-medium truncate">

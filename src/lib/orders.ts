@@ -7,6 +7,7 @@
  */
 
 import { env } from 'cloudflare:workers';
+import { releaseHold } from './stock-release';
 import type { AddressParts } from './address';
 
 export const HOLD_HOURS = 48;
@@ -87,16 +88,7 @@ export async function expireStaleHolds(): Promise<number> {
   const statements = [];
   for (const { id } of stale) {
     statements.push(
-      env.DB.prepare(
-        `UPDATE books SET reserved = MAX(0, reserved - COALESCE(
-           (SELECT SUM(qty) FROM order_items WHERE order_id = ?1 AND book_id = books.id), 0))
-          WHERE id IN (SELECT book_id FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL)`,
-      ).bind(id),
-      env.DB.prepare(
-        `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
-         SELECT book_id, -SUM(qty), 'reserved', 'hold expired', ?1
-           FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL GROUP BY book_id`,
-      ).bind(id),
+      ...releaseHold(id, 'hold expired'),
       env.DB.prepare(
         `UPDATE orders SET status = 'expired', updated_at = unixepoch() WHERE id = ?`,
       ).bind(id),
@@ -292,16 +284,23 @@ export interface OrderView {
   cash_payment: number;
   /** What the owner said when cancelling, if anything. */
   cancel_note: string | null;
+  /** What the customer said, if anything. A different fact from the above. */
+  customer_cancel_note: string | null;
+  /** Set while a customer is waiting on the shop to answer a cancellation. */
+  cancel_requested_at: number | null;
+  /** The order's own id, for routes that act on it. */
+  id: number;
   items: { title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null }[];
 }
 
 /** Token-checked so a guessed reference cannot expose someone else's order. */
 export async function getOrder(ref: string, token: string): Promise<OrderView | null> {
   const order = await env.DB.prepare(
-    `SELECT ref, status, customer_name, email, fulfilment, address, notes,
+    `SELECT id, ref, status, customer_name, email, fulfilment, address, notes,
             subtotal_pence, postage_pence, total_pence, created_at, expires_at,
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
             postage_provider, postage_service, telegram, cancel_note,
+            customer_cancel_note, cancel_requested_at,
             access_token, telegram_chat_id, COALESCE(cash_payment, 0) as cash_payment
        FROM orders WHERE ref = ?`,
   )

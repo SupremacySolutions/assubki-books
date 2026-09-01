@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet"><style>
+body{margin:0;background:#e9e7e1;font-family:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;color:#101828}
+a{color:#184485;text-decoration:none}a:hover{color:#1d5099}
+.ar{font-family:"Noto Naskh Arabic","Geeza Pro","Times New Roman",serif;direction:rtl;unicode-bidi:isolate;line-height:1.9;font-size:1.14em;display:inline-block;max-width:100%}
+.dv-turn{padding:44px 48px 40px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#0e2a55;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 "IBM Plex Sans";color:#101828}
+.dv-opts{display:flex;flex-wrap:wrap;gap:34px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(14,42,85,.1);color:#0e2a55;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.3 "IBM Plex Sans";color:rgba(16,24,40,.55)}
+.dv-card{max-width:100%;background:#fbfaf7;border:1px solid rgba(0,0,0,.09);border-radius:10px;box-shadow:0 2px 10px rgba(16,24,40,.07);overflow:hidden}
+.dv-opt:target .dv-oid{background:#184485;color:#fff}
+.dv-next{margin:26px 0 0;font:12.5px/1.6 "IBM Plex Sans";color:rgba(16,24,40,.5)}
+.dv-sub{margin:0 0 14px;font:600 10.5px "IBM Plex Sans";letter-spacing:.16em;text-transform:uppercase;color:rgba(16,24,40,.42)}
+@keyframes rose-turn{to{transform:rotate(360deg)}}
+@keyframes drift{from{transform:translateX(0)}to{transform:translateX(calc(-50% - 14px))}}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important}}
+</style></helmet>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="rose" viewBox="0 0 200 200"><path d="M100 76L104.21 89.84L116.97 83.03L110.16 95.79L124 100L110.16 104.21L116.97 116.97L104.21 110.16L100 124L95.79 110.16L83.03 116.97L89.84 104.21L76 100L89.84 95.79L83.03 83.03L95.79 89.84ZM100 73Q87.59 59.88 100 43Q112.41 59.88 100 73ZM119.09 80.91Q119.6 62.85 140.31 59.69Q137.15 80.4 119.09 80.91ZM127 100Q140.12 87.59 157 100Q140.12 112.41 127 100ZM119.09 119.09Q137.15 119.6 140.31 140.31Q119.6 137.15 119.09 119.09ZM100 127Q112.41 140.12 100 157Q87.59 140.12 100 127ZM80.91 119.09Q80.4 137.15 59.69 140.31Q62.85 119.6 80.91 119.09ZM73 100Q59.88 112.41 43 100Q59.88 87.59 73 100ZM80.91 80.91Q62.85 80.4 59.69 59.69Q80.4 62.85 80.91 80.91ZM113.78 66.74Q109.45 45.82 128.32 31.63Q131.63 55 113.78 66.74ZM133.26 86.22Q145 68.37 168.37 71.68Q154.18 90.55 133.26 86.22ZM133.26 113.78Q154.18 109.45 168.37 128.32Q145 131.63 133.26 113.78ZM113.78 133.26Q131.63 145 128.32 168.37Q109.45 154.18 113.78 133.26ZM86.22 133.26Q90.55 154.18 71.68 168.37Q68.37 145 86.22 133.26ZM66.74 113.78Q55 131.63 31.63 128.32Q45.82 109.45 66.74 113.78ZM66.74 86.22Q45.82 90.55 31.63 71.68Q55 68.37 66.74 86.22ZM86.22 66.74Q68.37 55 71.68 31.63Q90.55 45.82 86.22 66.74Z"></path></symbol></svg>
+
+<!-- ============================ TURN 4 : LANDING ============================ -->
+<section class="dv-turn" id="t4">
+<div class="dv-thd"><a class="dv-tid" href="#t4">4</a><span class="dv-tname">Two new landing pages</span></div>
+<p style="margin:-6px 0 22px;max-width:76ch;font-size:14px;line-height:1.65;color:rgba(16,24,40,.6)">Both use the built system and nothing the shop cannot do — no live stock count in the header, no filters beyond in-stock. Covers are placeholders.</p>
+<div class="dv-opts">
+
+<!-- 4a -->
+<div class="dv-opt" id="4a">
+<div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>Text on the side — a fixed column of words, a moving wall of books</div>
+<div class="dv-card" style="width:1280px">
+  <div style="display:grid;grid-template-columns:496px 1fr;min-height:760px">
+    <div style="background:#0e2a55;color:#fff;padding:34px 44px 44px;display:flex;flex-direction:column;position:relative;overflow:hidden">
+      <div style="position:absolute;left:-150px;bottom:-130px;color:rgba(255,255,255,.045);animation:rose-turn 200s linear infinite"><svg width="420" height="420"><use href="#rose" fill="currentColor"></use></svg></div>
+      <div style="position:relative;display:flex;align-items:center;gap:11px"><span style="color:#c3ccde;display:block"><svg width="28" height="28"><use href="#rose" fill="currentColor"></use></svg></span><span style="font:600 18px/1 Spectral,Georgia,serif;letter-spacing:-.02em">As-Subkī Books</span></div>
+      <div style="position:relative;margin-top:auto;padding-top:56px">
+        <p style="margin:0;font:600 11px 'IBM Plex Sans';letter-spacing:.2em;text-transform:uppercase;color:rgba(195,204,222,.6)"><span class="ar" style="letter-spacing:0">مكتبة السبكي</span> · Leicester</p>
+        <h1 style="margin:16px 0 0;font:600 52px/1.05 Spectral,Georgia,serif;letter-spacing:-.025em;animation:rise .8s ease-out both">The books on your syllabus, in stock and priced plainly.</h1>
+        <p style="margin:18px 0 0;font-size:16px;line-height:1.7;color:rgba(195,204,222,.85);max-width:38ch">Hadith, fiqh and tafsir, the Dars Nizami and Maktab syllabus. Request what you need and we reply directly.</p>
+        <form style="margin-top:26px;display:flex;align-items:center;gap:10px;background:#fff;border-radius:999px;padding:8px 8px 8px 20px;box-shadow:0 18px 40px -18px rgba(0,0,0,.6)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6f7787" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input placeholder="Title in English or Arabic" style="flex:1;min-width:0;border:0;outline:0;font:400 16px 'IBM Plex Sans';background:transparent;color:#101828">
+          <button style="flex:none;font:500 14.5px 'IBM Plex Sans';padding:10px 20px;border-radius:999px;border:0;background:#184485;color:#fff;cursor:pointer">Search</button>
+        </form>
+        <nav style="margin-top:30px;display:grid;grid-template-columns:1fr 1fr;gap:2px 24px">
+          <sc-for list="{{ shelves }}" as="c" hint-placeholder-count="8">
+            <a href="#" style="display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid rgba(195,204,222,.18);color:#c3ccde"><span style="flex:none;width:34px;font:600 10px 'IBM Plex Sans';letter-spacing:.12em;color:rgba(195,204,222,.6)">{{ c.mark }}</span><span style="flex:1;font-size:14.5px">{{ c.name }}</span><span style="font-size:12px;color:rgba(195,204,222,.5);font-variant-numeric:tabular-nums">{{ c.count }}</span></a>
+          </sc-for>
+        </nav>
+        <p style="margin:24px 0 0;font-size:13.5px;line-height:1.6;color:rgba(195,204,222,.6)">You send a request, we hold the books 48 hours and reply with the total. No card details are taken on this site.</p>
+      </div>
+    </div>
+
+    <div style="background:#fbfaf7;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:26px;padding:20px 40px;border-bottom:1px solid #e6e2d9">
+        <nav style="display:flex;gap:24px;font-size:14.5px;color:#4a5568"><a href="#" style="color:#4a5568">Catalogue</a><a href="#" style="color:#4a5568">Syllabus sets</a><a href="#" style="color:#4a5568">About</a><a href="#" style="color:#4a5568">Track an order</a></nav>
+        <a href="#" style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;font:500 14.5px 'IBM Plex Sans';padding:9px 16px;border-radius:999px;background:#0e2a55;color:#fff"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.25"></circle><circle cx="18" cy="20" r="1.25"></circle><path d="M3 4h2l2.1 10.2a2 2 0 0 0 2 1.6h8.7a2 2 0 0 0 1.9-1.4L21 8H6"></path></svg>Basket <span style="opacity:.7">2</span></a>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:34px 40px 0">
+        <p style="margin:0 0 18px;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Recently added</p>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);column-gap:26px;row-gap:36px">
+          <sc-for list="{{ grid8 }}" as="b" hint-placeholder-count="8">
+            <article style="animation:bob {{ b.dur }} ease-in-out {{ b.delay }} infinite">
+              <a href="#" style="display:block;color:inherit"><span style="display:grid;place-items:center;width:100%;aspect-ratio:3/4;border-radius:2px 4px 4px 2px;background:repeating-linear-gradient(135deg,#efece5,#efece5 7px,#f7f5f0 7px,#f7f5f0 14px);box-shadow:0 16px 24px -14px rgba(16,24,40,.55),inset 3px 0 0 rgba(14,42,85,.1);color:#6f7787;font:500 9.5px/1.4 ui-monospace,Menlo,monospace;text-align:center;padding:12px;box-sizing:border-box">{{ b.short }}</span></a>
+              <h3 style="margin:12px 0 0;font:500 16px/1.3 Spectral,Georgia,serif">{{ b.title }}</h3>
+              <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font:600 15.5px 'IBM Plex Sans';color:#8a6714;font-variant-numeric:tabular-nums">{{ b.price }}</span><button style="font:500 12.5px 'IBM Plex Sans';padding:6px 12px;border-radius:999px;border:1px solid #d7d2c8;background:#fff;color:#184485;cursor:pointer">Add</button></div>
+            </article>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- 4b -->
+<div class="dv-opt" id="4b">
+<div class="dv-olabel"><a class="dv-oid" href="#4b">4b</a>Free reign — the shop as an index: the shelves set in type, one book at a time</div>
+<div class="dv-card" style="width:1280px">
+  <header style="background:#fbfaf7;border-bottom:1px solid #e6e2d9"><div style="max-width:1160px;margin:0 auto;padding:16px 40px;display:flex;align-items:center;gap:28px">
+    <a href="#" style="display:flex;align-items:center;gap:11px;flex:none"><span style="color:#184485;display:block;animation:rose-turn 90s linear infinite"><svg width="26" height="26"><use href="#rose" fill="currentColor"></use></svg></span><span style="font:600 17px/1 Spectral,Georgia,serif;color:#0e2a55;letter-spacing:-.02em">As-Subkī Books</span></a>
+    <nav style="display:flex;gap:24px;font-size:14.5px;color:#4a5568"><a href="#" style="color:#4a5568">Catalogue</a><a href="#" style="color:#4a5568">Syllabus sets</a><a href="#" style="color:#4a5568">About</a><a href="#" style="color:#4a5568">Track an order</a></nav>
+    <a href="#" style="margin-left:auto;font:500 14.5px 'IBM Plex Sans';padding:9px 16px;border-radius:999px;background:#0e2a55;color:#fff">Basket 2</a>
+  </div></header>
+
+  <section style="max-width:1160px;margin:0 auto;padding:60px 40px 0">
+    <div style="display:grid;grid-template-columns:1fr auto;gap:40px;align-items:end;border-bottom:2px solid #0e2a55;padding-bottom:26px">
+      <h1 style="margin:0;font:400 68px/1 Spectral,Georgia,serif;letter-spacing:-.03em;color:#0e2a55;animation:rise .8s ease-out both">An index of<br><em style="font-style:italic">two hundred</em> and twenty-six<br>books.</h1>
+      <div style="text-align:right;padding-bottom:6px"><p class="ar" style="margin:0;font-size:20px;color:#6f7787">مكتبة السبكي</p><p style="margin:6px 0 0;font:600 11px 'IBM Plex Sans';letter-spacing:.2em;text-transform:uppercase;color:#6f7787">Leicester · est. 1444</p></div>
+    </div>
+  </section>
+
+  <section style="max-width:1160px;margin:0 auto;padding:0 40px">
+    <div style="display:grid;grid-template-columns:1fr 360px;gap:56px;align-items:start">
+      <ol style="margin:0;padding:0;list-style:none">
+        <sc-for list="{{ indexRows }}" as="r" hint-placeholder-count="8">
+          <li><a href="#" style="display:flex;align-items:baseline;gap:20px;padding:17px 0;border-bottom:1px solid #e6e2d9;color:#101828">
+            <span style="flex:none;width:26px;font:400 12px ui-monospace,Menlo,monospace;color:#6f7787">{{ r.n }}</span>
+            <span style="flex:none;font:600 10px 'IBM Plex Sans';letter-spacing:.14em;color:#184485;width:36px">{{ r.mark }}</span>
+            <span style="flex:1;font:400 26px/1.15 Spectral,Georgia,serif;letter-spacing:-.015em">{{ r.name }}</span>
+            <span class="ar" style="font-size:16px;color:#6f7787">{{ r.ar }}</span>
+            <span style="flex:none;width:44px;text-align:right;font:400 13px 'IBM Plex Sans';color:#6f7787;font-variant-numeric:tabular-nums">{{ r.count }}</span>
+          </a></li>
+        </sc-for>
+      </ol>
+
+      <aside style="position:sticky;top:24px;padding-top:30px">
+        <div style="background:#0e2a55;border-radius:12px;padding:28px;color:#fff">
+          <p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:rgba(195,204,222,.6)">Book of the week</p>
+          <div style="margin:18px auto 0;width:186px"><span style="display:grid;place-items:center;width:100%;aspect-ratio:3/4;border-radius:2px 5px 5px 2px;background:repeating-linear-gradient(135deg,#e8ecf4,#e8ecf4 8px,#f4f6fa 8px,#f4f6fa 16px);box-shadow:0 30px 40px -20px rgba(0,0,0,.85),inset 4px 0 0 rgba(14,42,85,.2);color:#4a5568;font:500 10px/1.4 ui-monospace,Menlo,monospace;text-align:center;padding:12px;box-sizing:border-box">cover photo — Mukhtasar al-Quduri</span></div>
+          <h2 style="margin:22px 0 0;font:600 24px/1.2 Spectral,Georgia,serif">Mukhtasar al-Quduri</h2>
+          <p class="ar" style="margin:6px 0 0;font-size:18px;color:#c3ccde">مختصر القدوري</p>
+          <p style="margin:12px 0 0;font-size:14px;line-height:1.65;color:rgba(195,204,222,.8)">The Hanafi primer every Dars Nizami student works through. Vowelled Arabic, sewn binding.</p>
+          <div style="margin-top:20px;display:flex;align-items:center;gap:14px"><span style="font:600 26px 'IBM Plex Sans';color:#f0d68a;font-variant-numeric:tabular-nums">£20.00</span><span style="font:500 12.5px 'IBM Plex Sans';color:#a9e0bf">Only 2 left</span></div>
+          <button style="margin-top:18px;width:100%;font:500 15px 'IBM Plex Sans';padding:13px;border-radius:999px;border:0;background:#fff;color:#0e2a55;cursor:pointer">Add to basket</button>
+        </div>
+        <form style="margin-top:16px;display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #d7d2c8;border-radius:999px;padding:8px 8px 8px 18px">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6f7787" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
+          <input placeholder="Search the index" style="flex:1;min-width:0;border:0;outline:0;font:400 15px 'IBM Plex Sans';background:transparent">
+          <button style="flex:none;font:500 13.5px 'IBM Plex Sans';padding:8px 16px;border-radius:999px;border:0;background:#184485;color:#fff;cursor:pointer">Go</button>
+        </form>
+        <p style="margin:14px 0 0;font-size:13px;line-height:1.6;color:#6f7787">You send a request, we hold the books 48 hours and reply with the total. No card details are taken here.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section style="margin-top:56px;overflow:hidden;-webkit-mask-image:linear-gradient(to right,transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(to right,transparent,#000 10%,#000 90%,transparent)">
+    <div style="display:flex;gap:28px;width:max-content;padding:0 40px 44px;animation:drift 52s linear infinite">
+      <sc-for list="{{ marquee }}" as="b" hint-placeholder-count="14">
+        <span style="display:grid;place-items:center;width:112px;height:158px;flex:none;border-radius:2px 4px 4px 2px;background:repeating-linear-gradient(135deg,#efece5,#efece5 6px,#f7f5f0 6px,#f7f5f0 12px);box-shadow:0 18px 26px -14px rgba(16,24,40,.5),inset 3px 0 0 rgba(14,42,85,.1);color:#6f7787;font:500 9px 'IBM Plex Sans';letter-spacing:.14em">{{ b.label }}</span>
+      </sc-for>
+    </div>
+  </section>
+</div>
+</div>
+
+</div>
+</section>
+
+<!-- ============================ TURN 3 : BRIEF ============================ -->
+<section class="dv-turn" id="t3">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname">Cancellation, reservations, the listing editor and sold in parts</span></div>
+<p style="margin:-6px 0 22px;max-width:80ch;font-size:14px;line-height:1.65;color:rgba(16,24,40,.6)">Drawn to the rules in the brief and nothing beyond them. Every cancellation control is a plain form post that works with JavaScript off; expected stock is a vague month, never a date; the listing editor is one form that saves once.</p>
+<div class="dv-opts">
+
+<!-- 3a CANCEL -->
+<div class="dv-opt" id="3a">
+<div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Cancelling — six states on <span style="font-family:ui-monospace,Menlo,monospace">/order</span></div>
+<div style="display:flex;flex-direction:column;gap:18px">
+
+  <div class="dv-card" style="width:860px;padding:32px 36px 30px">
+    <p class="dv-sub">1 · Can cancel outright — <span style="text-transform:none;letter-spacing:0;font-weight:400">status <code style="font-family:ui-monospace,Menlo,monospace">requested</code>, nothing arranged yet</span></p>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding-bottom:22px;border-bottom:1px solid #e6e2d9">
+      <div><p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Order <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:0">ASB-7F42K</span></p><h1 style="margin:9px 0 0;font:600 30px Spectral,Georgia,serif">Waiting for us to reply</h1><p style="margin:8px 0 0;font-size:15px;color:#4a5568;line-height:1.6">We have your request and will come back with the total and how to pay.</p></div>
+      <a href="#" style="flex:none;display:inline-flex;align-items:center;gap:9px;font:500 14.5px 'IBM Plex Sans';padding:11px 20px;border-radius:999px;background:#184485;color:#fff"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M21.7 3.4 18.4 20c-.25 1.17-.92 1.46-1.87.91l-5.14-3.79-2.48 2.39c-.27.27-.5.5-1.03.5l.37-5.23 9.52-8.6c.41-.37-.09-.58-.64-.21L5.36 13.5.28 11.91c-1.1-.34-1.12-1.1.23-1.63L20.4 2.54c.93-.34 1.74.21 1.3.86Z"></path></svg>Message the shop</a>
+    </div>
+    <p style="margin:20px 0 0;font-size:13px;color:#6f7787;font-style:italic">↓ the books, totals and address sit here, then at the very foot of the page:</p>
+    <div style="margin-top:18px;padding-top:20px;border-top:1px solid #e6e2d9;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+      <p style="margin:0;font-size:14px;color:#6f7787;flex:1;min-width:280px;line-height:1.6">Changed your mind? Nothing has been arranged yet, so you can cancel this straight away and the copies go back on the shelf.</p>
+      <button style="flex:none;font:500 14px 'IBM Plex Sans';padding:10px 18px;border-radius:999px;border:1px solid #ddd9d1;background:transparent;color:#6f7787;cursor:pointer">Cancel this order</button>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:860px;padding:32px 36px 30px">
+    <p class="dv-sub">2 · Can only ask — <span style="text-transform:none;letter-spacing:0;font-weight:400">status <code style="font-family:ui-monospace,Menlo,monospace">awaiting_payment</code>, <code style="font-family:ui-monospace,Menlo,monospace">paid</code> or <code style="font-family:ui-monospace,Menlo,monospace">dispatched</code></span></p>
+    <div style="padding:20px 22px;background:#fff;border:1px solid #e6e2d9;border-radius:12px">
+      <h2 style="margin:0;font:600 17px Spectral,Georgia,serif">Need to cancel?</h2>
+      <p style="margin:8px 0 0;font-size:14px;line-height:1.65;color:#4a5568;max-width:62ch">We have already quoted you and set these books aside, so cancelling now is something we do together. Ask, and we will confirm — your order stays live until we do.</p>
+      <button style="margin-top:16px;font:500 14px 'IBM Plex Sans';padding:10px 18px;border-radius:999px;border:1px solid #ddd9d1;background:#fbfaf7;color:#4a5568;cursor:pointer">Ask us to cancel</button>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:860px;padding:32px 36px 30px">
+    <p class="dv-sub">3 + 4 · Confirmation, expanded in place — <span style="text-transform:none;letter-spacing:0;font-weight:400">no modal, works without JavaScript</span></p>
+    <form style="background:#fff;border:1px solid #e6e2d9;border-left:3px solid #9a3412;border-radius:12px;padding:24px 26px">
+      <h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Cancel order ASB-7F42K?</h2>
+      <p style="margin:10px 0 0;font-size:14.5px;line-height:1.65;color:#4a5568;max-width:62ch">This cannot be undone. The three books go back on the shelf for someone else, and you would need to request them again.</p>
+      <label style="display:block;margin-top:20px;font:500 13.5px 'IBM Plex Sans';color:#4a5568">Why are you cancelling? <span style="color:#6f7787;font-weight:400">— optional, and we will not chase you for an answer</span></label>
+      <textarea rows="3" placeholder="Only if you want to tell us." style="margin-top:7px;width:100%;box-sizing:border-box;font:400 15px/1.6 'IBM Plex Sans';padding:12px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"></textarea>
+      <p style="margin:6px 0 0;font-size:12.5px;color:#6f7787;font-variant-numeric:tabular-nums">0 of 600</p>
+      <div style="margin-top:18px;display:flex;align-items:center;gap:12px">
+        <button style="font:500 15px 'IBM Plex Sans';padding:12px 24px;border-radius:999px;border:0;background:#9a3412;color:#fff;cursor:pointer">Yes, cancel it</button>
+        <button style="font:500 15px 'IBM Plex Sans';padding:12px 22px;border-radius:999px;border:1px solid #ddd9d1;background:transparent;color:#4a5568;cursor:pointer">Keep my order</button>
+      </div>
+    </form>
+    <p style="margin:16px 0 0;font-size:13px;color:#6f7787;line-height:1.6">On the request version the heading reads <em>Ask us to cancel ASB-7F42K?</em>, the button reads <em>Send the request</em>, and the warning is replaced by “we will reply to confirm — nothing changes until we do”.</p>
+  </div>
+
+  <div class="dv-card" style="width:860px;padding:32px 36px 30px">
+    <p class="dv-sub">5 · Asked, waiting on the shop — <span style="text-transform:none;letter-spacing:0;font-weight:400">survives a reload; the order is still live</span></p>
+    <div style="padding:22px 24px;background:#fff;border:1px solid #e6e2d9;border-left:3px solid #8a6714;border-radius:12px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="display:grid;place-items:center;width:22px;height:22px;border-radius:999px;background:rgba(138,103,20,.14);color:#8a6714;font:600 13px 'IBM Plex Sans'">?</span><h2 style="margin:0;font:600 18px Spectral,Georgia,serif">You have asked us to cancel this</h2></div>
+      <p style="margin:10px 0 0;font-size:14.5px;line-height:1.65;color:#4a5568;max-width:64ch">Asked on 30 August at 14:12. <strong style="color:#101828">Your order is still live until we reply</strong> — the shop will get back to you.</p>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid #f0eee9"><p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Your reason</p><p style="margin:7px 0 0;font-size:14.5px;line-height:1.65;color:#4a5568">Ordered the wrong edition — I need the vowelled one.</p></div>
+      <a href="#" style="margin-top:16px;display:inline-flex;align-items:center;gap:9px;font:500 14px 'IBM Plex Sans';padding:10px 18px;border-radius:999px;background:#184485;color:#fff"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M21.7 3.4 18.4 20c-.25 1.17-.92 1.46-1.87.91l-5.14-3.79-2.48 2.39c-.27.27-.5.5-1.03.5l.37-5.23 9.52-8.6c.41-.37-.09-.58-.64-.21L5.36 13.5.28 11.91c-1.1-.34-1.12-1.1.23-1.63L20.4 2.54c.93-.34 1.74.21 1.3.86Z"></path></svg>Message the shop</a>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:860px;padding:32px 36px 30px">
+    <p class="dv-sub">6 · Cancelled — <span style="text-transform:none;letter-spacing:0;font-weight:400">two voices, kept apart</span></p>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:24px">
+      <div><p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Order <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:0">ASB-7F42K</span></p><h1 style="margin:9px 0 0;font:600 30px Spectral,Georgia,serif;color:#6f7787">Cancelled</h1><p style="margin:8px 0 0;font-size:15px;color:#4a5568">Cancelled on 30 August at 16:40. The books are back on the shelf.</p></div>
+    </div>
+    <div style="margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:18px 20px"><p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">What you told us</p><p style="margin:9px 0 0;font-size:14.5px;line-height:1.65;color:#4a5568">Ordered the wrong edition — I need the vowelled one.</p></div>
+      <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:18px 20px"><p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Note from the shop</p><p style="margin:9px 0 0;font-size:14.5px;line-height:1.65;color:#4a5568">No problem. The vowelled Quduri is due in the next delivery — we will hold one back for you.</p></div>
+    </div>
+    <p style="margin:16px 0 0;font-size:13px;color:#6f7787;line-height:1.6">Either box is dropped when its column is empty. They are never merged into one paragraph.</p>
+  </div>
+
+</div>
+</div>
+
+<!-- 3b RESERVATIONS — CUSTOMER -->
+<div class="dv-opt" id="3b">
+<div class="dv-olabel"><a class="dv-oid" href="#3b">3b</a>Reserving — the five states of the buy card</div>
+<div style="display:flex;flex-direction:column;gap:16px">
+  <sc-for list="{{ buyStates }}" as="s" hint-placeholder-count="5">
+    <div class="dv-card" style="width:560px;padding:26px 28px">
+      <p class="dv-sub">{{ s.label }}</p>
+      <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:22px;box-shadow:0 2px 8px rgba(16,24,40,.05)">
+        <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap"><span style="font:600 32px 'IBM Plex Sans';color:#8a6714;font-variant-numeric:tabular-nums">£20.00</span><span style="font:500 13px 'IBM Plex Sans';color:{{ s.tone }};background:{{ s.tint }};padding:4px 11px;border-radius:999px">{{ s.badge }}</span></div>
+        <sc-if value="{{ s.hasIncoming }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:16px;padding:14px 16px;background:#fbfaf7;border:1px solid #e6e2d9;border-radius:10px">
+            <p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Delivery on its way</p>
+            <p style="margin:8px 0 0;font-size:14.5px;line-height:1.6;color:#4a5568">{{ s.incoming }}</p>
+            <p style="margin:6px 0 0;font-size:13px;color:#6f7787">{{ s.free }}</p>
+          </div>
+        </sc-if>
+        <sc-if value="{{ s.hasStepper }}" hint-placeholder-val="{{ true }}">
+          <div style="margin-top:18px;display:flex;align-items:center;gap:10px">
+            <div style="display:flex;align-items:center;border:1px solid #ddd9d1;border-radius:999px;overflow:hidden;flex:none"><button style="width:38px;height:44px;border:0;background:#fbfaf7;color:#4a5568;font-size:18px;cursor:pointer">−</button><span style="width:34px;text-align:center;font:500 16px 'IBM Plex Sans';font-variant-numeric:tabular-nums">1</span><button style="width:38px;height:44px;border:0;background:#fbfaf7;color:#4a5568;font-size:18px;cursor:pointer">+</button></div>
+            <button style="flex:1;font:500 16px 'IBM Plex Sans';padding:13px 24px;border-radius:999px;border:0;background:{{ s.btnBg }};color:#fff;cursor:pointer">{{ s.btn }}</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ s.hasNote }}" hint-placeholder-val="{{ false }}">
+          <p style="margin:16px 0 0;font-size:14.5px;line-height:1.65;color:{{ s.noteTone }}">{{ s.note }}</p>
+        </sc-if>
+        <p style="margin:14px 0 0;font-size:13px;line-height:1.6;color:#6f7787">{{ s.foot }}</p>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</div>
+
+<!-- 3c RESERVATIONS — BASKET / CHECKOUT / ORDER -->
+<div class="dv-opt" id="3c">
+<div class="dv-olabel"><a class="dv-oid" href="#3c">3c</a>A mixed basket — one order, one parcel, sent when everything has arrived</div>
+<div style="display:flex;flex-direction:column;gap:18px">
+
+  <div class="dv-card" style="width:880px;padding:30px 34px">
+    <p class="dv-sub">Basket</p>
+    <div style="background:#fff;border:1px solid #e6e2d9;border-left:3px solid #8a6714;border-radius:12px;padding:18px 22px;display:flex;gap:14px;align-items:flex-start;margin-bottom:16px">
+      <span style="flex:none;margin-top:1px;color:#8a6714"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16.4v.1"></path></svg></span>
+      <p style="margin:0;font-size:15.5px;line-height:1.6;color:#101828">One book in your basket has not arrived yet, so <strong style="color:#8a6714">the whole order goes out in one parcel once everything is here</strong> — expected mid-October.</p>
+    </div>
+    <ul style="margin:0;padding:0;list-style:none;background:#fff;border:1px solid #e6e2d9;border-radius:12px;overflow:hidden">
+      <sc-for list="{{ mixedBasket }}" as="b" hint-placeholder-count="3">
+        <li style="display:flex;gap:16px;padding:16px 20px;align-items:center;border-top:1px solid #f4f2ed">
+          <span style="flex:none;width:52px;height:70px;border-radius:2px;background:repeating-linear-gradient(135deg,#efece5,#efece5 5px,#f7f5f0 5px,#f7f5f0 10px);box-shadow:0 8px 14px -8px rgba(16,24,40,.6);opacity:{{ b.dim }}"></span>
+          <div style="flex:1;min-width:0"><p style="margin:0;font:500 16.5px Spectral,Georgia,serif">{{ b.title }}</p><p class="ar" style="margin:0;font-size:13.5px;color:#4a5568">{{ b.ar }}</p><p style="margin:5px 0 0;font:500 12.5px 'IBM Plex Sans';color:{{ b.tone }}">{{ b.state }}</p></div>
+          <span style="flex:none;display:inline-flex;align-items:center;border:1px solid #ddd9d1;border-radius:999px;overflow:hidden"><button style="width:30px;height:34px;border:0;background:#fbfaf7;color:#4a5568;cursor:pointer">−</button><span style="width:26px;text-align:center;font:500 14.5px 'IBM Plex Sans'">{{ b.qty }}</span><button style="width:30px;height:34px;border:0;background:#fbfaf7;color:#4a5568;cursor:pointer">+</button></span>
+          <span style="flex:none;width:66px;text-align:right;font:600 15.5px 'IBM Plex Sans';color:#8a6714;font-variant-numeric:tabular-nums">{{ b.price }}</span>
+        </li>
+      </sc-for>
+    </ul>
+    <div style="margin-top:18px;display:flex;align-items:center;gap:20px;flex-wrap:wrap"><a href="#" style="font-size:14.5px">← Keep browsing</a><div style="margin-left:auto;display:flex;align-items:center;gap:20px"><p style="margin:0;font-size:15px;color:#4a5568">Subtotal <span style="font:600 23px 'IBM Plex Sans';color:#8a6714;margin-left:8px;font-variant-numeric:tabular-nums">£68.50</span></p><a href="#" style="font:500 15px 'IBM Plex Sans';padding:13px 26px;border-radius:999px;background:#184485;color:#fff">Continue to request →</a></div></div>
+  </div>
+
+  <div class="dv-card" style="width:880px;padding:30px 34px">
+    <p class="dv-sub">Request, stage three — the sentence appears again where it is confirmed</p>
+    <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;overflow:hidden">
+      <sc-for list="{{ mixedBasket }}" as="b" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:14px;padding:13px 20px;border-top:1px solid #f4f2ed"><span style="flex:none;width:34px;height:46px;border-radius:2px;background:repeating-linear-gradient(135deg,#efece5,#efece5 4px,#f7f5f0 4px,#f7f5f0 8px);opacity:{{ b.dim }}"></span><span style="flex:1;min-width:0;font:500 15.5px Spectral,Georgia,serif">{{ b.title }}<span style="font:400 12.5px 'IBM Plex Sans';color:{{ b.tone }};margin-left:10px">{{ b.tag }}</span></span><span style="font-size:13.5px;color:#6f7787">× {{ b.qty }}</span><span style="font:600 15px 'IBM Plex Sans';color:#8a6714;font-variant-numeric:tabular-nums">{{ b.price }}</span></div>
+      </sc-for>
+      <div style="padding:14px 20px;border-top:1px solid #f4f2ed;background:#fbfaf7"><p style="margin:0;font-size:14.5px;line-height:1.6;color:#101828"><strong>Your order goes out in one parcel when everything has arrived</strong> — one postage, sent together, expected mid-October. Tell us in the box below if you would rather have the in-stock books now and pay postage twice.</p></div>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:880px;padding:30px 34px">
+    <p class="dv-sub">Order page — a waiting step that says it is waiting</p>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:24px">
+      <div><p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Order <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:0">ASB-3P88M</span></p><h1 style="margin:9px 0 0;font:600 30px Spectral,Georgia,serif">Waiting on a delivery</h1><p style="margin:8px 0 0;font-size:15px;color:#4a5568;line-height:1.6;max-width:52ch">Paid and set aside. One of your books has not landed yet, so we send the whole order together when it does.</p></div>
+      <div style="flex:none;text-align:right"><p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Expected</p><p style="margin:6px 0 0;font:600 22px 'IBM Plex Sans';color:#0e2a55">Mid-October</p><p style="margin:2px 0 0;font-size:12.5px;color:#6f7787">we will email if it slips</p></div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <sc-for list="{{ waitJourney }}" as="s" hint-placeholder-count="6">
+        <div style="flex:{{ s.flex }}"><span style="display:block;height:4px;border-radius:999px;background:{{ s.bar }}"></span><p style="margin:10px 0 0;font:500 12.5px 'IBM Plex Sans';color:{{ s.color }}">{{ s.title }}</p><p style="margin:2px 0 0;font-size:11.5px;color:#6f7787">{{ s.at }}</p></div>
+      </sc-for>
+    </div>
+    <p style="margin:16px 0 0;font-size:13px;color:#6f7787;line-height:1.6">“Waiting on a delivery” is its own segment in <span style="font-family:ui-monospace,Menlo,monospace">#8a6714</span> between Paid and Posted, not a stalled Posted step.</p>
+  </div>
+
+</div>
+</div>
+
+<!-- 3d RESERVATIONS — OWNER -->
+<div class="dv-opt" id="3d">
+<div class="dv-olabel"><a class="dv-oid" href="#3d">3d</a>Reservations, owner side — recording a delivery, seeing what is claimed, landing it</div>
+<div style="display:flex;flex-direction:column;gap:18px">
+
+  <div class="dv-card" style="width:880px;padding:30px 34px">
+    <p class="dv-sub">On the listing — “Price, stock and visibility”</p>
+    <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:22px 24px">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+        <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Price</label><div style="display:flex;align-items:center;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;padding:0 13px"><span style="font:400 15px 'IBM Plex Sans';color:#6f7787">£</span><input value="20.00" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:400 15px 'IBM Plex Sans';padding:11px 8px;font-variant-numeric:tabular-nums"></div></div>
+        <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">On the shelf</label><input value="0" style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums"></div>
+        <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Visible in the shop</label><select style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"><option>Listed</option><option>Draft</option></select></div>
+      </div>
+      <div style="margin-top:20px;padding-top:18px;border-top:1px solid #f0eee9">
+        <h3 style="margin:0;font:600 15px 'IBM Plex Sans'">A delivery on its way</h3>
+        <p style="margin:6px 0 14px;font-size:13px;color:#6f7787;line-height:1.6">Fill both boxes and customers can reserve a copy before it lands. Leave “how many” at zero and nothing is offered. Be vague about when — a month you will beat is better than a date you might miss.</p>
+        <div style="display:grid;grid-template-columns:160px 1fr;gap:16px;align-items:end">
+          <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">How many coming</label><input value="12" style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums"></div>
+          <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Roughly when</label><div style="display:flex;gap:8px"><select style="flex:1;font:400 15px 'IBM Plex Sans';padding:11px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"><option>Early</option><option selected>Mid</option><option>Late</option><option>Sometime in</option></select><select style="flex:1;font:400 15px 'IBM Plex Sans';padding:11px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"><option>October 2026</option><option>November 2026</option><option>December 2026</option></select></div></div>
+        </div>
+        <div style="margin-top:14px;padding:12px 14px;background:#fbfaf7;border:1px solid #e6e2d9;border-radius:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <p style="margin:0;font-size:13.5px;color:#4a5568;flex:1;min-width:260px">Customers will see: <strong style="color:#101828">12 copies expected mid-October · 4 still free to reserve</strong></p>
+          <span style="font:500 12.5px 'IBM Plex Sans';color:#8a6714;background:rgba(138,103,20,.12);padding:5px 12px;border-radius:999px">8 already reserved</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:880px;padding:30px 34px">
+    <p class="dv-sub">Portal — what is spoken for before the box arrives</p>
+    <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;overflow:hidden">
+      <div style="padding:15px 20px;border-bottom:1px solid #e6e2d9;display:flex;align-items:baseline;gap:12px;background:#faf9f6"><h2 style="margin:0;font:600 18px Spectral,Georgia,serif">Coming in</h2><p style="margin:0;font-size:13px;color:#6f7787">3 deliveries · 21 of 34 copies already claimed</p></div>
+      <sc-for list="{{ incoming }}" as="d" hint-placeholder-count="3">
+        <div style="padding:15px 20px;border-bottom:1px solid #f4f2ed;display:flex;align-items:center;gap:18px">
+          <span style="flex:none;width:36px;height:48px;border-radius:2px;background:repeating-linear-gradient(135deg,#efece5,#efece5 4px,#f7f5f0 4px,#f7f5f0 8px)"></span>
+          <div style="flex:1;min-width:0"><a href="#" style="display:block;font:500 15px 'IBM Plex Sans';color:#101828">{{ d.title }}</a><p style="margin:2px 0 0;font-size:12.5px;color:#6f7787">{{ d.when }}</p></div>
+          <div style="flex:none;width:190px"><div style="display:flex;justify-content:space-between;font-size:12.5px;color:#6f7787;margin-bottom:5px"><span>{{ d.claimed }} claimed</span><span style="font-variant-numeric:tabular-nums">{{ d.of }}</span></div><div style="height:6px;background:#f5f4f0;border-radius:999px;overflow:hidden"><div style="height:100%;background:{{ d.tone }};border-radius:999px;width:{{ d.pct }}"></div></div></div>
+          <a href="#" style="flex:none;font:500 13.5px 'IBM Plex Sans';padding:8px 16px;border-radius:999px;border:1px solid #ddd9d1;background:#fbfaf7;color:#184485">{{ d.action }}</a>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:880px;padding:30px 34px">
+    <p class="dv-sub">The delivery has landed</p>
+    <div style="background:#fff;border:1px solid #e6e2d9;border-left:3px solid #2f6b46;border-radius:12px;padding:24px 26px">
+      <h2 style="margin:0;font:600 20px Spectral,Georgia,serif">Mukhtasar al-Quduri has arrived</h2>
+      <p style="margin:9px 0 0;font-size:14.5px;line-height:1.65;color:#4a5568;max-width:64ch">You said 12 were coming and 8 are reserved. Tell us how many actually turned up — the reservations become ordinary orders in the order they were made, and anything left over goes on the shelf.</p>
+      <div style="margin-top:18px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
+        <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">How many arrived</label><input value="12" style="width:120px;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums"></div>
+        <button style="font:500 15px 'IBM Plex Sans';padding:12px 24px;border-radius:999px;border:0;background:#184485;color:#fff;cursor:pointer">Release the reservations</button>
+      </div>
+      <ul style="margin:20px 0 0;padding:0;list-style:none;border-top:1px solid #f0eee9">
+        <sc-for list="{{ landed }}" as="r" hint-placeholder-count="4">
+          <li style="display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid #f4f2ed"><span style="flex:none;font:400 12px ui-monospace,Menlo,monospace;color:#6f7787;width:78px">{{ r.ref }}</span><span style="flex:1;min-width:0;font-size:14.5px">{{ r.name }}</span><span style="font-size:13px;color:#6f7787">{{ r.qty }}</span><span style="flex:none;font:500 12.5px 'IBM Plex Sans';color:{{ r.tone }};background:{{ r.tint }};padding:4px 11px;border-radius:999px">{{ r.outcome }}</span></li>
+        </sc-for>
+      </ul>
+      <p style="margin:14px 0 0;font-size:13px;color:#6f7787;line-height:1.6">If fewer arrive than were claimed, the overflow stays reserved and waits for the next delivery — it is never silently cancelled.</p>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- 3e LISTING EDITOR -->
+<div class="dv-opt" id="3e">
+<div class="dv-olabel"><a class="dv-oid" href="#3e">3e</a>Creating a listing — sections down one form, saved once</div>
+<div class="dv-card" style="width:1180px">
+  <header style="background:#0e2a55;color:#fff"><div style="max-width:1100px;margin:0 auto;padding:0 36px"><div style="display:flex;align-items:center;gap:12px;padding:14px 0"><span style="color:#c3ccde"><svg width="22" height="22"><use href="#rose" fill="currentColor"></use></svg></span><span style="font:600 16px Spectral,Georgia,serif">Shop portal</span><nav style="display:flex;gap:4px;margin-left:28px"><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;color:rgba(195,204,222,.75)">Dashboard</a><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;color:rgba(195,204,222,.75)">Orders</a><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;background:rgba(255,255,255,.14);color:#fff;font-weight:500">Listings</a><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;color:rgba(195,204,222,.75)">Shelves</a><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;color:rgba(195,204,222,.75)">Settings</a></nav><span style="margin-left:auto;font-size:13px;color:rgba(195,204,222,.7)">Owner workspace</span></div></div></header>
+  <div style="background:#fbfaf7;padding:30px 36px 44px"><div style="max-width:1100px;margin:0 auto">
+    <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:6px"><h1 style="margin:0;font:600 30px Spectral,Georgia,serif">New listing</h1><p style="margin:0;font-size:15px;color:#6f7787">Not saved yet</p></div>
+    <p style="margin:0 0 22px;font-size:14.5px;color:#4a5568;max-width:66ch;line-height:1.65">Fill in what you know and save. Photos, Telegram and selling in parts open up once the listing exists.</p>
+    <div style="display:grid;grid-template-columns:14rem 1fr;gap:32px;align-items:start">
+      <nav style="position:sticky;top:20px">
+        <p style="margin:0 0 8px;padding:0 10px;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Sections</p>
+        <sc-for list="{{ editorNav }}" as="n" hint-placeholder-count="8">
+          <a href="#" style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;font:{{ n.weight }} 14px 'IBM Plex Sans';background:{{ n.bg }};color:{{ n.color }}"><span style="flex:1">{{ n.name }}</span><span style="font-size:11.5px;color:{{ n.badgeColor }}">{{ n.badge }}</span></a>
+        </sc-for>
+        <p style="margin:14px 10px 0;font-size:12px;color:#6f7787;line-height:1.55">These jump down the page. It is all one form — one Save at the bottom covers everything.</p>
+      </nav>
+      <div style="min-width:0;display:flex;flex-direction:column;gap:16px">
+        <section style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+          <h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Identity</h2>
+          <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div style="grid-column:1/-1"><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Title</label><input placeholder="Mukhtasar al-Quduri" style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"></div>
+            <div style="grid-column:1/-1"><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Arabic title</label><input class="ar" placeholder="مختصر القدوري" style="width:100%;box-sizing:border-box;font-size:15px;padding:11px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"></div>
+            <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Author</label><input style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"></div>
+            <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Publisher</label><input style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"></div>
+            <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Volumes</label><input value="1" style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums"></div>
+          </div>
+        </section>
+        <section style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+          <h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Description</h2>
+          <textarea rows="4" placeholder="Binding, paper, script, who it suits." style="margin-top:14px;width:100%;box-sizing:border-box;font:400 15px/1.65 'IBM Plex Sans';padding:12px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"></textarea>
+        </section>
+        <section style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+          <h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Price, stock and visibility</h2>
+          <div style="margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+            <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Price</label><div style="display:flex;align-items:center;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;padding:0 13px"><span style="font:400 15px 'IBM Plex Sans';color:#6f7787">£</span><input placeholder="0.00" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:400 15px 'IBM Plex Sans';padding:11px 8px"></div></div>
+            <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">On the shelf</label><input value="0" style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums"></div>
+            <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Visible in the shop</label><select style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 14px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"><option>Draft</option><option>Listed</option></select></div>
+          </div>
+        </section>
+        <section style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+          <div style="display:flex;align-items:baseline;gap:12px"><h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Subjects</h2><p style="margin:0;font-size:13px;color:#6f7787">none chosen · a listing with no subject cannot be browsed to</p></div>
+          <div style="margin-top:14px;display:flex;align-items:center;gap:10px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:999px;padding:8px 16px;max-width:320px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6f7787" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg><input placeholder="Filter the 26 subjects" style="flex:1;border:0;outline:0;font:400 14px 'IBM Plex Sans';background:transparent"></div>
+          <div style="margin-top:14px;max-height:186px;overflow:auto;border:1px solid #f0eee9;border-radius:10px;padding:12px 14px;column-count:3;column-gap:22px">
+            <sc-for list="{{ subjects }}" as="s" hint-placeholder-count="18">
+              <label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13.5px;color:#4a5568;break-inside:avoid"><input type="checkbox" style="accent-color:#184485;flex:none">{{ s }}</label>
+            </sc-for>
+          </div>
+        </section>
+        <sc-for list="{{ lockedSections }}" as="l" hint-placeholder-count="3">
+          <section style="background:#faf9f6;border:1px dashed #ddd9d1;border-radius:12px;padding:20px 24px;display:flex;align-items:center;gap:16px">
+            <span style="flex:none;color:#6f7787"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="11" width="14" height="9" rx="1.6"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg></span>
+            <div style="flex:1"><h2 style="margin:0;font:600 17px Spectral,Georgia,serif;color:#6f7787">{{ l.name }}</h2><p style="margin:4px 0 0;font-size:13.5px;color:#6f7787">{{ l.why }}</p></div>
+          </section>
+        </sc-for>
+        <div style="position:sticky;bottom:0;background:rgba(251,250,247,.95);border-top:1px solid #e6e2d9;padding:14px 0;display:flex;align-items:center;gap:14px;backdrop-filter:blur(6px)">
+          <p style="margin:0;font-size:13.5px;color:#6f7787">Unsaved changes — leaving the page will warn you first</p>
+          <button style="margin-left:auto;font:500 15px 'IBM Plex Sans';padding:12px 26px;border-radius:999px;border:0;background:#184485;color:#fff;cursor:pointer">Save listing</button>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</div>
+</div>
+
+<!-- 3f EXISTING LISTING -->
+<div class="dv-opt" id="3f">
+<div class="dv-olabel"><a class="dv-oid" href="#3f">3f</a>An existing listing — the same form, everything unlocked</div>
+<div class="dv-card" style="width:1180px">
+  <header style="background:#0e2a55;color:#fff"><div style="max-width:1100px;margin:0 auto;padding:0 36px"><div style="display:flex;align-items:center;gap:12px;padding:14px 0"><span style="color:#c3ccde"><svg width="22" height="22"><use href="#rose" fill="currentColor"></use></svg></span><span style="font:600 16px Spectral,Georgia,serif">Shop portal</span><nav style="display:flex;gap:4px;margin-left:28px"><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;color:rgba(195,204,222,.75)">Dashboard</a><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;color:rgba(195,204,222,.75)">Orders</a><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;background:rgba(255,255,255,.14);color:#fff;font-weight:500">Listings</a><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;color:rgba(195,204,222,.75)">Shelves</a><a href="#" style="padding:7px 14px;border-radius:999px;font-size:14px;color:rgba(195,204,222,.75)">Settings</a></nav><span style="margin-left:auto;font-size:13px;color:rgba(195,204,222,.7)">Owner workspace</span></div></div></header>
+  <div style="background:#fbfaf7;padding:30px 36px 44px"><div style="max-width:1100px;margin:0 auto">
+    <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:20px"><h1 style="margin:0;font:600 30px Spectral,Georgia,serif">Mukhtasar al-Quduri</h1><p style="margin:0;font-size:15px;color:#6f7787">Listed · <span style="font-family:ui-monospace,Menlo,monospace">/book/mukhtasar-al-quduri</span></p><a href="#" style="margin-left:auto;font-size:14px">View in the shop →</a></div>
+    <div style="display:grid;grid-template-columns:14rem 1fr;gap:32px;align-items:start">
+      <nav style="position:sticky;top:20px">
+        <p style="margin:0 0 8px;padding:0 10px;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">Sections</p>
+        <sc-for list="{{ editorNavFull }}" as="n" hint-placeholder-count="8">
+          <a href="#" style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;font:{{ n.weight }} 14px 'IBM Plex Sans';background:{{ n.bg }};color:{{ n.color }}"><span style="flex:1">{{ n.name }}</span><span style="font-size:11.5px;color:{{ n.badgeColor }}">{{ n.badge }}</span></a>
+        </sc-for>
+      </nav>
+      <div style="min-width:0;display:flex;flex-direction:column;gap:16px">
+        <section style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+          <div style="display:flex;align-items:baseline;gap:12px"><h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Photos</h2><p style="margin:0;font-size:13px;color:#6f7787">3 · the first one is the cover</p></div>
+          <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap">
+            <div style="position:relative;width:104px"><span style="display:grid;place-items:center;width:104px;height:139px;border-radius:4px;background:repeating-linear-gradient(135deg,#efece5,#efece5 6px,#f7f5f0 6px,#f7f5f0 12px);box-shadow:0 0 0 2px #184485;color:#6f7787;font:500 9px ui-monospace,Menlo,monospace">cover</span><p style="margin:6px 0 0;text-align:center;font:500 11.5px 'IBM Plex Sans';color:#184485">Cover</p></div>
+            <div style="width:104px"><span style="display:grid;place-items:center;width:104px;height:139px;border-radius:4px;background:repeating-linear-gradient(135deg,#efece5,#efece5 6px,#f7f5f0 6px,#f7f5f0 12px);border:1px solid #e6e2d9;color:#6f7787;font:500 9px ui-monospace,Menlo,monospace">spine</span><p style="margin:6px 0 0;text-align:center;font-size:11.5px;color:#6f7787">Make cover</p></div>
+            <div style="width:104px"><span style="display:grid;place-items:center;width:104px;height:139px;border-radius:4px;background:repeating-linear-gradient(135deg,#efece5,#efece5 6px,#f7f5f0 6px,#f7f5f0 12px);border:1px solid #e6e2d9;color:#6f7787;font:500 9px ui-monospace,Menlo,monospace">inside</span><p style="margin:6px 0 0;text-align:center;font-size:11.5px;color:#6f7787">Make cover</p></div>
+            <label style="display:grid;place-items:center;width:104px;height:139px;border-radius:4px;border:1px dashed #ddd9d1;background:#fbfaf7;color:#184485;font:500 13px 'IBM Plex Sans';cursor:pointer;text-align:center;padding:8px;box-sizing:border-box">+ Add photos</label>
+          </div>
+          <p style="margin:14px 0 0;font-size:12.5px;color:#6f7787;line-height:1.6">Uploads go up as you pick them and are attached when you save. A photo that would crop badly is flagged before it goes live.</p>
+        </section>
+        <section style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+          <div style="display:flex;align-items:baseline;gap:12px"><h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Telegram</h2><span style="font:500 12px 'IBM Plex Sans';color:#6f7787;background:#f0eee9;padding:4px 11px;border-radius:999px">Not announced</span></div>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.65;color:#4a5568;max-width:62ch">Posts the cover, title, price and a link to the channel. You can post again later if the price changes — it edits the old message rather than adding a new one.</p>
+          <button style="margin-top:14px;font:500 14px 'IBM Plex Sans';padding:10px 20px;border-radius:999px;border:1px solid #ddd9d1;background:#fbfaf7;color:#184485;cursor:pointer">Announce on Telegram</button>
+        </section>
+        <section style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+          <h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Sold in parts</h2>
+          <p style="margin:8px 0 0;font-size:14px;color:#4a5568;line-height:1.65">Not set up. See <a class="dv-oid" href="#3g" style="padding:2px 6px">3g</a> for this section in full.</p>
+        </section>
+        <section style="background:#fff;border:1px solid rgba(154,52,18,.3);border-radius:12px;padding:24px">
+          <h2 style="margin:0;font:600 19px Spectral,Georgia,serif;color:#9a3412">Delete this listing</h2>
+          <p style="margin:8px 0 0;font-size:14px;line-height:1.65;color:#4a5568;max-width:62ch">It disappears from the shop. Orders that already contain it keep their record. Asks you to confirm first.</p>
+          <button style="margin-top:14px;font:500 14px 'IBM Plex Sans';padding:10px 20px;border-radius:999px;border:1px solid rgba(154,52,18,.4);background:transparent;color:#9a3412;cursor:pointer">Delete listing</button>
+        </section>
+        <div style="position:sticky;bottom:0;background:rgba(251,250,247,.95);border-top:1px solid #e6e2d9;padding:14px 0;display:flex;align-items:center;gap:14px;backdrop-filter:blur(6px)">
+          <p style="margin:0;font-size:13.5px;color:#2f6b46">Saved 4 minutes ago</p>
+          <button style="margin-left:auto;font:500 15px 'IBM Plex Sans';padding:12px 26px;border-radius:999px;border:0;background:#184485;color:#fff;cursor:pointer">Save changes</button>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</div>
+</div>
+
+<!-- 3g SOLD IN PARTS -->
+<div class="dv-opt" id="3g">
+<div class="dv-olabel"><a class="dv-oid" href="#3g">3g</a>Sold in parts — headers that stay, an example that stays, and a row that is refused</div>
+<div style="display:flex;flex-direction:column;gap:18px">
+
+  <div class="dv-card" style="width:900px;padding:30px 34px">
+    <p class="dv-sub">Setting it up</p>
+    <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+      <h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Sold in parts</h2>
+      <p style="margin:9px 0 0;font-size:14.5px;line-height:1.65;color:#4a5568;max-width:66ch">Turn this set into parts people can buy separately. Each part becomes its own listing, and they all draw from the same pile of volumes — sell volumes 1–2 and you have fewer complete sets, but just as many 3–4.</p>
+      <div style="margin-top:18px;display:grid;grid-template-columns:180px 180px;gap:14px">
+        <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Volumes altogether</label><input value="8" style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums"></div>
+        <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Complete sets on the shelf</label><input value="3" style="width:100%;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:11px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums"></div>
+      </div>
+      <div style="margin-top:20px;padding:14px 16px;background:#fbfaf7;border:1px solid #e6e2d9;border-radius:10px">
+        <p style="margin:0;font:600 10.5px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:#6f7787">For example</p>
+        <div style="margin-top:10px;display:grid;grid-template-columns:1.6fr .8fr .8fr 1fr;gap:12px;font-size:13.5px;color:#4a5568"><span>Volumes 1–2</span><span style="font-variant-numeric:tabular-nums">1</span><span style="font-variant-numeric:tabular-nums">2</span><span style="font-variant-numeric:tabular-nums">£12.00</span></div>
+        <div style="margin-top:6px;display:grid;grid-template-columns:1.6fr .8fr .8fr 1fr;gap:12px;font-size:13.5px;color:#4a5568"><span>Volumes 3–8</span><span style="font-variant-numeric:tabular-nums">3</span><span style="font-variant-numeric:tabular-nums">8</span><span style="font-variant-numeric:tabular-nums">£34.00</span></div>
+        <p style="margin:10px 0 0;font-size:12.5px;color:#6f7787">Parts may overlap or leave gaps — it is your shelf.</p>
+      </div>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1.6fr .8fr .8fr 1fr;gap:12px;padding-bottom:9px;border-bottom:1px solid #e6e2d9;font:600 10.5px 'IBM Plex Sans';letter-spacing:.14em;text-transform:uppercase;color:#6f7787">
+        <span>Name of the part</span><span>First volume</span><span>Last volume</span><span>Price</span>
+      </div>
+      <sc-for list="{{ partRows }}" as="p" hint-placeholder-count="4">
+        <div style="display:grid;grid-template-columns:1.6fr .8fr .8fr 1fr;gap:12px;padding-top:10px">
+          <input value="{{ p.name }}" placeholder="Volumes 1–2" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px">
+          <input value="{{ p.from }}" placeholder="1" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums">
+          <input value="{{ p.to }}" placeholder="2" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums">
+          <div style="display:flex;align-items:center;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;padding:0 13px"><span style="font:400 14.5px 'IBM Plex Sans';color:#6f7787">£</span><input value="{{ p.price }}" placeholder="0.00" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:400 14.5px 'IBM Plex Sans';padding:10px 7px;font-variant-numeric:tabular-nums"></div>
+        </div>
+      </sc-for>
+      <p style="margin:14px 0 0;font-size:12.5px;color:#6f7787">Leave a row blank to skip it. Four parts is the most.</p>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:900px;padding:30px 34px">
+    <p class="dv-sub">A half-filled row — refused, not guessed at</p>
+    <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+      <div style="display:grid;grid-template-columns:1.6fr .8fr .8fr 1fr;gap:12px;padding-bottom:9px;border-bottom:1px solid #e6e2d9;font:600 10.5px 'IBM Plex Sans';letter-spacing:.14em;text-transform:uppercase;color:#6f7787"><span>Name of the part</span><span>First volume</span><span>Last volume</span><span>Price</span></div>
+      <div style="display:grid;grid-template-columns:1.6fr .8fr .8fr 1fr;gap:12px;padding-top:10px"><input value="Volumes 1–2" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"><input value="1" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"><input value="2" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px"><div style="display:flex;align-items:center;background:#fbfaf7;border:1px solid #ddd9d1;border-radius:8px;padding:0 13px"><span style="font:400 14.5px 'IBM Plex Sans';color:#6f7787">£</span><input value="12.00" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:400 14.5px 'IBM Plex Sans';padding:10px 7px"></div></div>
+      <div style="display:grid;grid-template-columns:1.6fr .8fr .8fr 1fr;gap:12px;padding-top:10px"><input value="Volumes 3–8" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fff;border:1px solid #ddd9d1;border-radius:8px"><input value="3" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fff;border:1px solid #ddd9d1;border-radius:8px"><input value="8" style="width:100%;box-sizing:border-box;font:400 14.5px 'IBM Plex Sans';padding:10px 13px;background:#fff;border:1px solid #ddd9d1;border-radius:8px"><div style="display:flex;align-items:center;background:#fff;border:1.5px solid #9a3412;border-radius:8px;padding:0 13px"><span style="font:400 14.5px 'IBM Plex Sans';color:#9a3412">£</span><input placeholder="0.00" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:400 14.5px 'IBM Plex Sans';padding:10px 7px"></div></div>
+      <p style="margin:9px 0 0;display:flex;align-items:center;gap:8px;font:500 13px 'IBM Plex Sans';color:#9a3412"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v5.5"></path><path d="M12 16.4v.1"></path></svg>Row 2 needs a price. We will not guess one — fill it in or clear the row.</p>
+      <button style="margin-top:18px;font:500 15px 'IBM Plex Sans';padding:12px 24px;border-radius:999px;border:0;background:#184485;color:#fff;cursor:pointer;opacity:.5">Save changes</button>
+    </div>
+  </div>
+
+  <div class="dv-card" style="width:900px;padding:30px 34px">
+    <p class="dv-sub">Already split</p>
+    <div style="background:#fff;border:1px solid #e6e2d9;border-radius:12px;padding:24px">
+      <div style="display:flex;align-items:baseline;gap:12px"><h2 style="margin:0;font:600 19px Spectral,Georgia,serif">Sold in parts</h2><span style="font:500 12px 'IBM Plex Sans';color:#2f6b46;background:rgba(47,107,70,.1);padding:4px 11px;border-radius:999px">3 parts live</span></div>
+      <p style="margin:9px 0 0;font-size:14px;color:#4a5568;line-height:1.65">8 volumes altogether. Everything below draws from the same pile.</p>
+      <ul style="margin:16px 0 0;padding:0;list-style:none;border-top:1px solid #f0eee9">
+        <sc-for list="{{ liveParts }}" as="p" hint-placeholder-count="3">
+          <li style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid #f4f2ed"><a href="#" style="flex:1;min-width:0;font:500 15px 'IBM Plex Sans';color:#101828">{{ p.name }}</a><span style="font-size:13px;color:#6f7787;font-variant-numeric:tabular-nums">vols {{ p.range }}</span><span style="font:600 15px 'IBM Plex Sans';color:#8a6714;font-variant-numeric:tabular-nums;width:64px;text-align:right">{{ p.price }}</span><span style="font-size:13px;color:#6f7787;width:88px;text-align:right">{{ p.canMake }}</span><a href="#" style="font-size:13.5px">Edit</a></li>
+        </sc-for>
+      </ul>
+      <div style="margin-top:18px;padding:16px 18px;background:#fbfaf7;border:1px solid #e6e2d9;border-radius:10px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px"><p style="margin:0;font:500 14px 'IBM Plex Sans'">A delivery has come in</p><p style="margin:4px 0 0;font-size:13px;color:#6f7787;line-height:1.55">Set the complete sets on the shelf and every part recalculates from it.</p></div>
+        <div><label style="display:block;font:500 13px 'IBM Plex Sans';margin-bottom:6px;color:#4a5568">Complete sets</label><input value="3" style="width:110px;box-sizing:border-box;font:400 15px 'IBM Plex Sans';padding:10px 13px;background:#fff;border:1px solid #ddd9d1;border-radius:8px;font-variant-numeric:tabular-nums"></div>
+        <button style="font:500 14px 'IBM Plex Sans';padding:11px 20px;border-radius:999px;border:1px solid #ddd9d1;background:#fff;color:#184485;cursor:pointer">Update</button>
+      </div>
+      <button style="margin-top:16px;font:500 14px 'IBM Plex Sans';padding:10px 20px;border-radius:999px;border:1px solid rgba(154,52,18,.4);background:transparent;color:#9a3412;cursor:pointer">Stop selling in parts</button>
+      <p style="margin:9px 0 0;font-size:12.5px;color:#6f7787">The part listings come down; the complete set stays. Orders already placed keep their record.</p>
+    </div>
+  </div>
+
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "<a class="dv-oid" href="#4a">4a</a> but the covers scroll with the page" · "show the owner's side of a cancellation request" · "the reservation confirmation email"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  renderVals() {
+    const covers = [
+      ['Sahih al-Bukhari', 'صحيح البخاري', '£35.50'], ['Riyad as-Salihin', 'رياض الصالحين', '£30.00'],
+      ['Al-Adab al-Mufrad', 'الأدب المفرد', '£18.50'], ['Tafsir al-Jalalayn', 'تفسير الجلالين', '£25.99'],
+      ['Mukhtasar al-Quduri', 'مختصر القدوري', '£20.00'], ['Fiqh al-Sunnah', 'فقه السنة', '£32.99'],
+      ['Al-Muwatta of Imam Malik', 'الموطأ', '£28.75'], ['The Sealed Nectar', 'الرحيق المختوم', '£27.50'],
+    ];
+    const marks = ['HDT', 'SYL', 'FQH', 'TFS', 'NHW', 'SRH', 'TSW', 'MKT', 'DNZ', 'QRN', 'TRK', 'AQD', 'MTN', 'ULM'];
+    return {
+      shelves: [
+        ['Syllabus', 'SYL', 105], ['Maktab', 'MKT', 67], ['Dars Nizami', 'DNZ', 49], ['Hadith', 'HDT', 42],
+        ['Biographies', 'TRJ', 33], ['Hadith Works', 'MTN', 29], ['Spirituality', 'TSW', 25], ['Seerah', 'SRH', 22],
+      ].map(([name, mark, count]) => ({ name, mark, count })),
+      grid8: covers.map(([title, ar, price], i) => ({
+        title, ar, price, short: 'cover — ' + title,
+        dur: (5.4 + (i % 4) * 0.6).toFixed(1) + 's', delay: ((i % 5) * 0.5).toFixed(1) + 's',
+      })),
+      indexRows: [
+        ['Syllabus', 'السلسلة الدراسية', 'SYL', 105], ['Maktab / Islamic School', 'المكتب', 'MKT', 67],
+        ['Dars Nizami', 'درس نظامي', 'DNZ', 49], ['Hadith', 'الحديث', 'HDT', 42],
+        ['Biographies', 'التراجم', 'TRJ', 33], ['Spirituality', 'التصوف', 'TSW', 25],
+        ['Seerah', 'السيرة', 'SRH', 22], ['Fiqh', 'الفقه', 'FQH', 21],
+      ].map(([name, ar, mark, count], i) => ({ name, ar, mark, count, n: String(i + 1).padStart(2, '0') })),
+      marquee: (() => {
+        const one = marks.map((label) => ({ label }));
+        // Two identical halves so translateX wraps without a jump.
+        return one.concat(one);
+      })(),
+      buyStates: [
+        { label: '1 · In stock — unchanged, for reference', badge: 'In stock · 4 copies', tone: '#2f6b46', tint: 'rgba(47,107,70,.1)',
+          hasIncoming: false, hasStepper: true, hasNote: false, btn: 'Add to basket', btnBg: '#184485',
+          foot: 'Nothing is reserved until you send your request. Then we hold it 48 hours and reply with the total.' },
+        { label: '2 · Out of stock, a delivery is coming', badge: 'Out of stock', tone: '#9a3412', tint: 'rgba(154,52,18,.1)',
+          hasIncoming: true, incoming: '12 copies expected mid-October.', free: '4 still free to reserve',
+          hasStepper: true, hasNote: false, btn: 'Reserve a copy', btnBg: '#8a6714',
+          foot: 'A reservation is not a hold that runs out — it stands until the delivery lands. Nothing is paid now.' },
+        { label: '3 · Out of stock, nothing coming — unchanged', badge: 'Out of stock', tone: '#9a3412', tint: 'rgba(154,52,18,.1)',
+          hasIncoming: false, hasStepper: false, hasNote: true, noteTone: '#4a5568',
+          note: 'We do not have this at the moment and none are on their way. Ask us and we will tell you if we can get it.',
+          foot: 'Message the shop on Telegram or by email.' },
+        { label: '4 · Fully reserved — a delivery is coming, every copy claimed', badge: 'Fully reserved', tone: '#8a6714', tint: 'rgba(138,103,20,.12)',
+          hasIncoming: true, incoming: '12 copies expected mid-October.', free: 'All 12 are already spoken for',
+          hasStepper: false, hasNote: true, noteTone: '#4a5568',
+          note: 'Every copy from this delivery is reserved. Ask us and we will add you to the one after.',
+          foot: 'Message the shop on Telegram or by email.' },
+        { label: '5 · You already reserved one', badge: 'Reserved for you', tone: '#2f6b46', tint: 'rgba(47,107,70,.1)',
+          hasIncoming: true, incoming: '1 copy reserved for you on order ASB-3P88M.', free: 'Expected mid-October',
+          hasStepper: false, hasNote: true, noteTone: '#4a5568',
+          note: 'We will email when it lands, and send it with the rest of that order.',
+          foot: 'Track that order to see where it is up to.' },
+      ],
+      mixedBasket: [
+        { title: 'Sahih al-Bukhari', ar: 'صحيح البخاري', price: '£35.50', qty: 1, state: 'In stock', tag: '', tone: '#2f6b46', dim: '1' },
+        { title: 'Riyad as-Salihin', ar: 'رياض الصالحين', price: '£30.00', qty: 1, state: 'In stock', tag: '', tone: '#2f6b46', dim: '1' },
+        { title: 'Mukhtasar al-Quduri', ar: 'مختصر القدوري', price: '£20.00', qty: 1, state: 'Reserved — expected mid-October', tag: 'reserved, mid-October', tone: '#8a6714', dim: '.62' },
+      ],
+      waitJourney: [
+        { title: 'Request received', at: '28 Aug', bar: '#2f6b46', color: '#101828', flex: 1 },
+        { title: 'Confirmed', at: '29 Aug', bar: '#2f6b46', color: '#101828', flex: 1 },
+        { title: 'Paid', at: '29 Aug', bar: '#2f6b46', color: '#101828', flex: 1 },
+        { title: 'Waiting on a delivery', at: 'expected mid-October', bar: '#8a6714', color: '#8a6714', flex: 1.5 },
+        { title: 'Posted', at: '—', bar: '#e6e2d9', color: '#6f7787', flex: 1 },
+        { title: 'Delivered', at: '—', bar: '#e6e2d9', color: '#6f7787', flex: 1 },
+      ],
+      incoming: [
+        { title: 'Mukhtasar al-Quduri', when: '12 coming · expected mid-October', claimed: 8, of: '8 / 12', pct: '67%', tone: '#8a6714', action: 'Mark arrived' },
+        { title: 'Al-Ajurrumiyyah', when: '10 coming · expected late November', claimed: 10, of: '10 / 10', pct: '100%', tone: '#9a3412', action: 'Open' },
+        { title: 'An Nasihah Coursebook 2', when: '12 coming · sometime in December', claimed: 3, of: '3 / 12', pct: '25%', tone: '#2f6b46', action: 'Open' },
+      ],
+      landed: [
+        { ref: 'ASB-3P88M', name: 'Yusuf Patel', qty: '× 1', outcome: 'Becomes an order', tone: '#2f6b46', tint: 'rgba(47,107,70,.1)' },
+        { ref: 'ASB-5R21T', name: 'Madrasah Al-Huda', qty: '× 6', outcome: 'Becomes an order', tone: '#2f6b46', tint: 'rgba(47,107,70,.1)' },
+        { ref: 'ASB-8N44C', name: 'Aisha Rahman', qty: '× 1', outcome: 'Becomes an order', tone: '#2f6b46', tint: 'rgba(47,107,70,.1)' },
+        { ref: '—', name: 'Left over, goes on the shelf', qty: '× 4', outcome: 'On the shelf', tone: '#6f7787', tint: '#f0eee9' },
+      ],
+      editorNav: [
+        { name: 'Identity', badge: '', weight: '500', bg: '#dde3ee', color: '#184485', badgeColor: '#6f7787' },
+        { name: 'Description', badge: '', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#6f7787' },
+        { name: 'Price and stock', badge: '', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#6f7787' },
+        { name: 'Subjects', badge: 'none', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#9a3412' },
+        { name: 'Photos', badge: 'after saving', weight: '400', bg: 'transparent', color: '#6f7787', badgeColor: '#6f7787' },
+        { name: 'Telegram', badge: 'after saving', weight: '400', bg: 'transparent', color: '#6f7787', badgeColor: '#6f7787' },
+        { name: 'Sold in parts', badge: 'after saving', weight: '400', bg: 'transparent', color: '#6f7787', badgeColor: '#6f7787' },
+      ],
+      editorNavFull: [
+        { name: 'Identity', badge: '', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#6f7787' },
+        { name: 'Description', badge: '', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#6f7787' },
+        { name: 'Price and stock', badge: '', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#6f7787' },
+        { name: 'Subjects', badge: '2', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#6f7787' },
+        { name: 'Photos', badge: '3', weight: '500', bg: '#dde3ee', color: '#184485', badgeColor: '#184485' },
+        { name: 'Telegram', badge: 'not yet', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#8a6714' },
+        { name: 'Sold in parts', badge: '', weight: '400', bg: 'transparent', color: '#4a5568', badgeColor: '#6f7787' },
+        { name: 'Delete', badge: '', weight: '400', bg: 'transparent', color: '#9a3412', badgeColor: '#6f7787' },
+      ],
+      lockedSections: [
+        { name: 'Photos', why: 'Available once the listing is saved — a photo needs something to attach to.' },
+        { name: 'Telegram', why: 'You can announce it after saving, when there is a page to link to.' },
+        { name: 'Sold in parts', why: 'Set the listing up first, then split it into parts.' },
+      ],
+      subjects: ['Aqeedah', 'Arabic Grammar', 'Children', 'Contemporary issues', 'Dars Nizami', 'Dictionaries',
+        'Fiqh', 'Hadith', 'Hadith Commentaries', 'Hadith Narrators', 'Hadith Works', 'Hanafi', 'History',
+        'Maktab/Islamic School', 'Mushaf Collection', 'Quran', 'Seerah', 'Shafi', 'Spirituality', 'Syllabus',
+        'Tafsir', 'Tajweed', 'Tarajim', 'Ulum al-Hadith', 'Usul al-Fiqh'],
+      partRows: [
+        { name: 'Volumes 1–2', from: '1', to: '2', price: '12.00' },
+        { name: 'Volumes 3–8', from: '3', to: '8', price: '34.00' },
+        { name: '', from: '', to: '', price: '' },
+        { name: '', from: '', to: '', price: '' },
+      ],
+      liveParts: [
+        { name: 'Volumes 1–2', range: '1–2', price: '£12.00', canMake: '3 available' },
+        { name: 'Volumes 3–8', range: '3–8', price: '£34.00', canMake: '3 available' },
+        { name: 'Volume 1 alone', range: '1–1', price: '£7.00', canMake: '3 available' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
