@@ -29,8 +29,8 @@ A **second Worker** (`workers/expire-holds/`) exists only to run a cron trigger:
 the Astro adapter owns the main Worker's entrypoint and gives no way to add a
 `scheduled` handler to it.
 
-**Roughly**: 24 pages, 32 API routes, 26 library modules, 11 components,
-20 migrations, and one end-to-end suite of 437 assertions.
+**Roughly**: 28 pages, 36 API routes, 28 library modules, 11 components,
+21 migrations, and one end-to-end suite of 444 assertions.
 
 ---
 
@@ -212,7 +212,7 @@ is the test suite rather than customers.
 
 ## Testing
 
-One suite: `npm run test:e2e`, against a local `astro dev`. 437 assertions
+One suite: `npm run test:e2e`, against a local `astro dev`. 444 assertions
 across sixteen groups. `npm run test:e2e:prod` runs against the live site and
 genuinely sends email and posts to Telegram, because a mock returns success and
 proves nothing — the failures that actually happened here were a reserved
@@ -278,3 +278,12 @@ key never propagates; `IMAGE_VERSION` in the URL is what busts it.
   ineffective and dangerous.
 - **`setOptions` is the shop's view** and filters to live listings. The portal
   wants `setOptionsForOwner`, which does not.
+- **`??` does not mean "if it failed".** `(await panel?.review(f)) ?? f` was
+  meant to cover the review panel being absent, and swallowed the panel's own
+  `null` for Cancel with it - so refusing a crooked photo uploaded it anyway.
+  Where a function answers `null` on purpose, test for the thing that might be
+  missing, not for the answer.
+- **The CSP is `img-src 'self'`.** An image from anywhere else does not render
+  and reports nothing. Anything found off-site is served through a route of our
+  own (`/api/admin/covers/image`), which takes an id rather than a URL so it
+  cannot turn into an open proxy.
