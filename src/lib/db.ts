@@ -45,6 +45,9 @@ export interface BookRow {
   reserved_incoming: number;
   /** Free to claim now: `incoming - reserved_incoming`, never negative. */
   reservable: number;
+  /** Percent off while a sale is running, or null. Never zero - a book with
+      no reduction has no row in sale_items at all. */
+  sale_percent: number | null;
   /** How the arrival is described: a vagueness word and a month, never a date. */
   incoming_vague: string | null;
   incoming_month: string | null;
@@ -72,12 +75,24 @@ const BOOK_SELECT = `
             about one that is not here yet, and a card that added them together
             would be telling the customer something untrue. */
          MAX(0, b.incoming - b.reserved_incoming) AS reservable,
+         /*
+          * The sale percentage, if this book is in the sale that is running.
+          *
+          * The sale id is a scalar subquery with no reference to the outer
+          * row, so SQLite works it out once rather than per book - and the
+          * partial unique index on status='live' makes it an index probe.
+          * A correlated subquery here is exactly what once cost this project
+          * most of its daily read budget.
+          */
+         si.percent_off AS sale_percent,
          i.image_key, i.width, i.height,
          (SELECT group_concat(c2.slug) FROM book_categories bc2
             JOIN categories c2 ON c2.id = bc2.category_id
            WHERE bc2.book_id = b.id) AS cat_slugs
     FROM books b
     LEFT JOIN book_images i ON i.book_id = b.id AND i.sort = 0
+    LEFT JOIN sale_items si ON si.book_id = b.id
+         AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
 `;
 
 // ---------------------------------------------------------------------------
@@ -303,6 +318,9 @@ export async function bookBySlug(slug: string): Promise<BookDetail | null> {
     .prepare(
       `SELECT b.*, (b.stock - b.reserved) AS available,
               MAX(0, b.incoming - b.reserved_incoming) AS reservable,
+              (SELECT percent_off FROM sale_items
+                WHERE book_id = b.id
+                  AND sale_id = (SELECT id FROM sales WHERE status = 'live')) AS sale_percent,
               NULL AS image_key, NULL AS width, NULL AS height, NULL AS cat_slugs
          FROM books b WHERE b.slug = ? AND b.status != 'archived'`,
     )

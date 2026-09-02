@@ -8,6 +8,7 @@
 
 import { env } from 'cloudflare:workers';
 import { whenText } from './incoming';
+import { salePrice, orderDiscount, totals } from './sales';
 import { releaseHold } from './stock-release';
 import type { AddressParts } from './address';
 
@@ -115,14 +116,24 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   const ids = input.items.map((i) => i.bookId);
   const placeholders = ids.map(() => '?').join(',');
   const { results: books } = await env.DB.prepare(
-    `SELECT id, title, price_pence, (stock - reserved) AS available,
-            MAX(0, incoming - reserved_incoming) AS reservable
-       FROM books WHERE id IN (${placeholders}) AND status = 'live'`,
+    /*
+     * The price a customer is charged is decided here, once, server-side - so
+     * the sale has to be applied here too. Anywhere else and a sale ending
+     * mid-order would reprice an order already placed, and the customer would
+     * be charged something other than what they were shown.
+     */
+    `SELECT b.id, b.title, b.price_pence, (b.stock - b.reserved) AS available,
+            MAX(0, b.incoming - b.reserved_incoming) AS reservable,
+            si.percent_off AS sale_percent
+       FROM books b
+       LEFT JOIN sale_items si ON si.book_id = b.id
+            AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
+      WHERE b.id IN (${placeholders}) AND b.status = 'live'`,
   )
     .bind(...ids)
     .all<{
       id: number; title: string; price_pence: number;
-      available: number; reservable: number;
+      available: number; reservable: number; sale_percent: number | null;
     }>();
 
   const byId = new Map(books.map((b) => [b.id, b]));
@@ -156,12 +167,27 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
       bookId: book.id,
       title: book.title,
       qty: item.qty,
-      pricePence: book.price_pence,
+      // The reduced price, which is what price_pence_snapshot must record.
+      pricePence: salePrice(book.price_pence, book.sale_percent),
       // On the shelf if it can be; a claim on the delivery only when it cannot.
       fromIncoming: book.available < item.qty,
     };
   });
-  const subtotalPence = items.reduce((n, i) => n + i.pricePence * i.qty, 0);
+  /*
+   * The order discount, worked out once and written down.
+   *
+   * `items` already carries reduced prices, so this is the "after sale" figure
+   * the threshold is meant to be tested against. Stored rather than recomputed
+   * later: the rule can be switched off tomorrow, and an order must still show
+   * the discount it was actually given.
+   */
+  const discountRule = await orderDiscount();
+  const figures = totals(
+    items.map((i) => ({ pricePence: i.pricePence, qty: i.qty })),
+    discountRule,
+  );
+  const discountPence = figures.orderDiscountPence;
+  const subtotalPence = figures.subtotalPence;
 
   // A customer who has already started the bot stays reachable: Telegram grants
   // that permission per person, not per order, so making them tap Connect again
@@ -199,12 +225,13 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     const statements = [
       env.DB.prepare(
         `INSERT INTO orders (ref, access_token, customer_name, email, phone,
-                             fulfilment, address, notes, status, subtotal_pence, expires_at,
+                             fulfilment, address, notes, status, subtotal_pence, discount_pence,
+                             expires_at,
                              telegram_chat_id, telegram_linked_at,
                              address_line1, address_line2, address_city,
                              address_region, address_postcode, address_country,
                              payment_preference, cash_payment)
-         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         ref,
         token,
@@ -215,6 +242,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
         input.address ?? null,
         input.notes ?? null,
         subtotalPence,
+        discountPence,
         expiresAt,
         priorLink?.telegram_chat_id ?? null,
         priorLink ? Math.floor(Date.now() / 1000) : null,
