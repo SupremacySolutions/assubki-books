@@ -228,17 +228,6 @@ const drifting = pretty.slice(0, 14);
     )
   }
 
-  {/* The three shelves the shop is actually for, in the order a student reads
-      them. Two rows of covers each at the widest breakpoint. */}
-  {rows.map((row) => (
-    <Row
-      title={row.title}
-      href={`/catalogue/${row.path}`}
-      linkLabel={`All ${row.total} →`}
-      books={row.books}
-    />
-  ))}
-
   <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-12 md:py-16 reveal">
     <div class="flex items-baseline justify-between gap-4 pb-3.5 border-b border-[var(--color-rule-soft)]">
       <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Browse the shelves</h2>
@@ -272,6 +261,18 @@ const drifting = pretty.slice(0, 14);
       }
     </ul>
   </section>
+
+  {/* The three shelves the shop is actually for, in the order a student reads
+      them, under the index rather than above it - the index is how you get to
+      the other twelve. Two rows of covers each at the widest breakpoint. */}
+  {rows.map((row) => (
+    <Row
+      title={row.title}
+      href={`/catalogue/${row.path}`}
+      linkLabel={`All ${row.total} →`}
+      books={row.books}
+    />
+  ))}
 
   <section class="border-t border-[var(--color-rule-soft)] bg-white">
     <div class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-14 md:py-16 reveal">

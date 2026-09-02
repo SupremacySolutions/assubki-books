@@ -33,10 +33,32 @@ export const POST: APIRoute = async ({ params }) => {
     );
   }
 
+  /*
+   * The screenshots have to be read before the order goes, and removed after.
+   *
+   * `messages` cascades with the order, and those rows are the only record of
+   * which objects in the bucket belong to it - the retention sweep finds
+   * screenshots by walking them. Deleting an order therefore used to strand a
+   * customer's bank details in R2 permanently, which is the exact outcome the
+   * six-month sweep exists to prevent. Nothing would ever have collected them.
+   */
+  const { results: proofs } = await env.DB.prepare(
+    'SELECT image_key FROM messages WHERE order_id = ? AND image_key IS NOT NULL',
+  )
+    .bind(order.id)
+    .all<{ image_key: string }>();
+
   // order_items cascade; the ledger keeps its rows with a null order_id so the
   // stock movements stay auditable after the order itself is gone.
   statements.push(env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(order.id));
   await env.DB.batch(statements);
+
+  // After the row is gone, so a failure here leaves a collectable object rather
+  // than a message pointing at one that has been removed.
+  const bucket = (env as unknown as { UPLOADS?: R2Bucket }).UPLOADS;
+  for (const proof of proofs) {
+    await bucket?.delete(proof.image_key).catch(() => {});
+  }
 
   return new Response(null, {
     status: 302,

@@ -473,6 +473,21 @@ async function listings() {
    * the panel being absent, so refusing a crooked photo put it live. The suite
    * posts to APIs and cannot drive a dialog, so this is checked in the source.
    */
+  /*
+   * Deleting an order takes its screenshots out of the bucket with it.
+   *
+   * `messages` cascades with the order, and those rows are the only record of
+   * which objects belong to it - the retention sweep walks them. Without this,
+   * deleting an order stranded a customer's bank details in R2 permanently,
+   * and nothing would ever have collected them. Checked in the source because
+   * the suite cannot read the bucket.
+   */
+  const deleteRoute = readFileSync('src/pages/api/admin/orders/[ref]/delete.ts', 'utf8');
+  t.ok(
+    /SELECT image_key FROM messages/.test(deleteRoute) && /UPLOADS/.test(deleteRoute),
+    'deleting an order removes the screenshots it was holding',
+  );
+
   const editorSource = readFileSync('src/pages/admin/books/[id].astro', 'utf8');
   t.ok(!/coverClean\?\.review\([^)]*\)\s*\)\s*\?\?/.test(editorSource),
     'refusing a photo in the review panel does not upload it anyway');
@@ -2780,8 +2795,8 @@ async function frontPage() {
     'the three shelves the shop is for each get a row');
   t.ok(at('>Syllabus<') < at('>Hadith<') && at('>Hadith<') < at('>Fiqh<'),
     'and they run syllabus, then hadith, then fiqh');
-  t.ok(at('>Fiqh<') < at('Browse the shelves'),
-    'the shelves index comes after them, not before');
+  t.ok(at('Browse the shelves') < at('>Syllabus<'),
+    'the shelves index stays above them, where it has always been');
 
   t.ok(!home.includes('Recently added'), 'there is no "recently added" row any more');
   t.ok(!home.includes('Syllabus sets') && !home.includes('Back in stock'),
