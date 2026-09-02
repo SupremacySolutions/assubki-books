@@ -449,3 +449,10 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
     </div>
   </div>
 </Admin>
+
+{/* The tabs above are inert markup without this. It was lost once already,
+    when a `<script>` block at the foot of this page went during the CSP work
+    and left the buttons rendering and doing nothing. */}
+<script>
+  import '../../scripts/draft-tabs.ts';
+</script>
