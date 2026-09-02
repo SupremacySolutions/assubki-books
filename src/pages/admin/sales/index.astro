@@ -46,7 +46,7 @@ const counts = [
         </p>
         <div class="mt-4 flex flex-wrap items-center gap-3">
           <a href={`/admin/sales/${s.id}`} class="btn btn-ghost !py-2 !text-[14px]">Edit books</a>
-          <a href="/" class="btn btn-ghost !py-2 !text-[14px]">See it on the shop</a>
+          <a href={`/admin/sales/${s.id}/preview`} class="btn btn-ghost !py-2 !text-[14px]">Preview</a>
           <form method="post" action="/api/admin/sales" class="ml-auto">
             <input type="hidden" name="action" value="end" />
             <input type="hidden" name="id" value={s.id} />
@@ -77,6 +77,7 @@ const counts = [
                 {s.books > 0 && ` · up to ${s.headline}%`}
               </span>
               <a href={`/admin/sales/${s.id}`} class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2 shrink-0">Edit</a>
+              <a href={`/admin/sales/${s.id}/preview`} class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2 shrink-0">Preview</a>
               <form method="post" action="/api/admin/sales" class="shrink-0">
                 <input type="hidden" name="action" value="live" />
                 <input type="hidden" name="id" value={s.id} />

@@ -438,6 +438,30 @@ export async function saleBooks(limit = 10): Promise<BookRow[]> {
 }
 
 /**
+ * The books in one particular sale, whether or not it is the live one.
+ *
+ * `saleBooks` reads whatever is running, which is right for the shop and wrong
+ * for a preview: the whole point of previewing a draft is seeing it before it
+ * runs. The percentage is taken from the named sale rather than the live join,
+ * so a draft shows its own numbers.
+ */
+export async function saleBooksFor(saleId: number, limit = 10): Promise<BookRow[]> {
+  const { results } = await db()
+    .prepare(
+      `${BOOK_SELECT.replace(
+        "AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')",
+        'AND si.sale_id = ?1',
+      )}
+        WHERE b.status = 'live' AND si.percent_off IS NOT NULL
+        ORDER BY si.percent_off * b.price_pence DESC, b.title COLLATE NOCASE
+        LIMIT ?2`,
+    )
+    .bind(saleId, limit)
+    .all<BookRow>();
+  return applySetAvailability(results);
+}
+
+/**
  * Multi-volume sets in stock.
  *
  * The thing this shop is actually known for, and the reason people travel to

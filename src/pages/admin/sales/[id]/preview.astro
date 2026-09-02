@@ -1,0 +1,77 @@
+---
+import Admin from '../../../../layouts/Admin.astro';
+import BookCard from '../../../../components/BookCard.astro';
+import { getSale } from '../../../../lib/sales';
+import { saleBooksFor } from '../../../../lib/db';
+
+const saleId = Number.parseInt(Astro.params.id ?? '', 10);
+const sale = Number.isInteger(saleId) ? await getSale(saleId) : null;
+if (!sale) return Astro.rewrite('/404');
+
+const books = await saleBooksFor(sale.id, 10);
+---
+
+<Admin
+  title={sale.name}
+  sub="Preview"
+  back={{ href: `/admin/sales/${sale.id}`, label: 'Back to the books' }}
+>
+  {/*
+    * The real row, rendered by the real card, from the real numbers. A preview
+    * drawn separately would eventually stop matching the thing it previews.
+    */}
+  <div class="bg-[var(--color-navy-deep)] text-white rounded-t-[var(--radius-panel)] px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+    <p class="text-[14px]">
+      {sale.status === 'live'
+        ? 'This sale is live. Customers are seeing this now.'
+        : 'Not visible to anyone yet. This is the home page row as it would appear.'}
+    </p>
+    <a
+      href="/catalogue?sale=1"
+      class="text-[13.5px] text-[var(--color-wash)] hover:text-white underline underline-offset-2 shrink-0"
+    >
+      {sale.status === 'live' ? 'See the sale page' : 'The sale page needs it live'}
+    </a>
+  </div>
+
+  <div class="bg-[var(--color-paper-raised)] border border-t-0 border-[var(--color-rule-soft)] rounded-b-[var(--radius-panel)] p-5 md:p-8">
+    {books.length === 0 ? (
+      <p class="text-[15px] text-[var(--color-ink-soft)]">
+        Nothing in this sale yet, so there would be no row.{' '}
+        <a href={`/admin/sales/${sale.id}`} class="text-[var(--color-navy)] underline underline-offset-2">
+          Add some books
+        </a>.
+      </p>
+    ) : (
+      <>
+        <div class="flex items-baseline justify-between gap-4 mb-1">
+          <div class="flex items-baseline gap-3 flex-wrap min-w-0">
+            <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold text-[var(--color-ink)]">
+              {sale.name}
+            </h2>
+            <span class="shrink-0 rounded-[var(--radius-pill)] bg-[var(--color-outstock)]/10 px-3 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-[var(--color-outstock)]">
+              Up to {sale.headline}% off
+            </span>
+          </div>
+          <span class="shrink-0 text-[14.5px] text-[var(--color-navy)]">All {sale.books} →</span>
+        </div>
+        {sale.blurb && (
+          <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-2xl">{sale.blurb}</p>
+        )}
+        <div class="mt-5 pt-5 border-t border-[var(--color-rule-soft)] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-7 gap-y-11">
+          {books.slice(0, 5).map((book) => (
+            <BookCard book={book} />
+          ))}
+        </div>
+      </>
+    )}
+  </div>
+
+  {sale.status !== 'live' && sale.books > 0 && (
+    <form method="post" action="/api/admin/sales" class="mt-5">
+      <input type="hidden" name="action" value="live" />
+      <input type="hidden" name="id" value={sale.id} />
+      <button type="submit" class="btn btn-primary">Put this live</button>
+    </form>
+  )}
+</Admin>
