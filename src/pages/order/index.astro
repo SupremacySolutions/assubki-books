@@ -410,11 +410,40 @@ if (offerTelegram && telegramLink) {
 
 
         {/*
+          * The conversation, before the cancel controls.
+          *
+          * Somebody with a question is far more common than somebody who wants
+          * out, and the two should not be adjacent choices - a customer who
+          * only wanted to ask when their books were coming should meet the
+          * message box first and never have to scroll past "Cancel order" to
+          * find it.
+          *
+          * The notification links straight to #thread, so anyone arriving
+          * because they were told they have a reply lands on it either way.
+          */}
+        <div class="mt-10">
+          <Thread
+            messages={messages}
+            side="customer"
+            action="/api/orders/message"
+            hidden={{ ref: order.ref, t: token }}
+            open={threadOpen(order.status)}
+            canAttach={true}
+            imagesUsed={imagesUsed}
+            proofUrl={(id: number) =>
+              `/api/orders/proof?ref=${encodeURIComponent(order.ref)}&t=${encodeURIComponent(token)}&id=${id}`}
+            error={sendError}
+          />
+        </div>
+
+        {/*
           * Cancelling.
           *
-          * At the very foot of the page and never beside "Message the shop":
-          * it is the quietest thing here, not an alternative to getting in
-          * touch. Everything is a form post and a server-rendered panel - the
+          * Last, under the conversation, and never beside it: cancelling is
+          * the quietest thing on this page, not an alternative to getting in
+          * touch. Somebody with a question should have found the message box
+          * long before they reach this. Everything is a form post and a
+          * server-rendered panel - the
           * customer has no login, only the token in this URL, and the page has
           * to work with JavaScript off.
           */}
@@ -517,30 +546,6 @@ if (offerTelegram && telegramLink) {
             )}
           </div>
         )}
-
-        {/*
-          * The conversation goes here: after the order itself and the cancel
-          * control, before the closing note.
-          *
-          * Above the footer rather than at the very bottom because someone who
-          * arrived *because* they were told they have a reply should not have
-          * to hunt for it - and the notification links straight to #thread, so
-          * they land on it either way.
-          */}
-        <div class="mt-10">
-          <Thread
-            messages={messages}
-            side="customer"
-            action="/api/orders/message"
-            hidden={{ ref: order.ref, t: token }}
-            open={threadOpen(order.status)}
-            canAttach={true}
-            imagesUsed={imagesUsed}
-            proofUrl={(id: number) =>
-              `/api/orders/proof?ref=${encodeURIComponent(order.ref)}&t=${encodeURIComponent(token)}&id=${id}`}
-            error={sendError}
-          />
-        </div>
 
         <div class="mt-10 border-t border-[var(--color-rule)] pt-6 text-center">
           <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">

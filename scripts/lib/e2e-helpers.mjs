@@ -77,16 +77,44 @@ export function report() {
 // Database
 // ---------------------------------------------------------------------------
 
-/** Runs SQL against whichever database this mode is testing. */
+/**
+ * Runs SQL against whichever database this mode is testing.
+ *
+ * Retried, because it is a process launch and not a query. A run makes
+ * hundreds of these while the dev server is hitting the same database, and one
+ * `npx wrangler` failing to start took a whole suite down with
+ * "Command failed: npx wrangler d1 execute ..." - a message that named the
+ * query and said nothing about why. The suite would then leave its fixtures
+ * behind and fail the *next* run's ledger assertions on rubbish rather than
+ * code.
+ *
+ * Three retries, backing off. A full run makes hundreds of these against a
+ * dev server working the same file, and one attempt is demonstrably not enough:
+ * the suite failed this way on the committed code too, before any of this.
+ * A genuinely bad query fails every attempt and is reported with whatever
+ * wrangler actually said, which is what was missing.
+ */
 export async function db(sql) {
-  const { stdout } = await execFileAsync('npx', [
-    'wrangler', 'd1', 'execute', 'assubki-books',
-    PROD ? '--remote' : '--local', '--json', '--command', sql,
-  ], { maxBuffer: 20 * 1024 * 1024 });
+  let last;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const { stdout } = await execFileAsync('npx', [
+        'wrangler', 'd1', 'execute', 'assubki-books',
+        PROD ? '--remote' : '--local', '--json', '--command', sql,
+      ], { maxBuffer: 20 * 1024 * 1024 });
 
-  const parsed = JSON.parse(stdout);
-  if (!Array.isArray(parsed)) throw new Error(parsed.error?.text ?? 'query failed');
-  return parsed.flatMap((r) => r.results ?? []);
+      const parsed = JSON.parse(stdout);
+      if (!Array.isArray(parsed)) throw new Error(parsed.error?.text ?? 'query failed');
+      return parsed.flatMap((r) => r.results ?? []);
+    } catch (err) {
+      last = err;
+      // Say what wrangler said, not just that a command failed.
+      const detail = [err.stdout, err.stderr].filter(Boolean).join(' ').slice(0, 400);
+      if (detail) last = new Error(`${err.message.split('\n')[0]}\n       ${detail.trim()}`);
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+  }
+  throw last;
 }
 
 export const one = async (sql) => (await db(sql))[0] ?? {};

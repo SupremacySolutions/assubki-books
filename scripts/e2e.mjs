@@ -2331,7 +2331,16 @@ async function botAndOptIn() {
 async function messages() {
   const t = suite('17. Messages on an order');
 
-  const book = await makeBook({ stock: '3', price: '9.00' });
+  /*
+   * Stock well clear of what this suite spends.
+   *
+   * Four orders are placed against this one listing, and at stock 3 the fourth
+   * sat exactly on the boundary - it only fit because a cancellation happened
+   * to have released a copy first. Any change to the order of the sections
+   * below tipped it over, and the suite failed on arithmetic that has nothing
+   * to do with messages.
+   */
+  const book = await makeBook({ stock: '9', price: '9.00' });
   const order = await placeOrder(book.id, 'collection');
   const link = `?ref=${order.ref}&t=${order.token}`;
   const row = await one(`SELECT id FROM orders WHERE ref = '${order.ref}'`);
@@ -2413,6 +2422,21 @@ async function messages() {
   for (let i = 0; i < 19; i++) await post({ body: `flood ${i}` });
   sent = await post({ body: 'one too many' });
   t.ok(sent.location.includes('e=rate'), 'the hourly cap refuses the twenty-first');
+
+  /*
+   * Where the thread sits on the page.
+   *
+   * Above the cancel controls: somebody with a question is far more common than
+   * somebody who wants out, and a customer who only wanted to ask when their
+   * books were coming should not have to scroll past "Cancel order" to find the
+   * message box.
+   */
+  const live = await placeOrder(book.id, 'collection');
+  const ordering = await html(`/order?ref=${live.ref}&t=${live.token}`);
+  const atThread = ordering.indexOf('id="thread"');
+  const atCancel = ordering.search(/Changed your mind\?|Need to cancel\?/);
+  t.ok(atThread > -1 && atCancel > -1, 'the order page shows both the thread and the cancel controls');
+  t.ok(atThread < atCancel, 'and the thread comes before them, not after');
 
   // --- the compose box, as a customer meets it ------------------------------
   const compose = await html(`/order${link}`);
