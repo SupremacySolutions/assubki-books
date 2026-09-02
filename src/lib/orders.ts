@@ -401,6 +401,14 @@ export interface OrderView {
   unread_for_owner: number;
   /** When the thread last moved, either way. Null on an order with no thread. */
   last_message_at: number | null;
+  /**
+   * The newest message's id, which is what the poll compares against.
+   *
+   * Separate from `last_message_at` because a cursor has to be monotonic and
+   * whole seconds are not: two messages inside one second used to leave the
+   * page's cursor equal to the time, so the poll concluded nothing had moved.
+   */
+  last_message_id: number | null;
   /** When the customer was last told there is a reply. Debounce marker. */
   message_notified_at: number | null;
   items: {
@@ -423,7 +431,7 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
             access_token, telegram_chat_id, COALESCE(cash_payment, 0) as cash_payment,
             COALESCE(unread_for_customer, 0) AS unread_for_customer,
             COALESCE(unread_for_owner, 0) AS unread_for_owner,
-            last_message_at, message_notified_at
+            last_message_at, last_message_id, message_notified_at
        FROM orders WHERE ref = ?`,
   )
     .bind(ref)

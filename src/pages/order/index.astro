@@ -21,7 +21,7 @@ import { cancelRight, REASON_MAX } from '../../lib/cancellation';
 import { whenText } from '../../lib/incoming';
 import Thread from '../../components/Thread.astro';
 import { THREAD } from '../../lib/order-status';
-import { imageCount, markRead, thread, threadOpen } from '../../lib/messages';
+import { markRead, thread, threadOpen } from '../../lib/messages';
 import QRCode from 'qrcode';
 
 const params = Astro.url.searchParams;
@@ -58,7 +58,9 @@ const whereToCollect =
  * honestly say "they opened this" and must not claim more.
  */
 const messages = order ? await thread(order.id) : [];
-const imagesUsed = order ? await imageCount(order.id) : 0;
+/* Counted off the thread that was just read, not asked for again: the rows are
+   already here and they already carry `image_key`. */
+const imagesUsed = messages.filter((m) => m.image_key).length;
 if (order && order.unread_for_customer > 0) await markRead(order.id, 'customer');
 
 /* A refusal from the last send, turned back into the sentence the endpoint

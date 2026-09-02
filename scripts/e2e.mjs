@@ -2412,6 +2412,51 @@ async function messages() {
   const page = await html(`/order${link}`);
   t.ok(page.includes('put one aside'), 'the customer sees the reply on their page');
 
+  /*
+   * Two messages inside one second, which is the case that used to be lost.
+   *
+   * The poll's cursor was `created_at` - whole seconds - so a page showing the
+   * first of a same-second pair sent a cursor equal to the order's
+   * `last_message_at`, the endpoint's early-out read that as "nothing has
+   * moved", and the second message did not arrive until a reload. A Telegram
+   * media group reaches the webhook as separate updates and lands in one second
+   * without trying.
+   *
+   * The cursor is a message id now, and these assertions fail against the old
+   * one: the second message is the whole point.
+   */
+  await db(
+    `UPDATE messages SET created_at = (SELECT MAX(created_at) FROM messages WHERE order_id = ${row.id})
+      WHERE order_id = ${row.id}`,
+  );
+  await db(
+    `UPDATE orders SET last_message_at = (SELECT MAX(created_at) FROM messages WHERE order_id = ${row.id}),
+                       last_message_id = (SELECT MAX(id) FROM messages WHERE order_id = ${row.id})
+      WHERE id = ${row.id}`,
+  );
+  const all = await db(`SELECT id FROM messages WHERE order_id = ${row.id} ORDER BY id`);
+  t.ok(all.length >= 2, 'there are at least two messages to tell apart');
+
+  const stamped = await one(
+    `SELECT COUNT(DISTINCT created_at) AS seconds FROM messages WHERE order_id = ${row.id}`,
+  );
+  t.ok(stamped.seconds === 1, 'and they now share a second, as a burst would');
+
+  const older = all[all.length - 2].id;
+  const newest = all[all.length - 1].id;
+  const caught = await (await fetch(`${SITE}/api/orders/status${link}&since=${older}`)).json();
+  t.ok(
+    caught.messages.some((m) => m.id === newest),
+    'a message written in the same second as the one on screen still arrives',
+  );
+  t.ok(
+    !caught.messages.some((m) => m.id === older),
+    'and the one already on screen is not sent twice',
+  );
+
+  const uptodate = await (await fetch(`${SITE}/api/orders/status${link}&since=${newest}`)).json();
+  t.ok(uptodate.messages.length === 0, 'a page that is up to date is sent nothing');
+
   // --- the caps refuse, rather than silently truncating ---------------------
   sent = await post({ body: 'x'.repeat(2100) });
   t.ok(sent.location.includes('e=long'), 'a message over 2000 characters is refused');

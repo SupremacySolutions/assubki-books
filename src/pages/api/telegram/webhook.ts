@@ -452,13 +452,20 @@ async function storeTelegramPhoto(
     httpMetadata: { contentType: file.contentType, cacheControl: 'private, no-store' },
   });
 
-  await postMessage({
-    orderId: bound.id,
-    sender: 'customer',
-    via: 'telegram',
-    body: normaliseBody(note),
-    imageKey: key,
-  });
+  // Same rule as the web route: an object with no row pointing at it is one the
+  // sweep will never find, so it does not get to stay.
+  try {
+    await postMessage({
+      orderId: bound.id,
+      sender: 'customer',
+      via: 'telegram',
+      body: normaliseBody(note),
+      imageKey: key,
+    });
+  } catch (err) {
+    await bucket.delete(key).catch(() => {});
+    throw err;
+  }
 }
 
 /** Convenience for setting the webhook up; harmless to leave in place. */

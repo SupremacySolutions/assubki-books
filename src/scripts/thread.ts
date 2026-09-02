@@ -43,12 +43,19 @@ if (root) {
   let timer: number | null = null;
   let checking = false;
 
-  /** The newest message already on the page, so the poll asks for less. */
+  /**
+   * The newest message already on the page, so the poll asks for less.
+   *
+   * The id, not the time it was written. `created_at` is whole seconds, and two
+   * messages inside one second - a Telegram media group is the easy way to get
+   * there - made the cursor ambiguous: the server read it as "you are already
+   * up to date" and the second message stayed invisible until a reload.
+   */
   const newest = () => {
-    const items = list?.querySelectorAll<HTMLElement>('[data-message-at]') ?? [];
-    let at = 0;
-    for (const el of items) at = Math.max(at, Number(el.dataset.messageAt ?? 0));
-    return at;
+    const items = list?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [];
+    let id = 0;
+    for (const el of items) id = Math.max(id, Number(el.dataset.messageId ?? 0));
+    return id;
   };
 
   const params = () => {

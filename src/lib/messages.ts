@@ -37,13 +37,23 @@ export interface Message {
   created_at: number;
 }
 
-/** The whole conversation, oldest first, as both sides read it. */
-export async function thread(orderId: number): Promise<Message[]> {
+/**
+ * The conversation, oldest first, as both sides read it.
+ *
+ * `sinceId` narrows it to what a caller has not seen. The poll passes one so an
+ * update reads the new messages rather than the whole thread and throws most of
+ * it away; a page render passes nothing and gets everything.
+ *
+ * Ordered by id, not by `created_at`: whole seconds do not order two messages
+ * written inside one, and the order they are read in has to match the order the
+ * cursor advances in.
+ */
+export async function thread(orderId: number, sinceId = 0): Promise<Message[]> {
   const { results } = await env.DB.prepare(
     `SELECT id, sender, via, body, image_key, had_image, created_at
-       FROM messages WHERE order_id = ? ORDER BY created_at, id`,
+       FROM messages WHERE order_id = ? AND id > ? ORDER BY id`,
   )
-    .bind(orderId)
+    .bind(orderId, sinceId)
     .all<Message>();
   return results;
 }
@@ -114,11 +124,21 @@ export async function postMessage(input: PostInput): Promise<number | null> {
       `INSERT INTO messages (order_id, sender, via, body, image_key, had_image)
        VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
     ).bind(input.orderId, input.sender, input.via, body, imageKey, imageKey ? 1 : 0),
+    /*
+     * `last_message_id` is what the poll compares against, and it has to be an
+     * id rather than a time: two messages inside one second made a
+     * second-resolution cursor ambiguous, and the newer one went undelivered
+     * until a reload. `last_message_at` stays for the sweep and the debounce,
+     * which do want a clock.
+     */
     env.DB.prepare(
-      `UPDATE orders SET ${side} = ${side} + 1, last_message_at = unixepoch(),
-                         updated_at = unixepoch()
+      `UPDATE orders
+          SET ${side} = ${side} + 1,
+              last_message_id = (SELECT MAX(id) FROM messages WHERE order_id = ?),
+              last_message_at = unixepoch(),
+              updated_at = unixepoch()
         WHERE id = ?`,
-    ).bind(input.orderId),
+    ).bind(input.orderId, input.orderId),
   ]);
 
   const row = (inserted.results as { id: number }[] | undefined)?.[0];

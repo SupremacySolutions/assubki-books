@@ -29,7 +29,7 @@ this one.
 | What does a thread hang off? | **One thread per order.** Authority is the order token; a forwarded link must never expose another order's messages. The portal groups threads by customer so the owner still sees the whole person. |
 | Chat before ordering? | **No.** Order threads only. The contact form and Telegram stay as they are for browsers. No unauthenticated thread creation, no second kind of token, no spam surface. |
 | What does a notification email carry? | **Sender and a one-line preview, then a link.** Enough to judge urgency, not enough to answer by email. |
-| Screenshots? | **Customer only, removed when the order closes.** A payment screenshot shows a bank balance, an account number and a real name. The shop should hold that for days, not years. |
+| Screenshots? | **Customer only, removed after the order closes.** A payment screenshot shows a bank balance, an account number and a real name, so it does not live for ever. The owner set the window at **six months after the order closes** - long enough to answer a chargeback, a dispute or a question that arrives late. |
 
 ---
 
@@ -171,10 +171,11 @@ The owner reads the same object through an admin route. **Do not add `proofs/`
 to `SERVED_PREFIXES`.**
 
 **Removal on close.** The cron Worker sweeps images for orders that reached
-`completed` or `cancelled` more than **7 days** ago: delete the R2 object, null
-`image_key`, keep the message row so the conversation still reads. Seven days
-rather than instantly so a dispute the day after collection is not erased —
-worth confirming with the owner, but it is the safer default. This needs the
+`completed`, `cancelled` or `expired` more than **six months** ago: delete the
+R2 object, null `image_key`, keep the message row so the conversation still
+reads. The window is set by what the picture might still be needed for — a
+chargeback, a dispute, a question months later — rather than by the order it
+belongs to. This needs the
 `UPLOADS` R2 binding adding to `workers/expire-holds/wrangler.jsonc`, which
 currently has only `DB`. The chat says plainly that images are removed when the
 order closes, so nobody expects a permanent record.
@@ -328,7 +329,7 @@ verbatim.**
 > - Messages are **text up to 2000 characters**, or **an image**, or both.
 > - The customer may attach **up to 5 images per order**, and **only images**
 >   (`jpeg`, `png`, `webp`, 8 MB each). No PDFs, no documents, no voice notes.
-> - **Images are deleted 7 days after the order closes.** The page must say so
+> - **Images are deleted six months after the order closes.** The page must say so
 >   where someone will read it before they upload, not in a footnote.
 > - A message cannot be edited or deleted once sent.
 > - Sending is a **plain form post**. The whole flow must work with JavaScript
@@ -503,4 +504,3 @@ matters more once Telegram is a route into the thread.
 - **Covers:** run *Find a cover* over the 17 photo-less listings, keep what is
   good, photograph the rest. Nothing needs deleting.
 - The 18 policy blanks in `docs/policy-blanks.md`.
-- Confirm the 7-day grace before payment screenshots are deleted.

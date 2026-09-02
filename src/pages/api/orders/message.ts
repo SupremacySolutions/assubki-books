@@ -115,14 +115,28 @@ export const POST: APIRoute = async ({ request }) => {
     });
   }
 
-  const id = await postMessage({
-    orderId: order.id,
-    sender: 'customer',
-    via: 'web',
-    body,
-    imageKey,
-  });
-  if (id === null) return refuse('empty', THREAD.failed);
+  /*
+   * If the row cannot be written, take the object back out.
+   *
+   * The sweep finds screenshots by walking `messages`, so an object with no row
+   * pointing at it is never collected - it would sit in the bucket for good,
+   * which is precisely what a payment screenshot must not do.
+   */
+  let id: number | null = null;
+  try {
+    id = await postMessage({ orderId: order.id, sender: 'customer', via: 'web', body, imageKey });
+  } catch (err) {
+    if (imageKey) {
+      await (env as unknown as UploadEnv).UPLOADS?.delete(imageKey).catch(() => {});
+    }
+    throw err;
+  }
+  if (id === null) {
+    if (imageKey) {
+      await (env as unknown as UploadEnv).UPLOADS?.delete(imageKey).catch(() => {});
+    }
+    return refuse('empty', THREAD.failed);
+  }
 
   /*
    * The message is committed before this runs, and a Telegram outage must not

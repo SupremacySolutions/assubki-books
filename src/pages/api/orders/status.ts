@@ -28,16 +28,22 @@ export const GET: APIRoute = async ({ url }) => {
   /*
    * The messages themselves, and only when there are new ones.
    *
-   * `since` is the newest message the page is already showing. Reading the
-   * thread on every poll would put a second query behind a five-second timer
-   * on every open order page; comparing two integers we already have first
-   * means the common case - nothing has happened - stays at the one read
-   * `getOrder` was making anyway.
+   * `since` is the id of the newest message the page is already showing.
+   * Reading the thread on every poll would put a second query behind a
+   * five-second timer on every open order page; comparing two integers we
+   * already have first means the common case - nothing has happened - stays at
+   * the one read `getOrder` was making anyway.
+   *
+   * An id, not a timestamp. It used to be `created_at`, which is whole seconds,
+   * so two messages written inside the same second left the page's cursor equal
+   * to `last_message_at` - the early-out said nothing had moved, and the second
+   * message did not appear until a reload. Ids are monotonic; seconds are not.
    */
   const since = Number.parseInt(url.searchParams.get('since') ?? '', 10);
+  const cursor = Number.isInteger(since) && since >= 0 ? since : null;
   const moved =
-    Number.isInteger(since) && order.last_message_at !== null && order.last_message_at > since;
-  const messages = moved ? (await thread(order.id)).filter((m) => m.created_at > since) : [];
+    cursor !== null && order.last_message_id !== null && order.last_message_id > cursor;
+  const messages = moved ? await thread(order.id, cursor) : [];
 
   /*
    * Handing the messages over is the read event, exactly as opening the page
