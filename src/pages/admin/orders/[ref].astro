@@ -592,7 +592,8 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                       written here reaches the email, their order page and
                       Telegram, so the three cannot disagree. */}
                   {step.action === 'cancelled' && (
-                    <div class="mb-4">
+                    <div class="mb-4 p-3.5 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]">
+                      <p class="text-[13px] font-medium mb-2.5">What the customer is told when you cancel</p>
                       <label for="cancel_note" class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
                         Why, in your own words (optional)
                       </label>
@@ -606,6 +607,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
                       />
                       <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">
                         Goes with the email, their order page, and Telegram if they connected it.
+                        Leave it blank and they are only told the order was cancelled.
                       </p>
                     </div>
                   )}

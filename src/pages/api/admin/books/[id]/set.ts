@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { forgetCategoryCounts } from '../../../../../lib/db';
+import { forgetCategoryCounts, forgetHomeRows } from '../../../../../lib/db';
 import { partCandidates } from '../../../../../lib/admin-db';
 
 export const prerender = false;
@@ -82,6 +82,7 @@ export const POST: APIRoute = async ({ params, request }) => {
       .bind(sets, book.set_id)
       .run();
     forgetCategoryCounts();
+  forgetHomeRows();
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
@@ -167,6 +168,7 @@ export const POST: APIRoute = async ({ params, request }) => {
 
     await env.DB.batch(statements);
     forgetCategoryCounts();
+  forgetHomeRows();
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
@@ -207,6 +209,7 @@ export const POST: APIRoute = async ({ params, request }) => {
     ]);
 
     forgetCategoryCounts();
+  forgetHomeRows();
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
@@ -275,5 +278,6 @@ export const POST: APIRoute = async ({ params, request }) => {
 
   await env.DB.batch(statements);
   forgetCategoryCounts();
+  forgetHomeRows();
   return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
 };

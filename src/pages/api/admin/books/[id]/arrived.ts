@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { setStock } from '../../../../../lib/admin-db';
+import { forgetHomeRows } from '../../../../../lib/db';
 
 export const prerender = false;
 
@@ -81,6 +82,9 @@ export const POST: APIRoute = async ({ params, request }) => {
   )
     .bind(arrived, converted, bookId)
     .run();
+
+  // A landed delivery is exactly what takes a book out of the arriving row.
+  forgetHomeRows();
 
   return back;
 };

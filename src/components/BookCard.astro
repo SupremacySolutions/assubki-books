@@ -10,6 +10,7 @@
  */
 import { price, availability, imageUrl } from '../lib/format';
 import { cropsCleanly } from '../lib/cover-fit';
+import { delivery } from '../lib/incoming';
 import { IMAGE_PRESETS } from '../lib/image-presets';
 import { classmark } from '../lib/classmarks';
 import Rosette from './Rosette.astro';
@@ -50,6 +51,17 @@ const nowPence = off > 0 ? Math.round((book.price_pence * (100 - off)) / 100) : 
  * of themselves rather than losing a title.
  */
 const fills = cropsCleanly(book.width, book.height);
+
+/*
+ * A delivery on its way, which the card used to say nothing about at all.
+ *
+ * Every one of these fields has always been on the row this card is handed; it
+ * simply never read them, so a book with nothing on the shelf and twenty coming
+ * showed the same flat "Out of stock" as one nobody is reordering. Only shown
+ * when the shelf is empty - while a copy can be had today, that is the thing
+ * worth saying.
+ */
+const coming = book.available <= 0 ? delivery(book) : null;
 const marks = (book.cat_slugs ?? '')
   .split(',')
   .filter(Boolean)
@@ -100,8 +112,16 @@ const marks = (book.cat_slugs ?? '')
       )}
       {
         avail.state === 'out' && (
-          <span class="absolute inset-x-0 bottom-0 bg-[var(--color-ink)]/80 text-white text-[11px] font-semibold tracking-wide uppercase text-center py-1.5">
-            Out of stock
+          <span
+            class:list={[
+              'absolute inset-x-0 bottom-0 text-white text-[11px] font-semibold tracking-wide uppercase text-center py-1.5',
+              // Navy rather than near-black: a delivery on its way is not the
+              // same news as a book nobody is reordering, and the bar is the
+              // first thing read at this size.
+              coming ? 'bg-[var(--color-navy)]/85' : 'bg-[var(--color-ink)]/80',
+            ]}
+          >
+            {coming ? (coming.free > 0 ? 'Arriving' : 'Fully reserved') : 'Out of stock'}
           </span>
         )
       }
@@ -154,7 +174,11 @@ const marks = (book.cat_slugs ?? '')
     * "Only 2 left" without fighting the pill for space.
     */}
   <div class="pt-2.5 flex items-center justify-between gap-2">
-    <span class="flex items-baseline gap-2 min-w-0">
+    {/* Wraps rather than clips. At 375px a sale price, the price it replaced
+        and the Add pill do not fit on one line, and the old price was being cut
+        off mid-figure - "£45.0" - which reads as a different number rather than
+        as a truncation. */}
+    <span class="flex items-baseline gap-x-2 gap-y-0.5 flex-wrap min-w-0">
       <span class="price text-[16.5px]">{price(nowPence)}</span>
       {off > 0 && (
         <span class="text-[13.5px] text-[var(--color-ink-faint)] line-through decoration-1">
@@ -174,12 +198,25 @@ const marks = (book.cat_slugs ?? '')
       </button>
     )}
   </div>
-  <p
-    class:list={[
-      'mt-1.5 text-[12.5px] font-medium',
-      avail.state === 'in' && 'text-[var(--color-instock)]',
-      avail.state === 'low' && 'text-[var(--color-outstock)]',
-      avail.state === 'out' && 'text-[var(--color-ink-faint)]',
-    ]}
-  >{avail.label}</p>
+  {
+    coming ? (
+      <p class="mt-1.5 text-[12.5px] font-medium text-[var(--color-navy)]">
+        {coming.when ? `Arriving ${coming.when}` : 'Arriving soon'}
+        <span class="block font-normal text-[var(--color-ink-faint)]">
+          {coming.free > 0
+            ? `${coming.free} of ${coming.coming} free to reserve`
+            : `All ${coming.coming} already reserved`}
+        </span>
+      </p>
+    ) : (
+      <p
+        class:list={[
+          'mt-1.5 text-[12.5px] font-medium',
+          avail.state === 'in' && 'text-[var(--color-instock)]',
+          avail.state === 'low' && 'text-[var(--color-outstock)]',
+          avail.state === 'out' && 'text-[var(--color-ink-faint)]',
+        ]}
+      >{avail.label}</p>
+    )
+  }
 </article>

@@ -1,0 +1,77 @@
+---
+/**
+ * A titled row of covers with a way through to the rest of them.
+ *
+ * This markup was copy-pasted four times on the home page and the front page
+ * now wants seven, which is the point at which the fourth copy drifts from the
+ * first. The sale row keeps its own header - it carries a badge and a blurb
+ * nothing else has - so `header` replaces the default heading rather than the
+ * whole row being forked.
+ */
+import BookCard from './BookCard.astro';
+import type { BookRow } from '../lib/db';
+
+interface Props {
+  title?: string;
+  href: string;
+  linkLabel: string;
+  books: BookRow[];
+  /** How many to draw. Two rows at the widest breakpoint by default. */
+  limit?: number;
+  /** Above the fold, so its covers are worth fetching eagerly. */
+  eager?: boolean;
+  /** Spacing, for the one row that sits tight under the hero. */
+  padding?: string;
+  /** A rule between the header and the covers, as the sale row has. */
+  ruled?: boolean;
+}
+
+const {
+  title,
+  href,
+  linkLabel,
+  books,
+  limit = 10,
+  eager = false,
+  padding = 'pb-16',
+  ruled = false,
+} = Astro.props;
+
+const shown = books.slice(0, limit);
+---
+
+{
+  shown.length > 0 && (
+    <section class:list={['mx-auto max-w-[var(--width-shop)] px-5 md:px-10 reveal', padding]}>
+      <div class:list={['flex items-baseline justify-between gap-4', ruled ? 'mb-1' : 'mb-5']}>
+        {/* The sale row puts its own name and badge here. */}
+        {Astro.slots.has('header') ? (
+          <slot name="header" />
+        ) : (
+          <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">{title}</h2>
+        )}
+        <a
+          href={href}
+          class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2 whitespace-nowrap"
+        >
+          {linkLabel}
+        </a>
+      </div>
+
+      <slot name="blurb" />
+
+      <div
+        class:list={[
+          'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11',
+          ruled && 'mt-5 pt-5 border-t border-[var(--color-rule-soft)]',
+        ]}
+      >
+        {shown.map((book, i) => (
+          <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
+            <BookCard book={book} eager={eager && i < 5} quickAdd />
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}

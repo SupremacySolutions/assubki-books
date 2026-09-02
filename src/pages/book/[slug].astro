@@ -574,6 +574,76 @@ const jsonLd = {
       }, result.added > 0 ? 1800 : 0);
     });
 
+    /*
+     * Reserving a copy from a delivery that has not landed.
+     *
+     * This button had no handler at all. It rendered, it looked exactly like
+     * the one beside it, and clicking it did nothing - for the whole life of
+     * the reservations feature. The suite never saw it because it reserves by
+     * posting to the API, which has always worked; only the button was missing.
+     *
+     * The ceiling is `reservable` - what is left of the delivery after other
+     * people's claims - and never shelf stock, which is nil by definition here.
+     * Group baskets go through the same path as an ordinary add: a group line
+     * is a book and a quantity, and whether it comes off the shelf or off a
+     * delivery is decided when the order is actually created.
+     */
+    const reserveBtn = document.querySelector<HTMLButtonElement>('#reserve');
+
+    /** What is still free to claim, re-read rather than trusted from render. */
+    const reservableNow = async (id: string, fallback: number) => {
+      try {
+        const res = await fetch(`/api/basket?ids=${encodeURIComponent(id)}`);
+        const data = await res.json();
+        const book = data?.books?.[0];
+        return typeof book?.reservable === 'number' ? book.reservable : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+
+    reserveBtn?.addEventListener('click', async () => {
+      const id = reserveBtn.dataset.bookId;
+      if (!id) return;
+      const member = readGroup();
+
+      reserveBtn.disabled = true;
+      const free = await reservableNow(id, Number(reserveBtn.dataset.max ?? '1'));
+
+      if (free <= 0) {
+        say('Every copy of this delivery is already reserved.');
+        reserveBtn.disabled = false;
+        return;
+      }
+
+      const result = member
+        ? await addToGroup(member, Number(id), 1, free)
+        : window.asbBasket.addChecked(id, 1, free);
+
+      if (!result) {
+        say('That group basket is no longer taking books. Open your basket to check.');
+        reserveBtn.disabled = false;
+        return;
+      }
+
+      if (result.added === 0) {
+        say(
+          member
+            ? `The group has already reserved all ${free} that are free`
+            : `All ${free} free copies are already in your basket`,
+        );
+      } else say('');
+
+      if (result.added > 0) {
+        reserveBtn.textContent = member ? 'Reserved for the group' : 'Reserved';
+        toBasket?.classList.remove('hidden');
+      }
+      setTimeout(() => {
+        reserveBtn.textContent = 'Reserve a copy';
+        reserveBtn.disabled = false;
+      }, result.added > 0 ? 1800 : 0);
+    });
+
     const cover = document.querySelector<HTMLImageElement>('#cover');
     for (const thumb of document.querySelectorAll<HTMLButtonElement>('.thumb')) {
       thumb.addEventListener('click', () => {

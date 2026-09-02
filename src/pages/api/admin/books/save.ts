@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { setStock } from '../../../../lib/admin-db';
-import { forgetCategoryCounts } from '../../../../lib/db';
+import { forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
 
 export const prerender = false;
 
@@ -138,6 +138,7 @@ export const POST: APIRoute = async ({ request }) => {
   // The shelf counts are cached for a minute; the owner should see their own
   // change now rather than in a minute.
   forgetCategoryCounts();
+  forgetHomeRows();
 
   return new Response(null, {
     status: 302,

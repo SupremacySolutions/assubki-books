@@ -3,7 +3,7 @@ import Base from '../../layouts/Base.astro';
 import BookCard from '../../components/BookCard.astro';
 import CategoryNav from '../../components/CategoryNav.astro';
 import Rosette from '../../components/Rosette.astro';
-import { categoryTree, categoryByPath, listBooks, type Sort } from '../../lib/db';
+import { categoryTree, categoryByPath, listBooks, arrivingBooks, type Sort } from '../../lib/db';
 import { buildQuery } from '../../lib/format';
 import { liveSale } from '../../lib/sales';
 
@@ -20,18 +20,26 @@ if (categoryPath && !category) return Astro.rewrite('/404');
 const q = params.get('q')?.trim() || null;
 const inStockOnly = params.get('stock') === 'in';
 const onSale = params.get('sale') === '1';
+const arriving = params.get('arriving') === '1';
 const sortParam = params.get('sort');
 const validSorts: Sort[] = ['relevance', 'title', 'price-asc', 'price-desc', 'newest', 'saving'];
 const sort = (validSorts.includes(sortParam as Sort) ? sortParam : null) as Sort | null;
 const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
 
 const sale = await liveSale();
-const [tree, result] = await Promise.all([
+const [tree, result, anyArriving] = await Promise.all([
   categoryTree(),
-  listBooks({ categoryPath, q, inStockOnly, onSale, sort: sort ?? undefined, page }),
+  listBooks({ categoryPath, q, inStockOnly, onSale, arriving, sort: sort ?? undefined, page }),
+  arrivingBooks(1),
 ]);
 
-const base = { q, sort, stock: inStockOnly ? 'in' : null, sale: onSale ? '1' : null };
+const base = {
+  q,
+  sort,
+  stock: inStockOnly ? 'in' : null,
+  sale: onSale ? '1' : null,
+  arriving: arriving ? '1' : null,
+};
 const keep = buildQuery(base);
 const heading = category?.name ?? 'All titles';
 const crumbs = category
@@ -71,6 +79,12 @@ if (onSale && sale) {
   chips.push({
     label: sale.name,
     without: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, sale: null })}`,
+  });
+}
+if (arriving) {
+  chips.push({
+    label: 'Arriving soon',
+    without: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, arriving: null })}`,
   });
 }
 if (inStockOnly) {
@@ -153,6 +167,19 @@ const description = category
                 class="w-4 h-4 accent-[var(--color-navy)]"
               />
               On sale
+            </label>
+          )}
+          {(anyArriving.length > 0 || arriving) && (
+            <label class="mt-2.5 flex items-center gap-2.5 text-[14.5px] text-[var(--color-ink-soft)] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                name="arriving"
+                value="1"
+                checked={arriving}
+                data-autosubmit
+                class="w-4 h-4 accent-[var(--color-navy)]"
+              />
+              Arriving soon
             </label>
           )}
           <noscript><button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px] mt-3">Apply</button></noscript>

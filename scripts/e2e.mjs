@@ -2763,6 +2763,116 @@ async function messages() {
   );
 }
 
+// ---------------------------------------------------------------------------
+async function frontPage() {
+  const t = suite('18. The front page');
+
+  const home = await html('/');
+
+  /*
+   * The rows the shop leads with, in the order it leads with them.
+   *
+   * Order is the whole point of this section, so the assertion is on where the
+   * headings fall relative to one another rather than on each being present.
+   */
+  const at = (needle) => home.indexOf(needle);
+  t.ok(at('>Syllabus<') > 0 && at('>Hadith<') > 0 && at('>Fiqh<') > 0,
+    'the three shelves the shop is for each get a row');
+  t.ok(at('>Syllabus<') < at('>Hadith<') && at('>Hadith<') < at('>Fiqh<'),
+    'and they run syllabus, then hadith, then fiqh');
+  t.ok(at('>Fiqh<') < at('Browse the shelves'),
+    'the shelves index comes after them, not before');
+
+  t.ok(!home.includes('Recently added'), 'there is no "recently added" row any more');
+  t.ok(!home.includes('Syllabus sets') && !home.includes('Back in stock'),
+    'nor the two rows that repeated it');
+
+  /*
+   * Every cover on the drifting shelf passes the rule the cards use.
+   *
+   * The strip crops each one to a single size, so a shape that would be padded
+   * on a card loses its title here. It used to carry a looser rule of its own.
+   */
+  const shelfKeys = [...home.matchAll(/class="shelf-book"[\s\S]{0,400}?src="\/img\/([^"?]+)/g)]
+    .map((m) => m[1]);
+  t.ok(shelfKeys.length > 0, 'the shelf strip renders covers');
+  const shapes = await db(
+    `SELECT width, height FROM book_images WHERE image_key IN (${
+      [...new Set(shelfKeys)].map((k) => `'${k}'`).join(',')
+    })`,
+  );
+  const ugly = shapes.filter((s) => {
+    const r = s.width / s.height;
+    return !(r >= 0.75 && (r - 0.75) / r <= 0.06);
+  });
+  t.ok(ugly.length === 0, 'every cover on it would crop cleanly', `${ugly.length} would not`);
+
+  // Shuffled per render, so the shop looks different on a second visit.
+  const again = await html('/');
+  const keysOf = (page) =>
+    [...page.matchAll(/class="shelf-book"[\s\S]{0,400}?src="\/img\/([^"?]+)/g)].map((m) => m[1]).join();
+  t.ok(keysOf(home) !== keysOf(again), 'and the shelf is a different one on the next load');
+
+  // --- arriving --------------------------------------------------------------
+  const book = await makeBook({ stock: '0', price: '9.00' });
+  const row = await one(`SELECT id, slug FROM books WHERE id = ${book.id}`);
+
+  /*
+   * Scoped to this fixture rather than to the whole page.
+   *
+   * "No arriving row at all" is only true of an empty shop, and the local
+   * database rarely is - a delivery someone set up by hand is enough to make
+   * that assertion fail for a reason that has nothing to do with the code.
+   */
+  t.ok(!(await html('/catalogue?arriving=1')).includes(book.title),
+    'a book with nothing on the way is not in the arriving list');
+
+  await db(
+    `UPDATE books SET incoming = 6, reserved_incoming = 0,
+                      incoming_vague = 'mid', incoming_month = '2099-10'
+      WHERE id = ${book.id}`,
+  );
+
+  const withDelivery = await html('/');
+  t.ok(withDelivery.includes('Arriving soon'), 'a delivery on its way puts the row on the page');
+  t.ok(withDelivery.indexOf('Arriving soon') < withDelivery.indexOf('>Syllabus<'),
+    'and it sits above the shelves');
+
+  /*
+   * The card has to say so. A book with nothing on the shelf and six coming
+   * used to render the same flat "Out of stock" as one nobody is reordering,
+   * because the card never read the columns it was already being handed.
+   */
+  const card = await html(`/catalogue?arriving=1`);
+  t.ok(card.includes('free to reserve'), 'the card says how many are free to reserve');
+  t.ok(!/Out of stock[\s\S]{0,400}E2E/.test(card), 'and does not call an arriving book out of stock');
+
+  // The filter, and the count beside it - the pair that has come apart before.
+  const listed = await db(`SELECT COUNT(*) AS n FROM books WHERE status='live' AND incoming > 0`);
+  t.ok(card.includes(`${listed[0].n} title`), 'the arriving filter counts what it lists');
+
+  await db(`UPDATE books SET reserved_incoming = 6 WHERE id = ${book.id}`);
+  t.ok((await html('/catalogue?arriving=1')).includes('already reserved'),
+    'a delivery with every copy claimed says so rather than offering it');
+
+  await db(`UPDATE books SET incoming = 0, reserved_incoming = 0 WHERE id = ${book.id}`);
+  t.ok(!(await html('/catalogue?arriving=1')).includes(book.title),
+    'and it leaves the list once the delivery has landed');
+
+  /*
+   * The row itself disappears when the last delivery does. Checked by asking
+   * what is actually still coming, so this holds whatever else is set up.
+   */
+  const stillComing = await one(
+    `SELECT COUNT(*) AS n FROM books WHERE status='live' AND incoming > 0`,
+  );
+  const front = await html('/');
+  t.ok(
+    stillComing.n > 0 ? front.includes('Arriving soon') : !front.includes('Arriving soon'),
+    'the row is on the page exactly when something is on its way',
+  );
+}
+
 // The third field says whether the suite needs a signed-in portal session.
 // Everything that builds a fixture listing does; the public pages and the
 // checks that admin routes stay shut do not.
@@ -2776,6 +2886,7 @@ const SUITES = [
   ['bot', botAndOptIn, true], ['group', groupOrders, true],
   ['settings', ownerSettings, true],
   ['messages', messages, true],
+  ['front', frontPage, true],
   ['integrity', integrity, false],
 ];
 

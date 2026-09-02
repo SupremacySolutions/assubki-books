@@ -1,19 +1,27 @@
 ---
 import Base from '../layouts/Base.astro';
-import BookCard from '../components/BookCard.astro';
 import Rosette from '../components/Rosette.astro';
-import { categoryTree, shelfBooks, catalogueStats, setBooks, backInStock, saleBooks } from '../lib/db';
+import Row from '../components/Row.astro';
+import {
+  categoryTree,
+  shelfBooks,
+  catalogueStats,
+  saleBooks,
+  arrivingBooks,
+  homeRows,
+} from '../lib/db';
 import { liveSale } from '../lib/sales';
 import { classmark } from '../lib/classmarks';
+import { cropsCleanly } from '../lib/cover-fit';
 import { SITE, imageUrl } from '../lib/format';
 
 const sale = await liveSale();
-const [tree, shelf, stats, sets, restocked, onSale] = await Promise.all([
+const [tree, shelf, stats, arriving, rows, onSale] = await Promise.all([
   categoryTree(),
-  shelfBooks(24),
+  shelfBooks(60),
   catalogueStats(),
-  setBooks(10),
-  backInStock(10),
+  arrivingBooks(10),
+  homeRows(10),
   sale ? saleBooks(10) : Promise.resolve([]),
 ]);
 const top = tree.slice(0, 8);
@@ -25,21 +33,27 @@ const top = tree.slice(0, 8);
 const shelfCount = tree.reduce((n, c) => n + 1 + (c.children?.length ?? 0), 0);
 
 /*
- * The drifting shelf behind the hero uses the same covers as the grid below,
- * so the browser fetches each image once and the second use is a cache hit.
+ * The drifting shelf behind the hero: fourteen covers, different every visit.
  *
- * Upright covers only, because the strip crops every one of them to a single
- * size. Cropping is what keeps it even and what removes the white margin the
- * scans carry - but a landscape photo cropped to 118x166 loses most of itself
- * and a spine loses nearly all of it, so those are simply not offered a slot.
- * The grid below is unaffected and shows them at their own shape.
+ * Judged by `cropsCleanly` - the same rule the cards use to decide whether a
+ * cover fills its box or has to be padded inside it. The strip crops every
+ * cover to one size, so a shape that would lose its title on a card loses it
+ * here too. It used to have a looser rule of its own that let through anything
+ * between 0.6 and 0.85; 188 of the 208 live covers pass the strict one, which
+ * is a wide enough pool and a better-looking one.
  *
- * It costs almost nothing: of the in-stock covers, 198 are upright and 4 wide.
+ * Shuffled per render rather than ordered by date. The page is server-rendered
+ * on every request, so this is genuinely a different shelf each time somebody
+ * arrives - which is the point of a shelf you are meant to browse. The pool is
+ * drawn wide (60) for the same reason: shuffling two dozen redraws the same two
+ * dozen.
  */
-const upright = (b: { width: number | null; height: number | null }) =>
-  Boolean(b.width && b.height) && b.width! / b.height! >= 0.6 && b.width! / b.height! <= 0.85;
-
-const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
+const pretty = shelf.filter((b) => b.image_key && cropsCleanly(b.width, b.height));
+for (let i = pretty.length - 1; i > 0; i--) {
+  const j = Math.floor(Math.random() * (i + 1));
+  [pretty[i], pretty[j]] = [pretty[j], pretty[i]];
+}
+const drifting = pretty.slice(0, 14);
 ---
 
 <Base wide headerSearch={false} description={`${stats.titles} Islamic titles - classical texts, Dars Nizami and Maktab syllabus sets, hadith, fiqh and tafsir. ${SITE.tagline}.`}>
@@ -169,37 +183,62 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
     }
   </section>
 
-
+  {/* The sale leads, because it is the one thing on this page with a deadline
+      the shop chose. Its own header: a name, and a headline worked out from the
+      books in it rather than typed. */}
   {
     sale && onSale.length > 0 && (
-      <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pt-12 md:pt-14 pb-4 reveal">
-        <div class="flex items-baseline justify-between gap-4 mb-1">
-          <div class="flex items-baseline gap-3 flex-wrap min-w-0">
-            <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">{sale.name}</h2>
-            {/* Worked out from the books in the sale, never typed. */}
-            <span class="shrink-0 rounded-[var(--radius-pill)] bg-[var(--color-outstock)]/10 px-3 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-[var(--color-outstock)]">
-              Up to {sale.headline}% off
-            </span>
-          </div>
-          <a href="/catalogue?sale=1" class="shrink-0 text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
-            >All {onSale.length} →</a
-          >
+      <Row
+        href="/catalogue?sale=1"
+        linkLabel={`All ${onSale.length} →`}
+        books={onSale}
+        limit={5}
+        eager
+        padding="pt-12 md:pt-14 pb-4"
+        ruled
+      >
+        <div slot="header" class="flex items-baseline gap-3 flex-wrap min-w-0">
+          <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">{sale.name}</h2>
+          <span class="shrink-0 rounded-[var(--radius-pill)] bg-[var(--color-outstock)]/10 px-3 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-[var(--color-outstock)]">
+            Up to {sale.headline}% off
+          </span>
         </div>
         {sale.blurb && (
-          <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-2xl">{sale.blurb}</p>
+          <p slot="blurb" class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-2xl">
+            {sale.blurb}
+          </p>
         )}
-        <div class="mt-5 pt-5 border-t border-[var(--color-rule-soft)] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11">
-          {onSale.slice(0, 5).map((book, i) => (
-            <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
-              <BookCard book={book} quickAdd />
-            </div>
-          ))}
-        </div>
-      </section>
+      </Row>
     )
   }
 
-  <!-- Subjects as shelf classmarks: how a madrasah student actually navigates. -->
+  {/* Then what is on its way. Second to the sale by the owner's choosing, and
+      shown alongside it rather than instead of it - somebody waiting on a
+      shipment should not have to hunt for it because a sale happens to be on. */}
+  {
+    arriving.length > 0 && (
+      <Row
+        title="Arriving soon"
+        href="/catalogue?arriving=1"
+        linkLabel="All arriving →"
+        books={arriving}
+        limit={5}
+        padding="py-8"
+      />
+    )
+  }
+
+  {/* The three shelves the shop is actually for, in the order a student reads
+      them. Two rows of covers each at the widest breakpoint. */}
+  {rows.map((row) => (
+    <Row
+      title={row.title}
+      href={`/catalogue/${row.path}`}
+      linkLabel={`All ${row.total} →`}
+      books={row.books}
+    />
+  ))}
+
   <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-12 md:py-16 reveal">
     <div class="flex items-baseline justify-between gap-4 pb-3.5 border-b border-[var(--color-rule-soft)]">
       <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Browse the shelves</h2>
@@ -234,64 +273,6 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
     </ul>
   </section>
 
-  <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pb-16 reveal">
-    <div class="flex items-baseline justify-between gap-4 mb-5">
-      <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Recently added</h2>
-      <a href="/catalogue?sort=newest" class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
-        >All new arrivals →</a
-      >
-    </div>
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11">
-      {shelf.slice(0, 10).map((book, i) => (
-        <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
-          <BookCard book={book} eager={i < 5} quickAdd />
-        </div>
-      ))}
-    </div>
-  </section>
-
-
-  {
-    sets.length > 0 && (
-      <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pb-16 reveal">
-        <div class="flex items-baseline justify-between gap-4 mb-5">
-          <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Syllabus sets</h2>
-          <a href="/catalogue?sort=title" class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
-            >All sets →</a
-          >
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11">
-          {sets.slice(0, 5).map((book, i) => (
-            <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
-              <BookCard book={book} quickAdd />
-            </div>
-          ))}
-        </div>
-      </section>
-    )
-  }
-
-  {
-    restocked.length > 0 && (
-      <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pb-16 reveal">
-        <div class="flex items-baseline justify-between gap-4 mb-5">
-          <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Back in stock</h2>
-          <a href="/catalogue" class="text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
-            >All titles →</a
-          >
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11">
-          {restocked.slice(0, 5).map((book, i) => (
-            <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
-              <BookCard book={book} quickAdd />
-            </div>
-          ))}
-        </div>
-      </section>
-    )
-  }
-
-  <!-- Ordering here is unusual enough that it needs saying plainly and early. -->
   <section class="border-t border-[var(--color-rule-soft)] bg-white">
     <div class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-14 md:py-16 reveal">
       {/* The heading sits beside the steps rather than above them, so the three

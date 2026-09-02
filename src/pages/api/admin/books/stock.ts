@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { setStock } from '../../../../lib/admin-db';
+import { forgetHomeRows } from '../../../../lib/db';
 
 export const prerender = false;
 
@@ -14,6 +15,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   await setStock(id, stock, 'quick edit in portal');
+  forgetHomeRows();
 
   const referer = request.headers.get('Referer');
   const back = referer && referer.includes('/admin/books') ? referer : '/admin/books';

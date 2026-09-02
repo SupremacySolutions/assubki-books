@@ -226,6 +226,8 @@ export interface ListOptions {
   inStockOnly?: boolean;
   /** Only books in the sale that is running. */
   onSale?: boolean;
+  /** Only books with a delivery on its way. */
+  arriving?: boolean;
   sort?: Sort;
   page?: number;
   perPage?: number;
@@ -266,6 +268,13 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
 
   if (opts.inStockOnly) where.push('(b.stock - b.reserved) > 0');
   if (opts.onSale) where.push('si.percent_off IS NOT NULL');
+  /*
+   * On `books` itself, so unlike `onSale` it needs no join and the count query
+   * inherits it from the shared WHERE. That is the whole difference: the sale
+   * filter once narrowed the list and then counted the entire shop, because the
+   * count was not reaching `sale_items`.
+   */
+  if (opts.arriving) where.push('b.incoming > 0');
 
   const whereSql = ` WHERE ${where.join(' AND ')}`;
 
@@ -438,6 +447,37 @@ export async function saleBooks(limit = 10): Promise<BookRow[]> {
 }
 
 /**
+ * Books with a delivery on its way, soonest first.
+ *
+ * Reservable copies lead, because a shipment nobody can claim is something to
+ * look forward to rather than something to do. Fully-reserved deliveries are
+ * still listed: the books are still arriving, and the card says plainly that
+ * every copy is spoken for.
+ *
+ * `incoming_month` is 'YYYY-MM' text, so ascending is chronological. Nulls sort
+ * first in SQLite, which would put "no month given" ahead of a dated delivery,
+ * so they are pushed to the back explicitly.
+ *
+ * Reads through `idx_books_incoming`, a partial index added with the
+ * reservations work and until now used by nothing at all.
+ */
+export async function arrivingBooks(limit = 10): Promise<BookRow[]> {
+  const { results } = await db()
+    .prepare(
+      `${BOOK_SELECT}
+        WHERE b.status = 'live' AND b.incoming > 0
+        ORDER BY (b.incoming - b.reserved_incoming) > 0 DESC,
+                 b.incoming_month IS NULL,
+                 b.incoming_month ASC,
+                 b.title COLLATE NOCASE
+        LIMIT ?`,
+    )
+    .bind(limit)
+    .all<BookRow>();
+  return applySetAvailability(results);
+}
+
+/**
  * The books in one particular sale, whether or not it is the live one.
  *
  * `saleBooks` reads whatever is running, which is right for the shop and wrong
@@ -459,6 +499,53 @@ export async function saleBooksFor(saleId: number, limit = 10): Promise<BookRow[
     .bind(saleId, limit)
     .all<BookRow>();
   return applySetAvailability(results);
+}
+
+/**
+ * The shelves the front page leads with, and how many each holds.
+ *
+ * Syllabus, hadith and fiqh, in that order, because that is the order a
+ * madrasah student shops in - not the order things were added to the shop.
+ * Deliberately a fixed list rather than "the biggest shelves": the front page
+ * should say what the shop is for, and that does not change with stock.
+ *
+ * Cached like everything else the busiest page hits on every load. Three
+ * `listBooks` calls are six queries - each runs its own count - and this is the
+ * page where the read budget was lost once already.
+ */
+export const HOME_SHELVES = [
+  { path: 'syllabus', title: 'Syllabus' },
+  { path: 'hadith', title: 'Hadith' },
+  { path: 'fiqh', title: 'Fiqh' },
+] as const;
+
+export interface HomeRow {
+  path: string;
+  title: string;
+  books: BookRow[];
+  total: number;
+}
+
+let homeRowsCache: { at: number; value: HomeRow[] } | null = null;
+
+export async function homeRows(perRow = 10): Promise<HomeRow[]> {
+  const now = Date.now();
+  if (homeRowsCache && now - homeRowsCache.at < 60_000) return homeRowsCache.value;
+
+  const value = await Promise.all(
+    HOME_SHELVES.map(async (shelf) => {
+      const { books, total } = await listBooks({ categoryPath: shelf.path, perPage: perRow });
+      return { path: shelf.path, title: shelf.title, books, total };
+    }),
+  );
+
+  homeRowsCache = { at: now, value };
+  return value;
+}
+
+/** Called after a listing changes, so the owner sees their own edit at once. */
+export function forgetHomeRows(): void {
+  homeRowsCache = null;
 }
 
 /**
