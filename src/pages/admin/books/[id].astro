@@ -452,11 +452,73 @@ const previewCaption = book
             </p>
           ) : (
             <div>
+              {/*
+                * Two doors of the same size. Finding one is quicker when it
+                * works and often does not; a photo of the book on the desk
+                * always works. Neither is a fallback in small print.
+                */}
+              {book.images.length === 0 && (
+                <div id="coverStart" class="grid gap-3 sm:grid-cols-2 mb-4">
+                  <button
+                    type="button"
+                    id="findCover"
+                    class="text-left p-4 bg-white border border-[var(--color-rule-soft)] rounded-[10px] hover:border-[var(--color-navy)] transition-colors"
+                  >
+                    <span class="block text-[14.5px] font-medium text-[var(--color-navy)]">Find a cover</span>
+                    <span class="block mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                      Looks for this title in Open Library. Well-known editions usually turn up.
+                    </span>
+                  </button>
+                  {/*
+                    * The upload door is the file control itself, not a second
+                    * button beside one. Two ways to reach the same input read
+                    * as two different things, and with scripting off this one
+                    * still works while its neighbour does not.
+                    */}
+                  <label
+                    for="photo"
+                    class="block text-left p-4 bg-white border border-[var(--color-rule-soft)] rounded-[10px] cursor-pointer hover:border-[var(--color-navy)] transition-colors"
+                  >
+                    <span class="block text-[14.5px] font-medium text-[var(--color-navy)]">Upload one myself</span>
+                    <span class="block mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                      A photo of the book on your desk is often the best one there is.
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* What came back, or did not. */}
+              <div id="coverResults" hidden class="mb-4">
+                <p id="coverCount" class="text-[13.5px] font-medium mb-2"></p>
+                <p id="coverTerms" class="text-[12.5px] text-[var(--color-ink-faint)] mb-3"></p>
+
+                <div id="coverGrid" class="grid grid-cols-3 sm:grid-cols-6 gap-2"></div>
+
+                <div id="coverRetry" hidden class="mt-3">
+                  <label class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                    Search words - adding the publisher sometimes helps
+                  </label>
+                  <div class="flex flex-wrap gap-2">
+                    <input id="coverWords" class="field !py-2 !text-[14px] flex-1 min-w-[12rem]" />
+                    <button type="button" id="coverGo" class="btn btn-ghost !py-2 !text-[13.5px]">Search</button>
+                  </div>
+                </div>
+
+                <p id="coverNote" class="mt-3 pt-3 border-t border-[var(--color-rule-faint)] text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                  These are around 350px wide - right for a card, softer than your own photograph on
+                  the book page. Nothing is attached until you accept it, and nothing is saved until
+                  you save the page.
+                </p>
+              </div>
+
               <label
                 for="photo"
-                class="block p-4 text-center border-2 border-dashed border-[var(--color-rule)] rounded-[3px] cursor-pointer hover:border-[var(--color-navy)] transition-colors"
+                class:list={[
+                  'block p-4 text-center border-2 border-dashed border-[var(--color-rule)] rounded-[3px] cursor-pointer hover:border-[var(--color-navy)] transition-colors',
+                  book.images.length === 0 && 'hidden',
+                ]}
               >
-                <span class="text-[14px] text-[var(--color-navy)]">Choose a photo</span>
+                <span class="text-[14px] text-[var(--color-navy)]">Add another photo</span>
                 <span class="block text-[12.5px] text-[var(--color-ink-faint)] mt-0.5">
                   Take one now or pick from your photos
                 </span>
@@ -953,7 +1015,7 @@ const previewCaption = book
 
   {
     book && (
-      <script is:inline nonce={Astro.locals.cspNonce} define:vars={{ bookId: book.id, bookTitle: book.title }}>
+      <script is:inline nonce={Astro.locals.cspNonce} define:vars={{ bookId: book.id, bookTitle: book.title, coverTerms: [book.title, book.author].filter(Boolean).join(' ') }}>
         // ------------------------------------------------------------------
         // Save and post are ordered, not parallel. Posting sends whatever is
         // in the database, so offering it while the form has unsaved edits
@@ -1116,6 +1178,16 @@ const previewCaption = book
         input?.addEventListener('change', async () => {
           const chosen = input.files?.[0];
           if (!chosen) return;
+          await handOff(chosen);
+        });
+
+        /*
+         * One path from "here is an image" to "it is on the listing", whether
+         * it came off the owner's phone or out of the search. The search must
+         * not get its own quieter route to R2 - the straightening, the look at
+         * it, and the shrink are the same requirements either way.
+         */
+        async function handOff(chosen) {
           status.hidden = false;
           status.textContent = 'Preparing…';
 
@@ -1127,7 +1199,15 @@ const previewCaption = book
            * panel is not on the page - an older browser, a failed module - this
            * is undefined and the upload carries on exactly as it did.
            */
-          const original = (await window.coverClean?.review(chosen)) ?? chosen;
+          /*
+           * Two different nothings, and they must not be confused.
+           *
+           * `?? chosen` used to cover both, which meant Cancel resolved null,
+           * fell through to the original, and uploaded the crooked photo the
+           * owner had just refused. The panel being absent is the only case
+           * that may fall back.
+           */
+          const original = window.coverClean ? await window.coverClean.review(chosen) : chosen;
           if (!original) {
             // Cancelled. Clear the input so choosing the same file again still
             // fires a change event.
@@ -1162,7 +1242,7 @@ const previewCaption = book
           } catch (err) {
             status.textContent = `Could not upload that photo. ${err}`;
           }
-        });
+        }
 
         for (const btn of document.querySelectorAll('[data-remove-image]')) {
           btn.addEventListener('click', async () => {
@@ -1171,6 +1251,162 @@ const previewCaption = book
             body.append('imageId', btn.dataset.removeImage);
             const res = await fetch('/api/admin/upload', { method: 'DELETE', body });
             if (res.ok) window.location.reload();
+          });
+        }
+
+        /*
+         * Find a cover.
+         *
+         * Open Library is keyless and free, and its coverage of Turath,
+         * Zamzam, Mustafah and Whitethread is thin - a search that finds
+         * nothing is the ordinary outcome here, not a fault, and the empty
+         * state says so rather than looking like a broken tool.
+         *
+         * Every image comes through /api/admin/covers/image because the site's
+         * CSP is `img-src 'self'`: a cover fetched straight from Open Library
+         * would simply not render, with no error anywhere.
+         */
+        const findBtn = document.querySelector('#findCover');
+        if (findBtn) {
+          const results = document.querySelector('#coverResults');
+          const countLine = document.querySelector('#coverCount');
+          const termsLine = document.querySelector('#coverTerms');
+          const grid = document.querySelector('#coverGrid');
+          const retry = document.querySelector('#coverRetry');
+          const words = document.querySelector('#coverWords');
+          const note = document.querySelector('#coverNote');
+
+          /*
+           * Judged from the loaded image, because Open Library does not report
+           * dimensions until you have fetched the thing.
+           *
+           * Only what actually separates one candidate from another. Nearly
+           * every Open Library cover is around 350px and taller than 3:4, so
+           * flagging either would put the same two warnings under all six and
+           * teach the owner to ignore them. Being smaller than a photograph is
+           * true of the whole source, and is said once beneath the grid.
+           */
+          function faults(w, h) {
+            const out = [];
+            if (w < 300) out.push('a thumbnail - too small to use');
+            if (w >= h) out.push('not cover-shaped - check it is the right image');
+            return out;
+          }
+
+          async function search(terms) {
+            results.hidden = false;
+            grid.innerHTML = '';
+            retry.hidden = true;
+            countLine.textContent = 'Looking…';
+            note.hidden = false;
+            termsLine.textContent = '';
+            findBtn.disabled = true;
+
+            let covers = [];
+            try {
+              const res = await fetch(`/api/admin/covers/search?q=${encodeURIComponent(terms)}`);
+              if (res.ok) covers = (await res.json()).covers ?? [];
+            } catch {
+              /* Offered again below, same as finding nothing. */
+            }
+            findBtn.disabled = false;
+
+            // Said the same way whether the search returned nothing or every
+            // candidate turned out to be a dead cover id.
+            function nothing() {
+              countLine.textContent = 'Nothing found';
+              note.hidden = true;
+              termsLine.textContent =
+                'This is normal. Open Library covers well-known editions; most of what this shop sells is not in it. A photograph of the book is the reliable way, and often the better one.';
+              retry.hidden = false;
+              words.value = terms;
+            }
+
+            if (covers.length === 0) {
+              nothing();
+              return;
+            }
+
+            termsLine.textContent = `Searched for “${terms}”. Nothing is attached until you accept it.`;
+            retry.hidden = false;
+            words.value = terms;
+
+            let shown = 0;
+            for (const cover of covers) {
+              const cell = document.createElement('div');
+
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className =
+                'block w-full text-left rounded-[8px] overflow-hidden border border-[var(--color-rule-soft)] hover:border-[var(--color-navy)] transition-colors';
+
+              const img = document.createElement('img');
+              img.src = `/api/admin/covers/image?id=${cover.id}`;
+              img.alt = cover.title;
+              img.className = 'block w-full aspect-[3/4] object-contain bg-white';
+
+              const note = document.createElement('p');
+              note.className = 'mt-1 text-[11.5px] text-[var(--color-ink-faint)] leading-tight';
+              note.textContent = cover.source;
+
+              /*
+               * A cover id can 404 - `default=false` refuses the grey
+               * placeholder - so the tile earns its place by loading.
+               *
+               * Deliberately not `loading="lazy"`: a hidden image is never in
+               * the viewport, so a lazy one would wait for a scroll that can
+               * never happen and no tile would ever appear. There are six.
+               */
+              cell.hidden = true;
+              img.addEventListener('load', () => {
+                cell.hidden = false;
+                shown += 1;
+                countLine.textContent = shown === 1 ? '1 cover found' : `${shown} covers found`;
+                const bad = faults(img.naturalWidth, img.naturalHeight);
+                note.textContent = `${img.naturalWidth}×${img.naturalHeight} · ${cover.source}`;
+                if (bad.length) {
+                  const warn = document.createElement('span');
+                  warn.className = 'block text-[var(--color-outstock)]';
+                  warn.textContent = bad.join(' · ');
+                  note.append(warn);
+                }
+              });
+              img.addEventListener('error', () => {
+                cell.remove();
+                if (shown === 0 && grid.children.length === 0) nothing();
+              });
+
+              btn.addEventListener('click', async () => {
+                status.hidden = false;
+                status.textContent = 'Fetching that cover…';
+                try {
+                  const res = await fetch(`/api/admin/covers/image?id=${cover.id}`);
+                  if (!res.ok) throw new Error('gone');
+                  const blob = await res.blob();
+                  // Straight into the same review the owner's own photo gets.
+                  await handOff(new File([blob], 'cover.jpg', { type: blob.type || 'image/jpeg' }));
+                } catch {
+                  status.textContent = 'Could not fetch that cover. Try another, or upload one.';
+                }
+              });
+
+              btn.append(img);
+              cell.append(btn, note);
+              grid.append(cell);
+            }
+          }
+
+          // `start` deliberately stays visible. Hiding it once a search runs
+          // would leave uploading as a link under a grid of results, which is
+          // the one shape this section is not allowed to take.
+          findBtn.addEventListener('click', () => search(coverTerms));
+          document.querySelector('#coverGo')?.addEventListener('click', () => search(words.value));
+          words?.addEventListener('keydown', (e) => {
+            // Enter inside the listing form would otherwise save the page.
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              search(words.value);
+            }
           });
         }
       </script>

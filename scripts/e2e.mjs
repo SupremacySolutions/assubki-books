@@ -438,6 +438,44 @@ async function listings() {
   );
   const filtered = await html('/admin/books?filter=no-photo');
   t.ok(filtered.includes(`of ${counts.n}`), 'a filter count matches the database');
+
+  /*
+   * Find a cover.
+   *
+   * The search itself is one live call to Open Library, so it is asserted on
+   * its shape rather than on finding anything - what it returns for a given
+   * title is not this shop's to guarantee.
+   */
+  const searched = await get('/api/admin/covers/search?q=the+study+quran');
+  const found = await searched.json();
+  t.ok(searched.status === 200 && Array.isArray(found.covers), 'a cover search answers with a list');
+  t.ok(found.covers.every((c) => Number.isInteger(c.id) && !('url' in c)),
+    'candidates carry a cover id and never an off-site URL');
+
+  // `img-src 'self'`: a candidate the browser cannot load is no candidate.
+  const proxied = await get('/api/admin/covers/image?id=12778208');
+  t.ok(proxied.status === 200 && (proxied.headers.get('content-type') ?? '').startsWith('image/'),
+    'and the image itself is served from this origin');
+  t.ok((await get('/api/admin/covers/image?id=../secret')).status === 400,
+    'the proxy takes a cover id, never a URL to fetch');
+
+  const noPhoto = await makeBook();
+  const editor = await html(`/admin/books/${noPhoto.id}`);
+  t.ok(editor.includes('id="findCover"') && editor.includes('id="coverStart"'),
+    'a listing with no photo is offered the search');
+  t.ok(editor.includes('Upload one myself'),
+    'and uploading sits beside it as an equal, not as a fallback in small print');
+
+  /*
+   * Cancel used to upload anyway.
+   *
+   * `?? chosen` swallowed the review panel's own null along with the case of
+   * the panel being absent, so refusing a crooked photo put it live. The suite
+   * posts to APIs and cannot drive a dialog, so this is checked in the source.
+   */
+  const editorSource = readFileSync('src/pages/admin/books/[id].astro', 'utf8');
+  t.ok(!/coverClean\?\.review\([^)]*\)\s*\)\s*\?\?/.test(editorSource),
+    'refusing a photo in the review panel does not upload it anyway');
 }
 
 // ---------------------------------------------------------------------------
