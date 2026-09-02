@@ -21,7 +21,7 @@ import { env } from 'cloudflare:workers';
 import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml, noReply, noReplyText } from './email';
-import { sendMessage, optInLink, esc, botConfigured, mdLink } from './telegram';
+import { sendMessage, sendMessageId, optInLink, esc, botConfigured, mdLink } from './telegram';
 import { statusMessage, cashMoment } from './order-status';
 import { getSetting } from './settings';
 
@@ -790,16 +790,41 @@ async function tellOwner(input: {
   const line = preview(input.body, input.hasImage);
   const results = await Promise.allSettled([
     ownerChatId && botConfigured()
-      ? sendMessage(
-          ownerChatId,
-          [
-            `*${esc(`Message on ${input.ref}`)}*`,
-            '',
-            esc(`${input.name}: ${line}`),
-            '',
-            mdLink('Open the thread', `${input.origin}/admin/orders/${input.ref}`),
-          ].join('\n'),
-        )
+      ? (async () => {
+          const sent = await sendMessageId(
+            ownerChatId,
+            [
+              `*${esc(`Message on ${input.ref}`)}*`,
+              '',
+              esc(`${input.name}: ${line}`),
+              '',
+              esc('Reply to this message to answer them.'),
+              '',
+              mdLink('Or open the thread', `${input.origin}/admin/orders/${input.ref}`),
+            ].join('\n'),
+          );
+
+          /*
+           * Remembered so the owner can simply reply to it.
+           *
+           * Telegram puts `reply_to_message.message_id` on the reply, so this
+           * row is what turns "they answered something" into "they answered
+           * this order" - exactly, rather than by guessing at the most recent
+           * one and risking the shop's words landing in a stranger's thread.
+           */
+          if (sent !== null) {
+            await env.DB.prepare(
+              'INSERT OR REPLACE INTO owner_notices (message_id, order_id) VALUES (?, ?)',
+            )
+              .bind(sent, input.orderId)
+              .run()
+              .catch(() => {
+                /* the notification went; being unable to remember it only
+                   costs the reply-to shortcut, not the message */
+              });
+          }
+          return sent !== null;
+        })()
       : Promise.resolve(false),
     // The owner's own inbox, for when the bot is not bound or Telegram is down.
     ownerChatId && botConfigured()

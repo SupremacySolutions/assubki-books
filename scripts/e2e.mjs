@@ -2877,6 +2877,61 @@ async function messages() {
   const closed = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${secondRow.id}`);
   t.ok(closed.n === 1, 'and a closed order takes no Telegram message either');
 
+  /*
+   * The owner answering from Telegram, by replying to the notification.
+   *
+   * The mechanism has to be a lookup and never a guess: `owner_notices` maps
+   * the id of each message the bot sent to the order it was about, so a reply
+   * resolves exactly. Guessing at "their most recent order" would eventually
+   * put the shop's words in a stranger's thread.
+   */
+  const replyChat = `96${String(Date.now()).slice(-8)}`;
+  await db(
+    `INSERT INTO settings (key, value) VALUES ('owner_telegram_chat_id', '${replyChat}')
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  );
+
+  const talkative = await placeOrder(book.id, 'collection');
+  const talkativeRow = await one(`SELECT id FROM orders WHERE ref = '${talkative.ref}'`);
+  await fetch(`${SITE}/api/orders/message`, {
+    method: 'POST',
+    headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      ref: talkative.ref, t: talkative.token, body: 'When can I collect?',
+    }).toString(),
+  });
+
+  const notice = await one(
+    `SELECT message_id FROM owner_notices WHERE order_id = ${talkativeRow.id}`,
+  );
+  t.ok(Number.isInteger(notice.message_id), 'the notification to the owner is remembered');
+
+  await hook({
+    message_id: 501,
+    chat: { id: Number(replyChat) },
+    text: 'Saturday after asr works.',
+    reply_to_message: { message_id: notice.message_id },
+  });
+  const answered = await one(
+    `SELECT sender, via, body FROM messages WHERE order_id = ${talkativeRow.id} AND sender = 'owner'`,
+  );
+  t.ok(
+    answered.body === 'Saturday after asr works.' && answered.via === 'telegram',
+    'the owner can answer from Telegram by replying to it',
+  );
+  t.ok(
+    (await one(`SELECT unread_for_customer AS n FROM orders WHERE id = ${talkativeRow.id}`)).n === 1,
+    'and the customer is told',
+  );
+
+  const ownerBefore = await one("SELECT COUNT(*) AS n FROM messages WHERE sender = 'owner'");
+  await hook({ message_id: 502, chat: { id: Number(replyChat) }, text: 'yes fine' });
+  t.ok(
+    (await one("SELECT COUNT(*) AS n FROM messages WHERE sender = 'owner'")).n === ownerBefore.n,
+    'but a reply to nothing in particular is never guessed into an order',
+  );
+  await db("DELETE FROM settings WHERE key = 'owner_telegram_chat_id'");
+
   // --- email stopped carrying the conversation ------------------------------
   const notifySource = readFileSync('src/lib/notify.ts', 'utf8');
   t.ok(

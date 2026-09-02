@@ -166,6 +166,13 @@ export default {
      */
     const searches = await pruneSearches(env.DB);
     if (searches) console.log(`pruned ${searches} search(es) older than 90 days`);
+
+    // Nobody replies to a Telegram notification from two months ago, and an
+    // unbounded lookup table is a liability rather than a feature.
+    const notices = await env.DB
+      .prepare('DELETE FROM owner_notices WHERE at < unixepoch() - 60 * 86400')
+      .run();
+    if (notices.meta.changes) console.log(`pruned ${notices.meta.changes} old owner notice(s)`);
   },
 
   // Manual trigger for testing: `wrangler dev` then curl the worker.

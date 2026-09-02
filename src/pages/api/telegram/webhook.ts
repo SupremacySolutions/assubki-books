@@ -74,6 +74,8 @@ interface TelegramUpdate {
     caption?: string;
     photo?: { file_id?: string }[];
     document?: { mime_type?: string; file_id?: string };
+    /** Set when this message is a reply to another. The whole mechanism. */
+    reply_to_message?: { message_id?: number };
   };
 }
 
@@ -398,6 +400,64 @@ export const POST: APIRoute = async ({ request }) => {
 
     const origin = new URL(request.url).origin;
 
+    /*
+     * A reply to one of the bot's own notifications answers that customer.
+     *
+     * Telegram says which message was replied to, and `owner_notices` says
+     * which order that message was about - so this is a lookup, not a guess.
+     * That distinction is the whole reason this was left unbuilt before:
+     * assuming "their most recent order" would eventually put the shop's words
+     * in the wrong customer's thread.
+     */
+    const repliedTo = message?.reply_to_message?.message_id;
+    if (repliedTo) {
+      const notice = await env.DB.prepare(
+        `SELECT o.id, o.ref, o.status, o.customer_name, o.email, o.telegram_chat_id
+           FROM owner_notices n JOIN orders o ON o.id = n.order_id
+          WHERE n.message_id = ?`,
+      )
+        .bind(repliedTo)
+        .first<{
+          id: number; ref: string; status: string;
+          customer_name: string; email: string; telegram_chat_id: string | null;
+        }>();
+
+      if (notice && threadOpen(notice.status)) {
+        const body = normaliseBody(text);
+        if (body) {
+          await postMessage({
+            orderId: notice.id,
+            sender: 'owner',
+            via: 'telegram',
+            body,
+          });
+          await notifyNewMessage({
+            orderId: notice.id,
+            ref: notice.ref,
+            sender: 'owner',
+            name: notice.customer_name,
+            email: notice.email,
+            telegramChatId: notice.telegram_chat_id,
+            body,
+            hasImage: false,
+            origin,
+          });
+          // Said, because a reply that silently worked is indistinguishable
+          // from one that silently did not.
+          await sendMessage(chat, esc(`Sent to ${notice.customer_name} on ${notice.ref}.`));
+          return new Response('ok');
+        }
+      }
+
+      if (notice && !threadOpen(notice.status)) {
+        await sendMessage(
+          chat,
+          esc(`Order ${notice.ref} is finished, so its conversation is closed. Nothing was sent.`),
+        );
+        return new Response('ok');
+      }
+    }
+
     // A link to the order most recently written to, if there is one - a
     // convenience, not a guess about who this message was meant for.
     const waiting = await env.DB.prepare(
@@ -408,9 +468,9 @@ export const POST: APIRoute = async ({ request }) => {
     await sendMessage(
       chat,
       [
-        esc('That was not sent - replies do not go through this chat.'),
+        esc('That was not sent - I could not tell which order you meant.'),
         '',
-        esc('Answer from the portal and it reaches them wherever they are.'),
+        esc('Reply directly to the message about an order and it reaches that customer, or answer from the portal.'),
         '',
         waiting
           ? mdLink(`Open ${waiting.ref}`, `${origin}/admin/orders/${waiting.ref}`)

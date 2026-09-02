@@ -202,25 +202,38 @@ export function mdLink(label: string, url: string): string {
  * customer receiving nothing at all.
  */
 export async function sendMessage(chatId: string, text: string): Promise<boolean> {
+  return (await sendMessageId(chatId, text)) !== null;
+}
+
+/**
+ * The same send, handing back the id Telegram gave the message.
+ *
+ * Worth having because a reply carries `reply_to_message.message_id`: knowing
+ * which message the shop sent is what lets the owner answer a customer by
+ * replying to the notification, without anybody guessing which order they
+ * meant. `sendMessage` keeps its boolean, since almost every caller only wants
+ * to know whether it went.
+ */
+export async function sendMessageId(chatId: string, text: string): Promise<number | null> {
   let parseFailed = false;
-  const result = await call(
+  const result = await call<{ message_id?: number }>(
     'sendMessage',
     { chat_id: chatId, text, parse_mode: 'MarkdownV2', disable_web_page_preview: true },
     (description) => {
       if (description.toLowerCase().includes("can't parse entities")) parseFailed = true;
     },
   );
-  if (result !== null) return true;
-  if (!parseFailed) return false;
+  if (result !== null) return result.message_id ?? null;
+  if (!parseFailed) return null;
 
   console.warn('[telegram] MarkdownV2 rejected, resending as plain text');
   const plain = text.replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1').replace(/\*/g, '');
-  const retry = await call('sendMessage', {
+  const retry = await call<{ message_id?: number }>('sendMessage', {
     chat_id: chatId,
     text: plain,
     disable_web_page_preview: true,
   });
-  return retry !== null;
+  return retry === null ? null : (retry.message_id ?? null);
 }
 
 export interface ListingPost {
