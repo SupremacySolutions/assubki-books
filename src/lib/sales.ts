@@ -151,3 +151,78 @@ export function totals(lines: BasketLine[], discount: OrderDiscount): Totals {
     savedPence: saleSavingPence + orderDiscountPence,
   };
 }
+
+// ---------------------------------------------------------------------------
+// The portal
+// ---------------------------------------------------------------------------
+
+export interface SaleRow {
+  id: number;
+  name: string;
+  blurb: string | null;
+  status: 'draft' | 'live' | 'ended';
+  created_at: number;
+  started_at: number | null;
+  ended_at: number | null;
+  books: number;
+  headline: number;
+  smallest: number;
+  /** What it has taken off orders placed while it ran. */
+  givenPence: number;
+  orders: number;
+}
+
+/**
+ * Every sale, with what each one is worth.
+ *
+ * `given` is read from the orders themselves rather than recomputed from the
+ * sale: an ended sale's books are back at full price, and what it gave away is
+ * a fact about the past that only the snapshots still hold.
+ */
+export async function listSales(): Promise<SaleRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT s.id, s.name, s.blurb, s.status, s.created_at, s.started_at, s.ended_at,
+            COUNT(si.book_id) AS books,
+            COALESCE(MAX(si.percent_off), 0) AS headline,
+            COALESCE(MIN(si.percent_off), 0) AS smallest,
+            COALESCE((
+              SELECT SUM((b.price_pence - oi.price_pence_snapshot) * oi.qty)
+                FROM order_items oi
+                JOIN books b ON b.id = oi.book_id
+                JOIN orders o ON o.id = oi.order_id
+               WHERE o.created_at >= COALESCE(s.started_at, s.created_at)
+                 AND (s.ended_at IS NULL OR o.created_at <= s.ended_at)
+                 AND oi.price_pence_snapshot < b.price_pence
+            ), 0) AS givenPence,
+            COALESCE((
+              SELECT COUNT(DISTINCT o.id)
+                FROM order_items oi
+                JOIN books b ON b.id = oi.book_id
+                JOIN orders o ON o.id = oi.order_id
+               WHERE o.created_at >= COALESCE(s.started_at, s.created_at)
+                 AND (s.ended_at IS NULL OR o.created_at <= s.ended_at)
+                 AND oi.price_pence_snapshot < b.price_pence
+            ), 0) AS orders
+       FROM sales s
+       LEFT JOIN sale_items si ON si.sale_id = s.id
+      GROUP BY s.id
+      ORDER BY CASE s.status WHEN 'live' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END,
+               s.created_at DESC`,
+  ).all<SaleRow>();
+  return results;
+}
+
+/** One sale and the percentage against every book in it. */
+export async function saleMembers(saleId: number): Promise<Map<number, number>> {
+  const { results } = await env.DB.prepare(
+    'SELECT book_id, percent_off FROM sale_items WHERE sale_id = ?',
+  )
+    .bind(saleId)
+    .all<{ book_id: number; percent_off: number }>();
+  return new Map(results.map((r) => [r.book_id, r.percent_off]));
+}
+
+export async function getSale(id: number): Promise<SaleRow | null> {
+  const all = await listSales();
+  return all.find((s) => s.id === id) ?? null;
+}

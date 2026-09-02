@@ -64,7 +64,16 @@ export type SettingKey =
   // Non-empty closes the shop to customers. The value is what they are told.
   | 'maintenance'
   // Bumped to end every portal session at once.
-  | 'session_epoch';
+  | 'session_epoch'
+  /*
+   * A standing discount on the size of an order: "over £85, take 10% off".
+   * Not a sale - it runs whether or not one is on, and applies to whatever the
+   * order comes to after any sale prices, which is why it lives in Settings
+   * rather than beside the sales.
+   */
+  | 'order_discount_active'
+  | 'order_discount_threshold'
+  | 'order_discount_percent';
 
 export async function getSetting(key: SettingKey, fallback = ''): Promise<string> {
   const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?')

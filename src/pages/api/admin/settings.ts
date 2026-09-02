@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { forgetOrderDiscount } from '../../../lib/sales';
 import { forgetMaintenance } from '../../../lib/maintenance';
 import {
   setSetting,
@@ -44,6 +45,18 @@ export const POST: APIRoute = async ({ request }) => {
     await text(form, partLabelKey(slot), partLabelKey(slot), 40);
   }
 
+
+  /*
+   * The order discount. Only written when its own section was the one
+   * submitted - the settings page shows one section at a time, so a checkbox
+   * absent from the payment-wording form must not read as "switched off".
+   */
+  if (form.has('order_discount_percent')) {
+    await setSetting('order_discount_active', form.get('order_discount_active') ? '1' : '');
+    await text(form, 'order_discount_threshold', 'order_discount_threshold', 12);
+    await text(form, 'order_discount_percent', 'order_discount_percent', 4);
+    forgetOrderDiscount();
+  }
 
   // Empty closes nothing; anything else is what customers are told.
   await text(form, 'maintenance', 'maintenance', 400);

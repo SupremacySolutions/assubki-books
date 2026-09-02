@@ -18,6 +18,11 @@ const [settings, emailError, failedSignIns] = await Promise.all([
   recentFailures(),
 ]);
 const ownerTelegramLink = await ownerOptInLink();
+
+/* The order discount, as the form needs it: pounds in the box, not pence. */
+const discountOn = settings.order_discount_active === '1';
+const discountThreshold = settings.order_discount_threshold ?? '';
+const discountPercent = settings.order_discount_percent ?? '';
 const saved = Astro.url.searchParams.get('saved');
 const unbound = Astro.url.searchParams.get('unbound');
 
@@ -51,6 +56,7 @@ const draftGroups = [
 ];
 const SECTIONS = [
   { id: 'messages', group: 'Orders', label: 'Payment wording' },
+  { id: 'discount', group: 'Orders', label: 'Order discount' },
   { id: 'contact', group: 'Shop', label: 'Where people reach you' },
   { id: 'alerts', group: 'Shop', label: 'Owner alerts' },
   { id: 'maintenance', group: 'Shop', label: 'Closing the shop' },
@@ -223,6 +229,88 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
       {/* Outside any form. It used to sit inside the settings form, which is
           invalid HTML - a browser drops the inner form, so "Sign out
           everywhere" was posting the settings instead of signing out. */}
+      {
+        section === 'discount' && (
+          <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
+            <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Order discount</h2>
+            <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)] leading-relaxed max-w-xl">
+              A standing reduction on the size of an order. It is not a sale - it runs all the time,
+              on top of whatever a sale has already taken off, which is why it lives here rather
+              than with the sales.
+            </p>
+
+            <label class="mt-5 flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                name="order_discount_active"
+                value="1"
+                checked={discountOn}
+                class="w-4 h-4 mt-0.5 accent-[var(--color-navy)]"
+              />
+              <span>
+                <span class="block text-[14.5px] font-medium">Offer it</span>
+                <span class="block mt-0.5 text-[13px] text-[var(--color-ink-faint)]">
+                  Customers are told how much more to spend before it applies.
+                </span>
+              </span>
+            </label>
+
+            <div class="mt-4 flex flex-wrap items-end gap-3">
+              <label class="block">
+                <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
+                  Once the order reaches
+                </span>
+                <span class="inline-flex items-center rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white">
+                  <span class="pl-2.5 text-[14px] text-[var(--color-ink-faint)]">£</span>
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    name="order_discount_threshold"
+                    value={discountThreshold}
+                    placeholder="85.00"
+                    class="w-24 bg-transparent border-0 outline-none py-2 pl-1 pr-2.5 text-[14px] tabular-nums"
+                  />
+                </span>
+              </label>
+
+              <label class="block">
+                <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">Take off</span>
+                <span class="inline-flex items-center rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white">
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    name="order_discount_percent"
+                    value={discountPercent}
+                    placeholder="10"
+                    class="w-16 bg-transparent border-0 outline-none py-2 px-2.5 text-[14px] tabular-nums text-right"
+                  />
+                  <span class="pr-2.5 text-[14px] text-[var(--color-ink-faint)]">%</span>
+                </span>
+              </label>
+            </div>
+
+            {/* Exactly the sentence a customer will read, so the owner can see
+                what they are turning on rather than infer it. */}
+            <div class="mt-5 pt-4 border-t border-[var(--color-rule-faint)]">
+              <p class="eyebrow mb-1.5">What a customer sees</p>
+              <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+                {discountOn && Number(discountPercent) > 0 ? (
+                  <>
+                    Below it: <em>"Spend £12 more and {discountPercent}% comes off the whole order."</em>
+                    <br />
+                    Once they reach it: <em>"{discountPercent}% off orders over £{discountThreshold}"</em>{' '}
+                    as its own line in the basket.
+                  </>
+                ) : (
+                  <span class="text-[var(--color-ink-faint)]">Nothing - it is switched off.</span>
+                )}
+              </p>
+            </div>
+          </section>
+        )
+      }
+
       {section === 'security' && (
     <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
       <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">Getting in</h2>

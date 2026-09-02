@@ -1,0 +1,31 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+---
+
+<Admin title="New sale" back={{ href: '/admin/sales', label: 'All sales' }}>
+  <form method="post" action="/api/admin/sales" class="max-w-xl bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 space-y-4">
+    <input type="hidden" name="action" value="create" />
+
+    <div>
+      <label for="name" class="block text-[14.5px] font-medium mb-1.5">Name</label>
+      <input id="name" name="name" required maxlength="120" class="field" placeholder="Back to School Sale" />
+      <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+        Customers see this. It becomes the heading on the home page.
+      </p>
+    </div>
+
+    <div>
+      <label for="blurb" class="block text-[14.5px] font-medium mb-1.5">
+        A line beneath it <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
+      </label>
+      <input id="blurb" name="blurb" maxlength="300" class="field" placeholder="A few things for the new term" />
+    </div>
+
+    <div class="pt-1">
+      <button type="submit" class="btn btn-primary">Create and add books</button>
+      <p class="mt-2.5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+        No dates. A sale runs from when you put it live until you end it.
+      </p>
+    </div>
+  </form>
+</Admin>

@@ -1,0 +1,300 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { getSale, saleMembers, salePrice } from '../../../lib/sales';
+import { listBooksAdmin } from '../../../lib/admin-db';
+import { price, imageUrl, buildQuery } from '../../../lib/format';
+import { allCategories } from '../../../lib/db';
+
+const saleId = Number.parseInt(Astro.params.id ?? '', 10);
+const sale = Number.isInteger(saleId) ? await getSale(saleId) : null;
+if (!sale) return Astro.rewrite('/404');
+
+const params = Astro.url.searchParams;
+const q = params.get('q')?.trim() || null;
+const shelf = params.get('shelf') || null;
+const onlyIn = params.get('in') === '1';
+const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
+
+const [members, shelves] = await Promise.all([saleMembers(sale.id), allCategories()]);
+
+/*
+ * The picker reads the ordinary listing search, so shelf, title and Arabic
+ * title all work exactly as they do everywhere else in the portal. "Only ones
+ * in the sale" is applied here rather than in SQL - it is a filter over what
+ * this sale contains, which the books query knows nothing about.
+ */
+const result = await listBooksAdmin({ q, page, perPage: onlyIn ? 200 : 40 });
+const rows = onlyIn ? result.books.filter((b) => members.has(b.id)) : result.books;
+
+const inSale = [...members.values()];
+const headline = inSale.length ? Math.max(...inSale) : 0;
+const smallest = inSale.length ? Math.min(...inSale) : 0;
+
+const keep = buildQuery({ q, shelf, in: onlyIn ? '1' : null });
+const pageUrl = (n: number) => `/admin/sales/${sale.id}${buildQuery({ q, in: onlyIn ? '1' : null, page: n > 1 ? n : null })}`;
+const saved = params.get('saved');
+---
+
+<Admin title={sale.name} back={{ href: '/admin/sales', label: 'All sales' }}>
+  {
+    saved && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[var(--radius-field)] text-[14.5px] text-[var(--color-instock)]">
+        Saved.{sale.status === 'live' ? ' This sale is live, so customers see it now.' : ''}
+      </p>
+    )
+  }
+
+  <div class="grid gap-6 lg:grid-cols-[1fr_330px] items-start">
+    <form method="post" action="/api/admin/sales/books" id="saleForm" class="min-w-0">
+      <input type="hidden" name="sale_id" value={sale.id} />
+      <input type="hidden" name="back" value={`/admin/sales/${sale.id}${keep}`} />
+
+      <div class="bg-[#faf9f6] border border-[var(--color-rule-soft)] rounded-t-[var(--radius-panel)] p-3.5 space-y-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex-1 min-w-[14rem] flex items-center gap-2 bg-white rounded-[var(--radius-pill)] border border-[var(--color-rule)] px-4 py-1.5">
+            <input
+              form="pickerFilters"
+              name="q"
+              value={q ?? ''}
+              placeholder="Search title or Arabic title"
+              class="flex-1 min-w-0 bg-transparent border-0 outline-none text-[14px]"
+            />
+            <span class="shrink-0 text-[12.5px] text-[var(--color-ink-faint)] tabular-nums">
+              {rows.length} of {result.total}
+            </span>
+          </div>
+          <label class="flex items-center gap-2 text-[13.5px] text-[var(--color-ink-soft)] cursor-pointer select-none">
+            <input
+              form="pickerFilters"
+              type="checkbox"
+              name="in"
+              value="1"
+              checked={onlyIn}
+              data-autosubmit
+              class="w-4 h-4 accent-[var(--color-navy)]"
+            />
+            Only ones in the sale
+          </label>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 text-[13.5px]">
+          <span class="text-[var(--color-ink-faint)]" data-ticked>0 ticked</span>
+          <span class="flex items-center gap-1.5">
+            Set all ticked to
+            <span class="inline-flex items-center rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white">
+              <input id="bulk" type="number" min="1" max="90" placeholder="15"
+                class="w-14 bg-transparent border-0 outline-none py-1 px-2 text-[13.5px] tabular-nums text-right" />
+              <span class="pr-2 text-[var(--color-ink-faint)]">%</span>
+            </span>
+            <button type="button" id="applyBulk" class="btn btn-ghost !py-1 !px-3 !text-[13px]">Apply</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="border-x border-b border-[var(--color-rule-soft)] rounded-b-[var(--radius-panel)] bg-white overflow-hidden">
+        <div class="sale-row px-3.5 py-2 border-b border-[var(--color-rule-soft)] text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
+          <span /><span />
+          <span>Title</span>
+          <span class="text-right">Full price</span>
+          <span class="text-right">Off</span>
+          <span class="text-right">They pay</span>
+        </div>
+
+        {rows.map((b) => {
+          const pc = members.get(b.id) ?? 0;
+          return (
+            <label
+              class:list={[
+                'sale-row px-3.5 py-2 border-b border-[var(--color-rule-faint)] last:border-0 cursor-pointer',
+                pc > 0 && 'is-in-sale',
+              ]}
+            >
+              <input type="hidden" name={`present_${b.id}`} value="1" />
+              <input type="checkbox" data-tick checked={pc > 0} class="w-4 h-4 accent-[var(--color-navy)]" />
+              <span class="w-11 h-11 grid place-items-center bg-white border border-[var(--color-rule-soft)] rounded-[3px] overflow-hidden">
+                {b.image_key && (
+                  <img src={imageUrl(b.image_key, 'thumb')} alt="" loading="lazy" class="max-h-full max-w-full object-contain" />
+                )}
+              </span>
+              <span class="min-w-0 truncate text-[14px]">{b.title}</span>
+              <span class="text-right text-[13.5px] tabular-nums text-[var(--color-ink-faint)]">
+                {price(b.price_pence)}
+              </span>
+              <span class="inline-flex items-center justify-end rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white">
+                <input
+                  type="number"
+                  name={`percent_${b.id}`}
+                  min="1"
+                  max="90"
+                  value={pc > 0 ? String(pc) : ''}
+                  data-percent
+                  data-full={b.price_pence}
+                  class="w-full bg-transparent border-0 outline-none py-1 px-2 text-[13.5px] tabular-nums text-right"
+                />
+                <span class="pr-1.5 text-[12.5px] text-[var(--color-ink-faint)]">%</span>
+              </span>
+              <span
+                data-pay
+                class:list={['text-right text-[13.5px] tabular-nums', pc > 0 ? 'price' : 'text-[var(--color-ink-faint)]']}
+              >
+                {pc > 0 ? price(salePrice(b.price_pence, pc)) : 'not in the sale'}
+              </span>
+            </label>
+          );
+        })}
+
+        <p class="px-3.5 py-2.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+          A blank or zero means the book is not in the sale. Only the books on this page are
+          changed when you save.
+        </p>
+      </div>
+
+      {result.pages > 1 && !onlyIn && (
+        <nav class="mt-4 flex items-center justify-between gap-3 text-[14px]" aria-label="Pagination">
+          {result.page > 1 ? <a href={pageUrl(result.page - 1)} class="btn btn-ghost !py-1.5">← Previous</a> : <span />}
+          <span class="text-[var(--color-ink-faint)] tabular-nums">{result.page} of {result.pages}</span>
+          {result.page < result.pages ? <a href={pageUrl(result.page + 1)} class="btn btn-ghost !py-1.5">Next →</a> : <span />}
+        </nav>
+      )}
+
+      <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <p class="text-[13px] text-[var(--color-ink-faint)]">
+          {sale.status === 'live'
+            ? 'Changes apply the moment you save - this sale is live.'
+            : 'This sale is a draft. Nothing is visible until you put it live.'}
+        </p>
+        <button type="submit" class="btn btn-primary">Save changes</button>
+      </div>
+    </form>
+
+    <aside class="lg:sticky lg:top-[84px] space-y-4">
+      <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
+        <p class="eyebrow mb-1">In this sale</p>
+        <p class="text-[26px] font-semibold tabular-nums leading-none">{members.size}</p>
+        <p class="mt-0.5 text-[13px] text-[var(--color-ink-faint)]">
+          {members.size === 1 ? 'book' : 'books'}
+        </p>
+
+        <div class="mt-4 pt-4 border-t border-[var(--color-rule-faint)]">
+          <p class="eyebrow mb-1">Headline, worked out for you</p>
+          <p class="text-[22px] font-semibold text-[var(--color-outstock)] leading-none">
+            {headline > 0 ? `Up to ${headline}% off` : '—'}
+          </p>
+          <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+            The largest percentage in the sale. You cannot type this - change a book's number and
+            it follows.
+          </p>
+        </div>
+
+        {members.size > 0 && (
+          <div class="mt-4 pt-4 border-t border-[var(--color-rule-faint)] text-[13.5px] text-[var(--color-ink-soft)] space-y-1">
+            <p class="flex justify-between gap-3">
+              <span>Smallest</span><span class="tabular-nums">{smallest}%</span>
+            </p>
+            <p class="flex justify-between gap-3">
+              <span>Largest</span><span class="tabular-nums">{headline}%</span>
+            </p>
+          </div>
+        )}
+      </div>
+
+      <form method="post" action="/api/admin/sales" class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
+        <input type="hidden" name="action" value="rename" />
+        <input type="hidden" name="id" value={sale.id} />
+        <p class="eyebrow mb-2.5">Name and line</p>
+        <input name="name" value={sale.name} maxlength="120" required class="field !py-2 !text-[14px]" />
+        <input name="blurb" value={sale.blurb ?? ''} maxlength="300" placeholder="A line beneath it (optional)"
+          class="field !py-2 !text-[14px] mt-2" />
+        <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px] mt-3">Save name</button>
+      </form>
+    </aside>
+  </div>
+
+  <form method="get" id="pickerFilters" action={`/admin/sales/${sale.id}`}></form>
+</Admin>
+
+<script is:inline nonce={Astro.locals.cspNonce}>
+  /*
+   * "They pay" follows the percentage as it is typed, and the tick and the
+   * number say the same thing - clearing one clears the other, because a
+   * ticked row with no number is not in the sale and would silently do
+   * nothing on save.
+   */
+  const rows = document.querySelectorAll('label.sale-row');
+  const money = (p) => '£' + (p / 100).toFixed(2);
+
+  function paintRow(row) {
+    const pc = row.querySelector('[data-percent]');
+    const tick = row.querySelector('[data-tick]');
+    const pay = row.querySelector('[data-pay]');
+    if (!pc || !pay) return;
+    const n = Math.round(Number(pc.value));
+    const full = Number(pc.dataset.full);
+    const on = Number.isFinite(n) && n > 0;
+    if (tick) tick.checked = on;
+    row.classList.toggle('is-in-sale', on);
+    pay.textContent = on ? money(Math.round((full * (100 - n)) / 100)) : 'not in the sale';
+    pay.classList.toggle('price', on);
+    pay.classList.toggle('text-[var(--color-ink-faint)]', !on);
+  }
+
+  function countTicked() {
+    const n = [...document.querySelectorAll('[data-tick]')].filter((t) => t.checked).length;
+    const label = document.querySelector('[data-ticked]');
+    if (label) label.textContent = n + ' ticked';
+  }
+
+  for (const row of rows) {
+    const pc = row.querySelector('[data-percent]');
+    const tick = row.querySelector('[data-tick]');
+    pc?.addEventListener('input', () => { paintRow(row); countTicked(); });
+    tick?.addEventListener('change', () => {
+      if (!tick.checked) {
+        // Unticking clears the number, so the two can never disagree.
+        if (pc) pc.value = '';
+        paintRow(row);
+      } else if (pc && !pc.value.trim()) {
+        /*
+         * Ticking an empty row asks for the number rather than inventing one.
+         * Repainting here would untick it again the instant it was ticked,
+         * which reads as the checkbox being broken.
+         */
+        pc.focus();
+      }
+      countTicked();
+    });
+  }
+
+  document.querySelector('#applyBulk')?.addEventListener('click', () => {
+    const value = document.querySelector('#bulk')?.value;
+    if (!value) return;
+    for (const row of rows) {
+      const tick = row.querySelector('[data-tick]');
+      const pc = row.querySelector('[data-percent]');
+      if (tick?.checked && pc) { pc.value = value; paintRow(row); }
+    }
+    countTicked();
+  });
+
+  countTicked();
+</script>
+
+<style>
+  /*
+   * The picker's six columns, written here rather than as an arbitrary
+   * Tailwind value. The utility was not reaching the stylesheet from this file
+   * at all, and a table whose columns silently collapse into a stack is worse
+   * than one that never used the framework for them.
+   */
+  /* A row that is in the sale, faintly. */
+  .sale-row.is-in-sale {
+    background: rgba(24, 68, 133, 0.03);
+  }
+
+  .sale-row {
+    display: grid;
+    grid-template-columns: 24px 44px 1fr 80px 88px 92px;
+    gap: 12px;
+    align-items: center;
+  }
+</style>

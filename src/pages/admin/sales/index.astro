@@ -1,0 +1,131 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { listSales } from '../../../lib/sales';
+import { price } from '../../../lib/format';
+
+const sales = await listSales();
+const live = sales.filter((s) => s.status === 'live');
+const drafts = sales.filter((s) => s.status === 'draft');
+const ended = sales.filter((s) => s.status === 'ended');
+
+const when = (t: number | null) =>
+  t ? new Date(t * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }) : '';
+
+const counts = [
+  live.length && `${live.length} live`,
+  drafts.length && `${drafts.length} ${drafts.length === 1 ? 'draft' : 'drafts'}`,
+  ended.length && `${ended.length} ended`,
+].filter(Boolean).join(', ');
+---
+
+<Admin title="Sales" sub={counts || 'None yet'}>
+  <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+    <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed max-w-2xl">
+      One sale runs at a time. Each book in it has its own percentage, and the headline customers
+      see - "up to 20% off" - is the largest of those, worked out for you. Putting a draft live ends
+      whichever sale is running.
+    </p>
+    <a href="/admin/sales/new" class="btn btn-primary shrink-0">New sale</a>
+  </div>
+
+  {
+    live.map((s) => (
+      <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] border-l-[3px] border-l-[var(--color-instock)] p-5 mb-5">
+        <div class="flex flex-wrap items-center gap-2.5 mb-1">
+          <span class="rounded-[var(--radius-pill)] bg-[var(--color-instock)]/12 px-3 py-1 text-[12px] font-medium text-[var(--color-instock)]">
+            Live now
+          </span>
+          <span class="text-[13px] text-[var(--color-ink-faint)]">since {when(s.started_at)}</span>
+        </div>
+        <h2 class="font-[family-name:var(--font-display)] text-[24px] font-semibold">{s.name}</h2>
+        <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)]">
+          {s.books} {s.books === 1 ? 'book' : 'books'} ·{' '}
+          <strong class="text-[var(--color-ink)]">up to {s.headline}% off</strong>
+          {s.smallest !== s.headline && ` · ${s.smallest}% to ${s.headline}% each`}
+          {s.orders > 0 && ` · ${price(s.givenPence)} given away across ${s.orders} ${s.orders === 1 ? 'order' : 'orders'}`}
+        </p>
+        <div class="mt-4 flex flex-wrap items-center gap-3">
+          <a href={`/admin/sales/${s.id}`} class="btn btn-ghost !py-2 !text-[14px]">Edit books</a>
+          <a href="/" class="btn btn-ghost !py-2 !text-[14px]">See it on the shop</a>
+          <form method="post" action="/api/admin/sales" class="ml-auto">
+            <input type="hidden" name="action" value="end" />
+            <input type="hidden" name="id" value={s.id} />
+            <button
+              type="submit"
+              data-confirm={`End "${s.name}"? Its ${s.books} books go back to full price and the row disappears from the home page. The sale is kept so you can copy it later, and orders already sent keep the prices they were quoted.`}
+              class="rounded-[var(--radius-pill)] border border-[var(--color-outstock)]/40 px-4 py-2 text-[13.5px] text-[var(--color-outstock)] hover:bg-[var(--color-outstock)]/5 transition-colors"
+            >End sale</button>
+          </form>
+        </div>
+      </section>
+    ))
+  }
+
+  {
+    drafts.length > 0 && (
+      <section class="mb-5">
+        <h2 class="eyebrow mb-2.5">Drafts</h2>
+        <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
+          {drafts.map((s) => (
+            <li class="flex flex-wrap items-center gap-3 px-4 py-3">
+              <span class="rounded-[var(--radius-pill)] bg-[var(--color-rule)]/60 px-2.5 py-0.5 text-[12px] text-[var(--color-ink-soft)]">
+                Draft
+              </span>
+              <span class="min-w-0 flex-1 text-[15px] font-medium truncate">{s.name}</span>
+              <span class="text-[13px] text-[var(--color-ink-faint)] shrink-0">
+                {s.books} {s.books === 1 ? 'book' : 'books'}
+                {s.books > 0 && ` · up to ${s.headline}%`}
+              </span>
+              <a href={`/admin/sales/${s.id}`} class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2 shrink-0">Edit</a>
+              <form method="post" action="/api/admin/sales" class="shrink-0">
+                <input type="hidden" name="action" value="live" />
+                <input type="hidden" name="id" value={s.id} />
+                <button
+                  type="submit"
+                  data-confirm={live[0]
+                    ? `Put "${s.name}" live? Only one sale runs at a time, so this ends "${live[0].name}" straight away and its ${live[0].books} books go back to full price.`
+                    : `Put "${s.name}" live? Its ${s.books} books start showing reduced prices straight away.`}
+                  class="btn btn-primary !py-1.5 !px-4 !text-[13.5px]"
+                >Put live</button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+
+  {
+    ended.length > 0 && (
+      <section>
+        <h2 class="eyebrow mb-2.5">Ended</h2>
+        <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
+          {ended.map((s) => (
+            <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-[var(--color-ink-faint)]">
+              <span class="min-w-0 flex-1 text-[14.5px] truncate">{s.name}</span>
+              <span class="text-[13px] shrink-0">{when(s.started_at)} - {when(s.ended_at)}</span>
+              {/* What it gave away is the only number worth keeping about a
+                  sale that is over. */}
+              <span class="price text-[14px] shrink-0 w-[5rem] text-right">{price(s.givenPence)}</span>
+              <form method="post" action="/api/admin/sales" class="shrink-0">
+                <input type="hidden" name="action" value="copy" />
+                <input type="hidden" name="id" value={s.id} />
+                <button type="submit" class="text-[13.5px] text-[var(--color-navy)] hover:underline underline-offset-2">
+                  Copy to a new sale
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+
+  {
+    sales.length === 0 && (
+      <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
+        No sales yet. A sale is a set of books, each with its own percentage off.
+      </p>
+    )
+  }
+</Admin>
