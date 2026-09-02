@@ -494,3 +494,117 @@
     .group:hover .book-well { transform: none; }
   }
 }
+
+@layer components {
+  /*
+   * The list of titles under the search box.
+   *
+   * Drawn by src/scripts/search-suggest.ts and absent without it, so nothing
+   * here has a no-JavaScript state to worry about - the form underneath is an
+   * ordinary GET either way.
+   *
+   * The panel hangs off the pill rather than the page, so it follows the box
+   * on a phone where the hero is narrower than the field's max width.
+   */
+  .search-suggest {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 40;
+    background: var(--color-card);
+    border: 1px solid var(--color-rule-soft);
+    border-radius: var(--radius-panel);
+    box-shadow: 0 18px 40px -20px rgb(16 24 40 / 0.35);
+    overflow: hidden;
+    text-align: left;
+  }
+
+  .search-suggest ul {
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    max-height: min(60vh, 24rem);
+    overflow-y: auto;
+  }
+
+  .search-suggest-row a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--color-ink);
+  }
+
+  /* Hover and keyboard selection are the same state deliberately: the arrow
+     keys and the mouse are two ways of pointing at one row. */
+  .search-suggest-row a:hover,
+  .search-suggest-row.is-active a {
+    background: var(--color-paper);
+  }
+
+  .search-suggest-row img,
+  .search-suggest-blank {
+    width: 34px;
+    height: 45px;
+    flex: 0 0 34px;
+    object-fit: cover;
+    border-radius: 3px;
+    background: var(--color-wash-soft);
+    display: block;
+  }
+
+  .search-suggest-text {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+  }
+
+  .search-suggest-title {
+    font-size: 14.5px;
+    /* One line each: the panel is a shortlist to recognise something in, and
+       a wrapped title makes six rows read as a page of prose. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .search-suggest-ar {
+    font-size: 13px;
+    color: var(--color-ink-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.5;
+  }
+
+  .search-suggest-meta {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+  }
+
+  .search-suggest-price {
+    font-family: var(--font-display);
+    color: var(--color-brass);
+    font-size: 14.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .search-suggest-out {
+    font-size: 11.5px;
+    color: var(--color-outstock);
+  }
+
+  .search-suggest-empty {
+    padding: 14px 12px;
+    font-size: 14px;
+    color: var(--color-ink-faint);
+  }
+}

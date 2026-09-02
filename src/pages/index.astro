@@ -80,7 +80,7 @@ const drifting = pretty.slice(0, 14);
       {/* The search pill. The white ground and the long soft shadow lift it off
           the navy, which is the one thing the hero is for: people arrive
           knowing the text they want. */}
-      <form action="/catalogue" method="get" class="mt-8 mx-auto max-w-xl" role="search">
+      <form action="/catalogue" method="get" class="mt-8 mx-auto max-w-xl" role="search" data-suggest>
         <label for="hero-q" class="sr-only">Search the catalogue</label>
         <div
           class="flex items-center gap-2 bg-white rounded-[var(--radius-pill)] pl-[22px] pr-2.5 py-2.5 shadow-[var(--shadow-search)]"
@@ -113,8 +113,10 @@ const drifting = pretty.slice(0, 14);
         </div>
       </form>
 
-      {/* The prototype promises results as you type and a live count beside the
-          box. This search posts to /catalogue, so it says what it does. */}
+      {/* Titles appear under the box as you type - see
+          src/scripts/search-suggest.ts. Enter still submits to /catalogue, so
+          the whole thing works with JavaScript off and this line stays true
+          either way. */}
       <p class="mt-4 text-[13.5px] text-[var(--color-wash)]/70">
         Search in English or Arabic{' · '}
         <a href="/catalogue" class="underline underline-offset-2 hover:text-white">

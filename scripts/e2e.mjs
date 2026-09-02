@@ -143,6 +143,42 @@ async function publicCatalogue() {
     'and is served as a PNG',
     mark.headers.get('content-type') ?? '(no content-type)',
   );
+
+  // --- results as you type -------------------------------------------------
+  const suggest = async (q) =>
+    (await get(`/api/search/suggest?q=${encodeURIComponent(q)}`, { redirect: 'follow' })).json();
+
+  const hits = await suggest('nahw');
+  t.ok(hits.results.length > 0, 'the search box suggests titles as you type');
+  t.ok(
+    hits.results.every((r) => r.slug && r.title && r.price),
+    'and each one carries what the row needs to draw itself',
+  );
+  t.ok(hits.results.length <= 6, 'capped at a shortlist rather than a page');
+
+  const arabic = await suggest('النحو');
+  t.ok(arabic.results.length > 0, 'in Arabic as well as English');
+
+  t.ok((await suggest('n')).results.length === 0, 'one letter suggests nothing');
+  t.ok((await suggest('  ')).results.length === 0, 'and neither does whitespace');
+
+  /*
+   * FTS operators are not the visitor's to write. `ftsQuery` strips everything
+   * that is not a letter or a digit, so a quote or a bare OR cannot become
+   * syntax - the older shape of this bug is a 500, not a wrong answer.
+   */
+  for (const nasty of ['" OR 1=1 --', 'nahw OR *', '((("']) {
+    const res = await get(`/api/search/suggest?q=${encodeURIComponent(nasty)}`);
+    t.ok(res.status === 200, `a search box full of operators is answered, not broken (${nasty})`);
+  }
+
+  // The enhancement is opt-in per form, and the hero opts in.
+  const hero = await html('/');
+  t.ok(/<form[^>]*data-suggest/.test(hero), 'the home page search box asks for suggestions');
+  t.ok(
+    /<form[^>]*action="\/catalogue"[^>]*method="get"/.test(hero),
+    'and is still a plain GET, so it works with JavaScript off',
+  );
 }
 
 // ---------------------------------------------------------------------------
