@@ -9,25 +9,70 @@
 
 const KEY = 'asb.basket.v1';
 
+/**
+ * How long an untouched basket lives.
+ *
+ * The privacy page promises that baskets never ordered are cleared after 48
+ * hours, and for a long time nothing here did that - the ids sat in
+ * localStorage until the browser was cleared, so the published statement was
+ * simply untrue. It is counted from the last change rather than from the first
+ * one: a basket still being added to has not been abandoned, and "never
+ * ordered" is about the ones that were.
+ */
+const TTL_MS = 48 * 60 * 60 * 1000;
+
 export type Basket = Record<string, number>;
+
+/** Only whole positive quantities against numeric ids survive a read. */
+function clean(source: object): Basket {
+  const out: Basket = {};
+  for (const [id, qty] of Object.entries(source)) {
+    const n = Number(qty);
+    if (/^\d+$/.test(id) && Number.isInteger(n) && n > 0) out[id] = Math.min(n, 99);
+  }
+  return out;
+}
+
+/** Writes the basket down with the time, without announcing a change. */
+function stamp(basket: Basket): void {
+  localStorage.setItem(KEY, JSON.stringify({ at: Date.now(), items: basket }));
+}
 
 export function read(): Basket {
   try {
-    const parsed = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const out: Basket = {};
-    for (const [id, qty] of Object.entries(parsed)) {
-      const n = Number(qty);
-      if (/^\d+$/.test(id) && Number.isInteger(n) && n > 0) out[id] = Math.min(n, 99);
+
+    /*
+     * A basket written before this file recorded a time is a bare id-to-qty
+     * map. It is somebody's real basket, so it is kept rather than dropped -
+     * and stamped as we go, so it expires 48 hours from this visit instead of
+     * never.
+     */
+    const legacy = !('items' in parsed);
+    const source = legacy ? parsed : parsed.items;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+
+    const at = legacy ? Date.now() : Number(parsed.at);
+    // A clock that moved backwards leaves `at` in the future, which reads as
+    // negative age and is left alone - the basket is not stale, the clock is.
+    if (!Number.isFinite(at) || Date.now() - at > TTL_MS) {
+      localStorage.removeItem(KEY);
+      return {};
     }
-    return out;
+
+    const items = clean(source);
+    if (legacy) stamp(items);
+    return items;
   } catch {
     return {};
   }
 }
 
 function write(basket: Basket): void {
-  localStorage.setItem(KEY, JSON.stringify(basket));
+  stamp(basket);
   document.dispatchEvent(new CustomEvent('basket:change', { detail: basket }));
 }
 

@@ -146,13 +146,13 @@ const windowed = () => {
     {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
     <label class="flex items-center gap-2 text-[14px] text-[var(--color-ink-soft)]">
       Sort
-      <select name="sort" onchange="this.form.submit()" class="field !py-1.5 !w-auto !text-[14px]">
+      <select name="sort" data-autosubmit class="field !py-1.5 !w-auto !text-[14px]">
         {SORTS.map((s) => <option value={s.key} selected={sort === s.key}>{s.label}</option>)}
       </select>
     </label>
     <label class="flex items-center gap-2 text-[14px] text-[var(--color-ink-soft)]">
       Show
-      <select name="per" onchange="this.form.submit()" class="field !py-1.5 !w-auto !text-[14px]">
+      <select name="per" data-autosubmit class="field !py-1.5 !w-auto !text-[14px]">
         {[20, 40, 80, 200].map((n) => <option value={n} selected={perPage === n}>{n}</option>)}
       </select>
     </label>

@@ -125,7 +125,7 @@ const description = category
               name="stock"
               value="in"
               checked={inStockOnly}
-              onchange="this.form.submit()"
+              data-autosubmit
               class="w-4 h-4 accent-[var(--color-navy)]"
             />
             In stock only
@@ -139,7 +139,7 @@ const description = category
           <span class="sr-only">Jump to a subject</span>
           <select
             class="field"
-            onchange="if(this.value)window.location.href=this.value"
+            data-go
             aria-label="Jump to a subject"
           >
             <option value={`/catalogue${keep}`} selected={!categoryPath}>All titles</option>
@@ -184,7 +184,7 @@ const description = category
               <span>Sort</span>
               <select
                 name="sort"
-                onchange="this.form.submit()"
+                data-autosubmit
                 class="field !py-1.5 !w-auto !text-[14px] !rounded-[var(--radius-pill)] !px-3.5"
               >
                 {q && <option value="relevance" selected={!sort}>Best match</option>}

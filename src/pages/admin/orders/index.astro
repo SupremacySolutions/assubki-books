@@ -120,7 +120,7 @@ function facts(o: (typeof orders)[number]): string[] {
         method="post"
         action="/api/admin/orders/clear"
         class="mt-8 flex flex-wrap items-center gap-3 p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]"
-        onsubmit="return confirm('Delete every cancelled and lapsed order? Orders that were quoted or paid are kept.')"
+        data-confirm="Delete every cancelled and lapsed order? Orders that were quoted or paid are kept."
       >
         <p class="text-[14px] text-[var(--color-ink-soft)] flex-1 min-w-[220px]">
           {clearable} {clearable === 1 ? 'order' : 'orders'} came to nothing - cancelled or lapsed.
