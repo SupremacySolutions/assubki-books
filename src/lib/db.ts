@@ -218,12 +218,14 @@ function ftsQuery(raw: string): string | null {
 // Listing
 // ---------------------------------------------------------------------------
 
-export type Sort = 'relevance' | 'title' | 'price-asc' | 'price-desc' | 'newest';
+export type Sort = 'relevance' | 'title' | 'price-asc' | 'price-desc' | 'newest' | 'saving';
 
 export interface ListOptions {
   categoryPath?: string | null;
   q?: string | null;
   inStockOnly?: boolean;
+  /** Only books in the sale that is running. */
+  onSale?: boolean;
   sort?: Sort;
   page?: number;
   perPage?: number;
@@ -263,6 +265,7 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   }
 
   if (opts.inStockOnly) where.push('(b.stock - b.reserved) > 0');
+  if (opts.onSale) where.push('si.percent_off IS NOT NULL');
 
   const whereSql = ` WHERE ${where.join(' AND ')}`;
 
@@ -273,6 +276,10 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
     'price-asc': 'b.price_pence ASC, b.title COLLATE NOCASE',
     'price-desc': 'b.price_pence DESC, b.title COLLATE NOCASE',
     newest: 'b.created_at DESC, b.id DESC',
+    // Biggest reduction first, in money rather than percent: 20% off a £35
+    // book is a better offer than 25% off a £3 one, and the customer is
+    // choosing between books, not between percentages.
+    saving: 'COALESCE(b.price_pence * si.percent_off, 0) DESC, b.title COLLATE NOCASE',
   }[sort];
 
   // Out-of-stock titles stay browsable but sink to the bottom of every sort;
@@ -288,6 +295,12 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
             COUNT(DISTINCT CASE WHEN (b.stock - b.reserved) > 0 THEN b.id END) AS inStock
        FROM books b` +
     (match ? ' JOIN books_fts f ON f.rowid = b.id' : '') +
+    // The count has to reach the same tables the filter mentions, or "on sale"
+    // narrows the list and then counts every book in the shop.
+    (opts.onSale
+      ? ` LEFT JOIN sale_items si ON si.book_id = b.id
+             AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')`
+      : '') +
     whereSql;
 
   const [countRow, listRes] = await Promise.all([
