@@ -232,13 +232,22 @@ export const POST: APIRoute = async ({ request }) => {
   // Everything after this needs a chat the shop already knows
   // ---------------------------------------------------------------------
 
+  /*
+   * The most recent live order on this chat, and the id is what settles it.
+   *
+   * `created_at` is whole seconds, so two orders from one chat placed in the
+   * same second left this ordering undefined and SQLite could return either.
+   * Which one it returns decides where a payment screenshot is filed, so
+   * "undefined" here means somebody's proof of payment landing against the
+   * wrong order. Ids are monotonic, which is what "the newest" actually needs.
+   */
   const bound = await env.DB.prepare(
     `SELECT id, ref, customer_name, email, status, total_pence, subtotal_pence,
             COALESCE(payment_proofs, 0) AS payment_proofs
        FROM orders
       WHERE telegram_chat_id = ?
         AND status IN ('requested', 'awaiting_payment', 'paid', 'dispatched')
-      ORDER BY created_at DESC LIMIT 1`,
+      ORDER BY created_at DESC, id DESC LIMIT 1`,
   )
     .bind(chat)
     .first<BoundOrder>();
@@ -393,7 +402,7 @@ export const POST: APIRoute = async ({ request }) => {
     // convenience, not a guess about who this message was meant for.
     const waiting = await env.DB.prepare(
       `SELECT ref FROM orders
-        WHERE unread_for_owner > 0 ORDER BY last_message_at DESC LIMIT 1`,
+        WHERE unread_for_owner > 0 ORDER BY last_message_at DESC, id DESC LIMIT 1`,
     ).first<{ ref: string }>();
 
     await sendMessage(

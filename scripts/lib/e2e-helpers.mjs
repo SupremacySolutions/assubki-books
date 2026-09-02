@@ -7,7 +7,8 @@
  * mode changes as little as possible.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -78,29 +79,86 @@ export function report() {
 // ---------------------------------------------------------------------------
 
 /**
+ * The local D1 file miniflare keeps, found once.
+ *
+ * One `.sqlite` in that directory is the database and the other is miniflare's
+ * own metadata; the database is the one that is not called `metadata`.
+ */
+let localDbPath;
+function localDb() {
+  if (localDbPath) return localDbPath;
+  const dir = '.wrangler/state/v3/d1/miniflare-D1DatabaseObject';
+  const file = readdirSync(dir).find((f) => f.endsWith('.sqlite') && !f.startsWith('metadata'));
+  if (!file) throw new Error(`no local D1 database under ${dir} - has the dev server ever run?`);
+  localDbPath = join(dir, file);
+  return localDbPath;
+}
+
+/*
+ * Three pragmas, all needed, none of them printing anything.
+ *
+ * `foreign_keys=ON` because the sqlite3 CLI leaves them **off** and D1 does
+ * not. Without it `ON DELETE CASCADE` silently does nothing: deleting an order
+ * leaves its messages, deleting a set leaves its per-volume stock, and the next
+ * run trips over rows that should not exist. Getting this wrong does not fail
+ * loudly - it fails one run later, somewhere else.
+ *
+ * `trusted_schema=ON` because this schema has FTS triggers on `books`: with it
+ * off - which is the default in the system sqlite3 on macOS - any write to
+ * `books` fails with "unsafe use of virtual table books_fts", and the suite
+ * cannot create so much as a fixture listing.
+ *
+ * `.timeout` rather than `PRAGMA busy_timeout`, because the pragma returns a
+ * row and would land in the middle of the results. The dev server is writing
+ * to the same file, so waiting rather than failing is the whole point.
+ */
+const SQLITE_FLAGS = [
+  '-json',
+  '-cmd', 'PRAGMA foreign_keys=ON',
+  '-cmd', 'PRAGMA trusted_schema=ON',
+  '-cmd', '.timeout 8000',
+];
+
+/**
  * Runs SQL against whichever database this mode is testing.
  *
- * Retried, because it is a process launch and not a query. A run makes
- * hundreds of these while the dev server is hitting the same database, and one
- * `npx wrangler` failing to start took a whole suite down with
- * "Command failed: npx wrangler d1 execute ..." - a message that named the
- * query and said nothing about why. The suite would then leave its fixtures
- * behind and fail the *next* run's ledger assertions on rubbish rather than
- * code.
+ * Locally this talks to the SQLite file directly. It used to shell out to
+ * `npx wrangler d1 execute` for every query - a node launch, an npx resolve
+ * and a miniflare boot, about a second and a half each, hundreds of times a
+ * run. Worse than slow, it was unreliable: one launch failing took a whole
+ * suite down with "Command failed: npx wrangler d1 execute" and no reason,
+ * and the fixtures it had made were then left behind to fail the *next* run
+ * on rubbish rather than code. The same failure reproduced on commits that
+ * predate any of this year's features, so it was never anybody's bug - just
+ * the cost of the approach.
  *
- * Three retries, backing off. A full run makes hundreds of these against a
- * dev server working the same file, and one attempt is demonstrably not enough:
- * the suite failed this way on the committed code too, before any of this.
- * A genuinely bad query fails every attempt and is reported with whatever
- * wrangler actually said, which is what was missing.
+ * The file is WAL, so reading and writing beside a running dev server is
+ * exactly what SQLite is built for.
+ *
+ * Production still goes through wrangler, because there is no file to open -
+ * and keeps the retry, since that path is a network call.
  */
 export async function db(sql) {
+  if (!PROD) {
+    try {
+      const { stdout } = await execFileAsync('sqlite3', [...SQLITE_FLAGS, localDb(), sql], {
+        maxBuffer: 40 * 1024 * 1024,
+      });
+      return parseSqlite(stdout);
+    } catch (err) {
+      // sqlite3 says exactly what was wrong on stderr. Passing that on is the
+      // difference between "Command failed" and "UNIQUE constraint failed".
+      const why = (err.stderr || err.stdout || '').trim().split('\n')[0];
+      throw new Error(`${why || err.message.split('\n')[0]}\n       in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+    }
+  }
+
   let last;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const { stdout } = await execFileAsync('npx', [
         'wrangler', 'd1', 'execute', 'assubki-books',
-        PROD ? '--remote' : '--local', '--json', '--command', sql,
+        '--remote', '--json', '--command', sql,
       ], { maxBuffer: 20 * 1024 * 1024 });
 
       const parsed = JSON.parse(stdout);
@@ -108,13 +166,34 @@ export async function db(sql) {
       return parsed.flatMap((r) => r.results ?? []);
     } catch (err) {
       last = err;
-      // Say what wrangler said, not just that a command failed.
       const detail = [err.stdout, err.stderr].filter(Boolean).join(' ').slice(0, 400);
       if (detail) last = new Error(`${err.message.split('\n')[0]}\n       ${detail.trim()}`);
       if (attempt < 3) await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
     }
   }
   throw last;
+}
+
+/**
+ * `sqlite3 -json` prints one array per statement that returned rows, so a
+ * two-statement command prints two arrays back to back and the whole thing is
+ * not valid JSON. Statements that return nothing print nothing at all.
+ *
+ * Flattened, to match what the wrangler path returns.
+ */
+function parseSqlite(stdout) {
+  const text = stdout.trim();
+  if (!text) return [];
+  try {
+    return JSON.parse(text);
+  } catch {
+    const rows = [];
+    for (const chunk of text.split(/\]\s*\[/)) {
+      const json = chunk.startsWith('[') ? chunk : `[${chunk}`;
+      rows.push(...JSON.parse(json.endsWith(']') ? json : `${json}]`));
+    }
+    return rows;
+  }
 }
 
 export const one = async (sql) => (await db(sql))[0] ?? {};

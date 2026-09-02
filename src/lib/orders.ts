@@ -200,10 +200,12 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
    * Telegram connection they had already granted. That matters more now that
    * Telegram is a way into the order's thread and not only a way out.
    */
+  // Same second, same tie: the id decides, so which chat a returning customer
+  // keeps is never left to the query planner.
   const priorLink = await env.DB.prepare(
     `SELECT telegram_chat_id FROM orders
       WHERE LOWER(email) = LOWER(?) AND telegram_chat_id IS NOT NULL
-      ORDER BY telegram_linked_at DESC LIMIT 1`,
+      ORDER BY telegram_linked_at DESC, id DESC LIMIT 1`,
   )
     .bind(input.email)
     .first<{ telegram_chat_id: string }>();
