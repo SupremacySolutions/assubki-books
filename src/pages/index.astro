@@ -2,16 +2,19 @@
 import Base from '../layouts/Base.astro';
 import BookCard from '../components/BookCard.astro';
 import Rosette from '../components/Rosette.astro';
-import { categoryTree, shelfBooks, catalogueStats, setBooks, backInStock } from '../lib/db';
+import { categoryTree, shelfBooks, catalogueStats, setBooks, backInStock, saleBooks } from '../lib/db';
+import { liveSale } from '../lib/sales';
 import { classmark } from '../lib/classmarks';
 import { SITE, imageUrl } from '../lib/format';
 
-const [tree, shelf, stats, sets, restocked] = await Promise.all([
+const sale = await liveSale();
+const [tree, shelf, stats, sets, restocked, onSale] = await Promise.all([
   categoryTree(),
   shelfBooks(24),
   catalogueStats(),
   setBooks(10),
   backInStock(10),
+  sale ? saleBooks(10) : Promise.resolve([]),
 ]);
 const top = tree.slice(0, 8);
 /*
@@ -165,6 +168,36 @@ const drifting = shelf.filter((b) => b.image_key && upright(b)).slice(0, 14);
       )
     }
   </section>
+
+
+  {
+    sale && onSale.length > 0 && (
+      <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 pt-12 md:pt-14 pb-4 reveal">
+        <div class="flex items-baseline justify-between gap-4 mb-1">
+          <div class="flex items-baseline gap-3 flex-wrap min-w-0">
+            <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">{sale.name}</h2>
+            {/* Worked out from the books in the sale, never typed. */}
+            <span class="shrink-0 rounded-[var(--radius-pill)] bg-[var(--color-outstock)]/10 px-3 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-[var(--color-outstock)]">
+              Up to {sale.headline}% off
+            </span>
+          </div>
+          <a href="/catalogue?sale=1" class="shrink-0 text-[14.5px] text-[var(--color-navy)] hover:underline underline-offset-2"
+            >All {onSale.length} →</a
+          >
+        </div>
+        {sale.blurb && (
+          <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-2xl">{sale.blurb}</p>
+        )}
+        <div class="mt-5 pt-5 border-t border-[var(--color-rule-soft)] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-7 gap-y-11">
+          {onSale.slice(0, 5).map((book, i) => (
+            <div class="reveal" data-delay={String(Math.min(i % 5, 5))}>
+              <BookCard book={book} quickAdd />
+            </div>
+          ))}
+        </div>
+      </section>
+    )
+  }
 
   <!-- Subjects as shelf classmarks: how a madrasah student actually navigates. -->
   <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-12 md:py-16 reveal">

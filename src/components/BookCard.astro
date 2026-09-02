@@ -33,6 +33,17 @@ const img = imageUrl(book.image_key, 'card');
 const avail = availability(book.available);
 
 /*
+ * The three facts of a sale price, in the same order everywhere: what you pay,
+ * what it was, and by how much.
+ *
+ * Brass is the price colour on this site and has exactly one job, so only the
+ * new price is brass. Two brass numbers side by side and nobody can tell which
+ * one they are being charged.
+ */
+const off = book.sale_percent ?? 0;
+const nowPence = off > 0 ? Math.round((book.price_pence * (100 - off)) / 100) : book.price_pence;
+
+/*
  * A cover close enough to 3:4 fills the box and is trimmed at the sides, where
  * these scans carry a white margin; anything else is shown whole. Nearly every
  * cover crops, so the grid reads as one size, and the few odd shapes keep all
@@ -79,6 +90,14 @@ const marks = (book.cat_slugs ?? '')
         )
       }
 
+      {/* This book's own percentage, never the sale headline. Top-left, so it
+          never collides with the low-stock chip on the same corner - that one
+          moves right when both are showing. */}
+      {off > 0 && (
+        <span class="absolute top-2.5 left-2.5 bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-[0.08em] uppercase px-2.5 py-1 rounded-[var(--radius-pill)]">
+          {off}% off
+        </span>
+      )}
       {
         avail.state === 'out' && (
           <span class="absolute inset-x-0 bottom-0 bg-[var(--color-ink)]/80 text-white text-[11px] font-semibold tracking-wide uppercase text-center py-1.5">
@@ -88,7 +107,12 @@ const marks = (book.cat_slugs ?? '')
       }
       {
         avail.state === 'low' && (
-          <span class="absolute top-2.5 left-2.5 bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-[0.08em] uppercase px-2.5 py-1 rounded-[var(--radius-pill)]">
+          <span
+            class:list={[
+              'absolute top-2.5 bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-[0.08em] uppercase px-2.5 py-1 rounded-[var(--radius-pill)]',
+              off > 0 ? 'right-2.5' : 'left-2.5',
+            ]}
+          >
             Only {book.available} left
           </span>
         )
@@ -130,7 +154,14 @@ const marks = (book.cat_slugs ?? '')
     * "Only 2 left" without fighting the pill for space.
     */}
   <div class="pt-2.5 flex items-center justify-between gap-2">
-    <span class="price text-[16.5px]">{price(book.price_pence)}</span>
+    <span class="flex items-baseline gap-2 min-w-0">
+      <span class="price text-[16.5px]">{price(nowPence)}</span>
+      {off > 0 && (
+        <span class="text-[13.5px] text-[var(--color-ink-faint)] line-through decoration-1">
+          {price(book.price_pence)}
+        </span>
+      )}
+    </span>
     {quickAdd && book.available > 0 && (
       <button
         type="button"

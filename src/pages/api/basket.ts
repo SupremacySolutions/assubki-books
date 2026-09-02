@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { booksByIds } from '../../lib/db';
 import { whenText } from '../../lib/incoming';
+import { liveSale, orderDiscount } from '../../lib/sales';
 
 export const prerender = false;
 
@@ -18,7 +19,14 @@ export const GET: APIRoute = async ({ url }) => {
 
   if (!ids.length) return Response.json({ books: [] });
 
-  const books = await booksByIds(ids);
+  // The sale's name and the standing discount rule travel with the books, so
+  // the basket can name what it is taking off rather than just showing a
+  // smaller number.
+  const [books, sale, discount] = await Promise.all([
+    booksByIds(ids),
+    liveSale(),
+    orderDiscount(),
+  ]);
 
   return Response.json(
     {
@@ -33,9 +41,16 @@ export const GET: APIRoute = async ({ url }) => {
         // `available` so the basket can say which it is rather than quietly
         // treating a promise as a copy in hand.
         reservable: b.reservable,
+        // The reduction on this book, if a sale is running. The basket works
+        // out its own totals from these, the same way the server does.
+        salePercent: b.sale_percent ?? 0,
         expected: whenText(b.incoming_vague, b.incoming_month),
         imageKey: b.image_key,
       })),
+      sale: sale ? { name: sale.name, headline: sale.headline } : null,
+      discount: discount.active && discount.percent > 0
+        ? { thresholdPence: discount.thresholdPence, percent: discount.percent }
+        : null,
     },
     { headers: { 'Cache-Control': 'no-store' } },
   );

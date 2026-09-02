@@ -5,6 +5,7 @@ import Rosette from '../../components/Rosette.astro';
 import { bookBySlug, relatedBooks, setOptions } from '../../lib/db';
 import { price, availability, imageUrl, stripTags, truncate, SITE } from '../../lib/format';
 import { delivery } from '../../lib/incoming';
+import { liveSale } from '../../lib/sales';
 import { classmark } from '../../lib/classmarks';
 import { IMAGE_PRESETS } from '../../lib/image-presets';
 import { cropsCleanly } from '../../lib/cover-fit';
@@ -25,6 +26,12 @@ const avail = availability(book.available);
  * basket count is hydrated. It stays correct without JavaScript; it just does
  * not know this particular customer yet.
  */
+/* The three facts again, with room to breathe. */
+const off = book.sale_percent ?? 0;
+const nowPence = off > 0 ? Math.round((book.price_pence * (100 - off)) / 100) : book.price_pence;
+const savedPence = book.price_pence - nowPence;
+const sale = off > 0 ? await liveSale() : null;
+
 const coming = delivery(book);
 const mine: string | null = null;
 
@@ -65,7 +72,8 @@ const jsonLd = {
   image: cover ? new URL(cover, Astro.url.origin).toString() : undefined,
   offers: {
     '@type': 'Offer',
-    price: (book.price_pence / 100).toFixed(2),
+    // The sale price, or search results advertise one the shop is not charging.
+    price: (nowPence / 100).toFixed(2),
     priceCurrency: 'GBP',
     availability:
       book.available > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
@@ -233,7 +241,17 @@ const jsonLd = {
             eye had to gather up itself. */}
         <div class="mt-7 max-w-[520px] bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-[22px]">
           <div class="flex items-center gap-3.5 flex-wrap">
-            <span class="price text-[34px] leading-none">{price(book.price_pence)}</span>
+            <span class="price text-[34px] leading-none">{price(nowPence)}</span>
+            {off > 0 && (
+              <>
+                <span class="text-[18px] text-[var(--color-ink-faint)] line-through decoration-1">
+                  {price(book.price_pence)}
+                </span>
+                <span class="text-[13px] font-medium px-3 py-1 rounded-[var(--radius-pill)] text-[var(--color-outstock)] bg-[var(--color-outstock)]/10">
+                  Save {price(savedPence)}
+                </span>
+              </>
+            )}
             <span
               class:list={[
                 'text-[13.5px] font-medium px-3 py-1 rounded-[var(--radius-pill)]',
@@ -243,6 +261,13 @@ const jsonLd = {
               ]}>{pillLabel}</span
             >
           </div>
+
+          {off > 0 && sale && (
+            <p class="mt-2.5 text-[13.5px] text-[var(--color-outstock)]">
+              {off}% off in the{' '}
+              <a href="/catalogue?sale=1" class="underline underline-offset-2 font-medium">{sale.name}</a>
+            </p>
+          )}
 
           {/*
             * A delivery on its way.

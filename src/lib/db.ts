@@ -405,6 +405,26 @@ export async function shelfBooks(limit = 18): Promise<BookRow[]> {
 }
 
 /**
+ * The books in the sale that is running, biggest reduction first.
+ *
+ * Out-of-stock members are kept: they are still in the sale and still show
+ * their reduced price, and hiding them would make the count on the owner's
+ * screen disagree with the row on the page.
+ */
+export async function saleBooks(limit = 10): Promise<BookRow[]> {
+  const { results } = await db()
+    .prepare(
+      `${BOOK_SELECT}
+        WHERE b.status = 'live' AND si.percent_off IS NOT NULL
+        ORDER BY si.percent_off DESC, b.title COLLATE NOCASE
+        LIMIT ?`,
+    )
+    .bind(limit)
+    .all<BookRow>();
+  return applySetAvailability(results);
+}
+
+/**
  * Multi-volume sets in stock.
  *
  * The thing this shop is actually known for, and the reason people travel to
