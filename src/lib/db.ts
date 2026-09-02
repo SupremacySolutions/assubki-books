@@ -228,6 +228,18 @@ export interface ListOptions {
   onSale?: boolean;
   /** Only books with a delivery on its way. */
   arriving?: boolean;
+  /**
+   * Whether to count the whole match as well as reading a page of it.
+   *
+   * On by default, because the catalogue needs it for "42 titles - 38 in
+   * stock" and for the pager. A caller that already knows the number - the
+   * home rows take theirs from the cached category rollup - passes false and
+   * saves a second scan of about a thousand rows per row of covers.
+   *
+   * `total` and `pages` are zero when it is off. They are not "unknown"; they
+   * were not asked for.
+   */
+  withTotal?: boolean;
   sort?: Sort;
   page?: number;
   perPage?: number;
@@ -312,8 +324,11 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
       : '') +
     whereSql;
 
+  const wantsTotal = opts.withTotal !== false;
   const [countRow, listRes] = await Promise.all([
-    db().prepare(countSql).bind(...binds).first<{ n: number; inStock: number }>(),
+    wantsTotal
+      ? db().prepare(countSql).bind(...binds).first<{ n: number; inStock: number }>()
+      : Promise.resolve(null),
     db()
       .prepare(`${from}${whereSql}${order} LIMIT ? OFFSET ?`)
       .bind(...binds, perPage, (page - 1) * perPage)
@@ -532,10 +547,33 @@ export async function homeRows(perRow = 10): Promise<HomeRow[]> {
   const now = Date.now();
   if (homeRowsCache && now - homeRowsCache.at < 60_000) return homeRowsCache.value;
 
+  /*
+   * The totals come from the counts the page has already paid for.
+   *
+   * `listBooks` runs its own COUNT beside the list, which is right on the
+   * catalogue - it powers "42 titles - 38 in stock" and the pager. Here it was
+   * three extra counts of about a thousand rows each for three numbers that
+   * `categoryCounts()` has already worked out and cached, and which the shelves
+   * index further down the same page is reading anyway.
+   */
+  const counts = await categoryCounts();
+  const cats = await allCategories();
+  const byPath = new Map(cats.map((c) => [c.path, c]));
+
   const value = await Promise.all(
     HOME_SHELVES.map(async (shelf) => {
-      const { books, total } = await listBooks({ categoryPath: shelf.path, perPage: perRow });
-      return { path: shelf.path, title: shelf.title, books, total };
+      const { books } = await listBooks({
+        categoryPath: shelf.path,
+        perPage: perRow,
+        withTotal: false,
+      });
+      const cat = byPath.get(shelf.path);
+      return {
+        path: shelf.path,
+        title: shelf.title,
+        books,
+        total: cat ? (counts.get(cat.id) ?? 0) : 0,
+      };
     }),
   );
 
