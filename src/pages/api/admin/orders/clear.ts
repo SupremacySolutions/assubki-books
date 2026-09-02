@@ -31,11 +31,35 @@ export const POST: APIRoute = async ({ request }) => {
 
   const n = countRow?.n ?? 0;
   if (n > 0) {
+    /*
+     * The screenshots these orders were holding, read before they go.
+     *
+     * `messages` cascades with the order, and those rows are the only record of
+     * which objects in the bucket belong to it - the retention sweep walks
+     * them. Clearing in bulk therefore used to strand every payment screenshot
+     * those orders held, permanently and several at a time, which is the one
+     * thing this feature is meant not to do with somebody's bank details.
+     */
+    const { results: proofs } = await env.DB.prepare(
+      `SELECT m.image_key FROM messages m
+         JOIN orders o ON o.id = m.order_id
+        WHERE m.image_key IS NOT NULL AND o.status IN (${placeholders})`,
+    )
+      .bind(...statuses)
+      .all<{ image_key: string }>();
+
     // order_items cascade from orders; the ledger keeps its rows with a null
     // order_id so stock movements remain auditable.
     await env.DB.prepare(`DELETE FROM orders WHERE status IN (${placeholders})`)
       .bind(...statuses)
       .run();
+
+    // After the rows, so a failure here leaves a collectable object rather than
+    // a message pointing at one that is already gone.
+    const bucket = (env as unknown as { UPLOADS?: R2Bucket }).UPLOADS;
+    for (const proof of proofs) {
+      await bucket?.delete(proof.image_key).catch(() => {});
+    }
   }
 
   const referer = request.headers.get('Referer');

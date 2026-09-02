@@ -18,7 +18,7 @@
 import {
   PROD, SITE, ORIGIN, vars, prodVars, TEST_CHAT, CUSTOMER_EMAIL,
   suite, report, db, one, signIn, admin, get, html, json, visibleText,
-  created, makeBook, placeOrder, teardown, adminUpload,
+  created, makeBook, placeOrder, teardown, adminUpload, deleteObject,
 } from './lib/e2e-helpers.mjs';
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -486,6 +486,12 @@ async function listings() {
   t.ok(
     /SELECT image_key FROM messages/.test(deleteRoute) && /UPLOADS/.test(deleteRoute),
     'deleting an order removes the screenshots it was holding',
+  );
+  // The same rule, and the one that strands them several at a time.
+  const clearRoute = readFileSync('src/pages/api/admin/orders/clear.ts', 'utf8');
+  t.ok(
+    /image_key FROM messages/.test(clearRoute) && /UPLOADS/.test(clearRoute),
+    'and so does clearing them in bulk',
   );
 
   const editorSource = readFileSync('src/pages/admin/books/[id].astro', 'utf8');
@@ -2636,7 +2642,21 @@ async function messages() {
   t.ok(due.n === 5, 'the sweep claims every photo on an order closed over six months ago');
 
   const before = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id}`);
+
+  /*
+   * Imitating the sweep, so it has to do both halves of what the sweep does.
+   *
+   * Nulling `image_key` is the database half; the objects are the other, and
+   * they have to go with it. Without this the fixture destroyed the only record
+   * of which objects belonged to this order and then left them in the bucket -
+   * five files after every run, which looked for a while like a bug in the shop
+   * rather than in the test imitating it.
+   */
+  const sweeping = await db(
+    `SELECT image_key AS k FROM messages WHERE order_id = ${row.id} AND image_key IS NOT NULL`,
+  );
   await db(`UPDATE messages SET image_key = NULL WHERE order_id = ${row.id}`);
+  for (const { k } of sweeping) await deleteObject(k);
   const after = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id}`);
   t.ok(after.n === before.n, 'and removing the photos keeps every message row');
   const remembered = await one(

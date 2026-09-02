@@ -251,6 +251,19 @@ export async function placeOrder(bookId, fulfilment = 'delivery', extra = {}) {
  * is also the thing being tested; anything it could not remove is named rather
  * than left silently in the channel.
  */
+/**
+ * Removes one object from the bucket.
+ *
+ * For fixtures that deliberately imitate something the shop would have done -
+ * the retention sweep, say - and so have to do the other half of it too.
+ */
+export async function deleteObject(key) {
+  await execFileAsync('npx', [
+    'wrangler', 'r2', 'object', 'delete', `assubki-books-uploads/${key}`,
+    PROD ? '--remote' : '--local',
+  ]).catch(() => {});
+}
+
 export async function teardown() {
   const orphans = [];
 
