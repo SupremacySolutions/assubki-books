@@ -362,6 +362,50 @@ export async function copyToOwner(
   return result !== null;
 }
 
+/**
+ * Downloads a file a customer sent the bot.
+ *
+ * Two steps, because Telegram does not hand over bytes with the update: the
+ * update carries a `file_id`, `getFile` turns that into a path, and the path is
+ * fetched from a different host to the API.
+ *
+ * Used so a payment screenshot sent on Telegram lands in the order's thread
+ * like one sent from the site, rather than existing only as a relayed message
+ * in the owner's chat and a number in a column.
+ *
+ * Returns null rather than throwing on every failure: a screenshot that could
+ * not be fetched must not cost the customer their message, and the relay to the
+ * owner has already happened either way.
+ */
+export async function fetchFile(
+  fileId: string,
+  maxBytes: number,
+): Promise<{ bytes: ArrayBuffer; contentType: string } | null> {
+  const token = cfg().TELEGRAM_BOT_TOKEN;
+  if (!token || dryRun()) return null;
+
+  const file = await call<{ file_path?: string; file_size?: number }>('getFile', {
+    file_id: fileId,
+  });
+  if (!file?.file_path) return null;
+  if ((file.file_size ?? 0) > maxBytes) return null;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`);
+    if (!res.ok) return null;
+
+    // `getFile` reports a size, but a lying or absent one must not let an
+    // unbounded body through - so the actual bytes are checked too.
+    const bytes = await res.arrayBuffer();
+    if (bytes.byteLength > maxBytes) return null;
+
+    const contentType = res.headers.get('content-type') ?? '';
+    return { bytes, contentType };
+  } catch {
+    return null;
+  }
+}
+
 export function webhookSecret(): string | null {
   return cfg().TELEGRAM_WEBHOOK_SECRET ?? null;
 }

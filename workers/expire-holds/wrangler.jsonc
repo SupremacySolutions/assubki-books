@@ -20,6 +20,15 @@
     }
   ],
 
+  // The screenshots the sweep removes. Same bucket the site writes them to;
+  // this Worker only ever deletes, and only under the `proofs/` prefix.
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS",
+      "bucket_name": "assubki-books-uploads"
+    }
+  ],
+
   // Every 15 minutes. A book whose hold has lapsed should return to the shelf
   // quickly - an hour of showing "out of stock" when it is free is a lost sale.
   "triggers": {

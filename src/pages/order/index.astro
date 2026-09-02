@@ -19,6 +19,9 @@ import { statusLabel, isSettled, moneyReceived, trackingUrl, cashMoment } from '
 import { collectionAddress } from '../../lib/settings';
 import { cancelRight, REASON_MAX } from '../../lib/cancellation';
 import { whenText } from '../../lib/incoming';
+import Thread from '../../components/Thread.astro';
+import { THREAD } from '../../lib/order-status';
+import { imageCount, markRead, thread, threadOpen } from '../../lib/messages';
 import QRCode from 'qrcode';
 
 const params = Astro.url.searchParams;
@@ -45,6 +48,33 @@ const whereToCollect =
   ['awaiting_payment', 'paid', 'dispatched', 'completed'].includes(order.status)
     ? await collectionAddress()
     : '';
+
+/*
+ * The conversation, and the fact that they have now seen it.
+ *
+ * Opening the page *is* the read event - there is nothing else a customer
+ * could do to mark it, and no login to hang a per-message ticket on. That is
+ * also why read state is per thread and never per message: the shop can
+ * honestly say "they opened this" and must not claim more.
+ */
+const messages = order ? await thread(order.id) : [];
+const imagesUsed = order ? await imageCount(order.id) : 0;
+if (order && order.unread_for_customer > 0) await markRead(order.id, 'customer');
+
+/* A refusal from the last send, turned back into the sentence the endpoint
+   would have given the script layer. */
+const sendError = order
+  ? ({
+      long: THREAD.tooLong,
+      rate: THREAD.tooMany,
+      images: THREAD.imageCapped,
+      type: THREAD.imageWrongType,
+      big: THREAD.imageTooBig,
+      closed: THREAD.closed,
+      empty: THREAD.failed,
+      nostore: THREAD.failed,
+    } as Record<string, string>)[params.get('e') ?? ''] ?? null
+  : null;
 
 const status = order ? statusLabel(order.status, order.fulfilment, whereToCollect, cashPayment) : null;
 const placed = order ? new Date(order.created_at * 1000) : null;
@@ -488,11 +518,42 @@ if (offerTelegram && telegramLink) {
           </div>
         )}
 
+        {/*
+          * The conversation goes here: after the order itself and the cancel
+          * control, before the closing note.
+          *
+          * Above the footer rather than at the very bottom because someone who
+          * arrived *because* they were told they have a reply should not have
+          * to hunt for it - and the notification links straight to #thread, so
+          * they land on it either way.
+          */}
+        <div class="mt-10">
+          <Thread
+            messages={messages}
+            side="customer"
+            action="/api/orders/message"
+            hidden={{ ref: order.ref, t: token }}
+            open={threadOpen(order.status)}
+            canAttach={true}
+            imagesUsed={imagesUsed}
+            proofUrl={(id: number) =>
+              `/api/orders/proof?ref=${encodeURIComponent(order.ref)}&t=${encodeURIComponent(token)}&id=${id}`}
+            error={sendError}
+          />
+        </div>
+
         <div class="mt-10 border-t border-[var(--color-rule)] pt-6 text-center">
           <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-            Keep this page - it updates as we work through your request. Quote{' '}
-            <strong class="text-[var(--color-ink)]">{order.ref}</strong> if you get in touch.
+            Keep this page - it updates as we work through your request, and anything you
+            send us is on it. Quote{' '}
+            <strong class="text-[var(--color-ink)]">{order.ref}</strong> if you reach us any
+            other way.
           </p>
+          {/* Telegram is not being replaced by the thread - it is the same
+              conversation reached from the app, and someone who lives in it
+              should not be pushed onto a web page. Below the thread rather
+              than beside it, so the box on the page is the obvious first move
+              and this is the alternative for people who prefer it. */}
           <div class="mt-4 flex flex-wrap items-start gap-3">
             <MessageUs subject={`Order ${order.ref}`} />
             <a href="/catalogue" class="btn btn-ghost">Keep browsing</a>
@@ -591,58 +652,13 @@ if (offerTelegram && telegramLink) {
       showing the old status until someone reloaded. A customer standing at the
       door watching "Awaiting payment" has no way to know it has moved.
 
-      Polling is therefore deliberately modest: only while the order is still
-      live, only while the tab is actually being looked at, and only for an hour.
-      A page left open overnight should not still be asking the server. */}
-  <script is:inline nonce={Astro.locals.cspNonce}>
-    (() => {
-      const container = document.querySelector('[data-order-status]');
-      if (!container) return;
-
-      const current = container.getAttribute('data-order-status');
-      const live = ['requested', 'awaiting_payment', 'paid', 'dispatched'];
-      if (!live.includes(current)) return;
-
-      const EVERY = 20000;
-      const UNTIL = Date.now() + 3600000;
-      let timer = null;
-      let checking = false;
-
-      const check = async () => {
-        if (checking || document.visibilityState !== 'visible') return;
-        checking = true;
-        try {
-          const res = await fetch('/api/orders/status' + location.search);
-          const data = await res.json();
-          if (data.status && data.status !== current) location.reload();
-        } catch {
-          /* offline or blocked: leave the page exactly as it is */
-        } finally {
-          checking = false;
-        }
-      };
-
-      const stop = () => {
-        if (timer) clearInterval(timer);
-        timer = null;
-      };
-
-      const start = () => {
-        if (timer || Date.now() > UNTIL) return;
-        timer = setInterval(() => (Date.now() > UNTIL ? stop() : check()), EVERY);
-      };
-
-      // Coming back to the tab is the likeliest moment for the status to have
-      // moved, so ask straight away rather than waiting out the interval.
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          check();
-          start();
-        } else stop();
-      });
-
-      start();
-    })();
+      That poll used to live here as an inline script. The thread needs the very
+      same request, so rather than start a second timer beside it the whole
+      thing moved into src/scripts/thread.ts, which now watches the status and
+      the conversation from one interval. It is still modest: only on a live
+      order, only while the tab is being looked at, and only for an hour. */}
+  <script>
+    import '../../scripts/thread.ts';
   </script>
 
   {/* Connecting happens inside the Telegram app, so this page never learns of

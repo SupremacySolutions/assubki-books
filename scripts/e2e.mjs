@@ -2327,6 +2327,373 @@ async function botAndOptIn() {
   await db(`DELETE FROM settings WHERE key='owner_telegram_chat_id'`);
 }
 
+// ---------------------------------------------------------------------------
+async function messages() {
+  const t = suite('17. Messages on an order');
+
+  const book = await makeBook({ stock: '3', price: '9.00' });
+  const order = await placeOrder(book.id, 'collection');
+  const link = `?ref=${order.ref}&t=${order.token}`;
+  const row = await one(`SELECT id FROM orders WHERE ref = '${order.ref}'`);
+
+  const post = async (fields, headers = {}) => {
+    const res = await fetch(`${SITE}/api/orders/message`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
+      body: new URLSearchParams({ ref: order.ref, t: order.token, ...fields }).toString(),
+    });
+    return { status: res.status, location: res.headers.get('location') ?? '', res };
+  };
+
+  // --- the thread is the order's, and only the order's ----------------------
+  //
+  // A forwarded link must never open somebody else's conversation, so the token
+  // is the whole authority - exactly as it is for the order page itself.
+  let sent = await post({ body: 'Is the second volume in stock too?' });
+  t.ok(sent.status === 302 && sent.location.includes('sent=1'), 'a plain form post reaches the thread');
+
+  const wrong = await fetch(`${SITE}/api/orders/message`, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ ref: order.ref, t: 'not-the-token', body: 'let me in' }).toString(),
+  });
+  t.ok(wrong.status === 404, 'a wrong token reaches no thread');
+
+  const blind = await html(`/order?ref=${order.ref}&t=not-the-token`);
+  t.ok(!blind.includes('second volume in stock'), 'and cannot read one either');
+
+  const stored = await db(`SELECT id, sender, via, body FROM messages WHERE order_id = ${row.id}`);
+  t.ok(stored.length === 1, 'exactly one message was written');
+  t.ok(stored[0].sender === 'customer' && stored[0].via === 'web', 'recorded as the customer, on the web');
+
+  // --- the counters are the cost story, so they have to be right ------------
+  let counters = await one(
+    `SELECT unread_for_owner AS owner, unread_for_customer AS customer FROM orders WHERE id = ${row.id}`,
+  );
+  const total = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id}`);
+  t.ok(counters.owner === total.n, 'the unread counter matches the message count');
+  t.ok(counters.customer === 0, 'and the customer is not told about their own message');
+
+  const list = await html('/admin/orders');
+  t.ok(list.includes(order.ref) && /unread\s+message/.test(list), 'the orders list carries an unread badge');
+
+  const portal = await html(`/admin/orders/${order.ref}`);
+  t.ok(portal.includes('second volume in stock'), 'the owner reads it beside the books');
+  counters = await one(`SELECT unread_for_owner AS owner FROM orders WHERE id = ${row.id}`);
+  t.ok(counters.owner === 0, 'and opening the order marks it read');
+
+  // --- the owner answers ----------------------------------------------------
+  const reply = await admin(`/api/admin/orders/${order.ref}/message`, {
+    body: 'It is - I will put one aside.',
+  });
+  t.ok(reply.location.includes('sent=1'), 'the owner can reply');
+  counters = await one(`SELECT unread_for_customer AS customer FROM orders WHERE id = ${row.id}`);
+  t.ok(counters.customer === 1, 'and the customer is told');
+
+  // The poll the order page already runs carries it, rather than a second one.
+  const status = await (await fetch(`${SITE}/api/orders/status${link}&since=0`)).json();
+  t.ok(status.unread === 1, 'the status endpoint reports the unread count');
+  t.ok(
+    Array.isArray(status.messages) && status.messages.some((m) => m.body.includes('put one aside')),
+    'and hands over the message itself',
+  );
+
+  const page = await html(`/order${link}`);
+  t.ok(page.includes('put one aside'), 'the customer sees the reply on their page');
+
+  // --- the caps refuse, rather than silently truncating ---------------------
+  sent = await post({ body: 'x'.repeat(2100) });
+  t.ok(sent.location.includes('e=long'), 'a message over 2000 characters is refused');
+  sent = await post({});
+  t.ok(sent.location.includes('e=empty'), 'an empty message is refused');
+
+  // 20 an hour, counting the customer's own. Two are already there.
+  for (let i = 0; i < 19; i++) await post({ body: `flood ${i}` });
+  sent = await post({ body: 'one too many' });
+  t.ok(sent.location.includes('e=rate'), 'the hourly cap refuses the twenty-first');
+
+  // --- the compose box, as a customer meets it ------------------------------
+  const compose = await html(`/order${link}`);
+  t.ok(
+    compose.includes('Sent a payment? Attach the screenshot here, or send it to us on Telegram.'),
+    'the customer is told where proof of payment goes',
+  );
+  t.ok(!compose.includes('Kept for six months'), "and is not shown the shop's retention policy");
+  // "Choose File / No file chosen" is the native input's own furniture. Behind
+  // a label with sr-only on it, the browser renders none of it.
+  t.ok(
+    /<input[^>]*type="file"[^>]*class="sr-only"[^>]*data-thread-image/.test(compose),
+    'the file input is hidden behind the paperclip',
+  );
+  t.ok(
+    compose.includes('<span class="sr-only">Attach a screenshot</span>'),
+    'which still has an accessible name for a screen reader',
+  );
+  t.ok(!compose.includes('Choose a screenshot'), 'and no visible browse button remains');
+
+  // --- photographs ----------------------------------------------------------
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const sendImage = async (type = 'image/png', name = 'proof.png') => {
+    const form = new FormData();
+    form.set('ref', order.ref);
+    form.set('t', order.token);
+    form.set('image', new Blob([png], { type }), name);
+    const res = await fetch(`${SITE}/api/orders/message`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { ...ORIGIN, Accept: 'application/json' },
+      body: form,
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  };
+
+  // The flood above spent the hour's allowance, so it is cleared first - the
+  // cap being tested here is the image one, not that one.
+  await db(`DELETE FROM messages WHERE order_id = ${row.id} AND body LIKE 'flood %'`);
+
+  let image = await sendImage();
+  t.ok(image.status === 200 && image.body.ok, 'a photo can be attached');
+
+  const proof = await one(
+    `SELECT id, image_key FROM messages WHERE order_id = ${row.id} AND image_key IS NOT NULL`,
+  );
+  t.ok((proof.image_key ?? '').startsWith('proofs/'), 'and is stored under proofs/');
+
+  /*
+   * THE ONE THAT MATTERS.
+   *
+   * /img is public, unauthenticated and answers with a year-long immutable
+   * cache. A payment screenshot shows a bank balance, an account number and a
+   * real name; if that route ever grows a third prefix, this is the assertion
+   * that should stop it.
+   */
+  const publicRead = await fetch(`${SITE}/img/${proof.image_key}`);
+  t.ok(publicRead.status === 404, 'the public image route will not serve a payment screenshot');
+
+  const gated = await fetch(`${SITE}/api/orders/proof${link}&id=${proof.id}`);
+  t.ok(gated.status === 200, 'the token-gated route will');
+  t.ok(
+    (gated.headers.get('cache-control') ?? '').includes('no-store'),
+    'and tells every cache not to keep it',
+  );
+  const forged = await fetch(`${SITE}/api/orders/proof?ref=${order.ref}&t=not-the-token&id=${proof.id}`);
+  t.ok(forged.status === 404, 'a wrong token reaches no image');
+
+  const owned = await get(`/api/admin/orders/${order.ref}/proof?id=${proof.id}`);
+  t.ok(owned.status === 200, 'the owner reads it through the portal instead');
+
+  image = await sendImage('application/pdf', 'receipt.pdf');
+  t.ok(image.status === 415, 'anything that is not a photo is refused');
+
+  for (let i = 0; i < 4; i++) await sendImage();
+  image = await sendImage();
+  t.ok(image.status === 409, 'the sixth photo on an order is refused');
+
+  /*
+   * And the bot honours the same total.
+   *
+   * It used to count `payment_proofs`, which only the Telegram route ever
+   * bumps - so a customer who had already sent five from their order page
+   * could send five more through the bot, and "five per order" meant two
+   * different things depending on the door.
+   */
+  const fullChat = `98${String(Date.now()).slice(-8)}`;
+  await db(`UPDATE orders SET telegram_chat_id = '${fullChat}' WHERE id = ${row.id}`);
+  const proofsBefore = await one(`SELECT COALESCE(payment_proofs,0) AS n FROM orders WHERE id = ${row.id}`);
+  await fetch(`${SITE}/api/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      ...ORIGIN,
+      'Content-Type': 'application/json',
+      'X-Telegram-Bot-Api-Secret-Token': vars.TELEGRAM_WEBHOOK_SECRET ?? '',
+    },
+    body: JSON.stringify({
+      message: { message_id: 77, chat: { id: Number(fullChat) }, photo: [{ file_id: 'x' }] },
+    }),
+  });
+  const proofsAfter = await one(`SELECT COALESCE(payment_proofs,0) AS n FROM orders WHERE id = ${row.id}`);
+  t.ok(proofsAfter.n === proofsBefore.n, 'and Telegram refuses it too, on the same count');
+  const stillFive = await one(
+    `SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id} AND image_key IS NOT NULL`,
+  );
+  t.ok(stillFive.n === 5, 'so an order never holds more than five photos, whichever door they came through');
+  await db(`UPDATE orders SET telegram_chat_id = NULL WHERE id = ${row.id}`);
+
+  // The retention line belongs to the owner, who is the one holding somebody's
+  // bank details - not under the customer's send button.
+  const ownerSide = await html(`/admin/orders/${order.ref}`);
+  t.ok(
+    ownerSide.includes('kept for six months after it is finished'),
+    'the owner is told how long the shop holds them',
+  );
+
+  // --- the sweep ------------------------------------------------------------
+  //
+  // Run as SQL rather than by importing the Worker: the suite talks to the site
+  // over HTTP and has no D1 handle to hand it. What is checked is the contract
+  // the Worker depends on - which rows it claims, and that nulling the key
+  // leaves the conversation behind.
+  await db(
+    `UPDATE orders SET status = 'completed', completed_at = unixepoch() - 200*86400,
+                       updated_at = unixepoch() - 200*86400
+      WHERE id = ${row.id}`,
+  );
+  const due = await one(
+    `SELECT COUNT(*) AS n FROM messages m JOIN orders o ON o.id = m.order_id
+      WHERE m.image_key IS NOT NULL AND o.status IN ('completed','cancelled','expired')
+        AND COALESCE(o.completed_at, o.updated_at) < unixepoch() - 183*86400
+        AND m.order_id = ${row.id}`,
+  );
+  t.ok(due.n === 5, 'the sweep claims every photo on an order closed over six months ago');
+
+  const before = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id}`);
+  await db(`UPDATE messages SET image_key = NULL WHERE order_id = ${row.id}`);
+  const after = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id}`);
+  t.ok(after.n === before.n, 'and removing the photos keeps every message row');
+  const remembered = await one(
+    `SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id} AND had_image = 1`,
+  );
+  t.ok(remembered.n === 5, 'the rows still remember a photo was there');
+
+  const swept = await html(`/order${link}`);
+  t.ok(swept.includes('Photo removed'), 'and the page says so rather than showing a gap');
+
+  // --- a finished order is a record, not a conversation ---------------------
+  sent = await post({ body: 'one last thing' });
+  t.ok(sent.location.includes('e=closed'), 'a closed order takes no new messages');
+
+  // A closed thread that was never used must not invite one. Both empty states
+  // say "ask us" / "start the conversation", which sat directly above "the
+  // conversation is closed" and contradicted it.
+  const quiet = await placeOrder(book.id, 'collection');
+  await admin(`/api/admin/orders/${quiet.ref}/status`, { status: 'cancelled' });
+  const quietPage = await html(`/order?ref=${quiet.ref}&t=${quiet.token}`);
+  t.ok(
+    quietPage.includes('Nothing was said about this order.') &&
+      !quietPage.includes('ask it here'),
+    'a closed thread with no messages does not invite one',
+  );
+  t.ok(swept.includes('the conversation is closed'), 'and says why');
+
+  // --- the shape of the markup, not just what the endpoints do --------------
+  //
+  // The suite posts to APIs, so a form-shaped bug passes everything above. A
+  // nested <form> is discarded by the browser and its button submits the outer
+  // one - silently, and it has broken the portal order page twice.
+  const nesting = (markup) => {
+    let depth = 0;
+    let max = 0;
+    for (const tag of markup.matchAll(/<\/?form\b/gi)) {
+      if (tag[0].toLowerCase() === '<form') max = Math.max(max, ++depth);
+      else depth--;
+    }
+    return { max, balanced: depth === 0 };
+  };
+
+  for (const [label, url] of [
+    ['the order page', `/order${link}`],
+    ['the portal order page', `/admin/orders/${order.ref}`],
+  ]) {
+    const markup = await html(url);
+    const { max, balanced } = nesting(markup);
+    t.ok(balanced && max <= 1, `${label}: no form is nested inside another`, `deepest = ${max}`);
+    // CSP is script-src 'self' with no unsafe-inline, so an inline handler is
+    // refused by the browser without a word in the page.
+    t.ok(!/\son(click|change|submit|input)=/.test(markup), `${label}: no inline event handlers`);
+  }
+
+  // --- Telegram is a door into the same thread ------------------------------
+  //
+  // The bot used to throw away every text message it received, including
+  // customers answering the shop's own payment instructions.
+  const chat = `99${String(Date.now()).slice(-8)}`;
+  const second = await placeOrder(book.id, 'collection');
+  const secondRow = await one(`SELECT id FROM orders WHERE ref = '${second.ref}'`);
+  await db(`UPDATE orders SET telegram_chat_id = '${chat}' WHERE id = ${secondRow.id}`);
+
+  const hook = (message) =>
+    fetch(`${SITE}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: {
+        ...ORIGIN,
+        'Content-Type': 'application/json',
+        'X-Telegram-Bot-Api-Secret-Token': vars.TELEGRAM_WEBHOOK_SECRET ?? '',
+      },
+      body: JSON.stringify({ message }),
+    });
+
+  const inbound = await hook({
+    message_id: 11,
+    chat: { id: Number(chat) },
+    text: 'Can I collect on Saturday?',
+  });
+  t.ok(inbound.status === 200, 'the webhook handles a customer message without throwing');
+  const fromBot = await one(
+    `SELECT sender, via, body FROM messages WHERE order_id = ${secondRow.id}`,
+  );
+  t.ok(fromBot.body === 'Can I collect on Saturday?', 'a Telegram message lands in the order thread');
+  t.ok(fromBot.via === 'telegram' && fromBot.sender === 'customer', 'recorded as the customer, via Telegram');
+
+  const withBot = await html(`/admin/orders/${second.ref}`);
+  t.ok(withBot.includes('via Telegram'), 'and the owner can see which door it came through');
+
+  const allBefore = await one('SELECT COUNT(*) AS n FROM messages');
+  await hook({ message_id: 12, chat: { id: 12345678 }, text: 'hello?' });
+  const allAfter = await one('SELECT COUNT(*) AS n FROM messages');
+  t.ok(allAfter.n === allBefore.n, 'an unbound chat still writes nothing at all');
+
+  /*
+   * The owner typing back into their own bot chat.
+   *
+   * It cannot be routed to an order, but it must not vanish either - that used
+   * to return silently, so a reply typed there was lost with no warning and the
+   * customer went on waiting.
+   */
+  const ownerChat = `97${String(Date.now()).slice(-8)}`;
+  await db(
+    `INSERT INTO settings (key, value) VALUES ('owner_telegram_chat_id', '${ownerChat}')
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  );
+  const beforeOwner = await one('SELECT COUNT(*) AS n FROM messages');
+  const ownerReply = await hook({
+    message_id: 14,
+    chat: { id: Number(ownerChat) },
+    text: 'yes that is fine',
+  });
+  /*
+   * The status is asserted first, and deliberately.
+   *
+   * "Nothing was written" is also true when the handler threw, so on its own it
+   * passes a 500 - which is exactly what happened here once, on an import that
+   * was missing because this build does not typecheck.
+   */
+  t.ok(ownerReply.status === 200, 'the owner branch does not throw', `status ${ownerReply.status}`);
+  const afterOwner = await one('SELECT COUNT(*) AS n FROM messages');
+  t.ok(afterOwner.n === beforeOwner.n, "the owner's own chat writes nothing to any thread");
+  await db(`DELETE FROM settings WHERE key = 'owner_telegram_chat_id'`);
+
+  await db(`UPDATE orders SET status = 'cancelled' WHERE id = ${secondRow.id}`);
+  await hook({ message_id: 13, chat: { id: Number(chat) }, text: 'one more' });
+  const closed = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${secondRow.id}`);
+  t.ok(closed.n === 1, 'and a closed order takes no Telegram message either');
+
+  // --- email stopped carrying the conversation ------------------------------
+  const notifySource = readFileSync('src/lib/notify.ts', 'utf8');
+  t.ok(
+    !notifySource.includes('deliver({ to: input.email, replyTo: ownerAddress()'),
+    'customer email no longer replies to the owner inbox',
+  );
+  t.ok(
+    notifySource.includes('noReplyText(link)') && notifySource.includes('${noReply(link)}'),
+    'and carries the line saying where to answer instead',
+  );
+}
+
 // The third field says whether the suite needs a signed-in portal session.
 // Everything that builds a fixture listing does; the public pages and the
 // checks that admin routes stay shut do not.
@@ -2339,6 +2706,7 @@ const SUITES = [
   ['notifications', notifications, true], ['lifecycle', lifecycle, true],
   ['bot', botAndOptIn, true], ['group', groupOrders, true],
   ['settings', ownerSettings, true],
+  ['messages', messages, true],
   ['integrity', integrity, false],
 ];
 

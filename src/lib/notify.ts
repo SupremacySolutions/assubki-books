@@ -20,7 +20,7 @@
 import { env } from 'cloudflare:workers';
 import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
-import { deliver, ownerAddress, shell, button, itemRows, escapeHtml } from './email';
+import { deliver, ownerAddress, shell, button, itemRows, escapeHtml, noReply, noReplyText } from './email';
 import { sendMessage, optInLink, esc, botConfigured, mdLink } from './telegram';
 import { statusMessage, cashMoment } from './order-status';
 import { getSetting } from './settings';
@@ -110,7 +110,8 @@ function customerPlaced(input: PlacedInput) {
      ${button(link, 'View your request')}
      <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
        ${closing}
-     </p>`,
+     </p>
+     ${noReply(link)}`,
   );
 
   const text =
@@ -124,7 +125,8 @@ function customerPlaced(input: PlacedInput) {
       ? 'For collection.\n\n'
       : `To be posted to:\n${input.address ?? ''}\n\n`) +
     (optIn && !order.telegramChatId ? `Get payment details on Telegram: ${optIn}\n\n` : '') +
-    `View your request: ${link}\n\n${closing}\n`;
+    `View your request: ${link}\n\n${closing}\n` +
+    noReplyText(link);
 
   return {
     subject:
@@ -250,7 +252,7 @@ export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
       )
     : Promise.resolve(false);
   const results = await Promise.allSettled([
-    deliver({ to: input.email, replyTo: ownerAddress(), ...customerPlaced(input) }),
+    deliver({ to: input.email, ...customerPlaced(input) }),
     deliver({ to: ownerAddress(), replyTo: input.email, ...ownerPlaced(input) }),
     telegramOwner,
     telegramCustomer,
@@ -332,7 +334,8 @@ function confirmedEmail(input: ConfirmedInput) {
            ? 'No payment is taken on our website. Message us to agree a time and the books will be waiting.'
            : 'Once your payment reaches us we will confirm and post your books.'
        }
-     </p>`,
+     </p>
+     ${noReply(link)}`,
   );
 
   const text =
@@ -344,7 +347,8 @@ function confirmedEmail(input: ConfirmedInput) {
     (input.fulfilment === 'collection' ? '' : `\n  Postage: ${price(input.postagePence)}`) +
     `\n  ${totalLabel.toUpperCase()}: ${price(input.totalPence)}\n\n` +
     `${heading}\n${input.paymentInstructions}\n\n` +
-    `${quote}\n\n${link}\n`;
+    `${quote}\n\n${link}\n` +
+    noReplyText(link);
 
   const subject = cash
     ? `Order ${input.ref} confirmed - ${price(input.totalPence)} in cash`
@@ -415,7 +419,7 @@ export async function notifyOrderConfirmed(
   input: ConfirmedInput,
 ): Promise<{ email: boolean; telegram: boolean }> {
   const [emailResult, telegramResult] = await Promise.allSettled([
-    deliver({ to: input.email, replyTo: ownerAddress(), ...confirmedEmail(input) }),
+    deliver({ to: input.email, ...confirmedEmail(input) }),
     input.telegramChatId && botConfigured()
       ? sendMessage(input.telegramChatId, confirmedTelegram(input))
       : Promise.resolve(false),
@@ -458,18 +462,19 @@ export async function notifyGroupStarted(input: {
      <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
        Nothing is held or charged while a group basket is being filled. The books are only set aside
        once you send it, and it lasts a week.
-     </p>`,
+     </p>
+     ${noReply(null)}`,
   );
 
   const text =
     `Your group basket ${input.code}\n\nالسلام عليكم ${input.name},\n\n` +
     `Share this link with everyone adding to it:\n${input.shareLink}\n\n` +
     `Keep this one for yourself - it sends the order when the list is complete:\n${input.organiserLink}\n\n` +
-    `Nothing is held or charged while a group basket is being filled. It lasts a week.\n`;
+    `Nothing is held or charged while a group basket is being filled. It lasts a week.\n` +
+    noReplyText(null);
 
   return deliver({
     to: input.email,
-    replyTo: ownerAddress(),
     subject: `Your group basket ${input.code} - ${SITE.name}`,
     html,
     text,
@@ -547,7 +552,6 @@ export async function notifyCancelDeclined(input: {
   await Promise.allSettled([
     deliver({
       to: input.email,
-      replyTo: ownerAddress(),
       subject: `Your order stands - ${input.ref}`,
       html: shell(
         'Your order stands',
@@ -557,12 +561,14 @@ export async function notifyCancelDeclined(input: {
           (input.note
             ? `<p style="margin:16px 0 0;font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(input.note)}</p>`
             : '') +
-          button(link, 'View your order'),
+          button(link, 'View your order') +
+          noReply(link),
       ),
       text:
         `Your order stands - ${input.ref}\n\nالسلام عليكم ${input.name},\n\n${line}\n\n` +
         (input.note ? `${input.note}\n\n` : '') +
-        `${link}\n`,
+        `${link}\n` +
+        noReplyText(link),
     }),
     input.telegramChatId && botConfigured()
       ? sendMessage(
@@ -657,7 +663,6 @@ async function sendStatusChange(input: {
   await Promise.allSettled([
     deliver({
       to: input.email,
-      replyTo: ownerAddress(),
       subject: copy.subject,
       html: shell(
         copy.subject,
@@ -670,13 +675,15 @@ async function sendStatusChange(input: {
              : ''
          }
          ${copy.trackingLink ? button(copy.trackingLink, 'Track this parcel') : ''}
-         ${button(link, 'View your order')}`,
+         ${button(link, 'View your order')}
+         ${noReply(link)}`,
       ),
       text:
         `${copy.subject}\n\nالسلام عليكم ${input.name},\n\n${copy.line}\n\n` +
         (note ? `${note}\n\n` : '') +
         (copy.trackingLink ? `Track it here: ${copy.trackingLink}\n\n` : '') +
-        `${link}\n`,
+        `${link}\n` +
+        noReplyText(link),
     }),
     input.telegramChatId && botConfigured()
       ? sendMessage(
@@ -709,3 +716,193 @@ export async function notifyStatusChange(
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// 3. Somebody said something
+// ---------------------------------------------------------------------------
+
+/** Enough to judge whether it needs answering now, not enough to answer from. */
+function preview(body: string | null, hasImage: boolean): string {
+  const text = (body ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return hasImage ? 'Sent a photo.' : 'Sent a message.';
+  return text.length > 140 ? `${text.slice(0, 139)}…` : text;
+}
+
+/**
+ * Do not tell the same customer twice in half an hour.
+ *
+ * A full test run is already about 38 emails, which is most of a day's free
+ * Resend allowance; five replies in a row must not be five emails. The rule is
+ * deliberately per-order state on the order rather than a global marker, so one
+ * chatty conversation cannot silence a different customer's first notification.
+ *
+ * The debounce lifts as soon as the customer opens the thread - `markRead`
+ * clears `unread_for_customer`, and an unread count of zero means the last
+ * notification did its job and the next one is worth sending.
+ */
+const NOTIFY_EVERY = 30 * 60;
+
+export async function notifyNewMessage(input: {
+  orderId: number;
+  ref: string;
+  /** Who spoke. The notification goes to the other one. */
+  sender: 'customer' | 'owner';
+  name: string;
+  email: string;
+  telegramChatId?: string | null;
+  body: string | null;
+  hasImage: boolean;
+  origin: string;
+}): Promise<void> {
+  try {
+    if (input.sender === 'customer') await tellOwner(input);
+    else await tellCustomer(input);
+    await clearNotifyFailure();
+  } catch (err) {
+    const reason = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    await recordNotifyFailure(`message on ${input.ref} - ${reason}`);
+    /*
+     * Swallowed, unlike a status change. The message is already saved and both
+     * sides can see it on their own page; a Telegram outage must not turn into
+     * a 500 that loses what the customer typed.
+     */
+  }
+}
+
+/**
+ * The owner hears about a customer message on Telegram, immediately.
+ *
+ * They are bound to the bot, so there is a channel that reaches their phone -
+ * which is why the portal does not poll for this at all. No debounce here: the
+ * owner asked to be told, and a customer sending three messages is three things
+ * they may need to act on.
+ */
+async function tellOwner(input: {
+  orderId: number;
+  ref: string;
+  name: string;
+  body: string | null;
+  hasImage: boolean;
+  origin: string;
+}): Promise<void> {
+  const ownerChatId = (await getSetting('owner_telegram_chat_id')).trim();
+
+  const line = preview(input.body, input.hasImage);
+  const results = await Promise.allSettled([
+    ownerChatId && botConfigured()
+      ? sendMessage(
+          ownerChatId,
+          [
+            `*${esc(`Message on ${input.ref}`)}*`,
+            '',
+            esc(`${input.name}: ${line}`),
+            '',
+            mdLink('Open the thread', `${input.origin}/admin/orders/${input.ref}`),
+          ].join('\n'),
+        )
+      : Promise.resolve(false),
+    // The owner's own inbox, for when the bot is not bound or Telegram is down.
+    ownerChatId && botConfigured()
+      ? Promise.resolve(false)
+      : deliver({
+          to: ownerAddress(),
+          subject: `Message on ${input.ref} - ${input.name}`,
+          html: shell(
+            `Message on ${input.ref}`,
+            input.name,
+            `<p style="margin:0;font-size:15px;line-height:1.6">${escapeHtml(line)}</p>` +
+              button(`${input.origin}/admin/orders/${input.ref}`, 'Open the thread'),
+          ),
+          text: `${input.name} on ${input.ref}: ${line}\n\n${input.origin}/admin/orders/${input.ref}`,
+        }),
+  ]);
+  for (const r of results) {
+    if (r.status === 'rejected') console.error('[notify] message-to-owner failed', r.reason);
+  }
+}
+
+/**
+ * The customer hears about an owner reply - Telegram if they connected,
+ * email otherwise.
+ *
+ * The email is a doorbell, not the message: sender, one line, and a link back
+ * to the thread. Enough to judge urgency, not enough to answer by replying to
+ * an address nobody reads.
+ */
+async function tellCustomer(input: {
+  orderId: number;
+  ref: string;
+  name: string;
+  email: string;
+  telegramChatId?: string | null;
+  body: string | null;
+  hasImage: boolean;
+  origin: string;
+}): Promise<void> {
+  const due = await notificationDue(input.orderId);
+  if (!due) return;
+
+  const line = preview(input.body, input.hasImage);
+  const link = `${input.origin}/order?ref=${input.ref}&t=${await tokenFor(input.orderId)}`;
+
+  if (input.telegramChatId && botConfigured()) {
+    await sendMessage(
+      input.telegramChatId,
+      [
+        `*${esc(`A reply about ${input.ref}`)}*`,
+        '',
+        esc(line),
+        '',
+        mdLink('Open your order', link),
+      ].join('\n'),
+    );
+  } else {
+    await deliver({
+      to: input.email,
+      subject: `A reply about your order ${input.ref}`,
+      html: shell(
+        'The shop has replied',
+        `About order ${input.ref}`,
+        `<p style="margin:0 0 4px;font-size:13px;color:#8b93a1">${escapeHtml(SITE.name)} said</p>` +
+          `<p style="margin:0;font-size:15px;line-height:1.6">${escapeHtml(line)}</p>` +
+          button(link, 'Read it and reply') +
+          noReply(link),
+      ),
+      text: `${SITE.name} said: ${line}\n\nRead it and reply: ${link}` + noReplyText(link),
+    });
+  }
+
+  await env.DB.prepare('UPDATE orders SET message_notified_at = unixepoch() WHERE id = ?')
+    .bind(input.orderId)
+    .run();
+}
+
+/**
+ * Whether this customer is due a nudge.
+ *
+ * Due when they have read everything so far - an unread count of zero means the
+ * last notification was acted on - or when half an hour has gone by regardless.
+ */
+async function notificationDue(orderId: number): Promise<boolean> {
+  const row = await env.DB.prepare(
+    `SELECT COALESCE(unread_for_customer, 0) AS unread, message_notified_at
+       FROM orders WHERE id = ?`,
+  )
+    .bind(orderId)
+    .first<{ unread: number; message_notified_at: number | null }>();
+  if (!row) return false;
+
+  // The message just written is itself unread, so "they have read everything
+  // else" is a count of one, not zero.
+  if (row.unread <= 1) return true;
+  if (!row.message_notified_at) return true;
+  return Math.floor(Date.now() / 1000) - row.message_notified_at >= NOTIFY_EVERY;
+}
+
+/** The customer's own link, which only the server may assemble. */
+async function tokenFor(orderId: number): Promise<string> {
+  const row = await env.DB.prepare('SELECT access_token FROM orders WHERE id = ?')
+    .bind(orderId)
+    .first<{ access_token: string }>();
+  return row?.access_token ?? '';
+}

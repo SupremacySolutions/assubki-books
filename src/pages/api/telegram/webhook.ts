@@ -6,9 +6,21 @@ import {
   isOwnerLinkPayload,
   webhookSecret,
   copyToOwner,
+  fetchFile,
+  mdLink,
 } from '../../../lib/telegram';
 import { getSetting, setSetting } from '../../../lib/settings';
 import { price } from '../../../lib/format';
+import { notifyNewMessage } from '../../../lib/notify';
+import {
+  IMAGES_PER_ORDER,
+  PROOF_PREFIX,
+  imageCount,
+  normaliseBody,
+  overHourlyCap,
+  postMessage,
+  threadOpen,
+} from '../../../lib/messages';
 
 export const prerender = false;
 
@@ -28,19 +40,48 @@ export const prerender = false;
  * to ignore entirely, replying with a canned brush-off while the owner never
  * saw it.
  *
- * Everything else gets one reply pointing at a human. The bot is not a
- * conversation, and an unbound chat can do nothing here at all: that allowlist
- * is what makes accepting photos safe, since otherwise anyone who found the bot
- * could pipe images into the owner's Telegram.
+ * The third is the conversation. A message from a bound chat with a live order
+ * is now posted into that order's thread rather than thrown away - which is the
+ * piece that makes the whole feature cohere. A connected customer types in
+ * Telegram, an unconnected one types on the site, both land in one thread, and
+ * the owner answers both from one box.
+ *
+ * **Owner replies from Telegram are deliberately not handled.** Doing it
+ * properly needs a map from relayed message ids back to orders, and a half
+ * version that guessed at the most recent order would put the shop's words in
+ * the wrong customer's thread.
+ *
+ * Everything else still gets one reply pointing at a human. An unbound chat can
+ * do nothing here at all: that allowlist is what makes accepting photos safe,
+ * since otherwise anyone who found the bot could pipe images into the owner's
+ * Telegram.
  */
 
-/** Enough screenshots to cover a genuine mistake, not enough to flood. */
-const MAX_SCREENSHOTS = 5;
+/** The same 8 MB the site's own upload accepts. */
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
+const EXTENSIONS = new Map([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+]);
+
+interface TelegramUpdate {
+  message?: {
+    message_id?: number;
+    chat?: { id: number; username?: string; first_name?: string; last_name?: string };
+    text?: string;
+    caption?: string;
+    photo?: { file_id?: string }[];
+    document?: { mime_type?: string; file_id?: string };
+  };
+}
 
 interface BoundOrder {
   id: number;
   ref: string;
   customer_name: string;
+  email: string;
   status: string;
   total_pence: number | null;
   subtotal_pence: number;
@@ -66,16 +107,7 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response('Forbidden', { status: 403 });
   }
 
-  let update: {
-    message?: {
-      message_id?: number;
-      chat?: { id: number; username?: string; first_name?: string; last_name?: string };
-      text?: string;
-      caption?: string;
-      photo?: unknown[];
-      document?: { mime_type?: string };
-    };
-  };
+  let update: TelegramUpdate;
   try {
     update = await request.json();
   } catch {
@@ -201,7 +233,7 @@ export const POST: APIRoute = async ({ request }) => {
   // ---------------------------------------------------------------------
 
   const bound = await env.DB.prepare(
-    `SELECT id, ref, customer_name, status, total_pence, subtotal_pence,
+    `SELECT id, ref, customer_name, email, status, total_pence, subtotal_pence,
             COALESCE(payment_proofs, 0) AS payment_proofs
        FROM orders
       WHERE telegram_chat_id = ?
@@ -228,7 +260,16 @@ export const POST: APIRoute = async ({ request }) => {
       return new Response('ok');
     }
 
-    if (bound.payment_proofs >= MAX_SCREENSHOTS) {
+    /*
+     * One limit for the order, whichever door the photo came through.
+     *
+     * This used to count `payment_proofs`, which only this route ever bumps -
+     * so a customer who had already sent five from their order page could send
+     * five more here, and the two routes disagreed about what "five per order"
+     * meant. The thread's own count is the honest one, because both routes
+     * write to it.
+     */
+    if ((await imageCount(bound.id)) >= IMAGES_PER_ORDER) {
       await sendMessage(
         chat,
         esc('We already have your screenshots for this order. The shop will be in touch.'),
@@ -258,6 +299,20 @@ export const POST: APIRoute = async ({ request }) => {
       )
         .bind(bound.id)
         .run();
+
+      /*
+       * And into the thread, so the screenshot is part of the conversation
+       * rather than only a relayed message in the owner's chat and a number in
+       * a column. The customer can then see what they sent on their own order
+       * page, and the owner has it beside the books.
+       *
+       * The relay above has already happened and is what the owner acts on, so
+       * every failure here is swallowed: a photo the shop could not re-host
+       * must not turn into "sorry, that did not get through" for a message
+       * that did.
+       */
+      await storeTelegramPhoto(bound, message, note).catch(() => {});
+
       await sendMessage(
         chat,
         esc(`Thank you. That has reached the shop and will be checked against ${bound.ref}.`),
@@ -271,11 +326,140 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response('ok');
   }
 
+  /*
+   * Words, from someone the shop knows, about an order that is still live.
+   *
+   * This used to be the brush-off - "This bot only handles orders" - thrown at
+   * every text message the bot ever received, including customers answering
+   * the shop's own payment instructions. It now goes into that order's thread,
+   * marked as having come from Telegram.
+   */
+  if (text && bound && !isOwner && threadOpen(bound.status)) {
+    const body = normaliseBody(text);
+    if (!body) {
+      await pointAtAHuman(chat);
+      return new Response('ok');
+    }
+
+    if (await overHourlyCap(bound.id)) {
+      await sendMessage(
+        chat,
+        esc('That is a lot of messages at once. Please give the shop a moment to catch up.'),
+      );
+      return new Response('ok');
+    }
+
+    await postMessage({ orderId: bound.id, sender: 'customer', via: 'telegram', body });
+    await notifyNewMessage({
+      orderId: bound.id,
+      ref: bound.ref,
+      sender: 'customer',
+      name: bound.customer_name,
+      email: bound.email,
+      telegramChatId: chat,
+      body,
+      hasImage: false,
+      origin: new URL(request.url).origin,
+    });
+
+    /*
+     * No "thank you, received" reply. The customer is looking at their own
+     * message in a chat window; a bot answering every line with an
+     * acknowledgement is noise, and the shop's real answer is what they are
+     * waiting for.
+     */
+    return new Response('ok');
+  }
+
+  /*
+   * The owner typing back into their own bot chat.
+   *
+   * They are told here when a customer writes, so replying in the same window
+   * is the obvious move - and it does not work: routing a reply back to the
+   * right order needs a map from relayed message ids to orders, which is not
+   * built, and guessing at "their most recent order" would put the shop's
+   * words in the wrong customer's thread.
+   *
+   * What is *not* acceptable is swallowing it. This used to return silently,
+   * so a reply typed here vanished with no reply, no warning and no record,
+   * and the customer went on waiting. Saying so costs one message.
+   */
+  if (isOwner) {
+    if (!text) return new Response('ok'); // a photo or a sticker needs no lecture
+
+    const origin = new URL(request.url).origin;
+
+    // A link to the order most recently written to, if there is one - a
+    // convenience, not a guess about who this message was meant for.
+    const waiting = await env.DB.prepare(
+      `SELECT ref FROM orders
+        WHERE unread_for_owner > 0 ORDER BY last_message_at DESC LIMIT 1`,
+    ).first<{ ref: string }>();
+
+    await sendMessage(
+      chat,
+      [
+        esc('That was not sent - replies do not go through this chat.'),
+        '',
+        esc('Answer from the portal and it reaches them wherever they are.'),
+        '',
+        waiting
+          ? mdLink(`Open ${waiting.ref}`, `${origin}/admin/orders/${waiting.ref}`)
+          : mdLink('Open your orders', `${origin}/admin/orders`),
+      ].join('\n'),
+    );
+    return new Response('ok');
+  }
+
   // A photo from someone with no live order, or any other message at all.
-  if (isOwner) return new Response('ok'); // the owner talking to their own bot
   await pointAtAHuman(chat);
   return new Response('ok');
 };
+
+/**
+ * Re-hosts a Telegram photo under `proofs/` and puts it in the thread.
+ *
+ * Telegram keeps the file, but only behind a URL built from the bot token -
+ * which cannot be handed to a browser, and which the shop should not be relying
+ * on for its own record anyway. Stored in R2 like a photo sent from the site,
+ * so one sweep removes both and one route reads both.
+ */
+async function storeTelegramPhoto(
+  bound: BoundOrder,
+  message: NonNullable<TelegramUpdate['message']>,
+  note: string,
+): Promise<void> {
+  if ((await imageCount(bound.id)) >= IMAGES_PER_ORDER) return;
+
+  // Telegram sends a photo as a ladder of sizes, smallest first; the last is
+  // the largest it kept, which is the one a payment reference is legible in.
+  const sizes = (message.photo ?? []) as { file_id?: string }[];
+  const fileId =
+    sizes.length > 0 ? sizes[sizes.length - 1]?.file_id : message.document?.file_id;
+  if (!fileId) return;
+
+  const file = await fetchFile(fileId, MAX_PHOTO_BYTES);
+  if (!file) return;
+
+  const ext = EXTENSIONS.get(file.contentType.split(';')[0].trim());
+  if (!ext) return;
+
+  const bucket = (env as unknown as { UPLOADS?: R2Bucket }).UPLOADS;
+  if (!bucket) return;
+
+  const key = `${PROOF_PREFIX}${bound.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+  await bucket.put(key, file.bytes, {
+    httpMetadata: { contentType: file.contentType, cacheControl: 'private, no-store' },
+  });
+
+  await postMessage({
+    orderId: bound.id,
+    sender: 'customer',
+    via: 'telegram',
+    body: normaliseBody(note),
+    imageKey: key,
+  });
+}
 
 /** Convenience for setting the webhook up; harmless to leave in place. */
 export const GET: APIRoute = async () =>

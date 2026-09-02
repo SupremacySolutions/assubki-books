@@ -203,6 +203,43 @@ export function shell(heading: string, sub: string, inner: string): string {
   </div></body></html>`;
 }
 
+/**
+ * The line that turns this address into a doorbell rather than an inbox.
+ *
+ * Customer mail used to carry `replyTo: ownerAddress()`, so a reply landed in
+ * the owner's Gmail - outside the app, with nothing about it attached to the
+ * order, and invisible to the portal. Every order now has a thread on it, so
+ * email's job is to say that something happened and point back at the site.
+ *
+ * The link is the customer's own order page when there is one. A group basket
+ * has no order yet, so it gets the lookup instead - which is also the route
+ * back for anybody whose link has gone missing, and the reason
+ * `/api/orders/lookup` is still here.
+ */
+export function noReply(orderLink?: string | null): string {
+  const href = orderLink ?? `${SITE.url}/order`;
+  const what = orderLink ? 'your order page' : 'your order';
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0">
+    <tr><td height="1" bgcolor="#ddd9d1" style="height:1px;line-height:1px;font-size:0">&nbsp;</td></tr>
+  </table>
+  <p style="margin:14px 0 0;font-size:13px;color:#8b93a1;line-height:1.6">
+    This address is not monitored - replies to it are not read.
+    <a href="${escapeHtml(href)}" style="color:#184485">Answer on ${escapeHtml(what)}</a>,
+    where the shop will see it,
+    or message us on <a href="${escapeHtml(SITE.telegram)}" style="color:#184485">Telegram</a>.
+  </p>`;
+}
+
+/** The same thing for the plain-text part. */
+export function noReplyText(orderLink?: string | null): string {
+  const href = orderLink ?? `${SITE.url}/order`;
+  return (
+    `\n\n---\nThis address is not monitored - replies to it are not read.\n` +
+    `Answer on your order page: ${href}\n` +
+    `Or message us on Telegram: ${SITE.telegram}\n`
+  );
+}
+
 export function button(href: string, label: string): string {
   return `<p style="margin:22px 0 0"><a href="${escapeHtml(href)}" style="background:#184485;color:#fff;padding:11px 20px;border-radius:2px;text-decoration:none;font-size:15px;display:inline-block">${escapeHtml(label)}</a></p>`;
 }

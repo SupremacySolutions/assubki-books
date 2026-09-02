@@ -1,0 +1,292 @@
+---
+import { THREAD } from '../lib/order-status';
+import { BODY_MAX, IMAGES_PER_ORDER, type Message } from '../lib/messages';
+
+/**
+ * The conversation on an order, drawn the same way for both sides.
+ *
+ * One component rather than two so the customer and the owner cannot drift
+ * into disagreeing about what was said. What differs is only who "us" is, and
+ * that is a prop.
+ *
+ * The compose box is a plain form that posts and reloads. It works with
+ * JavaScript switched off, and src/scripts/thread.ts layers sending-in-place
+ * on top of exactly this markup without replacing any of it.
+ */
+interface Props {
+  messages: Message[];
+  /** Whose messages are drawn as "ours". */
+  side: 'customer' | 'owner';
+  /** Where the compose box posts. */
+  action: string;
+  /** Hidden fields the post needs - the token, on the customer side. */
+  hidden?: Record<string, string>;
+  /** False on a finished order: readable, not writable. */
+  open: boolean;
+  /** Only the customer may attach photographs. */
+  canAttach?: boolean;
+  /** How many they have already sent, so the limit can be stated honestly. */
+  imagesUsed?: number;
+  /** Builds the src for a photo in the thread. Both sides read their own route. */
+  proofUrl?: (id: number) => string;
+  /** Shown above the box: which way a reply will actually travel. */
+  channelNote?: string | null;
+  /** A refusal from the last post, already turned into a sentence. */
+  error?: string | null;
+}
+
+const {
+  messages,
+  side,
+  action,
+  hidden = {},
+  open,
+  canAttach = false,
+  imagesUsed = 0,
+  proofUrl,
+  channelNote = null,
+  error = null,
+} = Astro.props as Props;
+
+const atImageLimit = imagesUsed >= IMAGES_PER_ORDER;
+
+/* A time, not a date, for anything from today: "14:32" is what someone wants
+   from a conversation they are in the middle of. */
+const when = (at: number) => {
+  const date = new Date(at * 1000);
+  const today = new Date();
+  const sameDay =
+    date.getDate() === today.getDate() &&
+    date.getMonth() === today.getMonth() &&
+    date.getFullYear() === today.getFullYear();
+  return date.toLocaleString('en-GB', {
+    ...(sameDay ? {} : { day: 'numeric', month: 'short' }),
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const ours = (m: Message) => m.sender === side;
+---
+
+<section id="thread" class="scroll-mt-24" data-thread data-side={side}>
+  <h2 class="eyebrow mb-3">{THREAD.heading}</h2>
+
+  <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden">
+    {
+      messages.length === 0 ? (
+        <p class="p-5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+          {/* Both invitations assume there is somebody to answer. On a closed
+              thread that put "start the conversation" directly above "the
+              conversation is closed". */}
+          {!open
+            ? THREAD.emptyClosed
+            : side === 'customer'
+              ? THREAD.emptyCustomer
+              : THREAD.emptyOwner}
+        </p>
+      ) : (
+        /* Capped and scrolling rather than growing without limit: this panel
+           sits on a page that already has an order on it, and a long thread
+           must not push the rest of it out of reach. */
+        <ol class="max-h-[26rem] overflow-y-auto p-4 space-y-3" data-thread-list>
+          {messages.map((m) => (
+            <li
+              class:list={['flex', ours(m) ? 'justify-end' : 'justify-start']}
+              data-message-id={m.id}
+              data-message-at={m.created_at}
+            >
+              <div
+                class:list={[
+                  'max-w-[85%] sm:max-w-[75%] rounded-[12px] px-3.5 py-2.5',
+                  ours(m)
+                    ? 'bg-[var(--color-navy)] text-white'
+                    : 'bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)]',
+                ]}
+              >
+                {m.body && (
+                  <p class="text-[14.5px] leading-relaxed whitespace-pre-line break-words">{m.body}</p>
+                )}
+
+                {m.image_key && proofUrl && (
+                  /* Opened in its own tab rather than a lightbox: the owner is
+                     checking a payment reference against a screenshot and wants
+                     it at full size, and a plain link needs no script. */
+                  <a
+                    href={proofUrl(m.id)}
+                    target="_blank"
+                    rel="noopener"
+                    class:list={['block', m.body ? 'mt-2' : '']}
+                  >
+                    <img
+                      src={proofUrl(m.id)}
+                      alt="Photo sent with this message"
+                      loading="lazy"
+                      class="rounded-[8px] max-h-64 w-auto"
+                    />
+                  </a>
+                )}
+                {/* The photo has been swept, and the row remembers it was
+                    here. Saying so is the honest reading of a conversation
+                    that is missing half of one of its turns. */}
+                {!m.image_key && m.had_image === 1 && (
+                  <p class:list={['text-[13px] italic opacity-75', m.body ? 'mt-1.5' : '']}>
+                    Photo removed - this order closed over six months ago.
+                  </p>
+                )}
+
+                <p
+                  class:list={[
+                    'mt-1.5 text-[11.5px] tabular-nums',
+                    ours(m) ? 'text-white/65' : 'text-[var(--color-ink-faint)]',
+                  ]}
+                >
+                  {when(m.created_at)}
+                  {/* Which door they came through. The shop wants to know. */}
+                  {m.via === 'telegram' && <span> · via Telegram</span>}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )
+    }
+
+    {/* Owner side only. The customer does not need the shop's retention policy
+        under their compose box; the owner does, because they are the one
+        holding somebody's bank details. */}
+    {side === 'owner' && imagesUsed > 0 && (
+      <p class="px-4 pb-3 -mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+        {THREAD.ownerRetention(imagesUsed)}
+      </p>
+    )}
+
+    {
+      open ? (
+        <form
+          method="post"
+          action={action}
+          enctype={canAttach ? 'multipart/form-data' : undefined}
+          class="border-t border-[var(--color-rule-soft)] p-4"
+          data-thread-form
+        >
+          {Object.entries(hidden).map(([name, value]) => (
+            <input type="hidden" name={name} value={value} />
+          ))}
+
+          {error && (
+            <p
+              class="mb-3 text-[13.5px] text-[var(--color-outstock)] leading-relaxed"
+              data-thread-error
+              role="alert"
+            >
+              {error}
+            </p>
+          )}
+          {!error && <p class="hidden mb-3 text-[13.5px] text-[var(--color-outstock)] leading-relaxed" data-thread-error role="alert" />}
+
+          <label class="sr-only" for="thread-body">{THREAD.placeholder}</label>
+          <textarea
+            id="thread-body"
+            name="body"
+            rows="3"
+            maxlength={BODY_MAX}
+            placeholder={THREAD.placeholder}
+            class="field !text-[14.5px] resize-y min-h-[4.5rem]"
+          ></textarea>
+
+          {/* What was picked, before it is sent. Only appears once there is
+              something to show - the native input announced "No file chosen"
+              whether or not that mattered to anybody. */}
+          {canAttach && !atImageLimit && (
+            <div class="mt-2.5 hidden items-start gap-2.5" data-thread-preview>
+              <img alt="" class="rounded-[8px] max-h-24 w-auto border border-[var(--color-rule-soft)]" />
+              <button
+                type="button"
+                class="text-[12.5px] text-[var(--color-ink-faint)] underline underline-offset-2 hover:text-[var(--color-navy)]"
+                data-thread-clear
+              >{THREAD.remove}</button>
+            </div>
+          )}
+
+          <div class="mt-3 flex items-center gap-2.5">
+            <button type="submit" class="btn btn-primary !py-2 !text-[14px]" data-thread-send>
+              {THREAD.send}
+            </button>
+
+            {canAttach && !atImageLimit && (
+              /*
+               * A paperclip beside Send, not a native file input.
+               *
+               * `<input type="file">` renders as the browser's own button plus
+               * "No file chosen" - two pieces of furniture nobody asked for, in
+               * a typeface that is not ours, and on a phone it wraps onto its
+               * own line and pushes Send down. The input is still here and
+               * still does the work; it is only moved behind the label, which
+               * is what keeps the paperclip clickable with no JavaScript at
+               * all.
+               *
+               * 40px square, because that is the smallest thing a thumb can be
+               * asked to hit.
+               */
+              <label
+                class="shrink-0 grid place-items-center w-10 h-10 rounded-full border border-[var(--color-rule)] text-[var(--color-ink-faint)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] focus-within:border-[var(--color-navy)] focus-within:text-[var(--color-navy)] transition-colors cursor-pointer"
+                title={THREAD.attach}
+              >
+                <span class="sr-only">{THREAD.attach}</span>
+                <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+                {/* No `capture`: with it a phone opens the camera, and a bank
+                    screenshot is in the gallery. Left off, iOS and Android both
+                    offer Photo Library first. The narrow accept list is what
+                    makes iOS convert an HEIC photo to JPEG on the way out,
+                    which is what keeps this working with JavaScript off. */}
+                <input
+                  type="file"
+                  name="image"
+                  accept="image/jpeg,image/png,image/webp"
+                  class="sr-only"
+                  data-thread-image
+                />
+              </label>
+            )}
+
+            {/* With JavaScript off there is no preview, so the paperclip would
+                give no sign it had taken anything. This is the fallback name,
+                shown only by the script. */}
+            {canAttach && !atImageLimit && (
+              <p class="hidden min-w-0 flex-1 text-[12.5px] text-[var(--color-ink-faint)] truncate" data-thread-chosen></p>
+            )}
+          </div>
+
+          {canAttach && atImageLimit && (
+            <p class="mt-2.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+              {THREAD.imageCapped}
+            </p>
+          )}
+
+          {/* One line about paying, and only one.
+              The customer's real question is where to send proof, and the
+              answer is here or Telegram. How long the shop keeps the file is a
+              privacy-page matter, not something to put between somebody and
+              the send button - the owner is told that instead. */}
+          {canAttach && (
+            <p class="mt-2.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+              {THREAD.payHint}
+            </p>
+          )}
+
+          {channelNote && (
+            <p class="mt-2.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">{channelNote}</p>
+          )}
+        </form>
+      ) : (
+        <p class="border-t border-[var(--color-rule-soft)] p-4 text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">
+          {THREAD.closed}
+        </p>
+      )
+    }
+  </div>
+</section>

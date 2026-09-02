@@ -192,9 +192,17 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   // A customer who has already started the bot stays reachable: Telegram grants
   // that permission per person, not per order, so making them tap Connect again
   // for every order would be asking for something they already gave.
+  /*
+   * Matched case-insensitively, as `findOrder` already does.
+   *
+   * `WHERE email = ?` is exact, so someone who typed `Ali@Example.com` once and
+   * `ali@example.com` the next time was treated as two people and lost the
+   * Telegram connection they had already granted. That matters more now that
+   * Telegram is a way into the order's thread and not only a way out.
+   */
   const priorLink = await env.DB.prepare(
     `SELECT telegram_chat_id FROM orders
-      WHERE email = ? AND telegram_chat_id IS NOT NULL
+      WHERE LOWER(email) = LOWER(?) AND telegram_chat_id IS NOT NULL
       ORDER BY telegram_linked_at DESC LIMIT 1`,
   )
     .bind(input.email)
@@ -387,6 +395,14 @@ export interface OrderView {
   cancel_requested_at: number | null;
   /** The order's own id, for routes that act on it. */
   id: number;
+  /** Messages the customer has not opened yet. */
+  unread_for_customer: number;
+  /** Messages the owner has not opened yet. */
+  unread_for_owner: number;
+  /** When the thread last moved, either way. Null on an order with no thread. */
+  last_message_at: number | null;
+  /** When the customer was last told there is a reply. Debounce marker. */
+  message_notified_at: number | null;
   items: {
     title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null;
     /** This line is a claim on a delivery, not a copy off the shelf. */
@@ -404,7 +420,10 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
             postage_provider, postage_service, telegram, cancel_note,
             customer_cancel_note, cancel_requested_at,
-            access_token, telegram_chat_id, COALESCE(cash_payment, 0) as cash_payment
+            access_token, telegram_chat_id, COALESCE(cash_payment, 0) as cash_payment,
+            COALESCE(unread_for_customer, 0) AS unread_for_customer,
+            COALESCE(unread_for_owner, 0) AS unread_for_owner,
+            last_message_at, message_notified_at
        FROM orders WHERE ref = ?`,
   )
     .bind(ref)

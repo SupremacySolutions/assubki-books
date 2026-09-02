@@ -158,6 +158,18 @@ function facts(o: (typeof orders)[number]): string[] {
                         <span class="ml-2 text-[13px] font-normal tracking-wide text-[var(--color-ink-faint)]">
                           {o.ref}
                         </span>
+                        {/* Read straight off `orders.unread_for_owner`. Counting
+                            the messages per row would be a query per order,
+                            which is the shape that once ate the read budget. */}
+                        {(o.unread_for_owner ?? 0) > 0 && (
+                          <span class="ml-2 inline-flex items-center gap-1 align-middle rounded-[var(--radius-pill)] bg-[var(--color-navy)] px-2 py-0.5 text-[11.5px] font-semibold text-white tabular-nums">
+                            {o.unread_for_owner}
+                            <span class="sr-only">
+                              unread {o.unread_for_owner === 1 ? 'message' : 'messages'}
+                            </span>
+                            <span aria-hidden="true" class="font-normal">new</span>
+                          </span>
+                        )}
                       </p>
                       <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-faint)] truncate">
                         {facts(o).join(' · ')}
@@ -213,6 +225,15 @@ function facts(o: (typeof orders)[number]): string[] {
                       <span class="ml-2 text-[12.5px] font-normal tracking-wide text-[var(--color-ink-faint)]">
                         {o.ref}
                       </span>
+                      {(o.unread_for_owner ?? 0) > 0 && (
+                        <span class="ml-2 inline-flex items-center gap-1 align-middle rounded-[var(--radius-pill)] bg-[var(--color-navy)] px-2 py-0.5 text-[11px] font-semibold text-white tabular-nums">
+                          {o.unread_for_owner}
+                          <span class="sr-only">
+                            unread {o.unread_for_owner === 1 ? 'message' : 'messages'}
+                          </span>
+                          <span aria-hidden="true" class="font-normal">new</span>
+                        </span>
+                      )}
                     </p>
                     <p class="text-[13px] text-[var(--color-ink-faint)] truncate">
                       {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment} ·{' '}

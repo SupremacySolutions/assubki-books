@@ -407,6 +407,82 @@ export function canTransition(
 }
 
 // ---------------------------------------------------------------------------
+// The thread
+// ---------------------------------------------------------------------------
+
+/**
+ * Every word the message thread says, in one place.
+ *
+ * The page, the email and the Telegram message all read from here for the same
+ * reason the status copy does: three places writing their own version is how
+ * the shop ends up promising one thing on screen and another in an inbox.
+ */
+export const THREAD = {
+  heading: 'Messages',
+  /** The empty state, which is the one that has to do the persuading. */
+  emptyCustomer:
+    'Anything you need to ask about this order, ask it here. It reaches the shop with your order attached, so nobody has to look up who you are.',
+  emptyOwner: 'Nothing yet. You can start the conversation from here.',
+  /*
+   * A finished order that was never talked about.
+   *
+   * The two empty states above both invite a message, which on a closed thread
+   * sat directly above "the conversation is closed" and contradicted it.
+   */
+  emptyClosed: 'Nothing was said about this order.',
+  placeholder: 'Write a message about this order',
+  send: 'Send',
+  /**
+   * The one line the compose box needs about paying.
+   *
+   * "Paid already?" asked a question without answering the one the customer
+   * actually has, which is *where do I send the proof*. This says it: here, or
+   * Telegram, and nowhere else.
+   *
+   * How long the shop keeps the file is deliberately not here. It is the
+   * shop's own retention policy, it belongs on the privacy page, and under a
+   * compose box it was three lines of housekeeping between the customer and
+   * the send button. The owner sees it instead, where it is actually
+   * actionable.
+   */
+  payHint: 'Sent a payment? Attach the screenshot here, or send it to us on Telegram.',
+  /** The paperclip's accessible name - there is no visible label. */
+  attach: 'Attach a screenshot',
+  /** Shown once something is chosen, so the file has a name on screen. */
+  attached: 'Screenshot attached',
+  remove: 'Remove',
+  /** Owner side only: what the shop is holding, and for how long. */
+  ownerRetention: (n: number) =>
+    `${n} ${n === 1 ? 'photo' : 'photos'} on this order, kept for six months after it is finished.`,
+  /** A thread nobody is left to answer. */
+  closed: 'This order is finished, so the conversation is closed. It stays here for your records.',
+  /** The customer typed more than the column can hold. */
+  tooLong: 'That message is too long. Please shorten it and send again.',
+  /** Sent too much, too fast. */
+  tooMany: 'That is a lot of messages at once. Please give the shop a moment to catch up.',
+  imageCapped: 'You have sent the most photos this order can take. The shop has them all.',
+  imageWrongType: 'Photos only, please - a JPEG, PNG or WebP.',
+  imageTooBig: 'That photo is larger than 8 MB. Please send a smaller one.',
+  /** Something went wrong that is nobody's fault in particular. */
+  failed: 'That did not send. Your words are still here - please try again.',
+} as const;
+
+/** How an owner reply will actually reach this customer. */
+export function replyChannel(telegramChatId: string | null | undefined): 'telegram' | 'email' {
+  return telegramChatId ? 'telegram' : 'email';
+}
+
+/** What the owner is told about that, before they write. */
+export function replyChannelNote(
+  telegramChatId: string | null | undefined,
+  email: string,
+): string {
+  return telegramChatId
+    ? 'Your reply goes to their Telegram.'
+    : `Your reply goes to ${email}.`;
+}
+
+// ---------------------------------------------------------------------------
 // What gets sent
 // ---------------------------------------------------------------------------
 

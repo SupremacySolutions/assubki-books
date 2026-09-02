@@ -26,8 +26,23 @@ saying the same thing.
 # Part one — Emails
 
 Every email arrives with the shop's name and mark at the top, and
-`assubkibooks.co.uk` at the bottom. **If a customer hits reply, it comes to
-you** — not to a no-reply address.
+`assubkibooks.co.uk` at the bottom.
+
+**Replies no longer come to you, and every customer email now says so.** Under
+the last line of each one:
+
+> ───────────────
+> This address is not monitored - replies to it are not read.
+> **Answer on your order page**, where the shop will see it, or message us on
+> **Telegram**.
+
+That is because every order now has a message thread on its own page, and a
+reply typed there arrives with the order attached instead of landing loose in
+an inbox. The group basket email says the same thing but points at **Look up
+your order** instead, because there is no order yet.
+
+*(The emails that come **to you** are unchanged: hitting reply on one of those
+still writes straight to the customer.)*
 
 ---
 
@@ -336,8 +351,80 @@ sends:
 | A screenshot fails to send | Sorry, that did not get through. Please try sending it again shortly. |
 | A screenshot arrives but your chat is not connected | Thank you. Please send this to the shop directly - we cannot pass it on just yet. |
 | They send a sixth screenshot for one order | We already have your screenshots for this order. The shop will be in touch. |
-| They ask the bot anything else, and you have set a contact handle | This bot only handles orders. For anything else, message **@alsubkibooks**. |
-| They ask anything else, and no handle is set | This bot only handles orders. The shop will be in touch about yours. |
+| **They write anything else, and they have a live order** | **Nothing is replied.** Their words go into that order's thread instead, marked *via Telegram*, and you get a note about it. |
+| They ask the bot anything else, with no live order, and you have set a contact handle | This bot only handles orders. For anything else, message **@alsubkibooks**. |
+| They ask anything else, with no live order, and no handle is set | This bot only handles orders. The shop will be in touch about yours. |
+| They send more than 20 messages about one order in an hour | That is a lot of messages at once. Please give the shop a moment to catch up. |
+
+**This is the change worth reading twice.** The bot used to throw away every
+message that was not a screenshot — including customers answering your payment
+instructions. Now anything typed by someone with a live order lands in that
+order's thread, and you answer it from the portal like any other message.
+
+## Messages on an order
+
+Every order has a conversation on it. The customer writes from their order
+page; you write from the order in the portal. A customer on Telegram can type
+there instead and it lands in the same thread.
+
+### They message you → to you, on Telegram
+
+> **Message on ASB-4F7K**
+>
+> **Ali Hassan**: **Could I add the second volume to this?**
+>
+> Open the thread
+
+*(If your Telegram is not connected, this comes to you as an email with the
+same words.)*
+
+### You reply → to them
+
+**If they connected Telegram:**
+
+> **A reply about ASB-4F7K**
+>
+> **Yes, I will add it and send an updated total.**
+>
+> Open your order
+
+**If they did not** — email instead:
+
+**Subject:** A reply about your order **ASB-4F7K**
+**Big heading:** The shop has replied
+**Under it:** About order **ASB-4F7K**
+
+> As-Subkī Books said
+> **Yes, I will add it and send an updated total.**
+>
+> [ Read it and reply ]
+
+*(Then the not-monitored footer, like every other customer email.)*
+
+**You will not be emailed twice in half an hour** about the same order. If you
+send five replies in a row, the customer gets one nudge — the rest are simply
+waiting on the page when they open it. Once they have read the thread, the next
+reply notifies again.
+
+### What the page itself says
+
+- **Before anyone has written:** *Anything you need to ask about this order,
+  ask it here. It reaches the shop with your order attached, so nobody has to
+  look up who you are.*
+- **The attach control:** heading *Paid already?*, then *Attach a screenshot of
+  the transfer and the shop will check it against this order.* Under the
+  button: *Kept for six months after the order is finished, then removed.
+  **5** of 5 left on this order.*
+- **On a finished order:** *This order is finished, so the conversation is
+  closed. It stays here for your records.*
+- **Where a photo used to be, once it has been removed:** *Photo removed - this
+  order closed over six months ago.*
+- **If they try a sixth photo:** *You have sent the most photos this order can
+  take. The shop has them all.*
+- **If they attach something that is not a photo:** *Photos only, please - a
+  JPEG, PNG or WebP.*
+
+---
 
 ## E. A payment screenshot → to you
 

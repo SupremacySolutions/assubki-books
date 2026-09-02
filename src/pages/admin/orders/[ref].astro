@@ -9,11 +9,31 @@ import {
   composeMessage,
   CASH_SLOT,
 } from '../../../lib/settings';
-import { nextActions, portalLabel, POSTAGE_PROVIDERS } from '../../../lib/order-status';
+import {
+  nextActions,
+  portalLabel,
+  POSTAGE_PROVIDERS,
+  THREAD,
+  replyChannelNote,
+} from '../../../lib/order-status';
+import Thread from '../../../components/Thread.astro';
+import { imageCount, markRead, thread, threadOpen } from '../../../lib/messages';
 
 const { ref } = Astro.params;
 const order = ref ? await getOrderByRef(ref) : null;
 if (!order) return Astro.rewrite('/404');
+
+/* The conversation, and the fact the owner has now seen it. Opening the order
+   is the read event on this side too. */
+const messages = await thread(order.id);
+const imagesHeld = await imageCount(order.id);
+if ((order.unread_for_owner ?? 0) > 0) await markRead(order.id, 'owner');
+
+const threadError = ({
+  long: THREAD.tooLong,
+  closed: THREAD.closed,
+  empty: THREAD.failed,
+} as Record<string, string>)[Astro.url.searchParams.get('e') ?? ''] ?? null;
 
 const isCollection = order.fulfilment === 'collection';
 // Cash applies to either journey now - on a posted order it means one handed
@@ -390,6 +410,30 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
           </section>
         )
       }
+
+      {/*
+        * The conversation, between the packing list and the record of what has
+        * already been sent.
+        *
+        * Not in the aside: the aside is 320px of facts about the customer, and
+        * a reply box in it would be too narrow to write in on a phone. Not
+        * above the confirm card either - the books to pack stay first, because
+        * that is what the owner opens this page to do.
+        *
+        * Everything the shop already sends - the payment message, a
+        * cancellation note - stays where it is. This is a conversation, not a
+        * merged timeline of every event.
+        */}
+      <Thread
+        messages={messages}
+        side="owner"
+        action={`/api/admin/orders/${order.ref}/message`}
+        open={threadOpen(order.status)}
+        proofUrl={(id: number) => `/api/admin/orders/${order.ref}/proof?id=${id}`}
+        imagesUsed={imagesHeld}
+        channelNote={replyChannelNote(order.telegram_chat_id, order.email)}
+        error={threadError}
+      />
 
       {/* What has already been done, and what was typed at the time.
           The page used to show only the *next* step, so once an order was
