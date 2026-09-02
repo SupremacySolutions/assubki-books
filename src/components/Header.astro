@@ -33,7 +33,7 @@ const isCatalogue = path.startsWith('/catalogue');
       <!-- Search is the primary action on a 226-title catalogue where people
            arrive already knowing the text they need. -->
       {search && (
-      <form action="/catalogue" method="get" class="hidden md:flex flex-1 max-w-md ml-auto" role="search">
+      <form action="/catalogue" method="get" class="hidden md:flex flex-1 max-w-md ml-auto" role="search" data-suggest>
         <label for="hdr-q" class="sr-only">Search the catalogue</label>
         <input
           id="hdr-q"
@@ -132,7 +132,7 @@ const isCatalogue = path.startsWith('/catalogue');
          hidden behind an icon: it is the main way in. Off on the home page for
          the same reason as the desktop one - the hero already has it. -->
     {search && (
-    <form action="/catalogue" method="get" class="md:hidden pb-3" role="search">
+    <form action="/catalogue" method="get" class="md:hidden pb-3" role="search" data-suggest>
       <label for="hdr-q-m" class="sr-only">Search the catalogue</label>
       <input
         id="hdr-q-m"

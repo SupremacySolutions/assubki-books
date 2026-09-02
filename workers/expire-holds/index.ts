@@ -16,6 +16,7 @@
  */
 
 import { releaseHold } from '../../src/lib/stock-release';
+import { pruneSearches } from '../../src/lib/searches';
 
 interface Env {
   DB: D1Database;
@@ -156,6 +157,15 @@ export default {
 
     const proofs = await sweepProofs(env.DB, env.UPLOADS);
     if (proofs) console.log(`removed ${proofs} payment screenshot(s) from closed orders`);
+
+    /*
+     * A log nobody trims is a liability rather than an asset. This is free
+     * text a customer typed into a search box, and people occasionally type
+     * things that identify them; ninety days is long enough to see a pattern
+     * worth ordering against and short enough not to be a record.
+     */
+    const searches = await pruneSearches(env.DB);
+    if (searches) console.log(`pruned ${searches} search(es) older than 90 days`);
   },
 
   // Manual trigger for testing: `wrangler dev` then curl the worker.
@@ -163,6 +173,7 @@ export default {
     const result = await expireHolds(env.DB);
     const groups = await expireGroupBaskets(env.DB);
     const proofs = await sweepProofs(env.DB, env.UPLOADS);
-    return Response.json({ ...result, groups, proofs });
+    const searches = await pruneSearches(env.DB);
+    return Response.json({ ...result, groups, proofs, searches });
   },
 } satisfies ExportedHandler<Env>;

@@ -173,8 +173,63 @@ async function publicCatalogue() {
   }
 
   // The enhancement is opt-in per form, and the hero opts in.
+  // --- the searches that find nothing --------------------------------------
+  //
+  // A search that returns nothing is a purchase request the shop would
+  // otherwise never hear.
+  await db("DELETE FROM searches WHERE terms LIKE 'e2e %'");
+  const miss = `e2e ${Math.random().toString(36).slice(2, 7)} qzx`;
+
+  // Three spellings of one thing, which must normalise to one row.
+  for (const spelling of [miss, miss.toUpperCase(), `  ${miss.replace(/ /g, '-')}  `]) {
+    await get(`/catalogue?q=${encodeURIComponent(spelling)}`, { redirect: 'follow' });
+  }
+  // A pager walking an empty result must not log it again.
+  await get(`/catalogue?q=${encodeURIComponent(miss)}&page=2`, { redirect: 'follow' });
+  // One letter is not a search anybody typed on purpose.
+  await get('/catalogue?q=z', { redirect: 'follow' });
+  // And a search that found something is not a miss.
+  await get('/catalogue?q=nahw', { redirect: 'follow' });
+
+  const logged = await db(
+    `SELECT terms, COUNT(*) AS times FROM searches WHERE terms LIKE 'e2e %' GROUP BY terms`,
+  );
+  t.ok(logged.length === 1, 'three spellings of one miss are logged as one thing', JSON.stringify(logged));
+  t.ok(logged[0]?.times === 3, 'counted once per search, not once per spelling');
+  t.ok(logged[0]?.terms === miss, 'normalised to lower case with punctuation dropped', logged[0]?.terms);
+
+  const single = await db("SELECT COUNT(*) AS n FROM searches WHERE terms = 'z'");
+  t.ok(single[0].n === 0, 'a single letter is not recorded');
+  const found = await db("SELECT COUNT(*) AS n FROM searches WHERE terms = 'nahw'");
+  t.ok(found[0].n === 0, 'and neither is a search that found something');
+
+  /*
+   * The panel, not the freshness of it.
+   *
+   * `dashboard()` caches for a minute on purpose, and the dev server keeps its
+   * isolate between runs - so a miss recorded two seconds ago may legitimately
+   * not be in the snapshot the page is holding. Asserting otherwise tests the
+   * cache's luck rather than the feature. What has to be true is that the panel
+   * is there and is reading the log; that the right words reach it is settled
+   * above, against the table itself.
+   */
+  const board = await html('/admin');
+  t.ok(board.includes('Looked for, not found'), 'the dashboard shows them to the owner');
+  t.ok(
+    board.includes('/catalogue?q=') || board.includes('Every search in this period found something'),
+    'and either lists misses or says plainly that there were none',
+  );
+  await db("DELETE FROM searches WHERE terms LIKE 'e2e %'");
+
   const hero = await html('/');
   t.ok(/<form[^>]*data-suggest/.test(hero), 'the home page search box asks for suggestions');
+  // The header carries one for desktop and one for the phone, on every page
+  // that is not the home page - the hero already has the field there.
+  const inner = await html('/catalogue');
+  t.ok(
+    (inner.match(/<form[^>]*data-suggest/g) ?? []).length === 2,
+    'and so do both header boxes on every other page',
+  );
   t.ok(
     /<form[^>]*action="\/catalogue"[^>]*method="get"/.test(hero),
     'and is still a plain GET, so it works with JavaScript off',
@@ -2948,7 +3003,7 @@ async function frontPage() {
 // Everything that builds a fixture listing does; the public pages and the
 // checks that admin routes stay shut do not.
 const SUITES = [
-  ['catalogue', publicCatalogue, false], ['legacy', legacyUrls, false],
+  ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
   ['validation', validation, true], ['stock', stockAndHolds, true],
   ['fulfilment', fulfilment, true], ['lookup', orderPageAndLookup, true],
   ['auth', adminAuth, false], ['listings', listings, true],

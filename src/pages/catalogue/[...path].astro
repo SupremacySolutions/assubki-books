@@ -5,6 +5,7 @@ import CategoryNav from '../../components/CategoryNav.astro';
 import Rosette from '../../components/Rosette.astro';
 import { categoryTree, categoryByPath, listBooks, arrivingBooks, type Sort } from '../../lib/db';
 import { buildQuery } from '../../lib/format';
+import { recordMiss } from '../../lib/searches';
 import { liveSale } from '../../lib/sales';
 
 const { path } = Astro.params;
@@ -32,6 +33,25 @@ const [tree, result, anyArriving] = await Promise.all([
   listBooks({ categoryPath, q, inStockOnly, onSale, arriving, sort: sort ?? undefined, page }),
   arrivingBooks(1),
 ]);
+
+/*
+ * A search that found nothing is the one search worth writing down.
+ *
+ * Only on the first page - a pager walking an empty result must not log the
+ * same miss five times - and handed to `waitUntil` rather than awaited, the
+ * same way `api/orders.ts` hands off its notifications, so a slow write cannot
+ * hold up somebody's results.
+ *
+ * Some of these will be robots walking query strings. That is tolerable for a
+ * signal the owner reads with their own judgement, and cheaper than building
+ * bot detection for it.
+ */
+if (q && result.total === 0 && page === 1) {
+  const miss = recordMiss(q);
+  const ctx = (Astro.locals as { cfContext?: ExecutionContext }).cfContext;
+  if (ctx?.waitUntil) ctx.waitUntil(miss);
+  else await miss;
+}
 
 const base = {
   q,

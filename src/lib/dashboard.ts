@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { missesQuery, type Miss } from './searches';
 
 /**
  * The numbers behind the dashboard.
@@ -38,6 +39,13 @@ export interface Dashboard {
   bestSellers: { title: string; qty: number }[];
   lowStock: { title: string; slug: string; left: number }[];
   byShelf: { name: string; pence: number }[];
+  /**
+   * What people searched for and the shop did not have.
+   *
+   * The nearest thing here to a customer speaking directly: every row is
+   * somebody who came looking and left with nothing.
+   */
+  misses: Miss[];
   /** The catalogue worklist - listings missing something. */
   backlog: {
     noImage: number; noDescription: number; noCategory: number;
@@ -53,7 +61,8 @@ async function read(days: number): Promise<Dashboard> {
   const from = now - days * DAY;
   const previousFrom = from - days * DAY;
 
-  const [waiting, money, daily, splits, best, low, repeat, shelves, work] = await env.DB.batch([
+  const [waiting, money, daily, splits, best, low, repeat, shelves, work, misses] =
+    await env.DB.batch([
     // Everything the owner might need to act on, counted in one pass.
     env.DB.prepare(
       `SELECT
@@ -137,6 +146,9 @@ async function read(days: number): Promise<Dashboard> {
          (SELECT COUNT(*) FROM books WHERE status='live'
             AND (stock - reserved) > 0 AND (stock - reserved) <= 2) AS lowStock`,
     ),
+    // Reads inside the batch the dashboard was already making, so the panel
+    // costs no extra round trip and inherits the 60-second cache.
+    missesQuery(days),
   ]);
 
   const w = (waiting.results[0] ?? {}) as Record<string, number | null>;
@@ -185,6 +197,10 @@ async function read(days: number): Promise<Dashboard> {
         outOfStock: Number(b.outOfStock ?? 0), lowStock: Number(b.lowStock ?? 0),
       };
     })(),
+    misses: misses.results.map((r) => {
+      const row = r as Record<string, unknown>;
+      return { terms: String(row.terms), times: Number(row.times), lastAt: Number(row.lastAt) };
+    }),
     byShelf: shelves.results.map((r) => {
       const row = r as Record<string, unknown>;
       return { name: String(row.name), pence: Number(row.pence) };

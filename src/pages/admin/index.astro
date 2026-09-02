@@ -296,6 +296,45 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
   </div>
 
   {/*
+    * The nearest thing on this page to a customer speaking.
+    *
+    * Every other panel counts what the shop did. These are people who came
+    * looking for something and left with nothing - a purchase request that,
+    * until now, vanished the moment the results page rendered empty. Full
+    * width rather than a third of a row, because the useful thing is the
+    * words, and a title truncated to a card column is no use for deciding
+    * whether to order a book.
+    */}
+  <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4 mt-3">
+    <p class="eyebrow mb-1">Looked for, not found</p>
+    <p class="text-[12.5px] text-[var(--color-ink-faint)] mb-3 leading-relaxed">
+      Searches that returned nothing, most asked first. Some will be robots; the rest are
+      customers telling you what to stock.
+    </p>
+    {d.misses.length > 0 ? (
+      <ul class="grid gap-x-6 gap-y-1.5 sm:grid-cols-2 text-[13px]">
+        {d.misses.map((m) => (
+          <li class="flex justify-between gap-3">
+            {/* Straight to the catalogue search, so the owner can see for
+                themselves what the customer saw. */}
+            <a
+              href={`/catalogue?q=${encodeURIComponent(m.terms)}`}
+              class="truncate text-[var(--color-navy)] hover:underline underline-offset-2"
+            >{m.terms}</a>
+            <span class="tabular-nums shrink-0 text-[var(--color-ink-faint)]">
+              {m.times}{m.times === 1 ? '' : '×'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p class="text-[13.5px] text-[var(--color-ink-faint)]">
+        Every search in this period found something.
+      </p>
+    )}
+  </div>
+
+  {/*
     * Three figures that were a footnote and should not have been. "How many
     * orders" and "what an order is worth" are the two numbers behind the
     * takings above, and repeat customers is the one number that says whether

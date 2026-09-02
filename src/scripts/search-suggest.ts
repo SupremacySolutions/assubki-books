@@ -52,9 +52,15 @@ function wire(form: HTMLFormElement, input: HTMLInputElement): void {
   status.setAttribute('role', 'status');
   panel.append(status);
 
-  const anchor = input.closest('div') ?? form;
-  anchor.style.position = anchor.style.position || 'relative';
-  anchor.append(panel);
+  /*
+   * The form is the anchor, not the nearest div.
+   *
+   * In the hero the field sits inside a pill; in the header it is bare. The
+   * form is the one box that is the width of the field in every case - the
+   * nearest div in the header is the whole header bar.
+   */
+  form.style.position = form.style.position || 'relative';
+  form.append(panel);
 
   input.setAttribute('role', 'combobox');
   input.setAttribute('aria-expanded', 'false');
