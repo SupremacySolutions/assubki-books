@@ -14,7 +14,7 @@ import {
 import { liveSale } from '../lib/sales';
 import { classmark } from '../lib/classmarks';
 import { cropsCleanly } from '../lib/cover-fit';
-import { SITE, imageUrl, hasAddress } from '../lib/format';
+import { SITE, imageUrl, hasAddress, phoneE164 } from '../lib/format';
 
 const sale = await liveSale();
 const [tree, shelf, stats, arriving, rows, onSale, onSaleTotal] = await Promise.all([
@@ -71,7 +71,7 @@ const org = {
   email: SITE.email,
   description: SITE.tagline,
   sameAs: [SITE.telegram],
-  ...(SITE.phone ? { telephone: SITE.phone } : {}),
+  ...(SITE.phone ? { telephone: phoneE164() } : {}),
   ...(hasAddress()
     ? {
         address: {

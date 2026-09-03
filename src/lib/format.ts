@@ -27,8 +27,25 @@ export const SITE = {
     postcode: '',
     country: 'GB',
   },
-  phone: '',
+  /*
+   * Written the way a person reads it, and converted for machines below.
+   *
+   * There is no street address here on purpose: the shop's stock is held at
+   * another bookseller's premises, under their name and their signage, so it
+   * is not an address this shop can claim as its own - to Google or to anybody
+   * else. A phone number and an email are what Merchant Center actually asks
+   * for, and both are true.
+   */
+  phone: '07873 546794',
 } as const;
+
+/**
+ * The phone number in the form machines expect.
+ *
+ * `+44` and no spaces: schema.org, `tel:` links and Google all want E.164, and
+ * a UK mobile written `07873…` is only unambiguous inside the UK.
+ */
+export const phoneE164 = (): string => `+44${SITE.phone.replace(/\D/g, '').replace(/^0/, '')}`;
 
 /** Whether there is enough of an address to tell Google about. */
 export const hasAddress = (): boolean =>

@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import { SITE } from '../lib/format';
+import { SITE, phoneE164 } from '../lib/format';
 import { ownerAddress } from '../lib/email';
 import MessageUs from '../components/MessageUs.astro';
 
@@ -31,6 +31,20 @@ const contactEmail = ownerAddress();
         </p>
         <p class="mt-3 text-[15px] text-[var(--color-navy)] break-all">{contactEmail} →</p>
       </a>
+
+      {/* `tel:` in E.164 so it dials from anywhere, shown the way it is read. */}
+      {SITE.phone && (
+        <a
+          href={`tel:${phoneE164()}`}
+          class="block p-5 bg-white border border-[var(--color-rule)] rounded-[var(--radius-card)] hover:border-[var(--color-navy)] transition-colors"
+        >
+          <h2 class="text-[18px]">Phone</h2>
+          <p class="mt-1.5 text-[15px] text-[var(--color-ink-soft)]">
+            If you would rather ask than type.
+          </p>
+          <p class="mt-3 text-[15px] text-[var(--color-navy)]">{SITE.phone} →</p>
+        </a>
+      )}
     </div>
 
     <div class="mt-10 border-t border-[var(--color-rule)] pt-8">
