@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { createGroup, getGroup, cleanName } from '../../../lib/group';
 import { notifyGroupStarted } from '../../../lib/notify';
+import { takePublicAction } from '../../../lib/public-throttle';
 
 export const prerender = false;
 
@@ -18,6 +19,22 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
  * the page is no worse than losing an order confirmation.
  */
 export const POST: APIRoute = async ({ request, url, locals }) => {
+  /*
+   * Six new group baskets an hour from one address.
+   *
+   * Starting one is unauthenticated and sends the organiser an email, so
+   * without a limit the form is a way to post mail at somebody. Counted apart
+   * from orders so a busy afternoon of ordering cannot stop a teacher starting
+   * a class list.
+   */
+  const allowance = await takePublicAction('group', request);
+  if (allowance.blocked) {
+    return Response.json(
+      { ok: false, error: 'That is a lot of group baskets at once. Please try again shortly.' },
+      { status: 429, headers: { 'Retry-After': String(allowance.retryAfter) } },
+    );
+  }
+
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const organiser = cleanName(body.name);
   const email = String(body.email ?? '').trim();

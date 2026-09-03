@@ -472,6 +472,13 @@ export async function teardown() {
      );
      DELETE FROM sale_items WHERE book_id > ${REAL_CATALOGUE};
      DELETE FROM books WHERE id > ${REAL_CATALOGUE};
+     /* Attribution on a surviving line would hold a fixture sale hostage:
+        order_items.sale_id references sales(id), so the sale cannot go while
+        anything points at it. */
+     UPDATE order_items SET sale_id = NULL
+      WHERE sale_id IN (SELECT id FROM sales WHERE name LIKE 'E2E %');
+     DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE name LIKE 'E2E %');
+     DELETE FROM sales WHERE name LIKE 'E2E %';
      DELETE FROM book_set_stock WHERE set_id NOT IN (SELECT id FROM book_sets);`,
   ).catch(() => {});
 

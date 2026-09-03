@@ -96,7 +96,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
     pathname.startsWith('/admin/') ||
     pathname.startsWith('/api/admin/') ||
     pathname.startsWith('/order') ||
-    pathname.startsWith('/api/orders') ||
+    /*
+     * The routes an existing order needs - status, cancel, lookup, messages,
+     * the proof reader - and not the one that creates a new one.
+     *
+     * `/api/orders` was allowed by prefix, which meant a stale checkout tab or
+     * a scripted client could go on placing orders while the shop was closed:
+     * stock reserved and the owner given work, in the window they had shut the
+     * shop precisely to avoid.
+     */
+    pathname.startsWith('/api/orders/') ||
     pathname.startsWith('/img/') ||
     pathname.startsWith('/_astro/') ||
     pathname === '/favicon.svg' ||

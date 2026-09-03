@@ -120,11 +120,30 @@ async function read(days: number): Promise<Dashboard> {
               WHERE status IN ${EARNED} GROUP BY lower(email))`,
     ),
     env.DB.prepare(
+      /*
+       * One shelf per line, not one row per shelf the book sits on.
+       *
+       * A title filed under both Hadith and Syllabus was counted in full
+       * against each, so the rows added up to more than the shop had taken -
+       * on the live dashboard £260 and £260 against a total of £275. Read as a
+       * breakdown, which is what a column of money next to shelf names is,
+       * that is simply wrong.
+       *
+       * Each line is attributed to its first top-level shelf by the owner's own
+       * ordering, so the figure is deterministic and the rows never exceed the
+       * takings.
+       */
       `SELECT c.name AS name, SUM(oi.price_pence_snapshot * oi.qty) AS pence
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
-         JOIN book_categories bc ON bc.book_id = oi.book_id
-         JOIN categories c ON c.id = bc.category_id AND c.parent_id IS NULL
+         JOIN categories c ON c.id = (
+                SELECT c2.id
+                  FROM book_categories bc2
+                  JOIN categories c2 ON c2.id = bc2.category_id
+                 WHERE bc2.book_id = oi.book_id AND c2.parent_id IS NULL
+                 ORDER BY c2.sort, c2.id
+                 LIMIT 1
+              )
         WHERE o.status IN ${EARNED} AND o.created_at > ?
         GROUP BY c.id ORDER BY pence DESC LIMIT 5`,
     ).bind(from),

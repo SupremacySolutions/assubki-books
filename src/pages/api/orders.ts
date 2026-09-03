@@ -1,10 +1,11 @@
 import type { APIRoute } from 'astro';
 import { createOrder, StockConflict, type RequestedItem } from '../../lib/orders';
 import { notifyOrderPlaced } from '../../lib/notify';
-import { groupForOrder, markGroupSent } from '../../lib/group';
+import { groupForOrder, markGroupSent, claimGroup, releaseGroup } from '../../lib/group';
 import { checkOrder, clean, type Field } from '../../lib/validate';
 import { formatAddress } from '../../lib/address';
 import { forgetDashboard } from '../../lib/dashboard';
+import { takePublicAction } from '../../lib/public-throttle';
 
 export const prerender = false;
 
@@ -111,6 +112,51 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
         .slice(0, 4000)
     : notes;
 
+  /*
+   * One address, twelve orders an hour - checked here, where the cost is.
+   *
+   * Placing an order reserves stock, makes work for the owner and sends email
+   * or Telegram traffic, and none of it had a limit: a script could take the
+   * catalogue out of stock and fill the shop's inbox in one pass.
+   *
+   * Counted at this point rather than on arrival, because everything above is
+   * validation - a malformed request reserves nothing, notifies nobody and
+   * costs a 400. Charging those against the allowance only meant a customer
+   * correcting a postcode four times was closer to being locked out than a
+   * script sending well-formed junk.
+   */
+  const allowance = await takePublicAction('order', request);
+  if (allowance.blocked) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: 'That is a lot of orders at once. Please give it a few minutes, or message the shop.',
+      }),
+      {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': String(allowance.retryAfter) },
+      },
+    );
+  }
+
+  /*
+   * Take the group before making anything.
+   *
+   * Reading that it was unsent and writing the reference afterwards left a
+   * window: two submissions - a double tap, or a retry after a slow reply -
+   * both passed the read and both produced a real order holding real stock.
+   * One statement decides it now, and the loser is told the truth.
+   */
+  if (group) {
+    const mine = await claimGroup(groupCode);
+    if (!mine) {
+      return bad(
+        'That group basket has already been sent. Check your email for the confirmation.',
+        409,
+      );
+    }
+  }
+
   try {
     const order = await createOrder({
       name,
@@ -128,7 +174,7 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     // says how many. Without this it says the old number for another minute.
     forgetDashboard();
 
-    // Closes the group so nobody keeps adding to a basket already sent.
+    // The claim becomes the real reference, so the basket names its order.
     if (group) await markGroupSent(groupCode, order.ref);
 
     // Notifications must never cost the customer their order - the books are
@@ -150,6 +196,13 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
 
     return Response.json({ ok: true, ref: order.ref, token: order.token });
   } catch (err) {
+    /*
+     * No order was made, so the group must go back to being unsent - otherwise
+     * a stock conflict on one title would strand the basket as "already sent"
+     * and the organiser could never submit it at all.
+     */
+    if (group) await releaseGroup(groupCode).catch(() => {});
+
     if (err instanceof StockConflict) {
       return bad(
         'Some titles were taken while you were checking out. Your basket has been updated.',

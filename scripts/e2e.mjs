@@ -563,6 +563,9 @@ async function stockAlerts() {
 async function sales() {
   const t = suite('20. Sales and split-set checkout');
 
+  // Anything a previous run left attributed to a test sale, first: the sale
+  // cannot be deleted while an order line still points at it.
+  await db("UPDATE order_items SET sale_id = NULL WHERE sale_id IN (SELECT id FROM sales WHERE name LIKE 'E2E sale%')");
   await db("DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE name LIKE 'E2E sale%')");
   await db("DELETE FROM sales WHERE name LIKE 'E2E sale%'");
 
@@ -611,6 +614,60 @@ async function sales() {
   await db(`DELETE FROM sales WHERE id = ${sale.id}`);
 
   /*
+   * What a sale gave away is a fact about the past.
+   *
+   * Reporting used to subtract the charged price from the book's price *today*
+   * and pick qualifying orders by date, so repricing a title rewrote the value
+   * of a finished campaign and any other discount in the window was credited
+   * to the sale. The attribution is written on the order line now.
+   */
+  const priced = await makeBook({ stock: '9', price: '10.00' });
+  await db("INSERT INTO sales (name, status) VALUES ('E2E sale attribution', 'draft')");
+  const attributed = await one("SELECT id FROM sales WHERE name = 'E2E sale attribution'");
+  await db(`INSERT INTO sale_items (sale_id, book_id, percent_off) VALUES (${attributed.id}, ${priced.id}, 50)`);
+  await admin('/api/admin/sales', { action: 'live', id: String(attributed.id) });
+
+  const duringSale = await json('/api/orders', {
+    name: 'Ahmad Patel', email: `attrib${Date.now()}@example.com`, phone: '07700 900321',
+    fulfilment: 'collection', items: [{ bookId: priced.id, qty: 1 }],
+  });
+  t.ok(duringSale.body.ok === true, 'an order can be placed while a sale runs');
+
+  const attributedLine = await one(
+    `SELECT sale_id, full_price_pence, price_pence_snapshot
+       FROM order_items WHERE book_id = ${priced.id}`,
+  );
+  t.ok(
+    attributedLine.sale_id === attributed.id && attributedLine.full_price_pence === 1000,
+    'the line records which sale reduced it, and from what',
+  );
+  t.ok(attributedLine.price_pence_snapshot === 500, 'and what was charged');
+
+  const givenSql = `SELECT COALESCE(SUM((oi.full_price_pence - oi.price_pence_snapshot) * oi.qty), 0) AS given
+                      FROM order_items oi WHERE oi.sale_id = ${attributed.id}`;
+  const givenBefore = await one(givenSql);
+  t.ok(givenBefore.given === 500, 'the sale reports what it actually gave away');
+
+  await db(`UPDATE books SET price_pence = 2000 WHERE id = ${priced.id}`);
+  const givenAfter = await one(givenSql);
+  t.ok(
+    givenAfter.given === 500,
+    'and repricing the book does not rewrite a finished sale',
+    `${givenAfter.given}p, was ${givenBefore.given}p`,
+  );
+
+  /*
+   * The order goes before the sale does.
+   *
+   * `order_items.sale_id` references `sales(id)`, so a sale that orders point
+   * at cannot be deleted - which is the right constraint: the attribution is
+   * the record, and nothing in the portal offers to delete a sale anyway.
+   */
+  await db(`DELETE FROM orders WHERE ref = '${duringSale.body.ref}'`);
+  await db(`DELETE FROM sale_items WHERE sale_id = ${attributed.id}`);
+  await db(`DELETE FROM sales WHERE id = ${attributed.id}`);
+
+  /*
    * The split set, which is the one that could actually cost money.
    *
    * A set is one pool of volumes sold under several listings. Checkout
@@ -651,6 +708,101 @@ async function sales() {
   await db("DELETE FROM books WHERE slug LIKE 'e2epool-%'");
   await db('DELETE FROM book_set_stock WHERE set_id = 9400');
   await db('DELETE FROM book_sets WHERE id = 9400');
+}
+
+async function abuseAndAtomicity() {
+  const t = suite('21. Rate limits and group atomicity');
+
+  await db('DELETE FROM public_actions');
+  const book = await makeBook({ stock: '99', price: '5.00' });
+
+  /*
+   * One address, twelve orders an hour.
+   *
+   * Placing an order reserves stock and sends mail, and there was no limit at
+   * all - a script could take the catalogue out of stock and fill the shop's
+   * inbox in one pass.
+   */
+  /*
+   * `CF-Connecting-IP` is what the throttle counts by, and Cloudflare sets it
+   * at the edge - so it is absent locally and the limit does not apply. Sending
+   * one here is how the rule gets exercised at all outside production.
+   */
+  let made = 0;
+  let refused = 0;
+  for (let i = 0; i < 15; i++) {
+    const res = await fetch(`${SITE}/api/orders`, {
+      method: 'POST',
+      headers: { ...ORIGIN, 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' },
+      body: JSON.stringify({
+        name: 'Ahmad Patel', email: `rate${i}@example.com`, phone: '07700 900321',
+        fulfilment: 'collection', items: [{ bookId: book.id, qty: 1 }],
+      }),
+    });
+    if (res.status === 429) refused++;
+    else if ((await res.json()).ok) made++;
+  }
+  t.ok(made === 12, 'orders are allowed up to the hourly limit', `made ${made}`);
+  t.ok(refused === 3, 'and refused past it', `refused ${refused}`);
+  await db("DELETE FROM orders WHERE email LIKE 'rate%@example.com'");
+  await db('DELETE FROM public_actions');
+
+  /*
+   * Two group submissions at once, which is a double tap or a retry after a
+   * slow reply.
+   *
+   * The old order was: read that the basket was unsent, make the order, then
+   * write the reference with an unguarded UPDATE. Both passed the read, and
+   * both produced a real order holding real stock.
+   */
+  const started = await (await fetch(`${SITE}/api/group`, {
+    method: 'POST', headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Ustadh Yusuf', email: 'e2egroup@example.com' }),
+  })).json();
+  t.ok(Boolean(started.code), 'a group basket can be started');
+
+  await fetch(`${SITE}/api/group/line`, {
+    method: 'POST', headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: started.code, token: started.token, bookId: book.id, qty: 2, name: 'Bilal Khan',
+    }),
+  });
+
+  const ordersBefore = await one('SELECT COUNT(*) AS n FROM orders');
+  const heldBefore = await one(`SELECT reserved AS n FROM books WHERE id = ${book.id}`);
+
+  const submit = () =>
+    fetch(`${SITE}/api/orders`, {
+      method: 'POST', headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Ustadh Yusuf', email: 'e2egroup@example.com', phone: '07700 900321',
+        fulfilment: 'collection', groupCode: started.code, groupOwnerToken: started.ownerToken,
+      }),
+    });
+  const bodies = await Promise.all((await Promise.all([submit(), submit()])).map((r) => r.json()));
+
+  t.ok(bodies.filter((b) => b.ok).length === 1, 'exactly one of two simultaneous submissions wins');
+  const ordersAfter = await one('SELECT COUNT(*) AS n FROM orders');
+  t.ok(ordersAfter.n - ordersBefore.n === 1, 'so exactly one order exists');
+  const heldAfter = await one(`SELECT reserved AS n FROM books WHERE id = ${book.id}`);
+  t.ok(heldAfter.n - heldBefore.n === 2, 'and the stock is reserved once, not twice');
+
+  await db("DELETE FROM orders WHERE email = 'e2egroup@example.com'");
+  await db(`DELETE FROM group_basket_items WHERE group_id IN (SELECT id FROM group_baskets WHERE code = '${started.code}')`);
+  await db(`DELETE FROM group_baskets WHERE code = '${started.code}'`);
+  await db('DELETE FROM public_actions');
+
+  /*
+   * Maintenance closes the shop to *new* orders, not to the ones already
+   * placed. `/api/orders` was allowed by prefix, so a stale checkout tab could
+   * go on ordering during the window the owner had shut the shop to avoid it.
+   */
+  const source = readFileSync('src/middleware.ts', 'utf8');
+  t.ok(
+    source.includes("pathname.startsWith('/api/orders/')") &&
+      !source.includes("pathname.startsWith('/api/orders')"),
+    'maintenance keeps the order-status routes open and order creation shut',
+  );
 }
 
 async function adminAuth() {
@@ -3299,6 +3451,100 @@ async function frontPage() {
   );
 }
 
+// ---------------------------------------------------------------------------
+async function findable() {
+  const t = suite('20. Being findable');
+
+  const ld = (markup) => {
+    const found = [...markup.matchAll(/application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)];
+    return found.map((m) => JSON.parse(m[1]));
+  };
+
+  // --- the product page ------------------------------------------------------
+  //
+  // Typed as `Book` alone, the price and availability below were never eligible
+  // to appear in a search result: Google reads merchant listings off `Product`.
+  const row = await one(
+    `SELECT slug, price_pence, (stock - reserved) AS available FROM books
+      WHERE status='live' AND id <= 226 LIMIT 1`,
+  );
+  const page = await html(`/book/${row.slug}`);
+  const [product] = ld(page);
+
+  t.ok(Array.isArray(product['@type']) && product['@type'].includes('Product'),
+    'a book is typed as a Product, not only a Book');
+  t.ok(product.sku === row.slug, 'and carries an sku');
+  t.ok(product.offers?.priceCurrency === 'GBP', 'the offer names its currency');
+  t.ok(
+    product.offers.availability.endsWith(row.available > 0 ? 'InStock' : 'OutOfStock'),
+    'and its availability matches the shelf',
+  );
+  /*
+   * The price in the markup and the price on the page must be the same number.
+   * A penny between them is what suspends a Merchant Center account, and it is
+   * exactly the kind of drift nobody notices by reading.
+   */
+  t.ok(page.includes(`£${product.offers.price}`),
+    'the price in the markup is the price on the page', product.offers.price);
+
+  // --- the site itself -------------------------------------------------------
+  const home = ld(await html('/'));
+  t.ok(home.length === 1, 'the home page carries site-level markup');
+  const graph = home[0]['@graph'] ?? [];
+  const org = graph.find((n) => n['@type'] === 'Organization' || n['@type'] === 'BookStore');
+  const site = graph.find((n) => n['@type'] === 'WebSite');
+  t.ok(Boolean(org), 'naming who the shop is');
+  t.ok(Boolean(site?.potentialAction), 'and that it has a search box');
+  // A shop with no address is not a local business, and saying so to Google is
+  // the kind of claim it checks.
+  t.ok(org['@type'] === 'BookStore' ? Boolean(org.address) : !org.address,
+    'it only calls itself a shop with an address once it has one');
+
+  // --- the feed --------------------------------------------------------------
+  const feed = await (await get('/feed.xml')).text();
+  const ids = [...feed.matchAll(/<g:id>(.*?)<\/g:id>/g)].map((m) => m[1]);
+  const live = await one(`SELECT COUNT(*) AS n FROM books WHERE status='live'`);
+
+  t.ok(ids.length === live.n, 'the feed lists every live book and nothing else', `${ids.length} vs ${live.n}`);
+  t.ok(new Set(ids).size === ids.length, 'each exactly once');
+  t.ok(!/<g:gtin><\/g:gtin>/.test(feed), 'an unknown ISBN is left out rather than sent empty');
+  t.ok(!feed.includes('identifier_exists'),
+    'and never claims a published book has no identifier');
+
+  /*
+   * The feed and the page have to agree about money, including under a sale -
+   * the feed computing its own price is the most common reason a feed is
+   * rejected.
+   */
+  const priced = feed.match(new RegExp(`<g:id>${row.slug}</g:id>[\\s\\S]*?<g:price>(.*?) GBP</g:price>`));
+  t.ok(priced?.[1] === product.offers.price,
+    'the feed price is the page price', `${priced?.[1]} vs ${product.offers.price}`);
+
+  // --- the sitemap -----------------------------------------------------------
+  const map = await (await get('/sitemap.xml')).text();
+  const urls = (map.match(/<url>/g) ?? []).length;
+  const stamped = (map.match(/<lastmod>/g) ?? []).length;
+  t.ok(urls > 0 && urls === stamped, 'every sitemap entry says when it last changed');
+  t.ok(!map.includes('<priority>'), 'and none of them pretends priority is read');
+
+  // --- ISBNs -----------------------------------------------------------------
+  const isbn = await import('../src/lib/isbn-search.ts');
+  t.ok(isbn.validIsbn('9781597843331') && isbn.validIsbn('978-1-59784-333-1'),
+    'a real ISBN passes, hyphenated or not');
+  t.ok(!isbn.validIsbn('9781597843332'), 'a mistyped check digit does not');
+  t.ok(!isbn.validIsbn('12345'), 'nor does something that is not an ISBN at all');
+
+  // A wrong number is worse than none, so the save refuses rather than stores.
+  const book = await makeBook();
+  const bad = await admin('/api/admin/books/save', {
+    id: String(book.id), title: book.title, price: '9.00', stock: '1',
+    status: 'live', isbn: '9781597843332',
+  });
+  t.ok(bad.location.includes('e=isbn'), 'the editor refuses an ISBN that cannot be real');
+  const after = await one(`SELECT isbn FROM books WHERE id = ${book.id}`);
+  t.ok(!after.isbn, 'and stores nothing rather than something wrong');
+}
+
 // The third field says whether the suite needs a signed-in portal session.
 // Everything that builds a fixture listing does; the public pages and the
 // checks that admin routes stay shut do not.
@@ -3313,9 +3559,11 @@ const SUITES = [
   ['settings', ownerSettings, true],
   ['messages', messages, true],
   ['front', frontPage, true],
+  ['findable', findable, true],
   ['history', orderHistory, true],
   ['alerts', stockAlerts, true],
   ['sales', sales, true],
+  ['abuse', abuseAndAtomicity, true],
   ['integrity', integrity, false],
 ];
 
@@ -3370,6 +3618,18 @@ try {
       skipped.push(name);
       continue;
     }
+
+    /*
+     * The public throttle is production protection, not a thing to test
+     * against by accident.
+     *
+     * One address may place twelve orders an hour; a full run places many
+     * times that from localhost, so without this every suite after the first
+     * few met a 429 and failed on the wrong thing entirely. The `abuse` suite
+     * exercises the limit deliberately and clears up after itself.
+     */
+    await db('DELETE FROM public_actions').catch(() => {});
+
     try {
       await fn();
     } catch (err) {

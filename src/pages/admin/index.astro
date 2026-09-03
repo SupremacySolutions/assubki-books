@@ -79,7 +79,11 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
 
 <Admin title="Dashboard" showHeading={false}>
   <section class="reveal mb-8 border-l-2 border-[var(--color-navy)] pl-4">
-    <p class="eyebrow">Owner dashboard</p>
+    {/* An H1, not a paragraph styled like one: the page had no top-level
+        heading, so its outline began at H2 and assistive technology had
+        nothing to announce it by. The eyebrow carries the name because that is
+        what it already reads as; "Welcome back" is a greeting, not a title. */}
+    <h1 class="eyebrow">Owner dashboard</h1>
     <p class="mt-1 font-[family-name:var(--font-display)] text-[22px] font-semibold">Welcome back.</p>
     <p class="mt-1 text-[14.5px] text-[var(--color-ink-soft)]">Here is what needs your attention today.</p>
   </section>
@@ -254,7 +258,12 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     </div>
 
     <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
-      <p class="eyebrow mb-2.5">Taken per shelf</p>
+      <p class="eyebrow mb-1">Taken per shelf</p>
+      {/* Said plainly, because a book can sit on more than one shelf and the
+          owner should know which shelf a sale was counted against. */}
+      <p class="text-[12px] text-[var(--color-ink-faint)] mb-2.5 leading-relaxed">
+        Each sale counted once, against the first shelf its title is filed under.
+      </p>
       {d.byShelf.length > 0 ? (
         <ul class="space-y-2">
           {d.byShelf.map((s) => (

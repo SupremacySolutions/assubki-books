@@ -293,6 +293,46 @@ export async function groupForOrder(
 }
 
 /** Called once the order exists, so nobody adds to a basket already sent. */
+/**
+ * A value that is never a real reference, held while an order is being made.
+ *
+ * References are `ASB-XXXX`, so this cannot collide with one - and anything
+ * that reads `order_ref IS NULL` to mean "not sent yet" correctly treats a
+ * basket mid-submission as already spoken for.
+ */
+const CLAIMING = 'claiming';
+
+/**
+ * Takes the group for this submission, or reports that somebody already has.
+ *
+ * The old order was: read that `order_ref` was empty, make the order, then
+ * write the reference with an unguarded UPDATE. Two submissions - the
+ * organiser double-tapping, or a retry after a slow response - both passed the
+ * read, and both made a real order holding real stock.
+ *
+ * The claim happens *first* and in one statement, so exactly one caller can
+ * win: `WHERE order_ref IS NULL` is the compare, and `meta.changes` is the
+ * answer.
+ */
+export async function claimGroup(code: string): Promise<boolean> {
+  const claimed = await env.DB.prepare(
+    `UPDATE group_baskets SET order_ref = ? WHERE code = ? AND order_ref IS NULL`,
+  )
+    .bind(CLAIMING, code)
+    .run();
+  return (claimed.meta.changes ?? 0) === 1;
+}
+
+/** The order was not made after all; let somebody else try. */
+export async function releaseGroup(code: string): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE group_baskets SET order_ref = NULL WHERE code = ? AND order_ref = ?`,
+  )
+    .bind(code, CLAIMING)
+    .run();
+}
+
+/** The order exists: write its real reference over the claim. */
 export async function markGroupSent(code: string, orderRef: string): Promise<void> {
   await env.DB.prepare(`UPDATE group_baskets SET order_ref = ? WHERE code = ?`)
     .bind(orderRef, code)

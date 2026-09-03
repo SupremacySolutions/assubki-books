@@ -148,7 +148,8 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
                  ), 0))
             END AS available,
             MAX(0, b.incoming - b.reserved_incoming) AS reservable,
-            si.percent_off AS sale_percent
+            si.percent_off AS sale_percent,
+            si.sale_id AS sale_id
        FROM books b
        LEFT JOIN sale_items si ON si.book_id = b.id
             AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
@@ -157,7 +158,8 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     .bind(...ids)
     .all<{
       id: number; title: string; price_pence: number;
-      available: number; reservable: number; sale_percent: number | null;
+      available: number; reservable: number;
+      sale_percent: number | null; sale_id: number | null;
     }>();
 
   const byId = new Map(books.map((b) => [b.id, b]));
@@ -193,6 +195,17 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
       qty: item.qty,
       // The reduced price, which is what price_pence_snapshot must record.
       pricePence: salePrice(book.price_pence, book.sale_percent),
+      /*
+       * And what it was reduced *from*, plus which sale did it.
+       *
+       * Recorded here because this is the only moment both are true. Working
+       * the discount out later from the book's current price meant that
+       * repricing a title rewrote what a finished sale appeared to have given
+       * away, and picking qualifying orders by date credited the sale with
+       * every other discount in the same window.
+       */
+      saleId: book.sale_percent ? book.sale_id : null,
+      fullPricePence: book.price_pence,
       // On the shelf if it can be; a claim on the delivery only when it cannot.
       fromIncoming: book.available < item.qty,
     };
@@ -297,9 +310,13 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     for (const item of items) {
       statements.push(
         env.DB.prepare(
-          `INSERT INTO order_items (order_id, book_id, title_snapshot, price_pence_snapshot, qty, from_incoming)
-           VALUES ((SELECT id FROM orders WHERE ref = ?), ?, ?, ?, ?, ?)`,
-        ).bind(ref, item.bookId, item.title, item.pricePence, item.qty, item.fromIncoming ? 1 : 0),
+          `INSERT INTO order_items (order_id, book_id, title_snapshot, price_pence_snapshot,
+                                    qty, from_incoming, sale_id, full_price_pence)
+           VALUES ((SELECT id FROM orders WHERE ref = ?), ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          ref, item.bookId, item.title, item.pricePence, item.qty,
+          item.fromIncoming ? 1 : 0, item.saleId, item.fullPricePence,
+        ),
       );
 
       if (item.fromIncoming) {

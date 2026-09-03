@@ -72,7 +72,8 @@ const ogImage = image ? new URL(image, origin).toString() : null;
       // Without this, a JS failure would leave the page permanently blank.
       document.documentElement.classList.add('js');
     </script>
-    <a href="#main" class="skip">Skip to catalogue</a>
+    {/* Every page uses this layout, so it cannot name one of them. */}
+    <a href="#main" class="skip">Skip to main content</a>
     <div id="pageTransition" class="page-transition is-loading" aria-hidden="true">
       <div class="page-transition-mark"><Rosette size={34} />As-Subki Books</div>
     </div>
