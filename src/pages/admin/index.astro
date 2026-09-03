@@ -41,6 +41,9 @@ const jobs = [
   { n: work.outOfStock, label: 'out of stock', href: '/admin/books?filter=out-of-stock' },
   { n: work.lowStock, label: 'running low', href: '/admin/books?filter=low-stock' },
   { n: work.noImage, label: 'without a photo', href: '/admin/books?filter=no-photo' },
+  // Next to "without a photo" on purpose: a cover too small to fill the box is
+  // the same job, and reads worse on the shop than an honest blank would.
+  { n: work.thinImage, label: 'with a photo too small to print well', href: '/admin/books?filter=thin-photo' },
   { n: work.noDescription, label: 'without a description', href: '/admin/books?filter=no-description' },
   { n: work.noCategory, label: 'not on a shelf', href: '/admin/books?filter=no-subject' },
   { n: work.unposted, label: 'never announced', href: '/admin/books?filter=not-announced' },

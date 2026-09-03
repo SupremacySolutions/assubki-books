@@ -48,7 +48,7 @@ export interface Dashboard {
   misses: Miss[];
   /** The catalogue worklist - listings missing something. */
   backlog: {
-    noImage: number; noDescription: number; noCategory: number;
+    noImage: number; thinImage: number; noDescription: number; noCategory: number;
     unposted: number; outOfStock: number; lowStock: number;
   };
 }
@@ -160,6 +160,10 @@ async function read(days: number): Promise<Dashboard> {
             AND (description_html IS NULL OR description_html='')) AS noDescription,
          (SELECT COUNT(*) FROM books b WHERE b.status='live'
             AND NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)) AS noCategory,
+         (SELECT COUNT(*) FROM books b2 WHERE b2.status='live'
+            AND EXISTS (SELECT 1 FROM book_images i WHERE i.book_id = b2.id
+                          AND i.width IS NOT NULL AND i.height > 0
+                          AND MIN(i.width, CAST(i.height * 0.75 AS INTEGER)) < 300)) AS thinImage,
          (SELECT COUNT(*) FROM books WHERE status='live' AND telegram_message_id IS NULL) AS unposted,
          (SELECT COUNT(*) FROM books WHERE status='live' AND (stock - reserved) <= 0) AS outOfStock,
          (SELECT COUNT(*) FROM books WHERE status='live'
@@ -211,7 +215,8 @@ async function read(days: number): Promise<Dashboard> {
     backlog: (() => {
       const b = (work.results[0] ?? {}) as Record<string, number | null>;
       return {
-        noImage: Number(b.noImage ?? 0), noDescription: Number(b.noDescription ?? 0),
+        noImage: Number(b.noImage ?? 0), thinImage: Number(b.thinImage ?? 0),
+        noDescription: Number(b.noDescription ?? 0),
         noCategory: Number(b.noCategory ?? 0), unposted: Number(b.unposted ?? 0),
         outOfStock: Number(b.outOfStock ?? 0), lowStock: Number(b.lowStock ?? 0),
       };
