@@ -130,6 +130,42 @@ async function prepareCover(input, primary) {
   const normal = await sharp(input).rotate().toBuffer({ resolveWithObject: true });
 
   /*
+   * A transparent surround is not a border to be judged - it is simply absent.
+   *
+   * Six covers arrived as PNGs whose artwork floats in a transparent field
+   * filling two thirds of the file. Nothing matched white, so no trim ran, and
+   * the shop rendered the card's own background through the hole - which reads
+   * as exactly the border everything else here is trying to remove.
+   *
+   * It is handled before the colour trims and outside their size cap. That cap
+   * exists because a dark border and a dark design can be confused; nothing can
+   * be confused with transparency, so a trim of two thirds is not suspicious,
+   * it is correct. What is left is flattened onto white so the stored variant
+   * is opaque whatever sits behind it.
+   */
+  const meta = await sharp(normal.data).metadata();
+  if (meta.hasAlpha) {
+    const cut = await sharp(normal.data)
+      .trim({ threshold: WHITE_THRESHOLD })
+      .toBuffer({ resolveWithObject: true });
+
+    const removed =
+      1 - (cut.info.width * cut.info.height) / (normal.info.width * normal.info.height);
+    if (removed >= MIN_FRAME_TRIM) {
+      const flat = await sharp(cut.data)
+        .flatten({ background: '#ffffff' })
+        .toBuffer({ resolveWithObject: true });
+      return {
+        data: flat.data,
+        width: flat.info.width,
+        height: flat.info.height,
+        framed: true,
+        trim: { left: 0, right: 0, top: 0, bottom: 0, widthTrim: removed, heightTrim: removed },
+      };
+    }
+  }
+
+  /*
    * White first, then the cover's own border colour.
    *
    * Trimming only white missed a whole class of scan: the Zam Zam titles - the
