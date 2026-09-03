@@ -748,6 +748,36 @@ async function abuseAndAtomicity() {
   await db('DELETE FROM public_actions');
 
   /*
+   * The same limit, all at once.
+   *
+   * Counting and then inserting is a gap a sequential test cannot see: a burst
+   * from one source all read the same below-limit count, all found room, and
+   * all went through - which is the traffic the limit exists to stop. One
+   * conditional INSERT decides it now, and this is what proves it.
+   */
+  const burst = await Promise.all(
+    Array.from({ length: 30 }, (_, i) =>
+      fetch(`${SITE}/api/orders`, {
+        method: 'POST',
+        headers: {
+          ...ORIGIN, 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.77',
+        },
+        body: JSON.stringify({
+          name: 'Ahmad Patel', email: `burst${i}@example.com`, phone: '07700 900321',
+          fulfilment: 'collection', items: [{ bookId: book.id, qty: 1 }],
+        }),
+      }).then((r) => r.status)),
+  );
+  const through = burst.filter((c) => c === 200).length;
+  t.ok(through <= 12, 'a concurrent burst never exceeds the limit', `${through} of 30 got through`);
+  t.ok(burst.filter((c) => c === 429).length === 30 - through, 'and every other one is refused');
+  const recorded = await one("SELECT COUNT(*) AS n FROM public_actions WHERE ip = '203.0.113.77'");
+  t.ok(recorded.n === through, 'with exactly one record per order that was let through');
+
+  await db("DELETE FROM orders WHERE email LIKE 'burst%@example.com'");
+  await db('DELETE FROM public_actions');
+
+  /*
    * Two group submissions at once, which is a double tap or a retry after a
    * slow reply.
    *

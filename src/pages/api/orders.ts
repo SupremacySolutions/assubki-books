@@ -157,8 +157,18 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     }
   }
 
+  /*
+   * The claim is only reversible before the order exists.
+   *
+   * Everything below used to sit in one try/catch whose handler released the
+   * group - including the steps that run *after* `createOrder` has committed.
+   * A transient failure in marking the basket sent therefore returned a 500
+   * with a real order already placed and the group reopened, so the organiser
+   * retried and bought everything twice.
+   */
+  let order: Awaited<ReturnType<typeof createOrder>>;
   try {
-    const order = await createOrder({
+    order = await createOrder({
       name,
       email,
       phone: phone || null,
@@ -170,12 +180,45 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
       items: finalItems,
     });
 
+  } catch (err) {
+    // Nothing was committed, so the basket goes back to being unsent.
+    if (group) await releaseGroup(groupCode).catch(() => {});
+
+    if (err instanceof StockConflict) {
+      return bad(
+        'Some titles were taken while you were checking out. Your basket has been updated.',
+        409,
+        { problems: err.problems },
+      );
+    }
+    console.error('order creation failed', err);
+    return bad('Something went wrong creating your request. Please try again.', 500);
+  }
+
+  /*
+   * From here the order exists, and nothing may reopen the group.
+   *
+   * Every step below is bookkeeping around an order the customer has already
+   * placed: failing one of them must not lose it, and must not invite a second.
+   */
+
     // A new order is one more thing for the owner to do, and the dashboard
     // says how many. Without this it says the old number for another minute.
     forgetDashboard();
 
-    // The claim becomes the real reference, so the basket names its order.
-    if (group) await markGroupSent(groupCode, order.ref);
+    /*
+     * The claim becomes the real reference, so the basket names its order.
+     *
+     * Swallowed rather than thrown: the order is placed. A basket left holding
+     * the claim still reads as sent - which is the safe direction - and the
+     * worst case is a group that does not name its order, not a customer
+     * charged twice.
+     */
+    if (group) {
+      await markGroupSent(groupCode, order.ref).catch((err) =>
+        console.error('group left claimed but unmarked', groupCode, order.ref, err),
+      );
+    }
 
     // Notifications must never cost the customer their order - the books are
     // already held and the confirmation page renders from the database.
@@ -195,22 +238,4 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     else await notify;
 
     return Response.json({ ok: true, ref: order.ref, token: order.token });
-  } catch (err) {
-    /*
-     * No order was made, so the group must go back to being unsent - otherwise
-     * a stock conflict on one title would strand the basket as "already sent"
-     * and the organiser could never submit it at all.
-     */
-    if (group) await releaseGroup(groupCode).catch(() => {});
-
-    if (err instanceof StockConflict) {
-      return bad(
-        'Some titles were taken while you were checking out. Your basket has been updated.',
-        409,
-        { problems: err.problems },
-      );
-    }
-    console.error('order creation failed', err);
-    return bad('Something went wrong creating your request. Please try again.', 500);
-  }
 };

@@ -66,29 +66,47 @@ export async function takePublicAction(
   if (!ip || ip === '127.0.0.1' || ip === '::1') return { blocked: false, retryAfter: 0 };
 
   try {
-    const since = Math.floor(Date.now() / 1000) - limit.window;
-    const row = await env.DB.prepare(
-      `SELECT COUNT(*) AS n, COALESCE(MIN(at), 0) AS first
-         FROM public_actions WHERE action = ? AND ip = ? AND at > ?`,
-    )
-      .bind(action, ip, since)
-      .first<{ n: number; first: number }>();
+    const now = Math.floor(Date.now() / 1000);
+    const since = now - limit.window;
 
-    if ((row?.n ?? 0) >= limit.perHour) {
-      // From the oldest attempt still in the window: that is when a slot frees.
-      const retryAfter = Math.max(
-        1,
-        (row!.first + limit.window) - Math.floor(Date.now() / 1000),
-      );
-      return { blocked: true, retryAfter };
+    /*
+     * One statement decides it, because two cannot.
+     *
+     * Counting first and inserting afterwards is a gap: a burst from one source
+     * all read the same below-limit count, all found room, and all went
+     * through - which is precisely the traffic this exists to stop, and the
+     * sequential test never saw it because requests arrived one at a time.
+     *
+     * A conditional INSERT closes it. SQLite evaluates a single statement
+     * atomically, so the row is only written if the count *at the moment of
+     * writing* is under the limit, and `changes` is the verdict.
+     */
+    const claimed = await env.DB.prepare(
+      `INSERT INTO public_actions (action, ip)
+       SELECT ?1, ?2
+        WHERE (SELECT COUNT(*) FROM public_actions
+                WHERE action = ?1 AND ip = ?2 AND at > ?3) < ?4`,
+    )
+      .bind(action, ip, since, limit.perHour)
+      .run();
+
+    if (!claimed.meta.changes) {
+      // Only now is a second read worth making: from the oldest attempt still
+      // inside the window, which is when a slot next frees.
+      const oldest = await env.DB.prepare(
+        `SELECT COALESCE(MIN(at), ?3) AS first FROM public_actions
+          WHERE action = ?1 AND ip = ?2 AND at > ?3`,
+      )
+        .bind(action, ip, since)
+        .first<{ first: number }>();
+      return { blocked: true, retryAfter: Math.max(1, (oldest?.first ?? now) + limit.window - now) };
     }
 
-    await env.DB.batch([
-      env.DB.prepare('INSERT INTO public_actions (action, ip) VALUES (?, ?)').bind(action, ip),
-      env.DB.prepare('DELETE FROM public_actions WHERE at < ?').bind(
-        Math.floor(Date.now() / 1000) - KEEP_SECONDS,
-      ),
-    ]);
+    // Housekeeping, off the critical path of the decision above.
+    await env.DB.prepare('DELETE FROM public_actions WHERE at < ?')
+      .bind(now - KEEP_SECONDS)
+      .run();
+
     return { blocked: false, retryAfter: 0 };
   } catch (err) {
     console.error('[throttle] could not count', action, err);
