@@ -360,6 +360,55 @@ export async function findOrder(ref: string, email: string): Promise<{ ref: stri
   return row ? { ref: row.ref, token: row.access_token } : null;
 }
 
+export interface OrderSummary {
+  ref: string;
+  token: string;
+  status: string;
+  createdAt: number;
+  totalPence: number;
+  items: number;
+  fulfilment: string;
+}
+
+/**
+ * Every order this customer has placed.
+ *
+ * **Gated on the reference *and* the email, never on a token.** A token proves
+ * one order and travels in a link people forward; if this hung off that, a
+ * forwarded confirmation would hand somebody the whole of another person's
+ * buying history. Knowing a reference and the address it was placed with is
+ * the higher bar, and it is the same one `findOrder` already sets.
+ *
+ * Matched case-insensitively, like `findOrder`, so somebody who typed
+ * `Ali@Example.com` once and `ali@example.com` the next time is one customer.
+ */
+export async function ordersForCustomer(email: string): Promise<OrderSummary[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT o.ref, o.access_token, o.status, o.created_at, o.fulfilment,
+            COALESCE(o.total_pence, o.subtotal_pence) AS total_pence,
+            (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE order_id = o.id) AS items
+       FROM orders o
+      WHERE LOWER(o.email) = LOWER(?)
+      ORDER BY o.created_at DESC, o.id DESC
+      LIMIT 50`,
+  )
+    .bind(email.trim())
+    .all<{
+      ref: string; access_token: string; status: string; created_at: number;
+      fulfilment: string; total_pence: number; items: number;
+    }>();
+
+  return results.map((r) => ({
+    ref: r.ref,
+    token: r.access_token,
+    status: r.status,
+    createdAt: r.created_at,
+    totalPence: r.total_pence,
+    items: r.items,
+    fulfilment: r.fulfilment,
+  }));
+}
+
 export interface OrderView {
   ref: string;
   status: string;

@@ -10,12 +10,12 @@
 import Base from '../../layouts/Base.astro';
 import Rosette from '../../components/Rosette.astro';
 import OrderJourney from '../../components/OrderJourney.astro';
-import { getOrder } from '../../lib/orders';
+import { getOrder, findOrder, ordersForCustomer, type OrderSummary } from '../../lib/orders';
 import { optInLink } from '../../lib/telegram';
 import MessageUs from '../../components/MessageUs.astro';
 import Dialog from '../../components/Dialog.astro';
 import { price } from '../../lib/format';
-import { statusLabel, isSettled, moneyReceived, trackingUrl, cashMoment } from '../../lib/order-status';
+import { statusLabel, isSettled, moneyReceived, trackingUrl, cashMoment, portalLabel } from '../../lib/order-status';
 import { collectionAddress } from '../../lib/settings';
 import { cancelRight, REASON_MAX } from '../../lib/cancellation';
 import { whenText } from '../../lib/incoming';
@@ -25,9 +25,39 @@ import { markRead, thread, threadOpen } from '../../lib/messages';
 import QRCode from 'qrcode';
 
 const params = Astro.url.searchParams;
-const ref = params.get('ref')?.trim() ?? '';
-const token = params.get('t') ?? '';
-const failedLookup = params.get('e') === '1';
+let ref = params.get('ref')?.trim() ?? '';
+let token = params.get('t') ?? '';
+let failedLookup = params.get('e') === '1';
+
+/*
+ * The lookup posts here rather than redirecting away.
+ *
+ * Somebody who can give a reference *and* the address it was placed with has
+ * proved more than a link does, so this is where their other orders can safely
+ * be listed. It deliberately does not hang off the token: that travels in a
+ * forwarded confirmation, and a forwarded confirmation must never hand
+ * somebody the whole of another person's buying history.
+ *
+ * Rendered from the POST, never from a URL, so there is nothing to bookmark,
+ * share or leak - and no session or cookie to introduce for it.
+ */
+let history: OrderSummary[] = [];
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const askedRef = String(form.get('ref') ?? '').trim();
+  const askedEmail = String(form.get('email') ?? '').trim();
+  const found = askedRef && askedEmail ? await findOrder(askedRef, askedEmail) : null;
+
+  if (found) {
+    ref = found.ref;
+    token = found.token;
+    history = await ordersForCustomer(askedEmail);
+  } else {
+    // A miss is always reported the same way. "That reference exists but the
+    // email is wrong" would confirm to a stranger that somebody ordered.
+    failedLookup = true;
+  }
+}
 
 // A wrong token is not a 404: the customer is told which order they were after,
 // and only has to add their email to reach it.
@@ -412,6 +442,74 @@ if (offerTelegram && telegramLink) {
 
 
         {/*
+          * Everything else this customer has ordered.
+          *
+          * Only ever drawn after a lookup - a reference and the address it was
+          * placed with - and never from the token in the address bar, because
+          * that link gets forwarded. Each row carries its own token, so opening
+          * one is the same act as following its original confirmation.
+          */}
+        {history.length > 1 && (
+          <section class="mt-10">
+            <h2 class="eyebrow mb-3 text-center">Your other orders</h2>
+            <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
+              {history.filter((o) => o.ref !== order.ref).map((o) => (
+                <li>
+                  <a
+                    href={`/order?ref=${o.ref}&t=${o.token}`}
+                    class="flex items-center gap-4 px-4 py-3 hover:bg-[var(--color-paper)]"
+                  >
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-[14.5px] font-medium">{o.ref}</span>
+                      <span class="block text-[13px] text-[var(--color-ink-faint)]">
+                        {new Date(o.createdAt * 1000).toLocaleDateString('en-GB', {
+                          day: 'numeric', month: 'short', year: 'numeric',
+                        })}
+                        {' · '}
+                        {o.items} {o.items === 1 ? 'book' : 'books'}
+                      </span>
+                    </span>
+                    <span class="text-[13px] text-[var(--color-ink-faint)] shrink-0">
+                      {portalLabel(o.status, o.fulfilment)}
+                    </span>
+                    <span class="price text-[14.5px] shrink-0 w-[4.5rem] text-right">
+                      {price(o.totalPence)}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/*
+          * Order it again.
+          *
+          * Syllabus sets get bought once a year, by the same madrasah, for the
+          * next intake. Retyping a basket of eleven titles is the reason that
+          * does not happen on the site.
+          *
+          * The button fills the basket and nothing more - it does not place an
+          * order. Prices and stock are read fresh at the basket, so a
+          * year-old order cannot carry a year-old price forward, and a title
+          * that has since gone is simply not added.
+          */}
+        {order.items.some((i) => i.slug) && (
+          <div class="mt-8 text-center">
+            <button
+              type="button"
+              class="btn btn-ghost"
+              data-reorder={JSON.stringify(
+                order.items.filter((i) => i.slug).map((i) => ({ slug: i.slug, qty: i.qty })),
+              )}
+            >
+              Order these again
+            </button>
+            <p class="mt-2 text-[13px] text-[var(--color-ink-faint)]" data-reorder-said hidden></p>
+          </div>
+        )}
+
+        {/*
           * The conversation, before the cancel controls.
           *
           * Somebody with a question is far more common than somebody who wants
@@ -581,7 +679,7 @@ if (offerTelegram && telegramLink) {
           the email you ordered with will find it.
         </p>
 
-        <form method="post" action="/api/orders/lookup" class="mt-7 space-y-4 text-left">
+        <form method="post" action="/order" class="mt-7 space-y-4 text-left">
           <div>
             <label for="ref" class="block text-[14.5px] font-medium mb-1">Order reference</label>
             {/* Above the box, not under it: it tells you where to find what the
@@ -666,6 +764,7 @@ if (offerTelegram && telegramLink) {
       order, only while the tab is being looked at, and only for an hour. */}
   <script>
     import '../../scripts/thread.ts';
+    import '../../scripts/reorder.ts';
   </script>
 
   {/* Connecting happens inside the Telegram app, so this page never learns of

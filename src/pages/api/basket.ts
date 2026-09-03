@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { env } from 'cloudflare:workers';
 import { booksByIds } from '../../lib/db';
 import { whenText } from '../../lib/incoming';
 import { liveSale, orderDiscount } from '../../lib/sales';
@@ -52,6 +53,42 @@ export const GET: APIRoute = async ({ url }) => {
         ? { thresholdPence: discount.thresholdPence, percent: discount.percent }
         : null,
     },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
+};
+
+/**
+ * Turns the slugs off a past order into ids the basket can hold, with today's
+ * availability.
+ *
+ * Slugs rather than ids because that is what an order line can still name a
+ * year later - `order_items` snapshots the title and price, and the id it
+ * points at may since have been archived. A title that has gone is simply
+ * absent from the answer, which is what lets the page say "two of these are no
+ * longer listed" instead of silently dropping them.
+ */
+export const POST: APIRoute = async ({ request }) => {
+  const body = await request.json().catch(() => null);
+  const wanted = Array.isArray((body as { slugs?: unknown })?.slugs)
+    ? ((body as { slugs: unknown[] }).slugs)
+        .map((s) => String(s).slice(0, 120))
+        .filter(Boolean)
+        .slice(0, 100)
+    : [];
+
+  if (!wanted.length) return Response.json({ books: [] });
+
+  const holes = wanted.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(
+    `SELECT id, slug, title, (stock - reserved) AS available
+       FROM books
+      WHERE status = 'live' AND slug IN (${holes})`,
+  )
+    .bind(...wanted)
+    .all<{ id: number; slug: string; title: string; available: number }>();
+
+  return Response.json(
+    { books: results.map((b) => ({ ...b, available: Math.max(0, b.available) })) },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 };

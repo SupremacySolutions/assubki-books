@@ -450,6 +450,55 @@ async function orderPageAndLookup() {
 }
 
 // ---------------------------------------------------------------------------
+async function orderHistory() {
+  const t = suite('18. Order history and reordering');
+
+  const book = await makeBook({ stock: '9', price: '5.00' });
+  const email = `hist${Date.now()}@example.com`;
+  const first = await placeOrder(book.id, 'collection', { email });
+  const second = await placeOrder(book.id, 'collection', { email });
+
+  const lookup = async (fields) =>
+    (await fetch(`${SITE}/order`, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fields).toString(),
+    })).text();
+
+  const found = await lookup({ ref: first.ref, email });
+  t.ok(found.includes(first.ref), 'a reference and its email open the order');
+  t.ok(found.includes('Your other orders') && found.includes(second.ref),
+    'and list everything else that customer has ordered');
+  t.ok(found.includes('data-reorder'), 'with a way to order it all again');
+
+  const wrong = await lookup({ ref: first.ref, email: 'someone@else.example' });
+  t.ok(!wrong.includes(second.ref) && !wrong.includes('Your other orders'),
+    'the wrong email finds nothing, and hints at nothing');
+
+  /*
+   * The line that matters.
+   *
+   * A token proves one order and travels in a forwarded confirmation. If the
+   * history hung off it, forwarding a link would hand somebody the whole of
+   * another person's buying history - so it is gated on the reference and the
+   * email instead, which is the higher bar.
+   */
+  const forwarded = await (await fetch(`${SITE}/order?ref=${first.ref}&t=${first.token}`)).text();
+  t.ok(forwarded.includes(first.ref), 'a forwarded link still opens its own order');
+  t.ok(!forwarded.includes('Your other orders') && !forwarded.includes(second.ref),
+    'but never exposes the rest of that customer\'s history');
+
+  // Reordering resolves against today's catalogue, not the order's snapshot.
+  const resolved = await (await fetch(`${SITE}/api/basket`, {
+    method: 'POST',
+    headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slugs: ['not-a-real-slug-at-all'] }),
+  })).json();
+  t.ok(Array.isArray(resolved.books) && resolved.books.length === 0,
+    'a title that no longer exists resolves to nothing rather than an error');
+}
+
 async function adminAuth() {
   const t = suite('7. Admin authentication');
   const bare = { redirect: 'manual', headers: {} };
@@ -3068,6 +3117,7 @@ const SUITES = [
   ['settings', ownerSettings, true],
   ['messages', messages, true],
   ['front', frontPage, true],
+  ['history', orderHistory, true],
   ['integrity', integrity, false],
 ];
 
