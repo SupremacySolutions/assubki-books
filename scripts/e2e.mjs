@@ -1793,7 +1793,9 @@ async function integrity() {
   t.ok(
     coverQueries.length >= 3 &&
       coverQueries.some((q) => q.includes('title=')) &&
-      coverQueries.some((q) => decodeURIComponent(q).includes('al hidayah')),
+      // Spaces go over as `+`, which is form encoding rather than percent
+      // encoding - `decodeURIComponent` leaves them alone, so undo them here.
+      coverQueries.some((q) => decodeURIComponent(q.replace(/\+/g, ' ')).includes('al hidayah')),
     'cover lookup tries exact, folded and simplified title searches',
   );
   t.ok(

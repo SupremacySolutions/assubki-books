@@ -29,8 +29,13 @@
  * 3: the frame and mark removed altogether - back to the photo itself.
  * 4: scanner-white borders removed from covers that carry a full outer frame.
  * 5: every primary cover receives the same full-bleed 3:4 public variants.
+ * 6: dark and transparent surrounds trimmed as well as white ones. The pass
+ *    that did it rewrote 208 covers in place without bumping this, so a
+ *    browser that had already loaded the catalogue kept the bordered card
+ *    while the freshly-made detail variant came back clean - the same cover
+ *    correct on the product page and wrong one click away.
  */
-export const IMAGE_VERSION = 5;
+export const IMAGE_VERSION = 6;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */
