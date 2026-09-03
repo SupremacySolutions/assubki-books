@@ -417,6 +417,19 @@ export function canTransition(
  * reason the status copy does: three places writing their own version is how
  * the shop ends up promising one thing on screen and another in an inbox.
  */
+/** What the shop says when a book somebody asked about comes back. */
+export const BACK_IN_STOCK = {
+  ask: 'Tell me when it is back',
+  help: 'One email when it returns, and nothing else - we do not keep the address afterwards.',
+  placeholder: 'Your email address',
+  added: 'We will email you the moment it is back.',
+  already: 'You are already on the list for this one.',
+  tooMany: 'That is a lot of titles to watch at once. Please wait for one of them first.',
+  bad: 'That does not look like an email address.',
+  subject: (title: string) => `Back in stock: ${title}`,
+  heading: 'It is back',
+} as const;
+
 export const THREAD = {
   heading: 'Messages',
   /** The empty state, which is the one that has to do the persuading. */

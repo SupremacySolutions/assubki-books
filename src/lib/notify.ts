@@ -19,10 +19,11 @@
 
 import { env } from 'cloudflare:workers';
 import type { CreatedOrder } from './orders';
+import { claimWaiting } from './stock-alerts';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml, noReply, noReplyText } from './email';
 import { sendMessage, sendMessageId, optInLink, esc, botConfigured, mdLink } from './telegram';
-import { statusMessage, cashMoment } from './order-status';
+import { statusMessage, cashMoment, BACK_IN_STOCK } from './order-status';
 import { getSetting } from './settings';
 
 export interface PlacedInput {
@@ -930,4 +931,55 @@ async function tokenFor(orderId: number): Promise<string> {
     .bind(orderId)
     .first<{ access_token: string }>();
   return row?.access_token ?? '';
+}
+
+// ---------------------------------------------------------------------------
+// 4. A book somebody was waiting for has come back
+// ---------------------------------------------------------------------------
+
+/**
+ * Tells everybody waiting on a title that it is back, once.
+ *
+ * Called after stock has settled rather than as it rises: a delivery raises
+ * stock and *then* hands copies to the people who reserved them, so checking
+ * mid-way would announce copies that are already spoken for.
+ *
+ * `claimWaiting` deletes the rows as it reads them, so two admin actions at the
+ * same moment cannot send the same person the same message twice - and the
+ * address is not kept once it has been used, which is why there is nothing to
+ * unsubscribe from.
+ */
+export async function notifyBackInStock(bookId: number, origin: string): Promise<number> {
+  const waiting = await claimWaiting(bookId);
+  if (!waiting.length) return 0;
+
+  const results = await Promise.allSettled(
+    waiting.map((w) => {
+      const link = `${origin}/book/${w.slug}`;
+      return deliver({
+        to: w.email,
+        subject: BACK_IN_STOCK.subject(w.title),
+        html: shell(
+          BACK_IN_STOCK.heading,
+          w.title,
+          `<p style="margin:0;font-size:15px;line-height:1.6">You asked us to tell you when
+             <strong>${escapeHtml(w.title)}</strong> came back. It is on the shelf now.</p>` +
+            button(link, 'See it in the shop') +
+            `<p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
+               Stock is limited and we have not held a copy for you - it is first come.
+               This is the only message you will get about it; we do not keep your address
+               once it has been used.</p>`,
+        ),
+        text:
+          `${w.title} is back in stock.\n\n${link}\n\n` +
+          'We have not held a copy - it is first come. This is the only message you will ' +
+          'get about it, and we do not keep your address once it has been used.\n',
+      });
+    }),
+  );
+
+  for (const r of results) {
+    if (r.status === 'rejected') console.error('[notify] back-in-stock failed', r.reason);
+  }
+  return waiting.length;
 }

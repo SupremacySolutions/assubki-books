@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { setStock } from '../../../../../lib/admin-db';
 import { forgetHomeRows } from '../../../../../lib/db';
+import { tellWaiting } from '../../../../../lib/stock-alerts';
 
 export const prerender = false;
 
@@ -85,6 +86,14 @@ export const POST: APIRoute = async ({ params, request }) => {
 
   // A landed delivery is exactly what takes a book out of the arriving row.
   forgetHomeRows();
+
+  /*
+   * Anybody who asked to be told is told now, at the end, when availability
+   * has settled - a delivery raises stock and then hands copies to the people
+   * who reserved them, so a check half way through would announce copies that
+   * were already spoken for.
+   */
+  await tellWaiting(bookId, new URL(request.url).origin);
 
   return back;
 };

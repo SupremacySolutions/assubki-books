@@ -499,6 +499,67 @@ async function orderHistory() {
     'a title that no longer exists resolves to nothing rather than an error');
 }
 
+async function stockAlerts() {
+  const t = suite('19. Tell me when it is back');
+
+  const book = await makeBook({ stock: '0', price: '7.00' });
+  const row = await one(`SELECT id, slug FROM books WHERE id = ${book.id}`);
+
+  const page = await html(`/book/${row.slug}`);
+  t.ok(page.includes('/api/books/alert'), 'an out-of-stock book offers to tell you');
+  // Nested forms are discarded by the browser and their button submits the
+  // outer one. That has broken this codebase twice, so it is asserted.
+  const forms = page.match(/<\/?form\b/gi) ?? [];
+  let depth = 0;
+  let deepest = 0;
+  for (const tag of forms) {
+    if (tag.toLowerCase() === '<form') deepest = Math.max(deepest, ++depth);
+    else depth--;
+  }
+  t.ok(deepest <= 1 && depth === 0, 'and its form is not nested inside another');
+
+  const ask = (email) =>
+    fetch(`${SITE}/api/books/alert`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ bookId: String(row.id), slug: row.slug, email }).toString(),
+    });
+
+  t.ok(
+    ((await ask('waiting@example.com')).headers.get('location') ?? '').includes('tell=added'),
+    'an address can be left',
+  );
+  t.ok(
+    ((await ask('waiting@example.com')).headers.get('location') ?? '').includes('tell=already'),
+    'asking twice is asking once',
+  );
+  t.ok(
+    ((await ask('not-an-email')).headers.get('location') ?? '').includes('tell=bad'),
+    'and a bad address is refused',
+  );
+  t.ok(
+    (await one(`SELECT COUNT(*) AS n FROM stock_alerts WHERE book_id = ${row.id}`)).n === 1,
+    'leaving exactly one person waiting',
+  );
+
+  /*
+   * The row goes when the message does.
+   *
+   * The address is held only until it has been used - that is the honest
+   * answer to "how long do you keep this", and the reason there is nothing to
+   * unsubscribe from.
+   */
+  await admin('/api/admin/books/stock', { id: String(row.id), stock: '4' });
+  t.ok(
+    (await one(`SELECT COUNT(*) AS n FROM stock_alerts WHERE book_id = ${row.id}`)).n === 0,
+    'and restocking tells them, then forgets the address',
+  );
+
+  await admin('/api/admin/books/stock', { id: String(row.id), stock: '6' });
+  t.ok(true, 'restocking with nobody waiting is harmless');
+}
+
 async function adminAuth() {
   const t = suite('7. Admin authentication');
   const bare = { redirect: 'manual', headers: {} };
@@ -3118,6 +3179,7 @@ const SUITES = [
   ['messages', messages, true],
   ['front', frontPage, true],
   ['history', orderHistory, true],
+  ['alerts', stockAlerts, true],
   ['integrity', integrity, false],
 ];
 

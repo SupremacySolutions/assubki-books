@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { setStock } from '../../../../lib/admin-db';
 import { forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
+import { tellWaiting } from '../../../../lib/stock-alerts';
 
 export const prerender = false;
 
@@ -84,6 +85,8 @@ export const POST: APIRoute = async ({ request }) => {
       .bind(title, titleAr, author, publisher, volumes, description, pricePence, status, bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
+    /* Anybody waiting is told once availability has settled - see stock-alerts. */
+    await tellWaiting(bookId, new URL(request.url).origin);
 
   /*
    * The delivery. Floored at what customers have already claimed, the same way

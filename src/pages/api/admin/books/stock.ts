@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { setStock } from '../../../../lib/admin-db';
 import { forgetHomeRows } from '../../../../lib/db';
+import { tellWaiting } from '../../../../lib/stock-alerts';
 
 export const prerender = false;
 
@@ -16,6 +17,14 @@ export const POST: APIRoute = async ({ request }) => {
 
   await setStock(id, stock, 'quick edit in portal');
   forgetHomeRows();
+
+  /*
+   * Anybody who asked to be told is told now, at the end, when availability
+   * has settled - a delivery raises stock and then hands copies to the people
+   * who reserved them, so a check half way through would announce copies that
+   * were already spoken for.
+   */
+  await tellWaiting(id, new URL(request.url).origin);
 
   const referer = request.headers.get('Referer');
   const back = referer && referer.includes('/admin/books') ? referer : '/admin/books';
