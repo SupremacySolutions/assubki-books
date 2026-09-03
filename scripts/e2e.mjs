@@ -1656,6 +1656,100 @@ async function integrity() {
   t.ok(clean.detectQuad({ data: blank, width: CW, height: CW }) === null,
     'and an empty surface is reported as not found rather than guessed at');
 
+  /*
+   * The shapes the detector used to get wrong.
+   *
+   * Corners were taken as the extremes of x+y and x-y, which rests each one on
+   * a single pixel: anything joined to the cover - a cast shadow, the sleeve it
+   * was resting on, the next book along - took a corner with it, and the panel
+   * offered a crop at proportions no book has. Each case here is a cover with
+   * one such thing attached, and the cover has to come back the same either
+   * way. The last two are not covers at all and have to be refused outright.
+   */
+  const painted = (quad, background, subject, extra) => {
+    const data = new Uint8ClampedArray(CW * CW * 4);
+    for (let i = 0; i < CW * CW; i++) {
+      data[i * 4] = background[0]; data[i * 4 + 1] = background[1];
+      data[i * 4 + 2] = background[2]; data[i * 4 + 3] = 255;
+    }
+    const within = (pts, px, py) => {
+      let sign = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        sign += (b.x - a.x) * (py - a.y) - (b.y - a.y) * (px - a.x) > 0 ? 1 : -1;
+      }
+      return Math.abs(sign) === pts.length;
+    };
+    for (let y = 0; y < CW; y++) {
+      for (let x = 0; x < CW; x++) {
+        if (!(within(quad, x, y) || (extra && extra(x, y)))) continue;
+        const p = (y * CW + x) * 4;
+        data[p] = subject[0]; data[p + 1] = subject[1]; data[p + 2] = subject[2];
+      }
+    }
+    return { data, width: CW, height: CW };
+  };
+  const cornerError = (got, want) =>
+    got ? Math.max(...got.map((p, i) => Math.hypot(p.x - want[i].x, p.y - want[i].y))) : Infinity;
+
+  const table = [210, 205, 195];
+  const cover = [40, 50, 70];
+  const attached = {
+    'a shadow cast off one corner': (x, y) => x > 150 && x < 157 && y > 190 && y < 235,
+    'the sleeve it was resting on': (x, y) => y > 35 && y < 205 && x >= 3 && x < 9,
+    'grain in the surface below':   (x, y) => (x * 7 + y * 13) % 991 === 0,
+    'the next book along':          (x, y) => x > 205 && y > 205,
+  };
+  for (const [what, extra] of Object.entries(attached)) {
+    const off = cornerError(clean.detectQuad(painted(bookQuad, table, cover, extra)), bookQuad);
+    t.ok(off <= 4, `the book is still the book with ${what} touching it (off by ${off.toFixed(1)}px)`);
+  }
+
+  // Contrast and angle: the detector reads the surface rather than the cover,
+  // so it has to hold up whichever of the two is darker, and at a slant.
+  const squareOn = [{ x: 55, y: 45 }, { x: 185, y: 45 }, { x: 185, y: 200 }, { x: 55, y: 200 }];
+  const keystone = [{ x: 75, y: 35 }, { x: 170, y: 35 }, { x: 200, y: 205 }, { x: 45, y: 205 }];
+  const centre = 120;
+  const spun = squareOn.map(({ x, y }) => ({
+    x: centre + (x - centre) * Math.cos(0.21) - (y - centre) * Math.sin(0.21),
+    y: centre + (x - centre) * Math.sin(0.21) + (y - centre) * Math.cos(0.21),
+  }));
+  const angles = {
+    'photographed from an angle': [keystone, table, cover],
+    'a cream cover on a light surface': [squareOn, [205, 200, 190], [242, 238, 230]],
+    'a dark cover on a dark surface': [squareOn, [30, 30, 34], [70, 66, 60]],
+    'lying askew on the table': [spun, table, cover],
+  };
+  for (const [what, [quad, bg, fg]] of Object.entries(angles)) {
+    const off = cornerError(clean.detectQuad(painted(quad, bg, fg)), quad);
+    t.ok(off <= 4, `the corners hold for ${what} (off by ${off.toFixed(1)}px)`);
+  }
+
+  // A cover that runs off the picture is found, and cut at the frame: there is
+  // nothing outside to straighten, and the warp would only paint it white.
+  const overrun = clean.detectQuad(painted(
+    [{ x: 50, y: 60 }, { x: 190, y: 60 }, { x: 190, y: 300 }, { x: 50, y: 300 }], table, cover));
+  t.ok(overrun !== null && Math.abs(overrun[0].x - 50) <= 2 && Math.abs(overrun[0].y - 60) <= 2 &&
+       overrun[2].y >= CW - 2,
+    'a cover running off the frame is found, and stops at the edge of it');
+
+  // Neither of these is a book, and the honest answer is the whole frame with
+  // four handles rather than a confident crop of the wrong thing.
+  t.ok(clean.detectQuad(painted(
+    [{ x: 20, y: 30 }, { x: 38, y: 30 }, { x: 38, y: 215 }, { x: 20, y: 215 }], table, cover)) === null,
+    'a sliver is refused rather than offered as a cover');
+  t.ok(clean.detectQuad(painted([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }],
+    table, cover, (x, y) => Math.hypot(x - 120, y - 120) < 70)) === null,
+    'and so is something round');
+
+  // The warp sends the first corner to the output's top left, so the order the
+  // detector returns them in decides which way up the cover comes out.
+  const order = clean.detectQuad(painted(spun, table, cover));
+  t.ok(order !== null && clean.polygonArea(order) > 0 &&
+       order.every((p) => p.x + p.y >= order[0].x + order[0].y),
+    'corners come back clockwise from the top left, whatever angle the book was at');
+
   const h = clean.solveHomography(
     [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
     bookQuad,
@@ -1767,11 +1861,14 @@ async function integrity() {
    * which is where a title sits.
    */
   const fit = await import('../src/lib/cover-fit.ts');
+  t.ok(fit.cropsCleanly(600, 840), 'a cover already the shape of the box fills it untouched');
   t.ok(fit.cropsCleanly(617, 800), 'the ordinary 617x800 scan fills the box');
-  t.ok(fit.cropsCleanly(600, 800), 'and an exact 3:4 cover does');
+  t.ok(fit.cropsCleanly(600, 800), 'and so does a 3:4 one');
   t.ok(fit.cropsCleanly(640, 800),
     'and a 4:5 scan loses its narrow white side margins, as on the Al-Hidayah set');
-  t.ok(!fit.cropsCleanly(720, 1000), 'a taller cover is never trimmed top and bottom');
+  t.ok(!fit.cropsCleanly(660, 1000), 'a taller cover is never trimmed top and bottom');
+  t.ok(fit.cropsCleanly(720, 1000),
+    'while one only just wider than the box gives up a sliver of side and fills');
   t.ok(!fit.cropsCleanly(830, 1000), 'nor is one whose side trim would reach the artwork');
   t.ok(!fit.cropsCleanly(800, 700) && !fit.cropsCleanly(800, 800),
     'a landscape or square cover keeps all of itself');

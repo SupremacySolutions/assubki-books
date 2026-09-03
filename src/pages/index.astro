@@ -36,7 +36,7 @@ const shelfCount = tree.reduce((n, c) => n + 1 + (c.children?.length ?? 0), 0);
 /*
  * The drifting shelf behind the hero: fourteen covers, different every visit.
  *
- * Every primary cover now has a full-bleed 3:4 hero variant, so the shelf can
+ * Every primary cover now has a full-bleed hero variant, so the shelf can
  * draw from the complete pool rather than silently excluding tall covers.
  *
  * Shuffled per render rather than ordered by date. The page is server-rendered

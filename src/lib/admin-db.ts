@@ -154,7 +154,7 @@ const FILTER_SQL: Record<BookFilter, string> = {
   /*
    * A cover with too few pixels to fill the box it is given.
    *
-   * Every cover is cropped to 3:4, so what matters is the width that survives
+   * Every cover is cropped to 5:7, so what matters is the width that survives
    * that crop: a wide photo is trimmed at the sides and keeps only `height *
    * 0.75`. Below 300px of usable width the card - which asks for 600 - is
    * showing each pixel as four, and no amount of processing puts detail back

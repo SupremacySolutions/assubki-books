@@ -463,7 +463,7 @@ const previewCaption = book
             <ul class="grid grid-cols-3 gap-2 mb-3">
               {book.images.map((img, i) => (
                 <li class="relative">
-                  <div class="aspect-[3/4] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
+                  <div class="aspect-[5/7] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
                     <img
                       src={imageUrl(img.image_key, 'thumb')}
                       alt=""
@@ -1380,7 +1380,7 @@ const previewCaption = book
            * dimensions until you have fetched the thing.
            *
            * Only what actually separates one candidate from another. Nearly
-           * every Open Library cover is around 350px and taller than 3:4, so
+           * every Open Library cover is around 350px and taller than the frame, so
            * flagging either would put the same two warnings under all six and
            * teach the owner to ignore them. Being smaller than a photograph is
            * true of the whole source, and is said once beneath the grid.
@@ -1445,7 +1445,7 @@ const previewCaption = book
               const img = document.createElement('img');
               img.src = `/api/admin/covers/image?id=${cover.id}`;
               img.alt = cover.title;
-              img.className = 'block w-full aspect-[3/4] object-cover bg-[var(--color-paper)]';
+              img.className = 'block w-full aspect-[5/7] object-cover bg-[var(--color-paper)]';
 
               const title = document.createElement('p');
               title.className =

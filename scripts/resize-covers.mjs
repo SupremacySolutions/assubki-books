@@ -61,10 +61,10 @@ const DRY = process.argv.includes('--dry') || SAMPLE;
  * smaller variants rather than falling back to the untouched original.
  */
 const PRESETS = {
-  card: { width: 600, height: 800 },
-  detail: { width: 840, height: 1120 },
-  thumb: { width: 176, height: 234 },
-  hero: { width: 168, height: 224 },
+  card: { width: 600, height: 840 },
+  detail: { width: 840, height: 1176 },
+  thumb: { width: 180, height: 252 },
+  hero: { width: 170, height: 238 },
   social: { width: 600, height: 600 },
 };
 
@@ -198,7 +198,7 @@ async function prepareCover(input, primary) {
  * One cover, one size.
  *
  * A primary cover is the merchandise image customers browse, so every public
- * variant is a full-bleed 3:4 rectangle. Other photos remain documentary: a
+ * variant is a full-bleed 5:7 rectangle. Other photos remain documentary: a
  * spine, contents page or spread is fitted whole and never cropped.
  */
 async function resize(input, preset, primary) {
@@ -338,7 +338,7 @@ await Promise.all(
         }
 
         // These are the pixels the variants now contain. The page uses their
-        // ratio to decide whether a final 3:4 side crop is safe.
+        // ratio to decide whether a final side crop is safe.
         updates.push({
           id: row.id,
           key: original,

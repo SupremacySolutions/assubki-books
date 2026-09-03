@@ -14,7 +14,6 @@
  */
 import {
   detectQuad,
-  orderCorners,
   quadSize,
   warp,
   DETECT_EDGE,
@@ -475,7 +474,9 @@ export function mountCoverReview(): void {
       );
 
       if (found) {
-        corners = orderCorners(found).map((p) => ({
+        // Already clockwise from the top left - the detector settles that, and
+        // sorting them again here would only give the answer a second author.
+        corners = found.map((p) => ({
           x: (p.x / small.width) * full!.width,
           y: (p.y / small.height) * full!.height,
         }));

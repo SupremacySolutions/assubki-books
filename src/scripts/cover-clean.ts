@@ -59,16 +59,61 @@ export function detectQuad(image: {
   }
 
   const cut = threshold(dist);
-  const mask = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) mask[i] = dist[i] > cut ? 1 : 0;
+  const raw = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) raw[i] = dist[i] > cut ? 1 : 0;
 
-  const region = largestRegion(mask, w, h);
-  // Too little to be a book. Better to offer the whole frame and let the owner
-  // drag than to crop confidently to a shadow.
-  if (!region || region.length < w * h * 0.08) return null;
+  /*
+   * Corners come from the cover's four *sides*, not from its four furthest
+   * pixels.
+   *
+   * Taking the extremes of x+y and x-y is the obvious way to corner a blob and
+   * it was what this did, but it stakes each corner on a single pixel: one
+   * speck of anything joined to the cover, and that corner leaves for the far
+   * side of the frame, which is where the wrong-shaped crops came from.
+   * Fitting a line to each edge instead puts every boundary pixel to work, so
+   * no single one can move the answer - and intersecting the fitted lines
+   * recovers the true corner even when the photo has rounded it off.
+   */
+  const attempt = (radius: number): Point[] | null => {
+    // Opened before anything is measured. A cast shadow, a sleeve or the edge
+    // of the next book along reaches the mask as a limb joined to the cover;
+    // eroding then dilating by the same amount snaps anything narrower than
+    // twice the radius and leaves the cover itself its own size.
+    const region = largestRegion(open(raw, w, h, radius), w, h);
+    // Too little to be a book. Better to offer the whole frame and let the
+    // owner drag than to crop confidently to a shadow.
+    if (!region || region.length < w * h * 0.08) return null;
 
-  const quad = extremes(region, w);
-  return isSane(quad, w, h) ? quad : null;
+    const edge = outline(region, w, h);
+    const rect = minAreaRect(convexHull(edge));
+    if (!rect) return null;
+
+    const quad = refineSides(edge, rect);
+    return isSane(quad, w, h, region.length) ? canonical(quad) : null;
+  };
+
+  /*
+   * Widened until it works, rather than opened hard from the start.
+   *
+   * How thick a limb has to be before it stops mattering is a property of the
+   * photo, not something to settle in advance: open too little and a shadow
+   * still steers the crop, too much and a slim book is thinned away. So take
+   * the narrowest opening that yields a book-shaped answer, and only reach for
+   * a broader one when the cheaper reading did not produce one.
+   */
+  const base = Math.max(1, Math.round(Math.min(w, h) / 160));
+  for (const radius of [base, base * 2, base * 4]) {
+    const quad = attempt(radius);
+    // A fitted line can cross outside the picture when the cover runs off the
+    // edge of it. There is nothing out there to sample, so bring it back in.
+    if (quad) {
+      return quad.map((p) => ({
+        x: Math.min(w, Math.max(0, p.x)),
+        y: Math.min(h, Math.max(0, p.y)),
+      }));
+    }
+  }
+  return null;
 }
 
 /** The median colour of a ring around the edge: whatever it is lying on. */
@@ -136,6 +181,40 @@ function threshold(dist: Float32Array): number {
   return (best / (bins - 1)) * max;
 }
 
+/**
+ * Morphological opening: erode `r` times, then dilate `r` times.
+ *
+ * Anything thinner than 2r across does not survive the erosion and so is gone
+ * for good; everything wider is put back to the size it started at.
+ */
+function open(mask: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  let m = mask;
+  for (let i = 0; i < r; i++) m = morph(m, w, h, true);
+  for (let i = 0; i < r; i++) m = morph(m, w, h, false);
+  return m;
+}
+
+/**
+ * One pass of erosion or dilation over the four neighbours.
+ *
+ * Off the edge of the picture counts as whatever the pixel itself is, so a
+ * cover running off the frame is not eaten away from that side.
+ */
+function morph(mask: Uint8Array, w: number, h: number, erode: boolean): Uint8Array {
+  const out = new Uint8Array(mask.length);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const self = mask[i];
+      const at = (nx: number, ny: number) =>
+        nx < 0 || ny < 0 || nx >= w || ny >= h ? self : mask[ny * w + nx];
+      const n = [at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1), self];
+      out[i] = erode ? (n.every((v) => v) ? 1 : 0) : n.some((v) => v) ? 1 : 0;
+    }
+  }
+  return out;
+}
+
 /** The biggest connected blob in the mask, as pixel indices. */
 function largestRegion(mask: Uint8Array, w: number, h: number): Int32Array | null {
   const seen = new Uint8Array(mask.length);
@@ -167,44 +246,262 @@ function largestRegion(mask: Uint8Array, w: number, h: number): Int32Array | nul
 }
 
 /**
- * Four corners from a blob.
+ * The outline of a blob: the first and last pixel of every row and column.
  *
- * The extremes of x+y and x-y: for anything roughly rectangular, however it is
- * rotated, those four points are its corners. Cheap, and it does not care that
- * the blob's outline is ragged.
+ * For anything convex that set contains the whole boundary that matters,
+ * corners included, at O(w + h) points rather than the region's own size -
+ * which is what makes hulling it cheap enough to run on every frame.
  */
-function extremes(region: Int32Array, w: number): Point[] {
-  let tl = 0, br = 0, tr = 0, bl = 0;
-  let tlV = Infinity, brV = -Infinity, trV = -Infinity, blV = Infinity;
+function outline(region: Int32Array, w: number, h: number): Point[] {
+  const minX = new Int32Array(h).fill(-1);
+  const maxX = new Int32Array(h).fill(-1);
+  const minY = new Int32Array(w).fill(-1);
+  const maxY = new Int32Array(w).fill(-1);
 
   for (let n = 0; n < region.length; n++) {
     const i = region[n];
     const x = i % w;
     const y = (i / w) | 0;
-    const sum = x + y;
-    const diff = x - y;
-    if (sum < tlV) { tlV = sum; tl = i; }
-    if (sum > brV) { brV = sum; br = i; }
-    if (diff > trV) { trV = diff; tr = i; }
-    if (diff < blV) { blV = diff; bl = i; }
+    if (minX[y] < 0 || x < minX[y]) minX[y] = x;
+    if (maxX[y] < 0 || x > maxX[y]) maxX[y] = x;
+    if (minY[x] < 0 || y < minY[x]) minY[x] = y;
+    if (maxY[x] < 0 || y > maxY[x]) maxY[x] = y;
   }
 
-  const at = (i: number): Point => ({ x: i % w, y: (i / w) | 0 });
-  return [at(tl), at(tr), at(br), at(bl)];
+  const pts: Point[] = [];
+  for (let y = 0; y < h; y++) {
+    if (minX[y] >= 0) pts.push({ x: minX[y], y }, { x: maxX[y], y });
+  }
+  for (let x = 0; x < w; x++) {
+    if (minY[x] >= 0) pts.push({ x, y: minY[x] }, { x, y: maxY[x] });
+  }
+  return pts;
 }
 
-/** A quad worth using: big enough, and not folded in on itself. */
-function isSane(quad: Point[], w: number, h: number): boolean {
+/** Andrew's monotone chain. Collinear points are dropped. */
+function convexHull(pts: Point[]): Point[] {
+  if (pts.length < 3) return pts.slice();
+  const sorted = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Point, a: Point, b: Point) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+  const chain = (order: Point[]): Point[] => {
+    const out: Point[] = [];
+    for (const p of order) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+
+  return [...chain(sorted), ...chain([...sorted].reverse())];
+}
+
+/**
+ * The smallest rectangle enclosing the hull, at any rotation.
+ *
+ * Rotating calipers: the minimum-area rectangle always shares an edge with the
+ * hull, so trying each hull edge as the rectangle's direction and keeping the
+ * cheapest is exact. This is only a starting frame - it fixes the orientation
+ * and tells `refineSides` which points belong to which edge - so the fact that
+ * a rectangle cannot express perspective does not matter here.
+ */
+function minAreaRect(hull: Point[]): Point[] | null {
+  if (hull.length < 3) return null;
+  let best: Point[] | null = null;
+  let bestArea = Infinity;
+
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[i];
+    const b = hull[(i + 1) % hull.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1e-9) continue;
+
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const vx = -uy;
+    const vy = ux;
+
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (const p of hull) {
+      const u = p.x * ux + p.y * uy;
+      const v = p.x * vx + p.y * vy;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+
+    const area = (maxU - minU) * (maxV - minV);
+    if (area >= bestArea) continue;
+    bestArea = area;
+    const at = (u: number, v: number): Point => ({ x: u * ux + v * vx, y: u * uy + v * vy });
+    best = [at(minU, minV), at(maxU, minV), at(maxU, maxV), at(minU, maxV)];
+  }
+  return best;
+}
+
+interface Line {
+  nx: number;
+  ny: number;
+  o: number;
+}
+
+/**
+ * The rectangle's four sides, each pulled onto the hull points lying along it,
+ * then intersected back into corners.
+ *
+ * This is the step that restores perspective: four independent lines can meet
+ * as a trapezoid, which is what a cover photographed at an angle actually is,
+ * where the enclosing rectangle could only ever be square-on.
+ *
+ * Fitted to the outline rather than to the hull it came from. The hull is the
+ * right input for finding the rectangle and the wrong one for fitting to it:
+ * building it discards every point that lies along a side, which is precisely
+ * the set each side needs, and leaves only the corners this then excludes.
+ */
+function refineSides(edge: Point[], rect: Point[]): Point[] {
+  const diag = Math.hypot(rect[2].x - rect[0].x, rect[2].y - rect[0].y);
+  const band = Math.max(2, diag * 0.06);
+
+  const lines = rect.map((a, i): Line | null => {
+    const b = rect[(i + 1) % 4];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1e-9) return null;
+    const side: Line = { nx: -(b.y - a.y) / len, ny: (b.x - a.x) / len, o: 0 };
+    side.o = side.nx * a.x + side.ny * a.y;
+
+    // Points are taken from the middle of the side, never its ends. Within a
+    // band this wide the corners belong to two sides at once, and letting each
+    // fit claim them bends both lines towards the corner they share.
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const along = (p: Point) => ((p.x - a.x) * ux + (p.y - a.y) * uy) / len;
+    const near = edge.filter((p) => {
+      const t = along(p);
+      return t > 0.1 && t < 0.9 && Math.abs(side.nx * p.x + side.ny * p.y - side.o) <= band;
+    });
+    if (near.length < 2) return side;
+
+    // Fitted twice, the second time without whatever sat furthest from the
+    // first line. One pass is enough to shrug off a nick in the cover's edge
+    // without letting a genuinely curved edge be whittled down to a chord.
+    const first = fitLine(near);
+    const off = near.map((p) => Math.abs(first.nx * p.x + first.ny * p.y - first.o));
+    const limit = 2 * median([...off]) + 1;
+    const kept = near.filter((_, i) => off[i] <= limit);
+    return kept.length >= 2 ? fitLine(kept) : first;
+  });
+
+  return rect.map((corner, i) => intersect(lines[(i + 3) % 4], lines[i]) ?? corner);
+}
+
+/**
+ * The line of best fit through some points, by total least squares.
+ *
+ * Total least squares rather than the usual kind because a cover's edge can be
+ * vertical, and fitting y from x has no answer there.
+ */
+function fitLine(pts: Point[]): Line {
+  let mx = 0;
+  let my = 0;
+  for (const p of pts) {
+    mx += p.x;
+    my += p.y;
+  }
+  mx /= pts.length;
+  my /= pts.length;
+
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  for (const p of pts) {
+    const dx = p.x - mx;
+    const dy = p.y - my;
+    sxx += dx * dx;
+    sxy += dx * dy;
+    syy += dy * dy;
+  }
+
+  const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  const nx = -Math.sin(theta);
+  const ny = Math.cos(theta);
+  return { nx, ny, o: nx * mx + ny * my };
+}
+
+/** Where two lines meet, or null if they are parallel. */
+function intersect(a: Line | null, b: Line | null): Point | null {
+  if (!a || !b) return null;
+  const det = a.nx * b.ny - a.ny * b.nx;
+  if (Math.abs(det) < 1e-9) return null;
+  return {
+    x: (a.o * b.ny - b.o * a.ny) / det,
+    y: (a.nx * b.o - b.nx * a.o) / det,
+  };
+}
+
+/**
+ * A quad worth offering: the shape a book can actually be.
+ *
+ * The old version asked only that it was big enough and not folded up, which
+ * let through wedges and slivers - the crops that came back at proportions
+ * nothing on a shelf has. A cover is a rectangle, so under perspective its
+ * opposite sides stay comparable, its corners stay near square, and it stays
+ * within the range of shapes a book is printed in. Anything else is the
+ * detector having found something that is not the book, and the honest answer
+ * then is the whole frame and four handles to drag.
+ */
+function isSane(quad: Point[], w: number, h: number, regionArea: number): boolean {
   const area = Math.abs(polygonArea(quad));
   if (area < w * h * 0.06) return false;
+
+  const side = (i: number) =>
+    Math.hypot(quad[(i + 1) % 4].x - quad[i].x, quad[(i + 1) % 4].y - quad[i].y);
+
   // Every side has to have some length, or the "quad" is a triangle and the
   // warp would divide by nothing.
+  for (let i = 0; i < 4; i++) if (side(i) < Math.min(w, h) * 0.05) return false;
+
+  const paired = (a: number, b: number) => a / b >= 0.6 && a / b <= 1 / 0.6;
+  if (!paired(side(0), side(2)) || !paired(side(1), side(3))) return false;
+
   for (let i = 0; i < 4; i++) {
-    const a = quad[i];
-    const b = quad[(i + 1) % 4];
-    if (Math.hypot(b.x - a.x, b.y - a.y) < Math.min(w, h) * 0.05) return false;
+    const prev = quad[(i + 3) % 4];
+    const here = quad[i];
+    const next = quad[(i + 1) % 4];
+    let turn = Math.abs(
+      Math.atan2(prev.y - here.y, prev.x - here.x) - Math.atan2(next.y - here.y, next.x - here.x),
+    );
+    if (turn > Math.PI) turn = 2 * Math.PI - turn;
+    const degrees = (turn * 180) / Math.PI;
+    if (degrees < 55 || degrees > 125) return false;
   }
-  return true;
+
+  const across = (side(0) + side(2)) / 2;
+  const down = (side(1) + side(3)) / 2;
+  if (Math.max(across, down) / Math.min(across, down) > 2.4) return false;
+
+  // And it has to hug what it came from. A quad much larger than the blob it
+  // was fitted to means the blob was not rectangular in the first place.
+  return regionArea / area >= 0.7;
+}
+
+/**
+ * Clockwise from the top left, which is the order the warp reads.
+ *
+ * `minAreaRect` starts from whichever hull edge happened to win, so its corners
+ * arrive at any rotation - and `warp` sends the first one to the output's top
+ * left, so an unspun quad would come out of the cleaner lying on its side.
+ */
+function canonical(quad: Point[]): Point[] {
+  // Shoelace is positive for clockwise order once y points down the screen.
+  const turned = polygonArea(quad) > 0 ? quad : [...quad].reverse();
+  let first = 0;
+  for (let i = 1; i < turned.length; i++) {
+    if (turned[i].x + turned[i].y < turned[first].x + turned[first].y) first = i;
+  }
+  return turned.map((_, i) => turned[(first + i) % turned.length]);
 }
 
 export function polygonArea(pts: Point[]): number {
@@ -215,13 +512,6 @@ export function polygonArea(pts: Point[]): number {
     sum += a.x * b.y - b.x * a.y;
   }
   return sum / 2;
-}
-
-/** Clockwise from the top left, whatever order they arrived in. */
-export function orderCorners(pts: Point[]): Point[] {
-  const cx = pts.reduce((n, p) => n + p.x, 0) / pts.length;
-  const cy = pts.reduce((n, p) => n + p.y, 0) / pts.length;
-  return [...pts].sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
 }
 
 /**

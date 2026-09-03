@@ -6,7 +6,7 @@
  * colours, nothing added. The point is only that the home page should not be
  * sent an 800px cover for an 84px slot.
  *
- * There was a framing pass here once, fitting every cover into a 3:4 frame on
+ * There was a framing pass here once, fitting every cover into a fixed frame on
  * the shop's paper colour with the rosette in the corner. The owner did not
  * want it - the books look better as they are - so it was reverted and only
  * the resizing kept.
@@ -34,8 +34,9 @@
  *    browser that had already loaded the catalogue kept the bordered card
  *    while the freshly-made detail variant came back clean - the same cover
  *    correct on the product page and wrong one click away.
+ * 7: the frame is 5:7 rather than 3:4.
  */
-export const IMAGE_VERSION = 6;
+export const IMAGE_VERSION = 7;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */
@@ -52,16 +53,16 @@ export interface ImagePreset {
  */
 export const IMAGE_PRESETS = {
   /** The drifting shelf on the home page. */
-  hero: { width: 84, height: 112, scale: 2 },
+  hero: { width: 85, height: 119, scale: 2 },
   /** Catalogue grid and basket rows. */
-  card: { width: 300, height: 400, scale: 2 },
+  card: { width: 300, height: 420, scale: 2 },
   /**
    * The cover on a book's own page. A file is stored even when the source is
    * smaller, because this view also needs scanner-white borders removed.
    */
-  detail: { width: 420, height: 560, scale: 2 },
+  detail: { width: 420, height: 588, scale: 2 },
   /** Admin lists and the thumbnail strip. */
-  thumb: { width: 88, height: 117, scale: 2 },
+  thumb: { width: 90, height: 126, scale: 2 },
   /** Telegram, which shows a square well and crops anything taller. */
   social: { width: 600, height: 600, scale: 1 },
 } as const;
