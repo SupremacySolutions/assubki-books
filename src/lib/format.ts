@@ -65,9 +65,9 @@ export function availability(available: number): { label: string; state: 'in' | 
 /**
  * "books/al-nahw-al-wadih/1.webp" → "/img/books/al-nahw-al-wadih/1.webp"
  *
- * With a preset, the same image comes back padded into the standard frame at
- * the size that place actually needs - the home page was serving 800px covers
- * into 84px slots, 28 of them.
+ * With a preset, a primary cover comes back as the shared full-bleed crop at
+ * the size that place needs - the home page was serving 800px originals into
+ * 84px slots, 28 of them.
  */
 export function imageUrl(
   key: string | null | undefined,

@@ -13,7 +13,6 @@ import {
 } from '../lib/db';
 import { liveSale } from '../lib/sales';
 import { classmark } from '../lib/classmarks';
-import { cropsCleanly } from '../lib/cover-fit';
 import { SITE, imageUrl, hasAddress, phoneE164 } from '../lib/format';
 
 const sale = await liveSale();
@@ -37,12 +36,8 @@ const shelfCount = tree.reduce((n, c) => n + 1 + (c.children?.length ?? 0), 0);
 /*
  * The drifting shelf behind the hero: fourteen covers, different every visit.
  *
- * Judged by `cropsCleanly` - the same rule the cards use to decide whether a
- * cover fills its box or has to be padded inside it. The strip crops every
- * cover to one size, so a shape that would lose its title on a card loses it
- * here too. It used to have a looser rule of its own that let through anything
- * between 0.6 and 0.85; 188 of the 208 live covers pass the strict one, which
- * is a wide enough pool and a better-looking one.
+ * Every primary cover now has a full-bleed 3:4 hero variant, so the shelf can
+ * draw from the complete pool rather than silently excluding tall covers.
  *
  * Shuffled per render rather than ordered by date. The page is server-rendered
  * on every request, so this is genuinely a different shelf each time somebody
@@ -110,7 +105,7 @@ const siteJsonLd = {
 
 const nonce = Astro.locals.cspNonce;
 
-const pretty = shelf.filter((b) => b.image_key && cropsCleanly(b.width, b.height));
+const pretty = shelf.filter((b) => b.image_key);
 for (let i = pretty.length - 1; i > 0; i--) {
   const j = Math.floor(Math.random() * (i + 1));
   [pretty[i], pretty[j]] = [pretty[j], pretty[i]];

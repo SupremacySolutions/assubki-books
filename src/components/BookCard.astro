@@ -9,7 +9,6 @@
  * reflow as images load.
  */
 import { price, availability, imageUrl } from '../lib/format';
-import { cropsCleanly } from '../lib/cover-fit';
 import { delivery } from '../lib/incoming';
 import { IMAGE_PRESETS } from '../lib/image-presets';
 import { classmark } from '../lib/classmarks';
@@ -43,14 +42,6 @@ const avail = availability(book.available);
  */
 const off = book.sale_percent ?? 0;
 const nowPence = off > 0 ? Math.round((book.price_pence * (100 - off)) / 100) : book.price_pence;
-
-/*
- * A cover close enough to 3:4 fills the box and is trimmed at the sides, where
- * these scans carry a white margin; anything else is shown whole. Nearly every
- * cover crops, so the grid reads as one size, and the few odd shapes keep all
- * of themselves rather than losing a title.
- */
-const fills = cropsCleanly(book.width, book.height);
 
 /*
  * A delivery on its way, which the card used to say nothing about at all.
@@ -88,10 +79,7 @@ const marks = (book.cat_slugs ?? '')
             height={IMAGE_PRESETS.card.height}
             loading={eager ? 'eager' : 'lazy'}
             decoding="async"
-            class:list={[
-              'h-full w-full transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transform-none',
-              fills ? 'object-cover' : 'object-contain p-3',
-            ]}
+            class="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transform-none"
           />
         ) : (
           /* 18 titles arrived with no cover. A rosette placeholder keeps the

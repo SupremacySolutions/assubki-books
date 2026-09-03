@@ -28,8 +28,9 @@
  * 2: the mark moved off the artwork into a reserved band.
  * 3: the frame and mark removed altogether - back to the photo itself.
  * 4: scanner-white borders removed from covers that carry a full outer frame.
+ * 5: every primary cover receives the same full-bleed 3:4 public variants.
  */
-export const IMAGE_VERSION = 4;
+export const IMAGE_VERSION = 5;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */
