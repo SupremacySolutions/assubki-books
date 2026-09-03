@@ -51,21 +51,42 @@ export const POST: APIRoute = async ({ request }) => {
      * sale with no books would show an empty row on the home page, so it is
      * refused rather than published.
      */
+    /*
+     * A member the shop can actually sell.
+     *
+     * `sale_items` counts rows, not sellable books, and the public sale query
+     * joins `books` on `status = 'live'` - so a sale made entirely of drafts
+     * published happily and then showed customers an empty row.
+     */
     const members = await env.DB.prepare(
-      'SELECT COUNT(*) AS n FROM sale_items WHERE sale_id = ?',
+      `SELECT COUNT(*) AS n FROM sale_items si
+         JOIN books b ON b.id = si.book_id AND b.status = 'live'
+        WHERE si.sale_id = ?`,
     )
       .bind(id)
       .first<{ n: number }>();
     if (!members?.n) return back(`/admin/sales/${id}?e=empty`);
 
-    await env.DB.batch([
+    const [, started] = await env.DB.batch([
       env.DB.prepare(
         `UPDATE sales SET status = 'ended', ended_at = unixepoch() WHERE status = 'live'`,
       ),
+      /*
+       * Only a draft may go live.
+       *
+       * Without the guard an ended sale could be put back on, which wiped its
+       * `ended_at` and rewrote `started_at` - so the campaign that had run in
+       * March silently became a campaign that started today, and every figure
+       * reported against its window changed with it. A finished sale is a
+       * record; running it again is a new sale, which is what Copy is for.
+       */
       env.DB.prepare(
-        `UPDATE sales SET status = 'live', started_at = unixepoch(), ended_at = NULL WHERE id = ?`,
+        `UPDATE sales SET status = 'live', started_at = unixepoch(), ended_at = NULL
+          WHERE id = ? AND status = 'draft'`,
       ).bind(id),
     ]);
+    if (!started.meta.changes) return back(`/admin/sales/${id}?e=notdraft`);
+
     forgetSale();
     return back('/admin/sales?live=1');
   }

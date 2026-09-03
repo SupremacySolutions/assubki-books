@@ -214,7 +214,7 @@ import Rosette from '../components/Rosette.astro';
       discountRow.hidden = discountPence === 0;
       if (discountPence > 0) {
         el('#discountName')!.textContent =
-          `${discountRule!.percent}% off orders over ${gbp(discountRule!.thresholdPence)}`;
+          `${discountRule!.percent}% off orders of ${gbp(discountRule!.thresholdPence)} or more`;
         el('#discountAmount')!.textContent = `-${gbp(discountPence)}`;
       }
 

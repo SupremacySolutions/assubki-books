@@ -339,7 +339,7 @@ import { COUNTRIES } from '../lib/address';
       discountRow.hidden = discountPence === 0;
       if (discountPence > 0) {
         el('#ckDiscountName').textContent =
-          `${ckDiscount!.percent}% off orders over ${gbp(ckDiscount!.thresholdPence)}`;
+          `${ckDiscount!.percent}% off orders of ${gbp(ckDiscount!.thresholdPence)} or more`;
         el('#ckDiscountAmount').textContent = `-${gbp(discountPence)}`;
       }
 

@@ -4,6 +4,7 @@ import { notifyOrderPlaced } from '../../lib/notify';
 import { groupForOrder, markGroupSent } from '../../lib/group';
 import { checkOrder, clean, type Field } from '../../lib/validate';
 import { formatAddress } from '../../lib/address';
+import { forgetDashboard } from '../../lib/dashboard';
 
 export const prerender = false;
 
@@ -122,6 +123,10 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
       notes: finalNotes,
       items: finalItems,
     });
+
+    // A new order is one more thing for the owner to do, and the dashboard
+    // says how many. Without this it says the old number for another minute.
+    forgetDashboard();
 
     // Closes the group so nobody keeps adding to a basket already sent.
     if (group) await markGroupSent(groupCode, order.ref);

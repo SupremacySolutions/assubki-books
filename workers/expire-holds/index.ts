@@ -20,6 +20,8 @@ import { pruneSearches } from '../../src/lib/searches';
 
 interface Env {
   DB: D1Database;
+  /** Unset in production: with no secret there is no manual trigger at all. */
+  SWEEP_SECRET?: string;
   /** Only the sweep below touches it; the hold release needs no bucket. */
   UPLOADS?: R2Bucket;
 }
@@ -175,8 +177,33 @@ export default {
     if (notices.meta.changes) console.log(`pruned ${notices.meta.changes} old owner notice(s)`);
   },
 
-  // Manual trigger for testing: `wrangler dev` then curl the worker.
-  async fetch(_request: Request, env: Env): Promise<Response> {
+  /**
+   * Manual trigger, for `wrangler dev` only.
+   *
+   * This ran every mutation the cron does - expiring holds, clearing group
+   * baskets, deleting payment screenshots - to anybody who found the URL, and
+   * `workers.dev` is on by default, so the URL was public. It was put here as a
+   * convenience for testing and was reachable in production.
+   *
+   * Now: refused unless a secret is configured *and* matched, and refused
+   * outright on anything but POST, so it cannot be fired by a crawler
+   * following a link. With no secret set there is no manual trigger at all,
+   * which is the right default for production - the cron needs none of this.
+   */
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const secret = env.SWEEP_SECRET;
+    if (!secret) return new Response('Not found', { status: 404 });
+    if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+
+    const offered = request.headers.get('X-Sweep-Secret') ?? '';
+    // Length first, then a full scan, so a timing difference cannot leak the
+    // secret a character at a time - the same shape as the order token compare.
+    const a = new TextEncoder().encode(secret);
+    const b = new TextEncoder().encode(offered);
+    let diff = a.length === b.length ? 0 : 1;
+    for (let i = 0; i < a.length && i < b.length; i++) diff |= a[i] ^ b[i];
+    if (diff !== 0) return new Response('Not found', { status: 404 });
+
     const result = await expireHolds(env.DB);
     const groups = await expireGroupBaskets(env.DB);
     const proofs = await sweepProofs(env.DB, env.UPLOADS);

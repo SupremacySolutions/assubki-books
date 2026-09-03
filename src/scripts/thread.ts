@@ -18,7 +18,16 @@ const section = document.querySelector<HTMLElement>('[data-thread]');
 
 if (root) {
   const status = root.getAttribute('data-order-status') ?? '';
-  const list = section?.querySelector<HTMLOListElement>('[data-thread-list]') ?? null;
+  /*
+   * Looked up when it is needed, never captured.
+   *
+   * A thread that starts empty renders a paragraph and no list, so a constant
+   * taken here was null for the life of the page - `ensureList()` builds one on
+   * the first message but could not write it back. `newest()` then stayed at
+   * zero and every poll asked the server for the whole conversation again,
+   * every five seconds for an hour.
+   */
+  const listNow = () => section?.querySelector<HTMLOListElement>('[data-thread-list]') ?? null;
   const form = section?.querySelector<HTMLFormElement>('[data-thread-form]') ?? null;
 
   /*
@@ -52,7 +61,7 @@ if (root) {
    * up to date" and the second message stayed invisible until a reload.
    */
   const newest = () => {
-    const items = list?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [];
+    const items = listNow()?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [];
     let id = 0;
     for (const el of items) id = Math.max(id, Number(el.dataset.messageId ?? 0));
     return id;
@@ -239,7 +248,7 @@ if (root) {
    * message to arrive has nowhere to go until that paragraph is replaced.
    */
   function ensureList(): HTMLOListElement | null {
-    const existing = section?.querySelector<HTMLOListElement>('[data-thread-list]');
+    const existing = listNow();
     if (existing) return existing;
     const panel = section?.querySelector('div');
     if (!panel) return null;

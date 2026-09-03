@@ -122,7 +122,31 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
      * mid-order would reprice an order already placed, and the customer would
      * be charged something other than what they were shown.
      */
-    `SELECT b.id, b.title, b.price_pence, (b.stock - b.reserved) AS available,
+    /*
+     * `available` has to be the pooled figure for a split set.
+     *
+     * A set is one pool of volumes sold under several listings, so any single
+     * listing's `stock - reserved` is not the truth: holding one copy of
+     * volumes 1-2 leaves the complete-set row untouched while the pool is a
+     * set short. The catalogue and basket have always shown the pooled number,
+     * and this read used the raw one - so checkout would accept an order the
+     * shop could not build. `books_set_not_oversold` is the backstop; this is
+     * what turns it into a sentence naming the title rather than a rolled-back
+     * batch.
+     */
+    `SELECT b.id, b.title, b.price_pence,
+            CASE WHEN b.set_id IS NULL THEN (b.stock - b.reserved)
+                 ELSE MAX(0, COALESCE((
+                   SELECT MIN(v.have - COALESCE((
+                            SELECT SUM(o.reserved) FROM books o
+                             WHERE o.set_id = b.set_id
+                               AND v.volume BETWEEN o.set_from AND o.set_to
+                          ), 0))
+                     FROM book_set_stock v
+                    WHERE v.set_id = b.set_id
+                      AND v.volume BETWEEN b.set_from AND b.set_to
+                 ), 0))
+            END AS available,
             MAX(0, b.incoming - b.reserved_incoming) AS reservable,
             si.percent_off AS sale_percent
        FROM books b
@@ -300,8 +324,10 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
         );
       } else {
         statements.push(
-          // If this pushes reserved past stock the CHECK constraint fails, the
-          // statement errors, and D1 rolls the whole batch back. That - not the
+          // If this pushes reserved past stock the CHECK constraint fails, and
+          // for a split set the books_set_not_oversold trigger does the same
+          // when the shared pool of volumes cannot cover it. Either way the
+          // statement errors and D1 rolls the whole batch back. That - not the
           // read above - is what makes two simultaneous requests for the last
           // copy safe.
           env.DB.prepare(`UPDATE books SET reserved = reserved + ? WHERE id = ?`).bind(
@@ -330,7 +356,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     } catch (err) {
       const message = String(err);
       if (message.includes('orders.ref') || message.includes('UNIQUE')) continue; // ref clash, retry
-      if (message.includes('reserved <= stock')) {
+      if (message.includes('reserved <= stock') || message.includes('set pool oversold')) {
         // Someone took the last copy between the read and the write.
         throw new StockConflict(
           items.map((i) => ({ bookId: i.bookId, title: i.title, wanted: i.qty, available: -1 })),

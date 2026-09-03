@@ -16,7 +16,8 @@
     "migrate:woo": "node scripts/migrate-from-woo.mjs",
     "images:fetch": "node scripts/fetch-images.mjs",
     "test:e2e": "node --experimental-strip-types --no-warnings scripts/e2e.mjs",
-    "test:e2e:prod": "node --experimental-strip-types --no-warnings scripts/e2e.mjs --prod"
+    "test:e2e:prod": "node --experimental-strip-types --no-warnings scripts/e2e.mjs --prod",
+    "typecheck": "astro check --minimumSeverity error"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.2.5",
@@ -29,8 +30,11 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@types/qrcode": "^1.5.6",
     "onnxruntime-web": "^1.29.0",
     "sharp": "^0.35.4",
+    "typescript": "^5.9.3",
     "wrangler": "^4.127.0"
   }
 }

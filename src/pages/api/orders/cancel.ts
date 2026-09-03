@@ -4,6 +4,7 @@ import { getOrder } from '../../../lib/orders';
 import { releaseHold } from '../../../lib/stock-release';
 import { cancelRight, REASON_MAX } from '../../../lib/cancellation';
 import { notifyCancelRequest } from '../../../lib/notify';
+import { forgetDashboard } from '../../../lib/dashboard';
 
 export const prerender = false;
 
@@ -50,6 +51,7 @@ export const POST: APIRoute = async ({ request }) => {
       .bind(reason, order.id)
       .run();
 
+    forgetDashboard();
     await notifyCancelRequest({
       ref: order.ref,
       name: order.customer_name,
@@ -78,5 +80,6 @@ export const POST: APIRoute = async ({ request }) => {
   if (!changed.meta.changes) return back('&e=cancel');
 
   await env.DB.batch(releaseHold(order.id, 'customer cancelled'));
+  forgetDashboard();
   return back('&cancelled=1');
 };

@@ -138,8 +138,35 @@ const SQLITE_FLAGS = [
  * Production still goes through wrangler, because there is no file to open -
  * and keeps the retry, since that path is a network call.
  */
+/**
+ * Whether a statement wants the write lock.
+ *
+ * Reads and writes are treated differently below, and getting this wrong in the
+ * safe direction only costs speed, so anything that is not plainly a SELECT is
+ * assumed to write.
+ */
+const READ_ONLY = /^\s*(SELECT|PRAGMA|EXPLAIN|WITH)\b/i;
+
 export async function db(sql) {
-  if (!PROD) {
+  if (PROD) return viaWrangler(sql, '--remote');
+
+  /*
+   * Reads go straight at the file; writes go through wrangler.
+   *
+   * The file is WAL, and WAL is what makes a reader safe beside the dev
+   * server - readers never block and are never blocked. Writers are a
+   * different matter: SQLite allows one at a time, and miniflare does not wait
+   * for it. When this suite held the write lock, the server's next query came
+   * back `SQLITE_BUSY: database is locked`, the request 500'd, and whichever
+   * assertion happened to be behind it failed. That is what made a run's
+   * failures move around: 578/0, then 537/28, then 515/49, on the same code.
+   *
+   * So writes are handed to wrangler, which drives the same miniflare the
+   * server does and therefore queues behind it properly. Reads - the ones on
+   * the hot path of every assertion - keep the direct connection and the speed
+   * that came with it.
+   */
+  if (READ_ONLY.test(sql)) {
     try {
       const { stdout } = await execFileAsync('sqlite3', [...SQLITE_FLAGS, localDb(), sql], {
         maxBuffer: 40 * 1024 * 1024,
@@ -153,13 +180,18 @@ export async function db(sql) {
     }
   }
 
+  return viaWrangler(sql, '--local');
+}
+
+/** Retried, because a busy database is a wait rather than a failure. */
+async function viaWrangler(sql, where) {
   let last;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const { stdout } = await execFileAsync('npx', [
         'wrangler', 'd1', 'execute', 'assubki-books',
-        '--remote', '--json', '--command', sql,
-      ], { maxBuffer: 20 * 1024 * 1024 });
+        where, '--json', '--command', sql,
+      ], { maxBuffer: 40 * 1024 * 1024 });
 
       const parsed = JSON.parse(stdout);
       if (!Array.isArray(parsed)) throw new Error(parsed.error?.text ?? 'query failed');
@@ -284,6 +316,14 @@ export async function json(path, body) {
 // tracked so it can be removed again, including on failure.
 // ---------------------------------------------------------------------------
 
+/**
+ * The last id in the real catalogue. Anything above it was made by a test.
+ *
+ * The number was already hard-coded in two places; naming it once means the
+ * sweep and the "fixtures left" count cannot drift apart.
+ */
+export const REAL_CATALOGUE = 226;
+
 export const created = { books: [], orders: [], shelves: [], groups: [] };
 
 export async function makeBook(overrides = {}) {
@@ -376,9 +416,51 @@ export async function teardown() {
     await db(`DELETE FROM categories WHERE id = ${id}`).catch(() => {});
   }
 
+  /*
+   * The sweep, which does not depend on anything having been tracked.
+   *
+   * Everything above only removes what `created` knows about. Suites that build
+   * fixtures in SQL - split-set pools, sales - never appear there, and a suite
+   * that throws half way leaves rows it had not registered yet. Those survived
+   * the run and then failed the *next* one's counts, which is the contamination
+   * that made a whole run untrustworthy rather than one assertion.
+   *
+   * Ids above the real catalogue are fixtures by definition, so this is safe to
+   * run unconditionally and safe to run twice.
+   */
   await db(
     `DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders);
-     UPDATE books SET reserved = 0 WHERE reserved > 0 AND id > 226;`,
+     DELETE FROM orders WHERE id IN (
+       SELECT o.id FROM orders o JOIN order_items oi ON oi.order_id = o.id
+        WHERE oi.book_id > ${REAL_CATALOGUE}
+     );
+     DELETE FROM sale_items WHERE book_id > ${REAL_CATALOGUE};
+     DELETE FROM books WHERE id > ${REAL_CATALOGUE};
+     DELETE FROM book_set_stock WHERE set_id NOT IN (SELECT id FROM book_sets);`,
+  ).catch(() => {});
+
+  /*
+   * And put `reserved` back to what the live orders actually account for.
+   *
+   * A fixture that reserved a copy of a *real* listing - a split-set probe, an
+   * interrupted checkout - left that copy held for ever, because the reset only
+   * ever touched fixture ids. Recomputing from the orders that remain is both
+   * the correct number and self-healing, so a run that died half way does not
+   * quietly take a book off the shop.
+   */
+  await db(
+    `UPDATE books SET reserved = (
+       SELECT COALESCE(SUM(oi.qty), 0)
+         FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        WHERE oi.book_id = books.id AND oi.from_incoming = 0
+          AND o.status IN ('requested','awaiting_payment','paid','dispatched')
+     )
+     WHERE reserved <> (
+       SELECT COALESCE(SUM(oi.qty), 0)
+         FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        WHERE oi.book_id = books.id AND oi.from_incoming = 0
+          AND o.status IN ('requested','awaiting_payment','paid','dispatched')
+     );`,
   ).catch(() => {});
 
   return orphans;

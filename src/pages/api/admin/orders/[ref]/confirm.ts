@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { getOrderByRef, getOrderItems } from '../../../../../lib/admin-db';
 import { defaultMessage } from '../../../../../lib/settings';
 import { notifyOrderConfirmed } from '../../../../../lib/notify';
+import { forgetDashboard } from '../../../../../lib/dashboard';
 
 export const prerender = false;
 
@@ -56,6 +57,8 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   if (claim.meta.changes !== 1) {
     return new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}?e=state` } });
   }
+
+  forgetDashboard();
 
   const items = await getOrderItems(order.id);
 

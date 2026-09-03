@@ -23,15 +23,27 @@ const [members, shelves] = await Promise.all([saleMembers(sale.id), allCategorie
  * in the sale" is applied here rather than in SQL - it is a filter over what
  * this sale contains, which the books query knows nothing about.
  */
-const result = await listBooksAdmin({ q, page, perPage: onlyIn ? 200 : 40 });
-const rows = onlyIn ? result.books.filter((b) => members.has(b.id)) : result.books;
+/* Shelf and "only ones in the sale" are both applied in SQL now, so the pager
+   counts what the filter actually returns and a sale larger than one page of
+   candidates cannot hide its own members. */
+const result = await listBooksAdmin({
+  q,
+  shelf,
+  inSale: onlyIn ? sale.id : null,
+  page,
+  perPage: 40,
+});
+const rows = result.books;
 
 const inSale = [...members.values()];
 const headline = inSale.length ? Math.max(...inSale) : 0;
 const smallest = inSale.length ? Math.min(...inSale) : 0;
 
 const keep = buildQuery({ q, shelf, in: onlyIn ? '1' : null });
-const pageUrl = (n: number) => `/admin/sales/${sale.id}${buildQuery({ q, in: onlyIn ? '1' : null, page: n > 1 ? n : null })}`;
+// `shelf` was dropped from the pager, so paging away from page one silently
+// cleared the filter the owner had chosen.
+const pageUrl = (n: number) =>
+  `/admin/sales/${sale.id}${buildQuery({ q, shelf, in: onlyIn ? '1' : null, page: n > 1 ? n : null })}`;
 const saved = params.get('saved');
 ---
 
@@ -158,10 +170,15 @@ const saved = params.get('saved');
       )}
 
       <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+        {/* Three states, three sentences. "Not live" was described as a
+            draft, so an ended sale invited the owner to put it live again -
+            which is a thing that should not happen and no longer can. */}
         <p class="text-[13px] text-[var(--color-ink-faint)]">
           {sale.status === 'live'
             ? 'Changes apply the moment you save - this sale is live.'
-            : 'This sale is a draft. Nothing is visible until you put it live.'}
+            : sale.status === 'ended'
+              ? 'This sale has finished. It is kept as a record; to run it again, copy it.'
+              : 'This sale is a draft. Nothing is visible until you put it live.'}
         </p>
         <button type="submit" class="btn btn-primary">Save changes</button>
       </div>

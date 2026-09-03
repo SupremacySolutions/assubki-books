@@ -212,6 +212,10 @@ export async function partCandidates(book: {
 export async function listBooksAdmin(opts: {
   q?: string | null;
   filter?: BookFilter;
+  /** A shelf path, including everything beneath it. */
+  shelf?: string | null;
+  /** Only books already in this sale, applied in SQL rather than after paging. */
+  inSale?: number | null;
   sort?: BookSort;
   page?: number;
   perPage?: number;
@@ -230,6 +234,27 @@ export async function listBooksAdmin(opts: {
     binds.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (FILTER_SQL[filter]) clauses.push(FILTER_SQL[filter]);
+
+  /*
+   * Both of these have to be in SQL, not applied to a page of results.
+   *
+   * The sale editor read a `shelf` parameter and never passed it anywhere, and
+   * narrowed "only ones in the sale" by filtering at most 200 already-fetched
+   * rows - so on a catalogue of 225 the filter silently hid members, and the
+   * pager counted books that the filter would remove.
+   */
+  const shelf = opts.shelf?.trim();
+  if (shelf) {
+    clauses.push(
+      `EXISTS (SELECT 1 FROM book_categories bc JOIN categories c ON c.id = bc.category_id
+                WHERE bc.book_id = b.id AND (c.path = ? OR c.path LIKE ? || '/%'))`,
+    );
+    binds.push(shelf, shelf);
+  }
+  if (opts.inSale) {
+    clauses.push('EXISTS (SELECT 1 FROM sale_items si WHERE si.book_id = b.id AND si.sale_id = ?)');
+    binds.push(opts.inSale);
+  }
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 

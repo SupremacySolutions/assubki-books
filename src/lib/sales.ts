@@ -6,7 +6,7 @@ import { getSetting } from './settings';
  *
  * Two separate things that happen to both reduce a total. A sale is a named
  * set of books each with its own percentage; the order discount is a standing
- * rule about size ("over £85, take 10% off") that runs whether or not a sale
+ * rule about size ("£85 or more, take 10% off") that runs whether or not a sale
  * is on.
  *
  * The order they apply in is not arbitrary. The threshold is tested against

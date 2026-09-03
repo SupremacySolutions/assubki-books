@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { notifyCancelDeclined } from '../../../../../lib/notify';
+import { forgetDashboard } from '../../../../../lib/dashboard';
 
 export const prerender = false;
 
@@ -35,6 +36,7 @@ export const POST: APIRoute = async ({ params, request }) => {
   )
     .bind(order.id)
     .run();
+    forgetDashboard();
 
   await notifyCancelDeclined({
     ref: order.ref,

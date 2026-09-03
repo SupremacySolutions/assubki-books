@@ -220,6 +220,17 @@ function ftsQuery(raw: string): string | null {
 
 export type Sort = 'relevance' | 'title' | 'price-asc' | 'price-desc' | 'newest' | 'saving';
 
+/**
+ * What a book actually costs today, as the card renders it.
+ *
+ * The same rounding as `salePrice` in lib/sales.ts and as BookCard: whole
+ * pence, rounded, so the order on screen and the order in the query cannot
+ * disagree by a penny at the boundary.
+ */
+const SALE_PRICE =
+  `CASE WHEN si.percent_off IS NULL THEN b.price_pence
+        ELSE CAST(ROUND(b.price_pence * (100 - si.percent_off) / 100.0) AS INTEGER) END`;
+
 export interface ListOptions {
   categoryPath?: string | null;
   q?: string | null;
@@ -248,6 +259,8 @@ export interface ListOptions {
 export interface ListResult {
   books: BookRow[];
   total: number;
+  /** How many of the matched titles are on the shelf, for "42 titles - 38 in stock". */
+  inStock: number;
   page: number;
   pages: number;
   perPage: number;
@@ -294,8 +307,16 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   const orderBy = {
     relevance: match ? 'f.rank' : 'b.title COLLATE NOCASE',
     title: 'b.title COLLATE NOCASE',
-    'price-asc': 'b.price_pence ASC, b.title COLLATE NOCASE',
-    'price-desc': 'b.price_pence DESC, b.title COLLATE NOCASE',
+    /*
+     * The price on the card, not the price on the row.
+     *
+     * During a sale the card shows the reduced price and these sorted by the
+     * full one, so "price, low to high" could put a £9 book above a £5.50 one
+     * on the same screen. `si.percent_off` is already joined for the sale
+     * badge, so this costs nothing extra.
+     */
+    'price-asc': `${SALE_PRICE} ASC, b.title COLLATE NOCASE`,
+    'price-desc': `${SALE_PRICE} DESC, b.title COLLATE NOCASE`,
     newest: 'b.created_at DESC, b.id DESC',
     // Biggest reduction first, in money rather than percent: 20% off a £35
     // book is a better offer than 25% off a £3 one, and the customer is
@@ -448,6 +469,27 @@ export async function shelfBooks(limit = 18): Promise<BookRow[]> {
  * their reduced price, and hiding them would make the count on the owner's
  * screen disagree with the row on the page.
  */
+/**
+ * How many live books the running sale actually holds.
+ *
+ * Separate from the preview row, which draws ten. The home page labelled its
+ * link "All {onSale.length}" from the preview, so a sale of forty titles
+ * advertised itself as "All 10" - understating the offer and implying that was
+ * the whole of it.
+ */
+export async function saleBookCount(): Promise<number> {
+  const row = await db()
+    .prepare(
+      `SELECT COUNT(*) AS n
+         FROM books b
+         JOIN sale_items si ON si.book_id = b.id
+              AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
+        WHERE b.status = 'live'`,
+    )
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 export async function saleBooks(limit = 10): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(

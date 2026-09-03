@@ -11,6 +11,12 @@
   "main": "./index.ts",
   "compatibility_date": "2026-08-01",
 
+  // No public URL. This Worker is a cron job; it has no reason to answer the
+  // internet, and leaving workers.dev on published an endpoint that expired
+  // holds and deleted payment screenshots for anybody who found it.
+  "workers_dev": false,
+  "preview_urls": false,
+
   // Same database as the site.
   "d1_databases": [
     {

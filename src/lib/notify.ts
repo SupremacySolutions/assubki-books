@@ -789,9 +789,18 @@ async function tellOwner(input: {
   const ownerChatId = (await getSetting('owner_telegram_chat_id')).trim();
 
   const line = preview(input.body, input.hasImage);
-  const results = await Promise.allSettled([
+
+  /*
+   * Telegram, then email if it did not go.
+   *
+   * These used to run side by side with email switched off whenever a chat was
+   * bound - so a Telegram outage meant the owner simply never heard that a
+   * customer had written, because `sendMessage` reports an API failure by
+   * returning false rather than by throwing.
+   */
+  const viaTelegram =
     ownerChatId && botConfigured()
-      ? (async () => {
+      ? await (async () => {
           const sent = await sendMessageId(
             ownerChatId,
             [
@@ -826,10 +835,13 @@ async function tellOwner(input: {
           }
           return sent !== null;
         })()
-      : Promise.resolve(false),
-    // The owner's own inbox, for when the bot is not bound or Telegram is down.
-    ownerChatId && botConfigured()
-      ? Promise.resolve(false)
+      : false;
+
+  const results = await Promise.allSettled([
+    // The owner's own inbox, whenever the bot could not be used or would not
+    // take it. An owner who does not hear is the failure that matters here.
+    viaTelegram
+      ? Promise.resolve(true)
       : deliver({
           to: ownerAddress(),
           subject: `Message on ${input.ref} - ${input.name}`,
@@ -842,9 +854,14 @@ async function tellOwner(input: {
           text: `${input.name} on ${input.ref}: ${line}\n\n${input.origin}/admin/orders/${input.ref}`,
         }),
   ]);
+  const reached =
+    viaTelegram || results.some((r) => r.status === 'fulfilled' && r.value === true);
   for (const r of results) {
     if (r.status === 'rejected') console.error('[notify] message-to-owner failed', r.reason);
   }
+  // Surfaced rather than swallowed: `notifyNewMessage` records it against
+  // `settings.last_notify_error`, which is what the dashboard reads.
+  if (!reached) throw new Error(`no channel reached the owner about ${input.ref}`);
 }
 
 /**
@@ -871,8 +888,19 @@ async function tellCustomer(input: {
   const line = preview(input.body, input.hasImage);
   const link = `${input.origin}/order?ref=${input.ref}&t=${await tokenFor(input.orderId)}`;
 
+  /*
+   * Telegram first if they connected, email if they did not - and email anyway
+   * if Telegram would not take it.
+   *
+   * `sendMessage` returns false for an API failure rather than throwing, and
+   * that false used to be discarded: the customer heard nothing, the debounce
+   * marker was stamped anyway so nothing would try again for half an hour, and
+   * the health line on the dashboard was cleared as though all was well.
+   */
+  let delivered = false;
+
   if (input.telegramChatId && botConfigured()) {
-    await sendMessage(
+    delivered = await sendMessage(
       input.telegramChatId,
       [
         `*${esc(`A reply about ${input.ref}`)}*`,
@@ -882,8 +910,12 @@ async function tellCustomer(input: {
         mdLink('Open your order', link),
       ].join('\n'),
     );
-  } else {
-    await deliver({
+  }
+
+  if (!delivered) {
+    // Either they are not on Telegram, or Telegram would not take it. Both end
+    // up here, because an undelivered message is worse than a duplicate one.
+    delivered = await deliver({
       to: input.email,
       subject: `A reply about your order ${input.ref}`,
       html: shell(
@@ -897,6 +929,12 @@ async function tellCustomer(input: {
       text: `${SITE.name} said: ${line}\n\nRead it and reply: ${link}` + noReplyText(link),
     });
   }
+
+  /*
+   * Only once something actually went. Stamping this on a failed send is what
+   * turned one dropped notification into thirty minutes of silence.
+   */
+  if (!delivered) throw new Error(`no channel accepted the message notice for ${input.ref}`);
 
   await env.DB.prepare('UPDATE orders SET message_notified_at = unixepoch() WHERE id = ?')
     .bind(input.orderId)

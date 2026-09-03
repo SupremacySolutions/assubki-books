@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import { forgetDashboard } from '../../../../lib/dashboard';
 
 export const prerender = false;
 
@@ -53,6 +54,7 @@ export const POST: APIRoute = async ({ request }) => {
     await env.DB.prepare(`DELETE FROM orders WHERE status IN (${placeholders})`)
       .bind(...statuses)
       .run();
+    forgetDashboard();
 
     // After the rows, so a failure here leaves a collectable object rather than
     // a message pointing at one that is already gone.

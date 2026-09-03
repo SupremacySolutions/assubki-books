@@ -560,6 +560,99 @@ async function stockAlerts() {
   t.ok(true, 'restocking with nobody waiting is harmless');
 }
 
+async function sales() {
+  const t = suite('20. Sales and split-set checkout');
+
+  await db("DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE name LIKE 'E2E sale%')");
+  await db("DELETE FROM sales WHERE name LIKE 'E2E sale%'");
+
+  const live = await makeBook({ stock: '5', price: '10.00' });
+  const hidden = await makeBook({ stock: '5', price: '10.00' });
+  await db(`UPDATE books SET status = 'draft' WHERE id = ${hidden.id}`);
+
+  await db("INSERT INTO sales (name, status) VALUES ('E2E sale', 'draft')");
+  const sale = await one("SELECT id FROM sales WHERE name = 'E2E sale'");
+
+  /*
+   * Publishing counted rows in `sale_items`, not books a customer could buy -
+   * and the public sale query joins `books` on `status = 'live'`. A sale of
+   * nothing but drafts therefore published happily and showed an empty row.
+   */
+  await db(`INSERT INTO sale_items (sale_id, book_id, percent_off) VALUES (${sale.id}, ${hidden.id}, 20)`);
+  let r = await admin('/api/admin/sales', { action: 'live', id: String(sale.id) });
+  t.ok((r.location ?? '').includes('e=empty'), 'a sale of only draft books cannot be published');
+
+  await db(`INSERT INTO sale_items (sale_id, book_id, percent_off) VALUES (${sale.id}, ${live.id}, 20)`);
+  r = await admin('/api/admin/sales', { action: 'live', id: String(sale.id) });
+  t.ok((r.location ?? '').includes('live=1'), 'but one live member is enough');
+
+  await admin('/api/admin/sales', { action: 'end', id: String(sale.id) });
+  const ended = await one(`SELECT status, ended_at FROM sales WHERE id = ${sale.id}`);
+  t.ok(ended.status === 'ended' && ended.ended_at > 0, 'a sale can be ended');
+
+  /*
+   * An ended sale is a record. Putting it live again wiped `ended_at` and
+   * rewrote `started_at`, so a campaign that ran in March silently became one
+   * that started today - and every figure reported against its window moved
+   * with it.
+   */
+  await admin('/api/admin/sales', { action: 'live', id: String(sale.id) });
+  const after = await one(`SELECT status, ended_at FROM sales WHERE id = ${sale.id}`);
+  t.ok(after.status === 'ended', 'and cannot be resurrected');
+  t.ok(after.ended_at === ended.ended_at, 'so its history is not rewritten');
+
+  const editor = await html(`/admin/sales/${sale.id}`);
+  t.ok(
+    editor.includes('This sale has finished') && !editor.includes('This sale is a draft'),
+    'and the editor calls it finished rather than a draft',
+  );
+
+  await db(`DELETE FROM sale_items WHERE sale_id = ${sale.id}`);
+  await db(`DELETE FROM sales WHERE id = ${sale.id}`);
+
+  /*
+   * The split set, which is the one that could actually cost money.
+   *
+   * A set is one pool of volumes sold under several listings. Checkout
+   * validated against a single listing's `stock - reserved`, so holding one
+   * copy of volumes 1-2 left the complete-set listing reading as fully
+   * available - in production the complete set showed 9 to a customer and 10
+   * to checkout.
+   */
+  await db("DELETE FROM books WHERE slug LIKE 'e2epool-%'");
+  await db('DELETE FROM book_set_stock WHERE set_id = 9400');
+  await db('DELETE FROM book_sets WHERE id = 9400');
+  await db("INSERT INTO book_sets (id, name, volumes) VALUES (9400, 'E2E pool', 4)");
+  await db(`INSERT INTO book_set_stock (set_id, volume, have)
+            VALUES (9400,1,1),(9400,2,1),(9400,3,1),(9400,4,1)`);
+  await db(`INSERT INTO books (slug,title,price_pence,stock,reserved,status,set_id,set_from,set_to)
+            VALUES ('e2epool-full','E2E pool full',3200,1,0,'live',9400,1,4),
+                   ('e2epool-a','E2E pool 1-2',1700,1,0,'live',9400,1,2)`);
+  const whole = await one("SELECT id FROM books WHERE slug = 'e2epool-full'");
+  const part = await one("SELECT id FROM books WHERE slug = 'e2epool-a'");
+
+  const buy = (bookId, email) =>
+    json('/api/orders', {
+      name: 'Ahmad Patel', email, phone: '07700 900321', fulfilment: 'collection',
+      items: [{ bookId, qty: 1 }],
+    });
+
+  const tookPart = await buy(part.id, `pool${Date.now()}@example.com`);
+  t.ok(tookPart.body.ok === true, 'one part of a set can be bought');
+
+  const tookWhole = await buy(whole.id, `pool2${Date.now()}@example.com`);
+  t.ok(tookWhole.body.ok !== true,
+    'and the complete set is then refused, because the pool cannot build one');
+
+  const heldNow = await one('SELECT COALESCE(SUM(reserved),0) AS n FROM books WHERE set_id = 9400');
+  t.ok(heldNow.n === 1, 'so no second copy was ever reserved');
+
+  await db("DELETE FROM orders WHERE email LIKE 'pool%@example.com'");
+  await db("DELETE FROM books WHERE slug LIKE 'e2epool-%'");
+  await db('DELETE FROM book_set_stock WHERE set_id = 9400');
+  await db('DELETE FROM book_sets WHERE id = 9400');
+}
+
 async function adminAuth() {
   const t = suite('7. Admin authentication');
   const bare = { redirect: 'manual', headers: {} };
@@ -3212,6 +3305,7 @@ const SUITES = [
   ['front', frontPage, true],
   ['history', orderHistory, true],
   ['alerts', stockAlerts, true],
+  ['sales', sales, true],
   ['integrity', integrity, false],
 ];
 

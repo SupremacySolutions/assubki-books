@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import { forgetDashboard } from '../../../../../lib/dashboard';
 
 export const prerender = false;
 
@@ -31,6 +32,7 @@ export const POST: APIRoute = async ({ request, params }) => {
     )
       .bind(cashPayment, ref)
       .run();
+      forgetDashboard();
 
     if (result.meta.changes !== 1) {
       return Response.json({ ok: false, error: 'No order with that reference' }, { status: 404 });

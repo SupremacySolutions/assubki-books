@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { releaseHold } from '../../../../../lib/stock-release';
 import { getOrderByRef } from '../../../../../lib/admin-db';
+import { forgetDashboard } from '../../../../../lib/dashboard';
 
 export const prerender = false;
 
@@ -52,6 +53,7 @@ export const POST: APIRoute = async ({ params }) => {
   // stock movements stay auditable after the order itself is gone.
   statements.push(env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(order.id));
   await env.DB.batch(statements);
+  forgetDashboard();
 
   // After the row is gone, so a failure here leaves a collectable object rather
   // than a message pointing at one that has been removed.

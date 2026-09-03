@@ -7,6 +7,7 @@ import {
   shelfBooks,
   catalogueStats,
   saleBooks,
+  saleBookCount,
   arrivingBooks,
   homeRows,
 } from '../lib/db';
@@ -16,13 +17,14 @@ import { cropsCleanly } from '../lib/cover-fit';
 import { SITE, imageUrl } from '../lib/format';
 
 const sale = await liveSale();
-const [tree, shelf, stats, arriving, rows, onSale] = await Promise.all([
+const [tree, shelf, stats, arriving, rows, onSale, onSaleTotal] = await Promise.all([
   categoryTree(),
   shelfBooks(60),
   catalogueStats(),
   arrivingBooks(10),
   homeRows(10),
   sale ? saleBooks(10) : Promise.resolve([]),
+  sale ? saleBookCount() : Promise.resolve(0),
 ]);
 const top = tree.slice(0, 8);
 /*
@@ -192,7 +194,7 @@ const drifting = pretty.slice(0, 14);
     sale && onSale.length > 0 && (
       <Row
         href="/catalogue?sale=1"
-        linkLabel={`All ${onSale.length} →`}
+        linkLabel={`All ${onSaleTotal} →`}
         books={onSale}
         limit={5}
         eager

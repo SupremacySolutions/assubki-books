@@ -218,3 +218,20 @@ export async function dashboard(days = 30): Promise<Dashboard> {
   cache = { at: now, days, value };
   return value;
 }
+
+/**
+ * Called after an order moves, so the owner sees their own action.
+ *
+ * Every other cache of this kind has had one of these from the start -
+ * `forgetCategoryCounts`, `forgetHomeRows`, `forgetSale`. The dashboard was the
+ * exception, and it is the one showing numbers somebody acts on: confirming an
+ * order and then reading "3 to confirm" for another minute is the cache lying
+ * to the only person who can tell it is wrong.
+ *
+ * Like the others it clears the isolate that handled the write, so staleness is
+ * bounded by the minute rather than eliminated. That is the deal everywhere
+ * else here too.
+ */
+export function forgetDashboard(): void {
+  cache = null;
+}

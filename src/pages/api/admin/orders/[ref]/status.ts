@@ -5,6 +5,7 @@ import { getOrderByRef } from '../../../../../lib/admin-db';
 import { notifyStatusChange } from '../../../../../lib/notify';
 import { canTransition, closesOnDispatch, isPostageProvider } from '../../../../../lib/order-status';
 import { collectionAddress } from '../../../../../lib/settings';
+import { forgetDashboard } from '../../../../../lib/dashboard';
 
 export const prerender = false;
 
@@ -154,6 +155,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   }
 
   await env.DB.batch(statements);
+  forgetDashboard();
 
   // A collection customer who has just paid needs to know where to come.
   const whereToCollect =
