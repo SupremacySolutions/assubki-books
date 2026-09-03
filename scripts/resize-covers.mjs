@@ -2,9 +2,10 @@
 /**
  * Stores each cover at the sizes the site actually shows it at.
  *
- * The cover itself is left completely alone - same crop, same colours, no
- * frame, no background, no mark. This exists only so the home page is not sent
- * an 800px cover for an 84px slot, twenty-eight times.
+ * The artwork is left alone - same colours, no frame, no background, no mark.
+ * A plain white border surrounding all four sides is removed before resizing;
+ * this is scanner canvas, not part of the cover, and otherwise survives inside
+ * even an object-cover box.
  *
  * There was a framing pass here before, which put every cover on the shop's
  * paper colour with the rosette in the corner. The owner did not want it: the
@@ -53,16 +54,43 @@ const DRY = process.argv.includes('--dry') || SAMPLE;
  * route falls back to the original, so the failure is a large image rather
  * than a missing one.
  *
- * No `detail` entry: at 840×1120 it is bigger than almost every original, so
- * the file would be a copy of the original under another name. The route falls
- * back to the original for any size that is not here, which is exactly right.
+ * `detail` is stored even when it is no smaller than the original. It is the
+ * largest place a cover appears, and needs the same white-frame cleanup as the
+ * smaller variants rather than falling back to the untouched original.
  */
 const PRESETS = {
   card: { width: 600, height: 800 },
+  detail: { width: 840, height: 1120 },
   thumb: { width: 176, height: 234 },
   hero: { width: 168, height: 224 },
   social: { width: 600, height: 600 },
 };
+
+/*
+ * Sharp finds a border by walking inwards from a known white background. The
+ * two-axis gate is the safety catch: a naturally white cover may have white at
+ * one pair of edges, but scanner canvas surrounds all four. Very large trims
+ * are rejected too, so a sparse white design cannot be mistaken for a frame.
+ */
+const WHITE_THRESHOLD = 12;
+const MIN_FRAME_TRIM = 0.015;
+const MAX_FRAME_TRIM = 0.20;
+
+async function prepareCover(input) {
+  const normal = await sharp(input).rotate().toBuffer({ resolveWithObject: true });
+  const trimmed = await sharp(normal.data)
+    .trim({ background: '#ffffff', threshold: WHITE_THRESHOLD })
+    .toBuffer({ resolveWithObject: true });
+
+  const widthTrim = 1 - trimmed.info.width / normal.info.width;
+  const heightTrim = 1 - trimmed.info.height / normal.info.height;
+  const inFrameRange = (share) => share >= MIN_FRAME_TRIM && share <= MAX_FRAME_TRIM;
+  const framed = inFrameRange(widthTrim) && inFrameRange(heightTrim);
+
+  return framed
+    ? { data: trimmed.data, width: trimmed.info.width, height: trimmed.info.height, framed }
+    : { data: normal.data, width: normal.info.width, height: normal.info.height, framed };
+}
 
 /** One cover, one size. Fitted inside, never cropped, never enlarged. */
 async function resize(input, preset) {
@@ -166,6 +194,7 @@ if (SAMPLE) {
 
 const updates = [];
 const failures = [];
+let framesRemoved = 0;
 let done = 0;
 const queue = [...images];
 
@@ -176,18 +205,23 @@ await Promise.all(
       const src = join(WORK, `src-${row.id}`);
       try {
         const original = await pullOriginal(row.image_key, src);
+        const prepared = await prepareCover(src);
+        if (prepared.framed) framesRemoved++;
 
         for (const preset of Object.keys(PRESETS)) {
           const out = join(WORK, `${row.id}-${preset}.webp`);
-          writeFileSync(out, await resize(src, preset));
+          writeFileSync(out, await resize(prepared.data, preset));
           if (!DRY) await push(variantKey(original, preset), out);
         }
 
-        // The original's own dimensions, so the page can reserve the right
-        // space for it. The framing pass wrote 600×800 for everything, which
-        // is no longer true of anything.
-        const meta = await sharp(src).rotate().metadata();
-        updates.push({ id: row.id, key: original, width: meta.width, height: meta.height });
+        // These are the pixels the variants now contain. The page uses their
+        // ratio to decide whether a final 3:4 side crop is safe.
+        updates.push({
+          id: row.id,
+          key: original,
+          width: prepared.width,
+          height: prepared.height,
+        });
       } catch (err) {
         failures.push({ key: row.image_key, error: String(err).split('\n')[0] });
       }
@@ -197,6 +231,7 @@ await Promise.all(
 );
 
 console.log(`\nResized ${updates.length}/${images.length}${DRY ? ' (nothing uploaded)' : ''}`);
+console.log(`White frame removed from ${framesRemoved}`);
 if (SAMPLE) console.log(`Look at: ${WORK}`);
 
 if (failures.length) {

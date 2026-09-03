@@ -27,8 +27,9 @@
  *
  * 2: the mark moved off the artwork into a reserved band.
  * 3: the frame and mark removed altogether - back to the photo itself.
+ * 4: scanner-white borders removed from covers that carry a full outer frame.
  */
-export const IMAGE_VERSION = 3;
+export const IMAGE_VERSION = 4;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */
@@ -49,9 +50,8 @@ export const IMAGE_PRESETS = {
   /** Catalogue grid and basket rows. */
   card: { width: 300, height: 400, scale: 2 },
   /**
-   * The cover on a book's own page. No file is stored for it: at 840×1120 it
-   * is larger than almost every original, so it resolves to the original
-   * itself - which is the right image for the biggest place it appears.
+   * The cover on a book's own page. A file is stored even when the source is
+   * smaller, because this view also needs scanner-white borders removed.
    */
   detail: { width: 420, height: 560, scale: 2 },
   /** Admin lists and the thumbnail strip. */

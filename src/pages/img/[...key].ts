@@ -48,8 +48,9 @@ export const GET: APIRoute = async ({ params, request }) => {
   const variant = preset ? await bucket.get(variantKey(key, preset)) : null;
 
   // No variant - the original is the right image, just larger than this place
-  // needs. Better a heavy cover than a missing one, and `detail` has no file
-  // at all by design.
+  // needs. Better a heavy cover than a missing one. Newly processed covers
+  // also have a detail variant so their scanner-white border stays removed in
+  // the largest view; older uploads continue to fall back safely.
   const object = variant ?? (await bucket.get(key));
   if (!object) return new Response('Not found', { status: 404 });
 

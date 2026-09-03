@@ -27,8 +27,16 @@
  *   dimensions is padded; there is nothing to reason about.
  */
 const BOX_RATIO = 3 / 4;
-/** Share of the width that may be trimmed. 0.77 costs 2.6%; the margin is 7%. */
-const MAX_TRIM = 0.06;
+/**
+ * Share of the width that may be trimmed.
+ *
+ * Several otherwise clean catalogue photos are 4:5 (640x800 or 400x500),
+ * including the Al-Hidayah set the owner flagged. Filling a 3:4 well trims
+ * 6.25% of those images in total, all from their white side margins. Seven
+ * percent admits that common scan shape while still rejecting meaningfully
+ * wider covers.
+ */
+const MAX_TRIM = 0.07;
 
 export function cropsCleanly(
   width: number | null | undefined,

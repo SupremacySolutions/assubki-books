@@ -1768,8 +1768,10 @@ async function integrity() {
   const fit = await import('../src/lib/cover-fit.ts');
   t.ok(fit.cropsCleanly(617, 800), 'the ordinary 617x800 scan fills the box');
   t.ok(fit.cropsCleanly(600, 800), 'and an exact 3:4 cover does');
+  t.ok(fit.cropsCleanly(640, 800),
+    'and a 4:5 scan loses its narrow white side margins, as on the Al-Hidayah set');
   t.ok(!fit.cropsCleanly(720, 1000), 'a taller cover is never trimmed top and bottom');
-  t.ok(!fit.cropsCleanly(800, 1000), 'nor is one whose side trim would reach the artwork');
+  t.ok(!fit.cropsCleanly(830, 1000), 'nor is one whose side trim would reach the artwork');
   t.ok(!fit.cropsCleanly(800, 700) && !fit.cropsCleanly(800, 800),
     'a landscape or square cover keeps all of itself');
   t.ok(!fit.cropsCleanly(null, null) && !fit.cropsCleanly(0, 0),
