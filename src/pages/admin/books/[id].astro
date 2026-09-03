@@ -231,6 +231,42 @@ const previewCaption = book
               class="field"
             />
           </div>
+
+          {/*
+            * The ISBN, and the one field on this page worth leaving empty.
+            *
+            * It is what Google matches this book against every other seller's
+            * copy of it. A wrong one is worse than none - the listing is
+            * matched to a different edition and the shop's price then looks
+            * wrong beside it - so the lookup offers candidates and a person
+            * chooses. Nothing here fills it in on its own.
+            */}
+          <div class="sm:col-span-2">
+            <div class="flex items-baseline justify-between gap-3 mb-1.5">
+              <label for="isbn" class="block text-[14.5px] font-medium">
+                ISBN <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+              </label>
+              {!isNew && (
+                <button type="button" id="findIsbn" class="text-[13px] text-[var(--color-navy)] hover:underline underline-offset-2">
+                  Look it up
+                </button>
+              )}
+            </div>
+            <input
+              id="isbn"
+              name="isbn"
+              maxlength="20"
+              inputmode="numeric"
+              placeholder="978…"
+              value={book?.isbn ?? ''}
+              class="field"
+            />
+            <p id="isbnNote" class="mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+              Used by Google to match this against the same book elsewhere. Leave it blank if you
+              are not sure which edition this is - a wrong one is worse than none.
+            </p>
+            <div id="isbnList" hidden class="mt-2 grid gap-1.5"></div>
+          </div>
         </div>
 
         </section>
@@ -1251,6 +1287,65 @@ const previewCaption = book
             body.append('imageId', btn.dataset.removeImage);
             const res = await fetch('/api/admin/upload', { method: 'DELETE', body });
             if (res.ok) window.location.reload();
+          });
+        }
+
+        /*
+         * Look up the ISBN.
+         *
+         * Candidates only. Open Library returns many editions for one title -
+         * eight numbers came back for "Riyad as-Salihin" - and the shop stocks
+         * one of them, so the publisher and year are shown beside each and a
+         * person picks. Nothing is written until they do.
+         */
+        const isbnBtn = document.querySelector('#findIsbn');
+        if (isbnBtn) {
+          const isbnField = document.querySelector('#isbn');
+          const isbnList = document.querySelector('#isbnList');
+          const isbnNote = document.querySelector('#isbnNote');
+
+          isbnBtn.addEventListener('click', async () => {
+            isbnBtn.disabled = true;
+            isbnNote.textContent = 'Looking…';
+            isbnList.hidden = true;
+            isbnList.innerHTML = '';
+
+            let found = [];
+            try {
+              const res = await fetch(`/api/admin/isbn/search?q=${encodeURIComponent(coverTerms)}`);
+              if (res.ok) found = (await res.json()).candidates ?? [];
+            } catch {
+              /* Same as finding nothing: the field is typed by hand instead. */
+            }
+            isbnBtn.disabled = false;
+
+            if (found.length === 0) {
+              isbnNote.textContent =
+                'Nothing found. That is normal for these publishers - type it off the back of the book.';
+              return;
+            }
+
+            isbnNote.textContent = 'Pick the edition that matches the copy on your shelf.';
+            isbnList.hidden = false;
+
+            for (const c of found) {
+              const row = document.createElement('button');
+              row.type = 'button';
+              row.className =
+                'text-left w-full px-3 py-2 bg-white border border-[var(--color-rule-soft)] rounded-[8px] hover:border-[var(--color-navy)] transition-colors';
+              row.innerHTML =
+                `<span class="block text-[13.5px] font-medium text-[var(--color-navy)]"></span>` +
+                `<span class="block text-[12.5px] text-[var(--color-ink-faint)]"></span>`;
+              row.children[0].textContent = c.isbn;
+              row.children[1].textContent = `${c.title} · ${c.detail}`;
+              row.addEventListener('click', () => {
+                isbnField.value = c.isbn;
+                isbnField.dispatchEvent(new Event('input', { bubbles: true }));
+                isbnList.hidden = true;
+                isbnNote.textContent = 'Set. Nothing is saved until you save the page.';
+              });
+              isbnList.append(row);
+            }
           });
         }
 

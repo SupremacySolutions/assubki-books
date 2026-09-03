@@ -1,0 +1,14 @@
+-- The identifier a bookshop is matched by.
+--
+-- Google matches a book listing to every other seller's copy of the same book
+-- by its ISBN before anything else. Without one, a listing floats on its own:
+-- the shop's price cannot be compared, and the product does not join the group
+-- of results people actually browse.
+--
+-- Deliberately nullable and deliberately not back-filled. A single title
+-- returns many editions from any free catalogue - "Riyad as-Salihin" comes
+-- back with three works and eight ISBNs - so writing one automatically would
+-- attach the wrong edition's identifier to the shop's book. A wrong ISBN is
+-- worse than none: Google matches the listing to a different book and the
+-- price looks wrong against it. The portal offers candidates; a person picks.
+ALTER TABLE books ADD COLUMN isbn TEXT;

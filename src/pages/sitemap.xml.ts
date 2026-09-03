@@ -17,20 +17,29 @@ export const GET: APIRoute = async ({ site, url }) => {
     env.DB.prepare('SELECT path FROM categories ORDER BY path').all<{ path: string }>(),
   ]);
 
-  const entry = (loc: string, lastmod?: number, priority = '0.6') =>
-    `  <url><loc>${origin}${loc}</loc>` +
-    (lastmod ? `<lastmod>${new Date(lastmod * 1000).toISOString().slice(0, 10)}</lastmod>` : '') +
-    `<priority>${priority}</priority></url>`;
+  /*
+   * No `priority`. Google has ignored it for many years, and a number nobody
+   * reads invites the belief that the shop is steering something.
+   *
+   * `lastmod` is read, so everything carries one. The static pages take the
+   * newest book's date: they list the catalogue, so they genuinely change when
+   * it does.
+   */
+  const newest = Math.max(0, ...books.results.map((b) => b.updated_at));
+  const day = (at: number) => new Date(at * 1000).toISOString().slice(0, 10);
+
+  const entry = (loc: string, lastmod: number) =>
+    `  <url><loc>${origin}${loc}</loc><lastmod>${day(lastmod)}</lastmod></url>`;
 
   const body = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    entry('/', undefined, '1.0'),
-    entry('/catalogue', undefined, '0.9'),
-    entry('/about', undefined, '0.5'),
-    entry('/contact', undefined, '0.4'),
-    ...categories.results.map((c) => entry(`/catalogue/${c.path}`, undefined, '0.7')),
-    ...books.results.map((b) => entry(`/book/${b.slug}`, b.updated_at, '0.8')),
+    entry('/', newest),
+    entry('/catalogue', newest),
+    entry('/about', newest),
+    entry('/contact', newest),
+    ...categories.results.map((c) => entry(`/catalogue/${c.path}`, newest)),
+    ...books.results.map((b) => entry(`/book/${b.slug}`, b.updated_at)),
     '</urlset>',
   ].join('\n');
 

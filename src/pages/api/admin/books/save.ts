@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { setStock } from '../../../../lib/admin-db';
 import { forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
 import { tellWaiting } from '../../../../lib/stock-alerts';
+import { validIsbn, normaliseIsbn } from '../../../../lib/isbn-search';
 
 export const prerender = false;
 
@@ -55,6 +56,21 @@ export const POST: APIRoute = async ({ request }) => {
   const titleAr = String(form.get('title_ar') ?? '').trim() || null;
   const author = String(form.get('author') ?? '').trim() || null;
   const publisher = String(form.get('publisher') ?? '').trim() || null;
+  /*
+   * Refused rather than corrected if it is not a real ISBN.
+   *
+   * A mistyped number is worse than an empty field: it matches the listing to
+   * a different book in Google Shopping, where the shop's price then looks
+   * wrong against somebody else's edition.
+   */
+  const isbnRaw = String(form.get('isbn') ?? '').trim();
+  const isbn = isbnRaw ? (validIsbn(isbnRaw) ? normaliseIsbn(isbnRaw) : null) : null;
+  if (isbnRaw && !isbn) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: `/admin/books/${id ?? 'new'}?e=isbn` },
+    });
+  }
   // Null, not 1: "nobody has said" and "one volume" are different, and only
   // the first should leave the card silent.
   const volumesRaw = Math.round(Number(form.get('volumes')) || 0);
@@ -78,11 +94,11 @@ export const POST: APIRoute = async ({ request }) => {
     // so it cannot be dropped below what open orders have already promised.
     await env.DB.prepare(
       `UPDATE books SET title = ?, title_ar = ?, author = ?, publisher = ?, volumes = ?,
-                        description_html = ?, price_pence = ?, status = ?,
+                        description_html = ?, price_pence = ?, status = ?, isbn = ?,
                         updated_at = unixepoch()
         WHERE id = ?`,
     )
-      .bind(title, titleAr, author, publisher, volumes, description, pricePence, status, bookId)
+      .bind(title, titleAr, author, publisher, volumes, description, pricePence, status, isbn, bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
     /* Anybody waiting is told once availability has settled - see stock-alerts. */
@@ -113,10 +129,10 @@ export const POST: APIRoute = async ({ request }) => {
     const slug = await uniqueSlug(slugify(title), null);
     const created = await env.DB.prepare(
       `INSERT INTO books (slug, title, title_ar, author, publisher, volumes, description_html,
-                          price_pence, stock, reserved, status)
-       VALUES (?,?,?,?,?,?,?,?,?,0,?) RETURNING id`,
+                          price_pence, stock, reserved, status, isbn)
+       VALUES (?,?,?,?,?,?,?,?,?,0,?,?) RETURNING id`,
     )
-      .bind(slug, title, titleAr, author, publisher, volumes, description, pricePence, stock, status)
+      .bind(slug, title, titleAr, author, publisher, volumes, description, pricePence, stock, status, isbn)
       .first<{ id: number }>();
     bookId = created!.id;
 

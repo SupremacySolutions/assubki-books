@@ -14,7 +14,7 @@ import {
 import { liveSale } from '../lib/sales';
 import { classmark } from '../lib/classmarks';
 import { cropsCleanly } from '../lib/cover-fit';
-import { SITE, imageUrl } from '../lib/format';
+import { SITE, imageUrl, hasAddress } from '../lib/format';
 
 const sale = await liveSale();
 const [tree, shelf, stats, arriving, rows, onSale, onSaleTotal] = await Promise.all([
@@ -50,6 +50,66 @@ const shelfCount = tree.reduce((n, c) => n + 1 + (c.children?.length ?? 0), 0);
  * drawn wide (60) for the same reason: shuffling two dozen redraws the same two
  * dozen.
  */
+/*
+ * Who the shop is, and that it has a search box.
+ *
+ * The site had no site-level structured data at all, so Google had nothing to
+ * build a knowledge panel from and no reason to offer a search box under the
+ * listing. Both live here rather than in the layout: they describe the shop
+ * once, and repeating them on 226 book pages says nothing extra.
+ *
+ * `LocalBusiness` only once there is a real address to give - see SITE. A
+ * business with no address is not a local business, and claiming otherwise to
+ * Google is the kind of thing it checks.
+ */
+const org = {
+  '@type': hasAddress() ? 'BookStore' : 'Organization',
+  '@id': `${SITE.url}/#shop`,
+  name: SITE.name,
+  alternateName: SITE.nameAr,
+  url: SITE.url,
+  email: SITE.email,
+  description: SITE.tagline,
+  sameAs: [SITE.telegram],
+  ...(SITE.phone ? { telephone: SITE.phone } : {}),
+  ...(hasAddress()
+    ? {
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: SITE.address.street,
+          addressLocality: SITE.address.locality,
+          addressRegion: SITE.address.region || undefined,
+          postalCode: SITE.address.postcode,
+          addressCountry: SITE.address.country,
+        },
+      }
+    : {}),
+};
+
+const siteJsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    org,
+    {
+      '@type': 'WebSite',
+      '@id': `${SITE.url}/#site`,
+      url: SITE.url,
+      name: SITE.name,
+      publisher: { '@id': `${SITE.url}/#shop` },
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: {
+          '@type': 'EntryPoint',
+          urlTemplate: `${SITE.url}/catalogue?q={search_term_string}`,
+        },
+        'query-input': 'required name=search_term_string',
+      },
+    },
+  ],
+};
+
+const nonce = Astro.locals.cspNonce;
+
 const pretty = shelf.filter((b) => b.image_key && cropsCleanly(b.width, b.height));
 for (let i = pretty.length - 1; i > 0; i--) {
   const j = Math.floor(Math.random() * (i + 1));
@@ -59,6 +119,8 @@ const drifting = pretty.slice(0, 14);
 ---
 
 <Base wide headerSearch={false} description={`${stats.titles} Islamic titles - classical texts, Dars Nizami and Maktab syllabus sets, hadith, fiqh and tafsir. ${SITE.tagline}.`}>
+  <script is:inline nonce={nonce} set:html={JSON.stringify(siteJsonLd)} type="application/ld+json" />
+
   <!-- The hero is the catalogue, not a slogan. People arrive knowing the text
        they want, so the search field is the first thing they meet. -->
   <section class="bg-[var(--color-navy-deep)] text-white relative overflow-hidden">

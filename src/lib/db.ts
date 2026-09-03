@@ -36,6 +36,13 @@ export interface BookRow {
   height: number | null;
   /** Only set when the listing is a set, so the card can say "4 volumes". */
   volumes: number | null;
+  /**
+   * The edition's ISBN, where somebody has confirmed which edition it is.
+   *
+   * Null far more often than not, and deliberately so - see
+   * `src/lib/isbn-search.ts`. The feed omits the field rather than guessing.
+   */
+  isbn: string | null;
   /** Set only for a listing that is one option of a splittable set. */
   set_id: number | null;
   set_from: number | null;
@@ -67,7 +74,7 @@ const db = () => env.DB;
 
 const BOOK_SELECT = `
   SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved, b.volumes,
-         b.set_id, b.set_from, b.set_to,
+         b.set_id, b.set_from, b.set_to, b.isbn,
          b.incoming, b.reserved_incoming, b.incoming_vague, b.incoming_month,
          (b.stock - b.reserved) AS available,
          /* Free to claim from a delivery. Deliberately a separate number from

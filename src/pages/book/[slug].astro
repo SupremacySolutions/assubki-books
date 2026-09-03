@@ -70,10 +70,29 @@ const shareDescription = truncate(
   160,
 );
 
+/*
+ * A Book *and* a Product.
+ *
+ * schema.org allows a thing to be both, and Google needs it to be: the
+ * book-specific fields are what make it a book, but merchant listings and
+ * product snippets are only read off `Product`. Typed as `Book` alone - which
+ * this was - the price and availability below were never eligible to appear in
+ * a search result at all.
+ *
+ * Deliberately absent: `hasMerchantReturnPolicy` and `shippingDetails`. Both
+ * earn annotations in Google's results and both would have to state a returns
+ * window and a postage rate. The returns page is still a set of blanks and
+ * postage is quoted per order, so there is no true value to give. A guessed one
+ * would be a promise the shop has not made.
+ */
 const jsonLd = {
   '@context': 'https://schema.org',
-  '@type': 'Book',
+  '@type': ['Book', 'Product'],
   name: book.title,
+  sku: book.slug,
+  url: new URL(`/book/${book.slug}`, Astro.url.origin).toString(),
+  itemCondition: 'https://schema.org/NewCondition',
+  brand: book.publisher ? { '@type': 'Brand', name: book.publisher } : undefined,
   alternateName: book.title_ar ?? undefined,
   author: book.author ? { '@type': 'Person', name: book.author } : undefined,
   publisher: book.publisher ? { '@type': 'Organization', name: book.publisher } : undefined,

@@ -8,7 +8,31 @@ export const SITE = {
   tagline: 'An affordable Islamic bookshop with a vast catalogue',
   telegram: 'https://t.me/alsubkibooks',
   email: 'subkibooks@gmail.com',
+  /*
+   * Where the shop actually is.
+   *
+   * Blank until somebody fills them in, and deliberately not guessed - the
+   * same rule the policy pages follow. Google cross-checks a Business Profile
+   * against the site, so these must end up written exactly as they are on the
+   * profile, down to the punctuation.
+   *
+   * While they are empty the shop cannot appear in map results, and Merchant
+   * Center has no contact details to find. Filling them is the single highest
+   * return of anything in the SEO work.
+   */
+  address: {
+    street: '',
+    locality: 'Leicester',
+    region: '',
+    postcode: '',
+    country: 'GB',
+  },
+  phone: '',
 } as const;
+
+/** Whether there is enough of an address to tell Google about. */
+export const hasAddress = (): boolean =>
+  Boolean(SITE.address.street && SITE.address.postcode);
 
 export function price(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`;
