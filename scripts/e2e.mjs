@@ -918,15 +918,16 @@ async function listings() {
   /*
    * Find a cover.
    *
-   * The search itself is one live call to Open Library, so it is asserted on
-   * its shape rather than on finding anything - what it returns for a given
-   * title is not this shop's to guarantee.
+   * Open Library is live data, so this asserts the response shape rather than
+   * a particular edition - what it returns today is not this shop's to own.
    */
   const searched = await get('/api/admin/covers/search?q=the+study+quran');
   const found = await searched.json();
   t.ok(searched.status === 200 && Array.isArray(found.covers), 'a cover search answers with a list');
   t.ok(found.covers.every((c) => Number.isInteger(c.id) && !('url' in c)),
     'candidates carry a cover id and never an off-site URL');
+  t.ok(found.covers.length <= 12 && found.covers.every((c) => c.title && c.source),
+    'and returns a readable, bounded set of visual edition choices');
 
   // `img-src 'self'`: a candidate the browser cannot load is no candidate.
   const proxied = await get('/api/admin/covers/image?id=12778208');
@@ -1758,7 +1759,7 @@ async function integrity() {
   t.ok(shot.data[(90 * 100 + 90) * 4] === 255, 'and everything the mask does not claim is white');
 
   /*
-   * Which covers may be cropped to fill the box.
+   * Which secondary photos may be cropped to fill the box.
    *
    * The owner's constraint is that nothing may be cut off the book, so the
    * rule only crops when the trim lands on the sides - where these scans carry
@@ -1776,6 +1777,37 @@ async function integrity() {
     'a landscape or square cover keeps all of itself');
   t.ok(!fit.cropsCleanly(null, null) && !fit.cropsCleanly(0, 0),
     'and a cover of unknown shape is never cropped on a guess');
+
+  // Cover lookup has to survive the transliteration variants this catalogue
+  // actually uses, without depending on a live Open Library result to prove
+  // the query construction itself.
+  const coverSearch = await import('../src/lib/cover-search.ts');
+  t.ok(
+    coverSearch.normaliseCoverSearch('Riyāḍ as-Ṣāliḥīn') === 'riyad as salihin',
+    'cover lookup ignores transliteration accents and punctuation',
+  );
+  const coverQueries = coverSearch.coverSearchQueries(
+    'Al-Hidāyah (Full Set 4 Volumes)',
+    'Burhān al-Dīn al-Marghīnānī',
+  );
+  t.ok(
+    coverQueries.length >= 3 &&
+      coverQueries.some((q) => q.includes('title=')) &&
+      coverQueries.some((q) => decodeURIComponent(q).includes('al hidayah')),
+    'cover lookup tries exact, folded and simplified title searches',
+  );
+  t.ok(
+    coverSearch.coverMatchScore('Riyad as-Salihin', '', { title: 'Riyāḍ al-Ṣāliḥīn' }) >
+      coverSearch.coverMatchScore('Riyad as-Salihin', '', { title: 'Riyad Bank Annual Report' }),
+    'accent variants rank above a merely partial word match',
+  );
+
+  const cardSource = readFileSync('src/components/BookCard.astro', 'utf8');
+  const homeSource = readFileSync('src/pages/index.astro', 'utf8');
+  t.ok(cardSource.includes('h-full w-full object-cover') && !cardSource.includes('object-contain p-3'),
+    'catalogue primary covers always use the common full-bleed frame');
+  t.ok(!homeSource.includes('cropsCleanly') && homeSource.includes('shelf.filter((b) => b.image_key)'),
+    'the landing shelf can use every processed primary cover');
 
   // The parser behind the volume suggestions. It has to refuse more than it
   // accepts: a missed set costs a moment of typing, a wrong one goes on the

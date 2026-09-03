@@ -18,6 +18,7 @@
  *
  *   node scripts/resize-covers.mjs --sample   # a contact sheet, no upload
  *   node scripts/resize-covers.mjs --dry      # process all, upload none
+ *   node scripts/resize-covers.mjs --dry --public # faster catalogue audit
  *   node scripts/resize-covers.mjs            # process, upload, print SQL
  *
  * Safe to re-run: every output is derived from the original, and the original
@@ -36,7 +37,8 @@ const execFileAsync = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WORK = join(ROOT, '.cache', 'resize');
 const BUCKET = 'assubki-books-uploads';
-const CONCURRENCY = 4;
+const PUBLIC_PULL = process.argv.includes('--public');
+const CONCURRENCY = PUBLIC_PULL ? 12 : 4;
 
 const SAMPLE = process.argv.includes('--sample');
 /**
@@ -68,43 +70,119 @@ const PRESETS = {
 
 /*
  * Sharp finds a border by walking inwards from a known white background. The
- * two-axis gate is the safety catch: a naturally white cover may have white at
- * one pair of edges, but scanner canvas surrounds all four. Very large trims
- * are rejected too, so a sparse white design cannot be mistaken for a frame.
+ * two-axis gate is the safety catch for secondary photos. Primary covers were
+ * audited as a set and may have scanner canvas on one pair of sides only, or a
+ * deliberately loose product shot; either is removed before the common crop.
  */
 const WHITE_THRESHOLD = 12;
-const MIN_FRAME_TRIM = 0.015;
-const MAX_FRAME_TRIM = 0.20;
+const MIN_FRAME_TRIM = 0.01;
+const MAX_FRAME_TRIM = 0.25;
 
-async function prepareCover(input) {
-  const normal = await sharp(input).rotate().toBuffer({ resolveWithObject: true });
+/**
+ * One trim attempt, measured.
+ *
+ * `background` picks what counts as canvas: white for a scanner bed, or the
+ * image's own corner colour when `null`, which is what sharp does by default.
+ */
+async function measureTrim(normal, background, primary) {
   const trimmed = await sharp(normal.data)
-    .trim({ background: '#ffffff', threshold: WHITE_THRESHOLD })
+    .trim(background ? { background, threshold: WHITE_THRESHOLD } : { threshold: WHITE_THRESHOLD })
     .toBuffer({ resolveWithObject: true });
 
-  const widthTrim = 1 - trimmed.info.width / normal.info.width;
-  const heightTrim = 1 - trimmed.info.height / normal.info.height;
-  const inFrameRange = (share) => share >= MIN_FRAME_TRIM && share <= MAX_FRAME_TRIM;
-  const framed = inFrameRange(widthTrim) && inFrameRange(heightTrim);
+  const left = Math.max(0, -(trimmed.info.trimOffsetLeft ?? 0));
+  const top = Math.max(0, -(trimmed.info.trimOffsetTop ?? 0));
+  const right = normal.info.width - trimmed.info.width - left;
+  const bottom = normal.info.height - trimmed.info.height - top;
+  const widthTrim = (left + right) / normal.info.width;
+  const heightTrim = (top + bottom) / normal.info.height;
+  const inRange = (share) => share <= MAX_FRAME_TRIM;
+  const horizontalPair =
+    left / normal.info.width >= MIN_FRAME_TRIM / 2 &&
+    right / normal.info.width >= MIN_FRAME_TRIM / 2;
+  const verticalPair =
+    top / normal.info.height >= MIN_FRAME_TRIM / 2 &&
+    bottom / normal.info.height >= MIN_FRAME_TRIM / 2;
 
-  return framed
-    ? { data: trimmed.data, width: trimmed.info.width, height: trimmed.info.height, framed }
-    : { data: normal.data, width: normal.info.width, height: normal.info.height, framed };
+  /*
+   * A primary cover may carry scanner canvas on one opposite pair only - the
+   * An-Nasihah reference has white down both sides but none above or below.
+   * Secondary photos stay stricter because a page or spine is not meant to be
+   * forced into the same silhouette as a front cover.
+   *
+   * The upper bound applies to a colour-matched trim whoever the cover is:
+   * white canvas cannot be mistaken for artwork, but a dark border and a dark
+   * design can, and a quarter of the picture is the most any frame should be.
+   */
+  const framed = primary
+    ? (horizontalPair || verticalPair) && (background ? true : inRange(widthTrim) && inRange(heightTrim))
+    : inRange(widthTrim) && inRange(heightTrim) && horizontalPair && verticalPair;
+
+  return {
+    framed,
+    data: trimmed.data,
+    width: trimmed.info.width,
+    height: trimmed.info.height,
+    trim: { left, right, top, bottom, widthTrim, heightTrim },
+  };
 }
 
-/** One cover, one size. Fitted inside, never cropped, never enlarged. */
-async function resize(input, preset) {
+async function prepareCover(input, primary) {
+  const normal = await sharp(input).rotate().toBuffer({ resolveWithObject: true });
+
+  /*
+   * White first, then the cover's own border colour.
+   *
+   * Trimming only white missed a whole class of scan: the Zam Zam titles - the
+   * hundred-stories series among them - sit on a **black** bed, so the border
+   * is 0,0,0 and a white trim found nothing at all to remove. Those covers
+   * kept a 30-40px band down each side through every pass, which is exactly
+   * the border the shop was still showing.
+   *
+   * White keeps priority so nothing that already worked changes, and the
+   * colour-matched attempt only runs when white found no frame.
+   */
+  let best = await measureTrim(normal, '#ffffff', primary);
+  if (!best.framed) {
+    const natural = await measureTrim(normal, null, primary);
+    if (natural.framed) best = natural;
+  }
+
+  return best.framed
+    ? { data: best.data, width: best.width, height: best.height, framed: true, trim: best.trim }
+    : {
+        data: normal.data,
+        width: normal.info.width,
+        height: normal.info.height,
+        framed: false,
+        trim: best.trim,
+      };
+}
+
+/**
+ * One cover, one size.
+ *
+ * A primary cover is the merchandise image customers browse, so every public
+ * variant is a full-bleed 3:4 rectangle. Other photos remain documentary: a
+ * spine, contents page or spread is fitted whole and never cropped.
+ */
+async function resize(input, preset, primary) {
   const { width, height } = PRESETS[preset];
+  const fill = primary && preset !== 'social';
   return sharp(input)
     .rotate()
     .resize({
       width,
       height,
-      fit: 'inside',
-      // A cover smaller than the slot stays its own size. Enlarging it would
-      // only make it softer, and there is no frame now to keep it in line
-      // with its neighbours.
-      withoutEnlargement: true,
+      fit: fill ? 'cover' : 'inside',
+      // Titles overwhelmingly sit at the top of these covers. A content-aware
+      // crop sometimes chose a decorative centre and cut the title clean off;
+      // north keeps the identifying part when a very tall cover must lose a
+      // little from one end.
+      position: fill ? 'north' : 'centre',
+      // Primary variants need an exact common rectangle. The browser already
+      // enlarged small covers to that slot; doing it once here also gives the
+      // route predictable dimensions and a single crop everywhere.
+      withoutEnlargement: !fill,
       kernel: 'lanczos3',
     })
     .webp({ quality: 82 })
@@ -116,7 +194,7 @@ async function loadImages() {
   const { stdout } = await execFileAsync('npx', [
     'wrangler', 'd1', 'execute', 'assubki-books', '--remote', '--json',
     '--command',
-    "SELECT bi.id, bi.image_key, b.slug FROM book_images bi JOIN books b ON b.id = bi.book_id ORDER BY bi.id",
+    "SELECT bi.id, bi.image_key, bi.sort, b.slug FROM book_images bi JOIN books b ON b.id = bi.book_id ORDER BY bi.id",
   ], { maxBuffer: 32 * 1024 * 1024 });
   return JSON.parse(stdout)[0].results;
 }
@@ -149,6 +227,13 @@ async function pullOriginal(key, dest) {
 }
 
 async function pull(key, dest) {
+  if (PUBLIC_PULL) {
+    const path = key.split('/').map(encodeURIComponent).join('/');
+    const res = await fetch(`https://assubkibooks.co.uk/img/${path}?audit=1`);
+    if (!res.ok) throw new Error(`public image ${res.status}`);
+    writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+    return;
+  }
   await execFileAsync('npx', [
     'wrangler', 'r2', 'object', 'get', `${BUCKET}/${key}`, '--file', dest, '--remote',
   ], { maxBuffer: 32 * 1024 * 1024 });
@@ -194,6 +279,7 @@ if (SAMPLE) {
 
 const updates = [];
 const failures = [];
+const audit = [];
 let framesRemoved = 0;
 let done = 0;
 const queue = [...images];
@@ -205,12 +291,13 @@ await Promise.all(
       const src = join(WORK, `src-${row.id}`);
       try {
         const original = await pullOriginal(row.image_key, src);
-        const prepared = await prepareCover(src);
+        const primary = row.sort === 0;
+        const prepared = await prepareCover(src, primary);
         if (prepared.framed) framesRemoved++;
 
         for (const preset of Object.keys(PRESETS)) {
           const out = join(WORK, `${row.id}-${preset}.webp`);
-          writeFileSync(out, await resize(prepared.data, preset));
+          writeFileSync(out, await resize(prepared.data, preset, primary));
           if (!DRY) await push(variantKey(original, preset), out);
         }
 
@@ -222,6 +309,16 @@ await Promise.all(
           width: prepared.width,
           height: prepared.height,
         });
+        audit.push({
+          id: row.id,
+          slug: row.slug,
+          sort: row.sort,
+          primary,
+          framed: prepared.framed,
+          width: prepared.width,
+          height: prepared.height,
+          trim: prepared.trim,
+        });
       } catch (err) {
         failures.push({ key: row.image_key, error: String(err).split('\n')[0] });
       }
@@ -232,6 +329,7 @@ await Promise.all(
 
 console.log(`\nResized ${updates.length}/${images.length}${DRY ? ' (nothing uploaded)' : ''}`);
 console.log(`White frame removed from ${framesRemoved}`);
+writeFileSync(join(WORK, 'cover-audit.json'), JSON.stringify(audit.sort((a, b) => a.id - b.id), null, 2));
 if (SAMPLE) console.log(`Look at: ${WORK}`);
 
 if (failures.length) {

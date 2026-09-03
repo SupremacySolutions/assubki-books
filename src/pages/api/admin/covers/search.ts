@@ -11,7 +11,8 @@ export const prerender = false;
  * that will never call it.
  */
 export const GET: APIRoute = async ({ url }) => {
-  const terms = (url.searchParams.get('q') ?? '').slice(0, 200);
-  const covers = await findCovers(terms);
-  return Response.json({ terms, covers }, { headers: { 'Cache-Control': 'no-store' } });
+  const terms = (url.searchParams.get('title') ?? url.searchParams.get('q') ?? '').slice(0, 200);
+  const author = (url.searchParams.get('author') ?? '').slice(0, 120);
+  const covers = await findCovers(terms, author);
+  return Response.json({ terms, author, covers }, { headers: { 'Cache-Control': 'no-store' } });
 };
