@@ -894,9 +894,19 @@ async function notifications() {
   const badSecret = await hook({ message: { chat: { id: 1 }, text: '/start x' } }, 'wrong');
   t.ok(badSecret.status === 403, 'the webhook refuses a wrong secret');
 
+  /*
+   * The security property is that the *stranger's* chat is not bound, not that
+   * the field is empty.
+   *
+   * A new order inherits a chat id from an earlier one with the same address on
+   * purpose - Telegram grants that permission per person, not per order - and
+   * this suite places every order under one address. Asserting `null` therefore
+   * tested the absence of a deliberate feature, and failed the moment any
+   * earlier order for that address had ever been bound.
+   */
   await hook({ message: { chat: { id: 424242 }, text: `/start ${o.ref}_deadbeefdeadbeef` } });
   const notBound = await one(`SELECT telegram_chat_id AS c FROM orders WHERE ref='${o.ref}'`);
-  t.ok(notBound.c === null, 'a wrong token prefix cannot bind a chat');
+  t.ok(String(notBound.c ?? '') !== '424242', 'a wrong token prefix cannot bind a chat');
 
   await hook({ message: { chat: { id: Number(TEST_CHAT) }, text: `/start ${o.ref}_${o.token.slice(0, 16)}` } });
   const bound = await one(`SELECT telegram_chat_id AS c FROM orders WHERE ref='${o.ref}'`);

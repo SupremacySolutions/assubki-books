@@ -587,7 +587,17 @@ let homeRowsCache: { at: number; value: HomeRow[] } | null = null;
 
 export async function homeRows(perRow = 10): Promise<HomeRow[]> {
   const now = Date.now();
-  if (homeRowsCache && now - homeRowsCache.at < 60_000) return homeRowsCache.value;
+  /*
+   * Five minutes, not the house minute.
+   *
+   * These three shelves are the most expensive thing the busiest page asks
+   * for - a category listing reads about 1,300 rows to return ten books, and
+   * the front page wants three of them. Sixty seconds is the right default for
+   * a number somebody is watching change; nobody is watching the Hadith shelf
+   * for a book that appeared four minutes ago, and `forgetHomeRows` still
+   * clears it the moment the owner edits anything.
+   */
+  if (homeRowsCache && now - homeRowsCache.at < 300_000) return homeRowsCache.value;
 
   /*
    * The totals come from the counts the page has already paid for.

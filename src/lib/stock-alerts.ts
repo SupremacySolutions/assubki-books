@@ -43,6 +43,30 @@ export async function askToBeTold(bookId: number, rawEmail: string): Promise<Ask
   return done.meta.changes ? 'added' : 'already';
 }
 
+/**
+ * How long an unclaimed request is kept.
+ *
+ * The row is normally deleted the moment the message goes out, so this only
+ * ever catches the case that has no ending: a book that never comes back.
+ * Editions go out of print, and without this the address of somebody who asked
+ * about one in 2026 would still be here in 2036 - with nothing to unsubscribe
+ * from, because the whole design says nothing persists.
+ *
+ * Six months, matching how long the shop keeps a payment screenshot. Long
+ * enough for a reprint to arrive, short enough to be an honest answer to "how
+ * long do you keep this".
+ */
+const KEEP_WAITING = 183 * 24 * 60 * 60;
+
+/** Forgets requests for books that never came back. */
+export async function pruneAlerts(db: D1Database): Promise<number> {
+  const done = await db
+    .prepare('DELETE FROM stock_alerts WHERE created_at < unixepoch() - ?')
+    .bind(KEEP_WAITING)
+    .run();
+  return done.meta.changes ?? 0;
+}
+
 export interface Waiting {
   email: string;
   title: string;

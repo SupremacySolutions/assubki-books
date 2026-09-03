@@ -17,6 +17,7 @@
 
 import { releaseHold } from '../../src/lib/stock-release';
 import { pruneSearches } from '../../src/lib/searches';
+import { pruneAlerts } from '../../src/lib/stock-alerts';
 
 interface Env {
   DB: D1Database;
@@ -175,6 +176,17 @@ export default {
       .prepare('DELETE FROM owner_notices WHERE at < unixepoch() - 60 * 86400')
       .run();
     if (notices.meta.changes) console.log(`pruned ${notices.meta.changes} old owner notice(s)`);
+
+    /*
+     * "Tell me when it is back" for a book that never came back.
+     *
+     * Those rows are deleted when the message is sent, so this only catches
+     * the ones with no ending - and the privacy page promises the address does
+     * not outlive its purpose, which was true of every case except the one
+     * that never resolves.
+     */
+    const stale = await pruneAlerts(env.DB);
+    if (stale) console.log(`forgot ${stale} unanswered back-in-stock request(s)`);
   },
 
   /**

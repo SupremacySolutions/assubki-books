@@ -112,6 +112,15 @@ function localDb() {
  * row and would land in the middle of the results. The dev server is writing
  * to the same file, so waiting rather than failing is the whole point.
  */
+/**
+ * The wrangler binary, not `npx wrangler`.
+ *
+ * npx re-resolves the package on every invocation - about 0.7s of the 2.7s a
+ * call used to take, spent proving again what it proved a moment ago. The
+ * binary is right there in node_modules.
+ */
+const WRANGLER_BIN = new URL('../../node_modules/.bin/wrangler', import.meta.url).pathname;
+
 const SQLITE_FLAGS = [
   '-json',
   '-cmd', 'PRAGMA foreign_keys=ON',
@@ -186,10 +195,10 @@ export async function db(sql) {
 /** Retried, because a busy database is a wait rather than a failure. */
 async function viaWrangler(sql, where) {
   let last;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     try {
-      const { stdout } = await execFileAsync('npx', [
-        'wrangler', 'd1', 'execute', 'assubki-books',
+      const { stdout } = await execFileAsync(WRANGLER_BIN, [
+        'd1', 'execute', 'assubki-books',
         where, '--json', '--command', sql,
       ], { maxBuffer: 40 * 1024 * 1024 });
 
@@ -200,7 +209,7 @@ async function viaWrangler(sql, where) {
       last = err;
       const detail = [err.stdout, err.stderr].filter(Boolean).join(' ').slice(0, 400);
       if (detail) last = new Error(`${err.message.split('\n')[0]}\n       ${detail.trim()}`);
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+      if (attempt < 5) await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
     }
   }
   throw last;
@@ -256,8 +265,35 @@ export async function signIn() {
 }
 
 /** A form POST to the portal, as a browser would send it. */
+/**
+ * A fetch that retries the one failure this harness causes itself.
+ *
+ * The dev server and this suite hold the same SQLite file open, and SQLite
+ * allows one writer at a time. When the suite has the write lock, miniflare
+ * does not wait for it - the query comes straight back `SQLITE_BUSY: database
+ * is locked`, the request 500s, and whichever assertion was behind it fails.
+ * It lands on a different assertion every run, which is what made a full run
+ * come back 578/0, then 537/28, then 515/49 on identical code.
+ *
+ * None of that exists in production: real D1 has no local file to contend
+ * over. So it is retried here - and *only* on that signature, so a genuine 500
+ * still fails the assertion that found it rather than being waited out.
+ */
+const LOCKED = /database is locked|SQLITE_BUSY|Failed to parse body as JSON|internal error; reference/i;
+
+async function fetchSettling(url, init, attempts = 5) {
+  for (let i = 0; ; i++) {
+    const res = await fetch(url, init);
+    if (res.status !== 500 || i >= attempts) return res;
+
+    const body = await res.clone().text().catch(() => '');
+    if (!LOCKED.test(body)) return res;
+    await new Promise((r) => setTimeout(r, 150 * (i + 1)));
+  }
+}
+
 export async function admin(path, body = {}) {
-  const res = await fetch(`${SITE}${path}`, {
+  const res = await fetchSettling(`${SITE}${path}`, {
     method: 'POST',
     headers: { ...ORIGIN, Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(body).toString(),
@@ -271,7 +307,7 @@ export async function admin(path, body = {}) {
  * url-encodes its body, which cannot carry one.
  */
 export async function adminUpload(path, form) {
-  const res = await fetch(`${SITE}${path}`, {
+  const res = await fetchSettling(`${SITE}${path}`, {
     method: 'POST',
     headers: { ...ORIGIN, Cookie: cookie },
     body: form,
@@ -281,7 +317,7 @@ export async function adminUpload(path, form) {
 }
 
 export async function get(path, opts = {}) {
-  return fetch(`${SITE}${path}`, { headers: { Cookie: cookie }, redirect: 'manual', ...opts });
+  return fetchSettling(`${SITE}${path}`, { headers: { Cookie: cookie }, redirect: 'manual', ...opts });
 }
 
 export const html = async (path) => (await get(path, { redirect: 'follow' })).text();
@@ -301,7 +337,7 @@ export const visibleText = (markup) =>
     .replace(/\s+/g, ' ');
 
 export async function json(path, body) {
-  const res = await fetch(`${SITE}${path}`, {
+  const res = await fetchSettling(`${SITE}${path}`, {
     method: body ? 'POST' : 'GET',
     headers: { 'Content-Type': 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -377,8 +413,8 @@ export async function placeOrder(bookId, fulfilment = 'delivery', extra = {}) {
  * the retention sweep, say - and so have to do the other half of it too.
  */
 export async function deleteObject(key) {
-  await execFileAsync('npx', [
-    'wrangler', 'r2', 'object', 'delete', `assubki-books-uploads/${key}`,
+  await execFileAsync(WRANGLER_BIN, [
+    'r2', 'object', 'delete', `assubki-books-uploads/${key}`,
     PROD ? '--remote' : '--local',
   ]).catch(() => {});
 }
