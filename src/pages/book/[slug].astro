@@ -37,6 +37,19 @@ const told = ({
   bad: BACK_IN_STOCK.bad,
 } as Record<string, string>)[Astro.url.searchParams.get('tell') ?? ''] ?? null;
 
+/*
+ * The author joins the page title when there is one.
+ *
+ * Two different books can carry the same title - the shop sells Sayyed Abul
+ * Hassan's "Stories of the Prophets" and Ibn Kathīr's - and with only the
+ * title in the tag both pages were identical to a search engine and to anyone
+ * reading a list of tabs. The author is the thing that tells them apart, so it
+ * belongs where the title is, not only in the body of the page.
+ *
+ * Left off when the field is empty rather than rendering a dangling dash.
+ */
+const pageTitle = book.author?.trim() ? `${book.title} - ${book.author.trim()}` : book.title;
+
 const off = book.sale_percent ?? 0;
 const nowPence = off > 0 ? Math.round((book.price_pence * (100 - off)) / 100) : book.price_pence;
 const savedPence = book.price_pence - nowPence;
@@ -111,7 +124,7 @@ const jsonLd = {
 };
 ---
 
-<Base title={book.title} description={shareDescription} image={cover}>
+<Base title={pageTitle} description={shareDescription} image={cover}>
   <div class="py-8 md:py-10">
     <nav aria-label="Breadcrumb" class="text-[13.5px] text-[var(--color-ink-faint)] mb-6">
       <a href="/" class="hover:text-[var(--color-navy)]">Home</a>
