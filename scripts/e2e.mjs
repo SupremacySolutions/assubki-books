@@ -1297,6 +1297,38 @@ async function integrity() {
   t.ok(!touch.held(), 'and it drifts again once they have finished');
 
   /*
+   * Tapping a cover on a phone focuses it, and a phone often never fires
+   * `focusout` afterwards. A blocked resume used to return having cancelled
+   * its own timer, so nothing was left to try again: the shelf froze on the
+   * first tap and stayed frozen for the life of the page.
+   */
+  let coverFocused = true;
+  const tapped = createHold({ ...holdOpts, hasFocus: () => coverFocused });
+  tapped.grab('touch');
+  tapped.soon();
+  timers.filter(Boolean).forEach((fn) => fn());
+  t.ok(tapped.held(), 'a cover being read holds the shelf');
+  t.ok(timers.some(Boolean), 'and a blocked resume asks again rather than giving up');
+  coverFocused = false;
+  timers.filter(Boolean).forEach((fn) => fn());
+  t.ok(!tapped.held(), 'so it drifts again once nothing is focused');
+
+  /*
+   * A flick's momentum outlives the finger, and the browser scrolls a focused
+   * cover into view on its own. Both move the strip without a resync, and the
+   * drift used to write a position from before it happened - yanking a swipe
+   * back mid-flight, which is what this felt like on a phone.
+   */
+  const flicked = { scrollLeft: 0 };
+  const afterFlick = createDrift(flicked, () => 100000);
+  for (let frame = 0; frame < 60; frame++) afterFlick.step(16.7);
+  flicked.scrollLeft = 900;
+  afterFlick.step(16.7);
+  t.ok(flicked.scrollLeft >= 900,
+    `a scroll the drift did not cause is kept, not undone (landed at ${Math.round(flicked.scrollLeft)})`);
+  t.ok(afterFlick.moved() === false, 'and the drift knows its own write from somebody else\'s');
+
+  /*
    * The cover cleanup: geometry only, so all of it can be checked here. None
    * of it can be checked from HTTP, and the portal cannot be clicked from this
    * suite, so a synthetic photo - a dark book, rotated, on a light table - is

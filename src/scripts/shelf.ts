@@ -46,15 +46,37 @@ export function nextOffset(current: number, elapsed: number, half: number): numb
  */
 export function createDrift(el: { scrollLeft: number }, halfWidth: () => number) {
   let pos = el.scrollLeft;
+  /** What we last wrote, so a change we did not make can be recognised. */
+  let wrote = el.scrollLeft;
 
   return {
     step(elapsed: number): void {
+      /*
+       * Anything that moved the strip since our last write wins.
+       *
+       * A phone's momentum keeps running after the finger has gone, and the
+       * browser scrolls a focused cover into view on its own. Both change
+       * `scrollLeft` without a resync, and without this the next frame wrote a
+       * position from before it happened - yanking the strip back mid-flick,
+       * which is what a swipe on a phone actually felt like.
+       */
+      if (Math.abs(el.scrollLeft - wrote) > 1) pos = el.scrollLeft;
+
       pos = nextOffset(pos, elapsed, halfWidth());
       el.scrollLeft = pos;
+      // Read back rather than trusting `pos`: the browser rounds on write as
+      // well as on read, and comparing a float to a rounded value would make
+      // every frame look like somebody else's scroll.
+      wrote = el.scrollLeft;
     },
     /** They scrolled it themselves; carry on from wherever they left it. */
     resync(): void {
       pos = el.scrollLeft;
+      wrote = el.scrollLeft;
+    },
+    /** Whether the strip has moved since we last wrote to it. */
+    moved(): boolean {
+      return Math.abs(el.scrollLeft - wrote) > 1;
     },
   };
 }
@@ -87,10 +109,22 @@ export function createHold(opts: {
     idle = null;
   };
 
-  /** Now - unless a cursor is still on it, or a cover still has focus. */
+  /**
+   * Now - unless a cursor is still on it, or a cover still has focus.
+   *
+   * A blocked resume **asks again** rather than giving up. It used to return
+   * here having already cancelled its own timer, so nothing was left to try
+   * later: tapping a cover on a phone focuses it, and a phone often never
+   * fires `focusout` afterwards, so the shelf froze on the first tap and
+   * stayed frozen for the life of the page.
+   */
   const resume = () => {
     cancel();
-    if (hovering || opts.hasFocus()) return;
+    if (hovering) return; // a cursor leaving fires `pointerleave`, which retries
+    if (opts.hasFocus()) {
+      idle = opts.setTimer(resume, opts.resumeAfter);
+      return;
+    }
     held = false;
   };
 
@@ -158,12 +192,20 @@ function start(strip: HTMLElement): void {
     });
   }
 
-  // Their own scrolling, not ours: ours never fires this while held.
+  /*
+   * Their scrolling, not ours.
+   *
+   * The `held` check alone was not enough. A flick's momentum outlives the
+   * finger, and once the hold has lapsed those scrolls arrived with `held`
+   * false and were ignored - so the drift went on writing a position from
+   * before the flick. Asking the drift whether the strip moved without it
+   * catches that, and catches the browser scrolling a focused cover into view
+   * as well.
+   */
   strip.addEventListener('scroll', () => {
-    if (hold.held()) {
-      drift.resync();
-      hold.soon();
-    }
+    if (!hold.held() && !drift.moved()) return; // our own write, echoed back
+    drift.resync();
+    hold.soon();
   });
 
   // A finger lifting. `pointerleave` is not reliable for touch, so without
