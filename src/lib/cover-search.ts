@@ -9,6 +9,8 @@
  * Open Library ranking.
  */
 
+import { normaliseIsbn, validIsbn } from './isbn-search.ts';
+
 const OPEN_LIBRARY = 'https://openlibrary.org';
 const OPEN_LIBRARY_SEARCH = `${OPEN_LIBRARY}/search.json`;
 const GOOGLE_BOOKS = 'https://www.googleapis.com/books/v1/volumes';
@@ -44,6 +46,15 @@ type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Re
 export interface CoverSearchOptions {
   signal?: AbortSignal;
   googleApiKey?: string;
+  /**
+   * The listing's ISBN, when it has one.
+   *
+   * An ISBN names one edition, which is the thing the owner is actually
+   * holding; a title and author name a work, and a work can carry a dozen
+   * editions whose artwork has nothing in common. Where one is recorded it is
+   * asked first and its answers are offered first.
+   */
+  isbn?: string;
   /** Injectable so complete provider behavior can be tested offline. */
   fetcher?: Fetcher;
 }
@@ -134,6 +145,33 @@ export function coverSearchQueries(title: string, author = ''): string[] {
   else if (rawAuthor) add({ q: foldedTitle || rawTitle });
 
   return plans.slice(0, 4).map((plan) => `${OPEN_LIBRARY_SEARCH}?${plan}`);
+}
+
+/**
+ * The Open Library search for one exact edition, or null if there is no usable
+ * ISBN. Checked rather than trusted: a mistyped one would otherwise become a
+ * request for whatever edition that number happens to belong to.
+ */
+export function openLibraryIsbnQuery(isbn: string): string | null {
+  if (!validIsbn(isbn)) return null;
+  const search = new URLSearchParams({
+    isbn: normaliseIsbn(isbn),
+    limit: '5',
+    fields: OPEN_LIBRARY_FIELDS,
+  });
+  return `${OPEN_LIBRARY_SEARCH}?${search}`;
+}
+
+/** The same, for Google Books, using its documented `isbn:` qualifier. */
+export function googleIsbnQuery(isbn: string, apiKey: string): string | null {
+  if (!validIsbn(isbn) || !apiKey.trim()) return null;
+  const search = new URLSearchParams({
+    q: `isbn:${normaliseIsbn(isbn)}`,
+    maxResults: '5',
+    printType: 'books',
+    key: apiKey.trim(),
+  });
+  return `${GOOGLE_BOOKS}?${search}`;
 }
 
 /** One relevance-ordered Google query; client code must not reorder it. */
@@ -245,17 +283,35 @@ async function requestJson<T>(
 async function openLibraryCandidates(
   title: string,
   author: string,
+  isbn: string,
   fetcher: Fetcher,
   signal?: AbortSignal,
 ): Promise<ProviderResult> {
+  /*
+   * The exact edition first, and kept apart from the ranking below.
+   *
+   * Its artwork is not a better guess than the title search's, it is a
+   * different kind of answer - the cover of the book in the owner's hand
+   * rather than the cover of some edition of the same work. Scoring the two
+   * together would let a fuzzy title match outrank it, which is exactly
+   * backwards, so it is asked separately and its answers go in front.
+   */
+  const exact = await isbnCovers(isbn, fetcher, signal);
+
   const queries = coverSearchQueries(title, author);
-  if (!queries.length) return { covers: [], state: 'available' };
+  if (!queries.length) return { covers: exact, state: 'available' };
 
   const searches = await Promise.all(
     queries.map((url) => requestJson<{ docs?: SearchDoc[] }>(url, fetcher, signal)),
   );
   const available = searches.filter((result) => result.ok);
-  if (!available.length) return { covers: [], state: 'unavailable' };
+  // An ISBN hit still stands when the title search is down, and is worth
+  // showing rather than reporting an outage over.
+  if (!available.length) {
+    return exact.length
+      ? { covers: exact, state: 'available' }
+      : { covers: [], state: 'unavailable' };
+  }
 
   const ranked = available
     .flatMap((result) => (result.ok ? result.body.docs ?? [] : []))
@@ -288,8 +344,8 @@ async function openLibraryCandidates(
     }),
   );
 
-  const covers: Candidate[] = [];
-  const seenCovers = new Set<number>();
+  const covers: Candidate[] = [...exact];
+  const seenCovers = new Set<number>(exact.map((cover) => Number(cover.id)));
   const caps = [4, 2, 1, 1];
 
   for (const [index, match] of expandable.entries()) {
@@ -361,18 +417,77 @@ export function googleCandidates(body: { items?: GoogleVolume[] }): Candidate[] 
   return covers;
 }
 
+/**
+ * Covers for one exact edition. Never an outage on its own - a missing or
+ * unknown ISBN is an ordinary result, and the title search still has to run.
+ */
+async function isbnCovers(
+  isbn: string,
+  fetcher: Fetcher,
+  signal?: AbortSignal,
+): Promise<Candidate[]> {
+  const query = openLibraryIsbnQuery(isbn);
+  if (!query) return [];
+
+  const result = await requestJson<{ docs?: SearchDoc[] }>(query, fetcher, signal);
+  if (!result.ok) return [];
+
+  const covers: Candidate[] = [];
+  const seen = new Set<number>();
+  for (const doc of result.body.docs ?? []) {
+    const id = doc.cover_i;
+    if (!id || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    covers.push({
+      id: String(id),
+      provider: 'openlibrary',
+      title: (doc.title ?? 'Untitled edition').slice(0, 120),
+      source: `${openLibrarySource(doc)} · this ISBN`,
+    });
+    if (covers.length >= 3) break;
+  }
+  return covers;
+}
+
 async function googleBooksCandidates(
   title: string,
   author: string,
+  isbn: string,
   apiKey: string,
   fetcher: Fetcher,
   signal?: AbortSignal,
 ): Promise<ProviderResult> {
+  const exactQuery = googleIsbnQuery(isbn, apiKey);
   const query = googleBooksQuery(title, author, apiKey);
-  if (!query) return { covers: [], state: 'available' };
-  const result = await requestJson<{ items?: GoogleVolume[] }>(query, fetcher, signal);
-  if (!result.ok) return { covers: [], state: 'unavailable' };
-  return { covers: googleCandidates(result.body), state: 'available' };
+  if (!exactQuery && !query) return { covers: [], state: 'available' };
+
+  const [exact, general] = await Promise.all([
+    exactQuery
+      ? requestJson<{ items?: GoogleVolume[] }>(exactQuery, fetcher, signal)
+      : Promise.resolve(null),
+    query
+      ? requestJson<{ items?: GoogleVolume[] }>(query, fetcher, signal)
+      : Promise.resolve(null),
+  ]);
+
+  // Down only when everything asked for came back empty-handed.
+  const answered = [exact, general].filter((r) => r?.ok);
+  if (!answered.length) return { covers: [], state: 'unavailable' };
+
+  const covers: Candidate[] = [];
+  const seen = new Set<string>();
+  // Exact first, then relevance order, which Google's terms require us to keep.
+  for (const result of [exact, general]) {
+    if (!result?.ok) continue;
+    for (const cover of googleCandidates(result.body)) {
+      if (seen.has(cover.id)) continue;
+      seen.add(cover.id);
+      covers.push(cover);
+      if (covers.length >= MAX_PER_PROVIDER) break;
+    }
+    if (covers.length >= MAX_PER_PROVIDER) break;
+  }
+  return { covers, state: 'available' };
 }
 
 /** Search providers independently so one outage never hides the other. */
@@ -383,10 +498,11 @@ export async function searchCovers(
 ): Promise<CoverSearchResult> {
   const fetcher = options.fetcher ?? fetch;
   const googleKey = options.googleApiKey?.trim() ?? '';
+  const isbn = options.isbn?.trim() ?? '';
   const [openlibrary, google] = await Promise.all([
-    openLibraryCandidates(title, author, fetcher, options.signal),
+    openLibraryCandidates(title, author, isbn, fetcher, options.signal),
     googleKey
-      ? googleBooksCandidates(title, author, googleKey, fetcher, options.signal)
+      ? googleBooksCandidates(title, author, isbn, googleKey, fetcher, options.signal)
       : Promise.resolve<ProviderResult>({ covers: [], state: 'available' }),
   ]);
 

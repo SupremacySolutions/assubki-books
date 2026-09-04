@@ -2006,6 +2006,73 @@ async function integrity() {
     'a missing Google key is reported without breaking the keyless source',
   );
 
+  /*
+   * The ISBN path.
+   *
+   * A title and author name a work; an ISBN names the edition the owner is
+   * actually holding, and a work can carry a dozen editions whose artwork has
+   * nothing in common. So it is asked as its own question and its answers go
+   * in front - never scored against the title matches, where a close fuzzy
+   * match could outrank the exact one.
+   */
+  const REAL_ISBN = '9780062227621';
+  t.ok(coverSearch.openLibraryIsbnQuery('978-0-06-222762-1') ===
+       coverSearch.openLibraryIsbnQuery(REAL_ISBN),
+    'an ISBN is looked up the same whether or not it was typed with hyphens');
+  t.ok(coverSearch.openLibraryIsbnQuery('9780062227620') === null &&
+       coverSearch.googleIsbnQuery('9780062227620', 'test-key') === null,
+    'an ISBN that fails its check digit is not looked up at all');
+  t.ok(coverSearch.openLibraryIsbnQuery('') === null &&
+       coverSearch.googleIsbnQuery(REAL_ISBN, '') === null,
+    'and neither is a missing ISBN, or one with no Google key to ask with');
+  t.ok(decodeURIComponent(coverSearch.googleIsbnQuery(REAL_ISBN, 'test-key')).includes(
+         `q=isbn:${REAL_ISBN}`),
+    "Google is asked with its own isbn: qualifier rather than a loose search");
+
+  // The exact edition leads, and the title search still fills in behind it.
+  const isbnFetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.searchParams.get('isbn') === REAL_ISBN) {
+      return Response.json({ docs: [{
+        key: 'OL999W', title: 'The Study Quran', cover_i: 555,
+        author_name: ['Seyyed Hossein Nasr'], publisher: ['HarperOne'],
+      }] });
+    }
+    return fakeCoverFetch(input);
+  };
+  const withIsbn = await coverSearch.searchCovers('The Study Quran', 'Nasr', {
+    isbn: REAL_ISBN,
+    fetcher: isbnFetch,
+  });
+  t.ok(withIsbn.covers[0]?.id === '555' && /this ISBN/.test(withIsbn.covers[0]?.source ?? ''),
+    'the cover for the exact edition is offered first, and says so');
+  t.ok(withIsbn.covers.some((cover) => cover.id === '100'),
+    'and the title search still contributes the rest');
+  t.ok(new Set(withIsbn.covers.map((cover) => cover.id)).size === withIsbn.covers.length,
+    'with nothing offered twice when both routes find the same artwork');
+
+  // An ISBN nobody has heard of is an ordinary result, not a failure.
+  const unknownIsbn = await coverSearch.searchCovers('The Study Quran', 'Nasr', {
+    isbn: REAL_ISBN,
+    fetcher: async (input) => new URL(String(input)).searchParams.get('isbn') === REAL_ISBN
+      ? Response.json({ docs: [] })
+      : fakeCoverFetch(input),
+  });
+  t.ok(unknownIsbn.providers.openlibrary.state === 'available' &&
+       unknownIsbn.covers[0]?.id === '100',
+    'an ISBN with no cover behind it leaves the title search untouched');
+
+  // And an exact hit is worth showing even when the title search is down.
+  const isbnOutlives = await coverSearch.searchCovers('The Study Quran', 'Nasr', {
+    isbn: REAL_ISBN,
+    fetcher: async (input) => new URL(String(input)).searchParams.get('isbn') === REAL_ISBN
+      ? Response.json({ docs: [{ key: 'OL999W', title: 'The Study Quran', cover_i: 555 }] })
+      : new Response('down', { status: 503 }),
+  });
+  t.ok(isbnOutlives.providers.openlibrary.state === 'available' &&
+       isbnOutlives.covers[0]?.id === '555',
+    'an exact ISBN hit is shown rather than reported as an outage');
+
   const cardSource = readFileSync('src/components/BookCard.astro', 'utf8');
   const homeSource = readFileSync('src/pages/index.astro', 'utf8');
   t.ok(cardSource.includes('h-full w-full object-cover') && !cardSource.includes('object-contain p-3'),

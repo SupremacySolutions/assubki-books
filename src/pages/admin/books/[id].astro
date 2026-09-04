@@ -1411,6 +1411,10 @@ const previewCaption = book
               const params = new URLSearchParams(author
                 ? { title: terms, author }
                 : { q: terms });
+              // Read from the field rather than the saved row, so an ISBN just
+              // typed in is used without having to save the listing first.
+              const isbnNow = document.querySelector('#isbn')?.value?.trim();
+              if (isbnNow) params.set('isbn', isbnNow);
               const res = await fetch(`/api/admin/covers/search?${params}`);
               if (res.ok) {
                 const payload = await res.json();
