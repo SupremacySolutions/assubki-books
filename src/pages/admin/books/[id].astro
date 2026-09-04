@@ -1171,9 +1171,17 @@ const previewCaption = book
          * Shrinks the photo before it leaves the phone, and measures it.
          *
          * A phone camera produces something like 4000px and several megabytes,
-         * and the shop never displays a cover larger than about 800. Resizing
-         * here also sidesteps HEIC, which iPhones produce and the server does
-         * not accept, because the canvas decodes it and hands back WebP.
+         * so this has to come down before it is sent. Resizing here also
+         * sidesteps HEIC, which iPhones produce and the server does not
+         * accept, because the canvas decodes it and hands back WebP.
+         *
+         * The ceiling has to clear the largest thing the shop builds, and for
+         * a long time it did not. It was 800, written when the biggest variant
+         * was 600x800; the detail variant is 840x1176 now, so every upload was
+         * arriving smaller than the size it would be enlarged to. That is what
+         * made covers added through the portal look soft, and it survived the
+         * fix to the cropper - which had its own separate ceiling - because
+         * this runs afterwards and simply put the photo back down again.
          *
          * Measured while we are holding the bitmap: the server cannot read
          * dimensions from a stream it passes straight through, and without them
@@ -1189,7 +1197,7 @@ const previewCaption = book
          * that cannot decode HEIC meant several megabytes going to R2 unshrunk.
          * It still sends - refusing the photo would be worse - but it says so.
          */
-        const MAX_EDGE = 800;
+        const MAX_EDGE = 1400;
 
         async function shrink(file) {
           try {
@@ -1206,7 +1214,13 @@ const previewCaption = book
             canvas.height = h;
             canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
 
-            const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.82));
+            /*
+             * Encoded generously, because this is not the picture anyone sees.
+             * It is the master the variants are cut from, and each of those is
+             * encoded again at 82 - so anything given away here is given away
+             * twice. The extra weight is paid once, on the way to R2.
+             */
+            const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.92));
             return blob
               ? { file: new File([blob], 'photo.webp', { type: 'image/webp' }), width: w, height: h }
               : { file, width: bitmap.width, height: bitmap.height };

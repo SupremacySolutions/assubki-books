@@ -39,8 +39,11 @@
  *    variants had been made from a 285x420 upload - all the portal's cropper
  *    was handing over - and replacing the bytes under the same version would
  *    have reached nobody who had already opened the listing.
+ * 9: a small crop shared between both ends of a cover rather than taken
+ *    entirely off the foot, which was removing the bottom rule of a framed
+ *    cover while leaving the top one.
  */
-export const IMAGE_VERSION = 8;
+export const IMAGE_VERSION = 9;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */
