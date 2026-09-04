@@ -201,7 +201,7 @@ async function prepareCover(input, primary) {
  * variant is a full-bleed 5:7 rectangle. Other photos remain documentary: a
  * spine, contents page or spread is fitted whole and never cropped.
  */
-async function resize(input, preset, primary) {
+async function resize(input, preset, primary, shape) {
   const { width, height } = PRESETS[preset];
   const fill = primary && preset !== 'social';
   return sharp(input)
@@ -210,11 +210,7 @@ async function resize(input, preset, primary) {
       width,
       height,
       fit: fill ? 'cover' : 'inside',
-      // Titles overwhelmingly sit at the top of these covers. A content-aware
-      // crop sometimes chose a decorative centre and cut the title clean off;
-      // north keeps the identifying part when a very tall cover must lose a
-      // little from one end.
-      position: fill ? 'north' : 'centre',
+      position: fill ? anchor(shape, width / height) : 'centre',
       // Primary variants need an exact common rectangle. The browser already
       // enlarged small covers to that slot; doing it once here also gives the
       // route predictable dimensions and a single crop everywhere.
@@ -223,6 +219,33 @@ async function resize(input, preset, primary) {
     })
     .webp({ quality: 82 })
     .toBuffer();
+}
+
+/**
+ * Which end of a too-tall cover gives way.
+ *
+ * Titles overwhelmingly sit at the top of these covers, so a cover that has to
+ * lose real height loses it from the foot - a content-aware crop sometimes
+ * chose a decorative centre and cut the title clean off, and north never does.
+ *
+ * But most covers are barely off the box: of the 117 taller than 5:7, 81% are
+ * within 8% of it. Taking all of that off one end is what makes a framed cover
+ * look damaged - the border rule along the bottom goes while the one along the
+ * top stays, and the eye reads the difference immediately even though the
+ * amount is small. Split between the two ends nothing is lost that was not
+ * going anyway, and the frame stays a frame.
+ *
+ * So: share the loss when it is small enough that half of it cannot reach the
+ * title, and fall back to protecting the title when it is not.
+ */
+const SHARE_TRIM = 0.08;
+function anchor(shape, box) {
+  if (!shape?.width || !shape?.height) return 'north';
+  const ratio = shape.width / shape.height;
+  // Wider than the box: the trim lands on the sides, and centre is the only
+  // sensible reading of that - a cover is not lopsided.
+  if (ratio >= box) return 'centre';
+  return (box - ratio) / box <= SHARE_TRIM ? 'centre' : 'north';
 }
 
 /** Every image the catalogue knows about, newest keys last. */
@@ -333,7 +356,10 @@ await Promise.all(
 
         for (const preset of Object.keys(PRESETS)) {
           const out = join(WORK, `${row.id}-${preset}.webp`);
-          writeFileSync(out, await resize(prepared.data, preset, primary));
+          writeFileSync(
+            out,
+            await resize(prepared.data, preset, primary, prepared),
+          );
           if (!DRY) await push(variantKey(original, preset), out);
         }
 
