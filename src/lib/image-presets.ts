@@ -44,8 +44,11 @@
  *    cover while leaving the top one.
  * 10: a cover too narrow for the box widened along its own edges rather than
  *     trimmed at the ends, so a printed border survives intact.
+ * 11: the al-Wasit cover rebuilt without the white line the warp used to leave
+ *     along an edge cropped to the picture's own boundary - and without the
+ *     band the widening then stretched that line into.
  */
-export const IMAGE_VERSION = 10;
+export const IMAGE_VERSION = 11;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */

@@ -35,8 +35,14 @@ export const PLAIN_EDGE = 12;
  * into a band of white down the side of the cover. A real edge continues the
  * cover; an artefact does not resemble it. So the outer column is compared
  * with one a little inside, and it has to look like it.
+ *
+ * Set from the two measured cases rather than picked. On the al-Wasit cover
+ * the white line sat 170 from the cover behind it; the same cover's real right
+ * edge, which falls off in the light where the page curves, sits 44 - and
+ * widening from that is invisible, so vetoing it would cost the printed border
+ * for nothing. Ninety separates them with room on both sides.
  */
-export const EDGE_MATCH = 22;
+export const EDGE_MATCH = 90;
 
 /**
  * How much of the height may be lost before the title is worth protecting.

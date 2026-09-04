@@ -2231,6 +2231,15 @@ async function integrity() {
   // And the guard that stops such a line being stretched, if one ever appears.
   const whiteLine = () => [252, 255, 255];
   const blueBody = () => [20, 68, 94];
+  // The measurements the threshold was set from: a white artefact sits 170
+  // from the cover behind it, a real edge falling off in the light sits 44.
+  t.ok(frame.edgeGap(whiteLine, blueBody, 1383) > 150 && frame.EDGE_MATCH > 60 &&
+       frame.EDGE_MATCH < frame.edgeGap(whiteLine, blueBody, 1383),
+    'the guard sits between an artefact and an edge that merely catches the light');
+  t.ok(frame.framePlan({
+    width: 939, height: 1383, leftSpread: 5, rightSpread: 12, leftGap: 2, rightGap: 44,
+  }).mode === 'extend',
+    'so a cover whose edge falls off in the light is still widened, not trimmed');
   t.ok(frame.framePlan({
     width: 940, height: 1385,
     leftSpread: 0, rightSpread: 0,
