@@ -2073,6 +2073,25 @@ async function integrity() {
        isbnOutlives.covers[0]?.id === '555',
     'an exact ISBN hit is shown rather than reported as an outage');
 
+  /*
+   * The reachability probe behind the settings line.
+   *
+   * A key that exists is not a key that works. The easy mistake is a website
+   * or IP restriction, which a Worker can never satisfy, and that fails every
+   * lookup while a presence check goes on reporting all is well.
+   */
+  t.ok(await coverSearch.googleBooksReachable('') === 'not-configured' &&
+       await coverSearch.googleBooksReachable(undefined) === 'not-configured',
+    'no Google key at all is reported as not configured');
+  t.ok(await coverSearch.googleBooksReachable('good-key', {
+         fetcher: async () => Response.json({ items: [] }),
+       }) === 'available',
+    'a key Google answers for is reported as connected');
+  t.ok(await coverSearch.googleBooksReachable('wrongly-restricted', {
+         fetcher: async () => new Response('forbidden', { status: 403 }),
+       }) === 'unavailable',
+    'and one Google refuses is reported as refused, not as connected');
+
   const cardSource = readFileSync('src/components/BookCard.astro', 'utf8');
   const homeSource = readFileSync('src/pages/index.astro', 'utf8');
   t.ok(cardSource.includes('h-full w-full object-cover') && !cardSource.includes('object-contain p-3'),

@@ -12,6 +12,7 @@ import {
 import { botConfigured, botUsername, ownerOptInLink } from '../../lib/telegram';
 import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
 import { recentFailures } from '../../lib/login-throttle';
+import { googleBooksReachable, type ProviderState } from '../../lib/cover-search';
 
 const [settings, emailError, failedSignIns] = await Promise.all([
   getSettings(),
@@ -19,9 +20,17 @@ const [settings, emailError, failedSignIns] = await Promise.all([
   recentFailures(),
 ]);
 const ownerTelegramLink = await ownerOptInLink();
-const googleBooksConfigured = Boolean(
-  (env as unknown as { GOOGLE_BOOKS_API_KEY?: string }).GOOGLE_BOOKS_API_KEY?.trim(),
-);
+/*
+ * Asked rather than assumed. Reporting "Connected" on the strength of a key
+ * existing would hide the one mistake that is easy to make here - a website or
+ * IP restriction the Worker cannot satisfy - behind a green line saying all is
+ * well. A failure to reach Google is itself reported rather than thrown: this
+ * panel is a status page, and it should survive the thing it is reporting on.
+ */
+const googleBooks = await googleBooksReachable(
+  (env as unknown as { GOOGLE_BOOKS_API_KEY?: string }).GOOGLE_BOOKS_API_KEY,
+  { signal: AbortSignal.timeout(6_000) },
+).catch((): ProviderState => 'unavailable');
 
 /* The order discount, as the form needs it: pounds in the box, not pence. */
 const discountOn = settings.order_discount_active === '1';
@@ -449,8 +458,12 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
       </div>
       <div class="flex justify-between gap-4">
         <dt class="text-[var(--color-ink-soft)]">Google Books covers</dt>
-        <dd class:list={[googleBooksConfigured ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]']}>
-          {googleBooksConfigured ? 'Connected · second cover source' : 'Not configured · Open Library only'}
+        <dd class:list={[googleBooks === 'available' ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]']}>
+          {googleBooks === 'available'
+            ? 'Connected · second cover source'
+            : googleBooks === 'not-configured'
+              ? 'Not configured · Open Library only'
+              : 'Key set but Google refused it · check the key is restricted to the Books API, and that it has no website or IP restriction'}
         </dd>
       </div>
     </dl>

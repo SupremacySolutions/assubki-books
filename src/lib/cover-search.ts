@@ -518,6 +518,29 @@ export async function searchCovers(
   };
 }
 
+/**
+ * Whether Google will actually answer, as opposed to whether a key is present.
+ *
+ * A key that exists is not a key that works: the usual way to get this wrong is
+ * to put a website or IP restriction on it, which a Worker can never satisfy
+ * because it sends no referrer and has no fixed address. That fails every
+ * lookup silently while the settings page reports a key is configured, which is
+ * the least useful thing it could say. So this asks Google the cheapest real
+ * question it can and reports what came back.
+ */
+export async function googleBooksReachable(
+  apiKey: string | undefined,
+  options: { fetcher?: Fetcher; signal?: AbortSignal } = {},
+): Promise<ProviderState> {
+  const key = apiKey?.trim() ?? '';
+  if (!key) return 'not-configured';
+
+  const query = googleIsbnQuery('9780062227621', key);
+  if (!query) return 'unavailable';
+  const result = await requestJson<unknown>(query, options.fetcher ?? fetch, options.signal);
+  return result.ok ? 'available' : 'unavailable';
+}
+
 /** Backward-compatible Open Library-only helper for existing callers. */
 export async function findCovers(
   title: string,
