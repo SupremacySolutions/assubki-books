@@ -38,13 +38,46 @@ export function mountCoverReview(): void {
 
   /** How big the photo is drawn while it is being adjusted. */
   const STAGE_EDGE = 420;
-  /** The longest edge of the finished cover. The shop shows 800 at most. */
-  const MAX_EDGE = 800;
+  /**
+   * The photo kept back for the export warp.
+   *
+   * Dragging has to stay cheap, so the corners are placed against a 420px copy
+   * and the live preview is warped from it. The upload must not be: warping the
+   * preview was sending a 420px cover to a shop whose largest variant is 1176
+   * tall, so every listing added through the portal arrived already softened
+   * and no amount of processing afterwards could put the detail back.
+   *
+   * Capped rather than unbounded because a modern phone photo is 12MP, and
+   * `getImageData` on that is close to 50MB before anything has been warped.
+   * 2400 is comfortably more than the largest export can use.
+   */
+  const SOURCE_EDGE = 2400;
+  /**
+   * The longest edge of the finished cover.
+   *
+   * Has to clear the biggest variant the shop makes, which is the 840x1176
+   * detail; below that the site would be enlarging its own upload. 1400 leaves
+   * room for the crop to take a slice off without falling under it.
+   */
+  const MAX_EDGE = 1400;
+  /**
+   * What the upload route will take, mirrored from `api/admin/upload.ts`.
+   *
+   * Only used to decide whether the owner's own file can be passed through
+   * untouched. A phone photo that arrives as HEIC, or a 12MP JPEG over the
+   * limit, has to be re-encoded here or the upload comes back a 415 or a 413.
+   */
+  const UPLOAD_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+  const UPLOAD_MAX = 8 * 1024 * 1024;
 
   if (panel && stage && sourceCanvas && overlay && resultCanvas && note) {
     type Point = { x: number; y: number };
 
     let full: HTMLCanvasElement | null = null; // the photo at working size
+    let source: HTMLCanvasElement | null = null; // the same photo, kept large
+    let chosen: File | null = null; // exactly what the owner picked
+    /** The last mask the erase produced, so the export can apply it again. */
+    let erased: Float32Array | null = null;
     let corners: Point[] = [];
     let settle: ((file: File | null) => void) | null = null;
 
@@ -257,6 +290,7 @@ export function mountCoverReview(): void {
         if (!mask) {
           showing('Nothing here it could separate from the book - the photo is unchanged.');
           erase.checked = false;
+          erased = null;
           return;
         }
 
@@ -267,13 +301,19 @@ export function mountCoverReview(): void {
         );
         // Tightened before it is applied, or the soft boundary leaves a fringe
         // of whatever was behind the book smeared along every edge.
-        eraseBackground(out, refineMask(mask), fit);
+        const tightened = refineMask(mask);
+        eraseBackground(out, tightened, fit);
+        // Held on to rather than recomputed: the export warps the same corners
+        // out of a larger copy, and the mask is addressed by relative position,
+        // so the one already approved on screen is the right one to apply.
+        erased = tightened;
         resultCanvas.getContext('2d')!.putImageData(out, 0, 0);
         eraseNote.hidden = true;
       } catch (err) {
         console.error('background removal failed', err);
         showing('Could not do that here - the cropped photo is unchanged.');
         erase.checked = false;
+        erased = null;
         if (cropped) resultCanvas.getContext('2d')!.putImageData(cropped, 0, 0);
       }
     };
@@ -284,6 +324,7 @@ export function mountCoverReview(): void {
         void applyErase();
       } else if (cropped) {
         if (eraseNote) eraseNote.hidden = true;
+        erased = null;
         resultCanvas.getContext('2d')!.putImageData(cropped, 0, 0);
       }
     });
@@ -349,6 +390,9 @@ export function mountCoverReview(): void {
       const done = settle;
       settle = null;
       full = null;
+      source = null;
+      chosen = null;
+      erased = null;
       if (panel.open) panel.close();
       done?.(file);
     };
@@ -424,17 +468,75 @@ export function mountCoverReview(): void {
     });
 
     document.querySelector('#cleanRaw')?.addEventListener('click', () => {
-      // Their photo untouched, straight from the canvas it was drawn on.
-      full?.toBlob((blob) => {
-        close(blob ? new File([blob], 'photo.webp', { type: 'image/webp' }) : null);
+      closeUncropped();
+    });
+
+    /**
+     * "Use the photo as it is" - their file, if their file can be used.
+     *
+     * This used to hand back the working canvas re-encoded, so the button that
+     * promises to change nothing quietly shrank the photo to 420px and put it
+     * through WebP a second time. Passing the original through is the only
+     * reading of "as it is" that is true, and it costs nothing - but only when
+     * the route will actually take it. A HEIC from an iPhone, or a 12MP JPEG
+     * over the size limit, still has to be re-encoded, and then it is re-encoded
+     * from the large copy rather than the small one.
+     */
+    function closeUncropped(): void {
+      if (chosen && UPLOAD_TYPES.has(chosen.type) && chosen.size <= UPLOAD_MAX) {
+        close(chosen);
+        return;
+      }
+      if (!source) {
+        close(chosen);
+        return;
+      }
+      source.toBlob((blob) => {
+        close(blob ? new File([blob], 'photo.webp', { type: 'image/webp' }) : chosen);
+      }, 'image/webp', 0.9);
+    }
+
+    document.querySelector('#cleanUse')?.addEventListener('click', () => {
+      const out = exportCover();
+      if (!out) {
+        // Nothing to warp from. Better their own photo than an empty upload.
+        closeUncropped();
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = out.width;
+      canvas.height = out.height;
+      canvas.getContext('2d')!.putImageData(out, 0, 0);
+      canvas.toBlob((blob) => {
+        if (blob) close(new File([blob], 'photo.webp', { type: 'image/webp' }));
+        else closeUncropped();
       }, 'image/webp', 0.9);
     });
 
-    document.querySelector('#cleanUse')?.addEventListener('click', () => {
-      resultCanvas.toBlob((blob) => {
-        close(blob ? new File([blob], 'photo.webp', { type: 'image/webp' }) : null);
-      }, 'image/webp', 0.9);
-    });
+    /**
+     * The finished cover, cut from the large copy rather than the small one.
+     *
+     * The corners were placed against the working canvas, so they are scaled
+     * into the source's coordinates before the warp - the same quad, measured
+     * on a bigger picture. Everything the owner approved on screen is
+     * reproduced here at size: the same crop, and the same erase mask, which
+     * is addressed by relative position and so does not care how large the
+     * image it lands on is.
+     */
+    function exportCover(): ImageData | null {
+      if (!source || !full) return null;
+
+      const scale = source.width / full.width;
+      const corner = corners.map((p) => ({ x: p.x * scale, y: p.y * scale }));
+      const size = quadSize(corner, MAX_EDGE);
+
+      const src = source.getContext('2d')!.getImageData(0, 0, source.width, source.height);
+      const out = new ImageData(size.width, size.height);
+      if (!warp(src, corner, out)) return null;
+
+      if (erased) eraseBackground(out, erased, maskFit(out.width, out.height));
+      return out;
+    }
 
     /**
      * Show the panel for one photo and resolve with what to upload.
@@ -451,11 +553,21 @@ export function mountCoverReview(): void {
         return file; // let the existing uploader deal with it
       }
 
-      const scale = Math.min(1, STAGE_EDGE / Math.max(bitmap.width, bitmap.height));
-      full = document.createElement('canvas');
-      full.width = Math.max(1, Math.round(bitmap.width * scale));
-      full.height = Math.max(1, Math.round(bitmap.height * scale));
-      full.getContext('2d')!.drawImage(bitmap, 0, 0, full.width, full.height);
+      chosen = file;
+
+      // Two copies of the same photo. The working one is small enough to warp
+      // on every drag frame; the source one is what the finished cover is
+      // actually cut from, so the upload carries the detail the owner gave us.
+      const draw = (edge: number) => {
+        const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        return canvas;
+      };
+      full = draw(STAGE_EDGE);
+      source = draw(SOURCE_EDGE);
 
       sourceCanvas.width = full.width;
       sourceCanvas.height = full.height;
