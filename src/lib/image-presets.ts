@@ -35,8 +35,12 @@
  *    while the freshly-made detail variant came back clean - the same cover
  *    correct on the product page and wrong one click away.
  * 7: the frame is 5:7 rather than 3:4.
+ * 8: the al-Wasit cover rebuilt from the photo the owner actually chose. Its
+ *    variants had been made from a 285x420 upload - all the portal's cropper
+ *    was handing over - and replacing the bytes under the same version would
+ *    have reached nobody who had already opened the listing.
  */
-export const IMAGE_VERSION = 7;
+export const IMAGE_VERSION = 8;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */
