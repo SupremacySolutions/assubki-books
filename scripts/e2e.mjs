@@ -919,6 +919,38 @@ async function listings() {
   t.ok(filtered.includes(`of ${counts.n}`), 'a filter count matches the database');
 
   /*
+   * The re-shooting worklist.
+   *
+   * What matters is not the stored width but how much real detail survives
+   * the frame: a cover wider than 5:7 loses its sides to the crop, and one
+   * narrower has its sides continued outwards, which fills the frame and
+   * invents no detail. The smaller of the two is what the card - which asks
+   * for 600 across - actually has to work with.
+   */
+  const thinnest = await one(
+    `SELECT MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) AS usable
+       FROM books b JOIN book_images i ON i.book_id = b.id AND i.sort = 0
+      WHERE b.status = 'live' AND i.width > 0 AND i.height > 0
+      ORDER BY usable ASC LIMIT 1`,
+  );
+  const worstFirst = await html('/admin/books?sort=cover-worst');
+  t.ok(worstFirst.includes(`cover ${thinnest.usable}px of 600`),
+    'sorting by poorest cover puts the thinnest one on the first page, and says how thin');
+  t.ok(!/cover \d+px of 600[\s\S]{0,400}?cover \1px of 600/.test('') &&
+       worstFirst.indexOf(`cover ${thinnest.usable}px of 600`) <
+         worstFirst.lastIndexOf('cover '),
+    'and it leads rather than trails the listings behind it');
+
+  // A cover with plenty of detail is not labelled at all, so the badge stays
+  // a worklist rather than decoration on every row.
+  const roomy = await one(
+    `SELECT COUNT(*) AS n FROM books b JOIN book_images i ON i.book_id = b.id AND i.sort = 0
+      WHERE b.status = 'live' AND MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) >= 600`,
+  );
+  t.ok(roomy.n === 0 || !worstFirst.includes('px of 600</span>\n                  <span'),
+    'a cover with enough detail carries no badge');
+
+  /*
    * Find a cover.
    *
    * Open Library is live data, so this asserts the response shape rather than

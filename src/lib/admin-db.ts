@@ -129,6 +129,16 @@ export interface AdminBookRow {
   has_description: number;
   cat_count: number;
   telegram_message_id: number | null;
+  /**
+   * Real detail in the cover, in pixels across, before anything enlarges it.
+   *
+   * Not the stored width. A cover wider than the frame loses its sides to the
+   * crop, and one narrower has its sides continued outwards - which fills the
+   * frame but invents no detail. Either way what survives is the smaller of
+   * the two, and that is the number worth showing beside a listing, because
+   * the card asks for 600 and the detail view for 840.
+   */
+  usable_width: number | null;
 }
 
 /**
@@ -176,7 +186,13 @@ const FILTER_SQL: Record<BookFilter, string> = {
   archived: "b.status = 'archived'",
 };
 
-export type BookSort = 'recent' | 'title' | 'price-asc' | 'price-desc' | 'stock-asc';
+export type BookSort =
+  | 'recent'
+  | 'title'
+  | 'price-asc'
+  | 'price-desc'
+  | 'stock-asc'
+  | 'cover-worst';
 
 const SORT_SQL: Record<BookSort, string> = {
   recent: 'b.updated_at DESC, b.id DESC',
@@ -184,6 +200,18 @@ const SORT_SQL: Record<BookSort, string> = {
   'price-asc': 'b.price_pence ASC, b.title COLLATE NOCASE',
   'price-desc': 'b.price_pence DESC, b.title COLLATE NOCASE',
   'stock-asc': '(b.stock - b.reserved) ASC, b.title COLLATE NOCASE',
+  /*
+   * The re-shooting worklist, worst first.
+   *
+   * A listing with no cover at all sorts last rather than first: it belongs to
+   * "No photo", which is a different job with a different answer, and putting
+   * it here would bury the covers that do exist and are too thin to print.
+   */
+  'cover-worst': `(SELECT MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER))
+                     FROM book_images i
+                    WHERE i.book_id = b.id AND i.sort = 0
+                      AND i.width > 0 AND i.height > 0) ASC NULLS LAST,
+                  b.title COLLATE NOCASE`,
 };
 
 export interface BookListResult {
@@ -283,6 +311,10 @@ export async function listBooksAdmin(opts: {
       `SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved,
               (b.stock - b.reserved) AS available, b.status, b.telegram_message_id,
               (SELECT image_key FROM book_images WHERE book_id = b.id ORDER BY sort LIMIT 1) AS image_key,
+              (SELECT MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER))
+                 FROM book_images i
+                WHERE i.book_id = b.id AND i.sort = 0
+                  AND i.width > 0 AND i.height > 0) AS usable_width,
               (CASE WHEN b.description_html IS NULL OR b.description_html = '' THEN 0 ELSE 1 END) AS has_description,
               (SELECT COUNT(*) FROM book_categories WHERE book_id = b.id) AS cat_count
          FROM books b ${where}

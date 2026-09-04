@@ -47,8 +47,13 @@
  * 11: the al-Wasit cover rebuilt without the white line the warp used to leave
  *     along an edge cropped to the picture's own boundary - and without the
  *     band the widening then stretched that line into.
+ * 12: not a change to how covers are made - a repair. A pass ran with a guard
+ *     that cropped 22 covers it should have widened, and it had uploaded
+ *     before the numbers were compared and it was taken out again. Anyone who
+ *     opened the shop in that window holds those covers for a year unless the
+ *     version moves.
  */
-export const IMAGE_VERSION = 11;
+export const IMAGE_VERSION = 12;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */

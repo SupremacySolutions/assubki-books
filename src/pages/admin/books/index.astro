@@ -43,6 +43,7 @@ const SORTS: { key: BookSort; label: string }[] = [
   { key: 'recent', label: 'Recently edited' },
   { key: 'title', label: 'Title A-Z' },
   { key: 'stock-asc', label: 'Lowest stock first' },
+  { key: 'cover-worst', label: 'Poorest cover first' },
   { key: 'price-asc', label: 'Price low to high' },
   { key: 'price-desc', label: 'Price high to low' },
 ];
@@ -195,6 +196,18 @@ const windowed = () => {
               <p class="text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-2">
                 <span class="price !text-[13px]">{price(b.price_pence)}</span>
                 {b.reserved > 0 && <span>{b.reserved} reserved</span>}
+                {/*
+                  * How much real detail the cover has across, against the 600
+                  * the card asks for. Shown only when it falls short, and in
+                  * red only when the card is enlarging it more than twice -
+                  * the point past which no processing puts back what the
+                  * photograph never had.
+                  */}
+                {b.usable_width !== null && b.usable_width < 600 && (
+                  <span class:list={[b.usable_width < 300 ? 'text-[var(--color-outstock)]' : '']}>
+                    cover {b.usable_width}px of 600
+                  </span>
+                )}
                 {!b.has_description && <span class="text-[var(--color-outstock)]">no description</span>}
                 {b.cat_count === 0 && <span class="text-[var(--color-outstock)]">no subject</span>}
                 {b.status !== 'live' && <span class="text-[var(--color-outstock)]">{b.status}</span>}
