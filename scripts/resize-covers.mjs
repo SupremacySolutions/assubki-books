@@ -183,7 +183,7 @@ async function prepareCover(input, primary) {
     if (natural.framed) best = natural;
   }
 
-  return best.framed
+  const trimmed = best.framed
     ? { data: best.data, width: best.width, height: best.height, framed: true, trim: best.trim }
     : {
         data: normal.data,
@@ -192,6 +192,78 @@ async function prepareCover(input, primary) {
         framed: false,
         trim: best.trim,
       };
+
+  return primary ? await extendToBox(trimmed) : trimmed;
+}
+
+/** The public frame, as a ratio. Every primary variant is cut to this. */
+const BOX = 5 / 7;
+/** The most width worth inventing, as a share of the cover's own. */
+const MAX_EXTEND = 0.12;
+/** How much an edge may vary and still count as plain enough to continue. */
+const PLAIN_EDGE = 12;
+
+/**
+ * A cover too narrow for the box, widened along its own edges.
+ *
+ * The alternative is to crop, and on a cover with a printed border that is
+ * what people notice: the rule along the bottom goes while the one along the
+ * top stays, and it reads as damage even when the strip removed was blank.
+ * These covers are not too tall, they are too narrow - so rather than take
+ * height away, give width back.
+ *
+ * Only where the edge being continued is plain. The outermost column is
+ * stretched outwards, which is seamless on the flat colour that runs down the
+ * side of most covers and obvious nonsense on a photograph or a pattern, so
+ * the edge is measured first and anything busy is left to be cropped as
+ * before. Bounded too: past a point this stops being a cover with a wider
+ * margin and starts being a cover somebody made up.
+ */
+async function extendToBox(cover) {
+  const { width: w, height: h } = cover;
+  const want = Math.round(h * BOX);
+  const pad = want - w;
+  if (pad <= 0 || pad > w * MAX_EXTEND) return cover;
+
+  const { data, info } = await sharp(cover.data).ensureAlpha().raw()
+    .toBuffer({ resolveWithObject: true });
+  if (!plainEdge(data, info, 0) || !plainEdge(data, info, info.width - 1)) return cover;
+
+  const left = Math.floor(pad / 2);
+  const right = pad - left;
+  const column = async (x, width) =>
+    sharp(cover.data).extract({ left: x, top: 0, width: 1, height: h })
+      .resize(width, h, { fit: 'fill' }).png().toBuffer();
+
+  const widened = await sharp({
+    create: { width: want, height: h, channels: 3, background: '#ffffff' },
+  })
+    .composite([
+      ...(left ? [{ input: await column(0, left), left: 0, top: 0 }] : []),
+      { input: await sharp(cover.data).png().toBuffer(), left, top: 0 },
+      ...(right ? [{ input: await column(w - 1, right), left: left + w, top: 0 }] : []),
+    ])
+    .png()
+    .toBuffer();
+
+  return { ...cover, data: widened, width: want, height: h, extended: pad };
+}
+
+/** Whether one outer column is flat enough to be worth continuing outwards. */
+function plainEdge(data, info, x) {
+  const channels = info.channels;
+  const samples = [];
+  const steps = 60;
+  for (let i = 0; i < steps; i++) {
+    const y = Math.min(info.height - 1, Math.round(((i + 0.5) / steps) * info.height));
+    const at = (y * info.width + x) * channels;
+    samples.push([data[at], data[at + 1], data[at + 2]]);
+  }
+  const mean = [0, 1, 2].map((k) => samples.reduce((sum, v) => sum + v[k], 0) / samples.length);
+  const spread =
+    samples.reduce((sum, v) => sum + Math.max(...[0, 1, 2].map((k) => Math.abs(v[k] - mean[k]))), 0) /
+    samples.length;
+  return spread <= PLAIN_EDGE;
 }
 
 /**

@@ -51,7 +51,23 @@ export const GET: APIRoute = async ({ request, url }) => {
   const type = res.headers.get('content-type') ?? '';
   if (!type.startsWith('image/')) return new Response('Not an image', { status: 502 });
 
-  return new Response(res.body, {
+  /*
+   * Google answers 200 for a volume it has no artwork for, with a grey card
+   * reading "image not available". Passed through, that is a candidate the
+   * owner can click and choose, and it would go on the listing as though it
+   * were a cover. Treated as the miss it is instead - the picker already drops
+   * a candidate whose image fails to load, so the empty slot simply is not
+   * offered.
+   *
+   * Told apart by what it is rather than by a guess: cover art comes back as
+   * JPEG, and the placeholder is a small fixed PNG whose header says 575x750.
+   */
+  const body = await res.arrayBuffer();
+  if (provider === 'google' && isGooglePlaceholder(body)) {
+    return new Response('No cover', { status: 404 });
+  }
+
+  return new Response(body, {
     headers: {
       'Content-Type': type,
       // Nothing here is the shop's own image yet; it is a candidate being
@@ -61,3 +77,16 @@ export const GET: APIRoute = async ({ request, url }) => {
     },
   });
 };
+
+/** Google's "image not available" card, by its PNG header. */
+function isGooglePlaceholder(body: ArrayBuffer): boolean {
+  // Cover art is JPEG. Anything that is not a PNG cannot be this.
+  if (body.byteLength < 24 || body.byteLength > 40_000) return false;
+  const bytes = new Uint8Array(body, 0, 24);
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (!PNG.every((byte, i) => bytes[i] === byte)) return false;
+
+  const view = new DataView(body, 0, 24);
+  // IHDR is the first chunk: its width and height sit at bytes 16 and 20.
+  return view.getUint32(16) === 575 && view.getUint32(20) === 750;
+}

@@ -2092,6 +2092,34 @@ async function integrity() {
        }) === 'unavailable',
     'and one Google refuses is reported as refused, not as connected');
 
+  /*
+   * Google's "image not available" card.
+   *
+   * It comes back 200, so nothing upstream treats it as a miss, and passed
+   * through it becomes a candidate the owner can pick and put on a listing.
+   * Recognised by its PNG header - cover art is JPEG, and the card is a fixed
+   * 575x750 PNG - so the proxy can refuse it and the picker drops the slot.
+   */
+  const pngHeader = (width, height, bytes = 9103) => {
+    const buffer = new Uint8Array(Math.max(24, bytes));
+    buffer.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+    new DataView(buffer.buffer).setUint32(16, width);
+    new DataView(buffer.buffer).setUint32(20, height);
+    return buffer;
+  };
+  const imageRoute = readFileSync('src/pages/api/admin/covers/image.ts', 'utf8');
+  t.ok(/getUint32\(16\) === 575 && [\s\S]*getUint32\(20\) === 750/.test(imageRoute) &&
+       imageRoute.includes("provider === 'google' && isGooglePlaceholder"),
+    'the cover proxy refuses Google\'s placeholder card rather than serving it as artwork');
+  t.ok(!/isGooglePlaceholder\(body\)\s*\)\s*\{[\s\S]{0,80}status: 200/.test(imageRoute) &&
+       imageRoute.includes("return new Response('No cover', { status: 404 })"),
+    'and answers 404, which is what the picker already knows how to drop');
+  // The shape of the header the check reads, so the offsets stay honest.
+  const probe = pngHeader(575, 750);
+  const probeView = new DataView(probe.buffer);
+  t.ok(probeView.getUint32(16) === 575 && probeView.getUint32(20) === 750,
+    'PNG width and height really do sit at byte 16 and byte 20');
+
   const cardSource = readFileSync('src/components/BookCard.astro', 'utf8');
   const homeSource = readFileSync('src/pages/index.astro', 'utf8');
   t.ok(cardSource.includes('h-full w-full object-cover') && !cardSource.includes('object-contain p-3'),
