@@ -398,7 +398,9 @@
    */
   .shelf-book {
     display: block;
-    width: 118px;
+    /* 120x168 is 5:7 exactly, so the hero variant lands here at the size it
+       was cut to and `object-fit` has nothing left to crop. */
+    width: 120px;
     flex: none;
     /* Square at the spine, rounded at the fore-edge - the way a closed book
        actually presents when you look along a shelf. */
@@ -409,7 +411,7 @@
   }
   .shelf-book img {
     width: 100%;
-    height: 166px;
+    height: 168px;
     object-fit: cover;
     display: block;
   }

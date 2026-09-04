@@ -68,12 +68,15 @@ async function publicCatalogue() {
   /*
    * The strip crops every cover to one size - that is what keeps it even and
    * what takes off the white margin the scans carry. It only works because
-   * the covers offered to it are upright: a landscape photo cropped to 118x166
+   * the covers offered to it are upright: a landscape photo cropped to 120x168
    * loses most of itself, and one did, appearing at nearly twice the width of
    * everything beside it.
+   *
+   * 120x168 is 5:7, the shape the variants are cut to, so the strip re-crops
+   * nothing that reaches it.
    */
   const shelfImgs = [...home.matchAll(/<(?:a|span) class="shelf-book"[\s\S]*?<img[^>]*>/g)].map((m) => m[0]);
-  t.ok(shelfImgs.length > 0 && shelfImgs.every((tag) => /width="118"[^>]*height="166"/.test(tag)),
+  t.ok(shelfImgs.length > 0 && shelfImgs.every((tag) => /width="120"[^>]*height="168"/.test(tag)),
     'every cover on the shelf is given the same box');
 
   /*
