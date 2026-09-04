@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import { isPreset, IMAGE_PRESETS } from '../../../lib/image-presets';
 
 export const prerender = false;
 
@@ -61,9 +62,36 @@ export const POST: APIRoute = async ({ request }) => {
   const rand = crypto.randomUUID().slice(0, 8);
   const key = `uploads/${book.slug}/${Date.now()}-${rand}.${ext}`;
 
+  const immutable = 'public, max-age=31536000, immutable';
   await bucket.put(key, file.stream(), {
-    httpMetadata: { contentType: file.type, cacheControl: 'public, max-age=31536000, immutable' },
+    httpMetadata: { contentType: file.type, cacheControl: immutable },
   });
+
+  /*
+   * The sized versions, made by the browser alongside the photo.
+   *
+   * They are an optimisation, not a requirement: `/img/<key>?p=…` falls back
+   * to the original for anything missing, which is what every cover added
+   * before this did. So a variant that fails to store is passed over rather
+   * than failing the upload - the listing still works, just heavier, and the
+   * batch script will lay it down properly next time it runs.
+   *
+   * The preset name is checked against the table rather than trusted, so this
+   * cannot be used to write arbitrary keys into the bucket.
+   */
+  const stem = key.replace(/\.[a-z0-9]+$/i, '');
+  await Promise.all(
+    [...form.entries()].map(async ([field, value]) => {
+      if (!field.startsWith('variant:') || !(value instanceof File)) return;
+      const preset = field.slice('variant:'.length);
+      if (!isPreset(preset) || value.type !== 'image/webp' || value.size > MAX_BYTES) return;
+      await bucket
+        .put(`${stem}-${preset}.webp`, value.stream(), {
+          httpMetadata: { contentType: 'image/webp', cacheControl: immutable },
+        })
+        .catch(() => undefined);
+    }),
+  );
 
   const nextSort = await env.DB.prepare(
     'SELECT COALESCE(MAX(sort), -1) + 1 AS n FROM book_images WHERE book_id = ?',
@@ -94,10 +122,21 @@ export const DELETE: APIRoute = async ({ request }) => {
 
   await env.DB.prepare('DELETE FROM book_images WHERE id = ?').bind(imageId).run();
 
-  // Both prefixes are in R2 now, so removing a single photo reclaims its file
-  // whether it was migrated or uploaded.
+  /*
+   * Both prefixes are in R2 now, so removing a single photo reclaims its file
+   * whether it was migrated or uploaded - and its sized versions with it.
+   *
+   * Those were being left behind. It mattered little when only the batch
+   * script made them; now every upload does, so a photo added and removed
+   * again would strand five files nothing will ever ask for or clean up.
+   */
   if (bucket) {
-    await bucket.delete(image.image_key).catch((err) => console.error('[upload] R2 delete failed', err));
+    const stem = image.image_key.replace(/\.[a-z0-9]+$/i, '');
+    const keys = [
+      image.image_key,
+      ...Object.keys(IMAGE_PRESETS).map((preset) => `${stem}-${preset}.webp`),
+    ];
+    await bucket.delete(keys).catch((err) => console.error('[upload] R2 delete failed', err));
   }
 
   return Response.json({ ok: true });

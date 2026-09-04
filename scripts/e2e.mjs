@@ -2120,6 +2120,76 @@ async function integrity() {
   t.ok(probeView.getUint32(16) === 575 && probeView.getUint32(20) === 750,
     'PNG width and height really do sit at byte 16 and byte 20');
 
+  /*
+   * The framing rule, which two very different things now share: the batch
+   * script under Node with sharp, and the portal's uploader in a browser over
+   * a canvas. It was the same rule written twice, which is how a cover added
+   * through the portal came out framed differently from the same cover put
+   * through the script.
+   */
+  const frame = await import('../src/lib/cover-frame.mjs');
+  const flat = () => () => [30, 60, 90];
+  const busy = () => (y) => [y % 255, (y * 7) % 255, (y * 13) % 255];
+
+  const widened = frame.framePlan({
+    width: 940, height: 1385,
+    leftSpread: frame.edgeSpread(flat(), 1385),
+    rightSpread: frame.edgeSpread(flat(), 1385),
+  });
+  t.ok(widened.mode === 'extend' && widened.width === 989 &&
+       widened.left + widened.right === 989 - 940,
+    'a narrow cover with plain sides is widened to the box, not trimmed at the ends');
+  t.ok(Math.abs(widened.width / widened.height - 5 / 7) < 0.001,
+    'and what comes out is exactly the shape of the box');
+
+  t.ok(frame.framePlan({
+    width: 940, height: 1385,
+    leftSpread: frame.edgeSpread(busy(), 1385),
+    rightSpread: frame.edgeSpread(busy(), 1385),
+  }).mode === 'crop',
+    'a patterned edge is cropped instead, because an extension would show its join');
+
+  t.ok(frame.framePlan({ width: 940, height: 1385 }).mode === 'crop',
+    'and so is a cover whose edges were never measured');
+
+  // Bounded: past a point this stops being a margin and starts being invention.
+  t.ok(frame.framePlan({
+    width: 500, height: 1000, leftSpread: 0, rightSpread: 0,
+  }).mode === 'crop',
+    'a cover far too narrow is not widened by half its own width');
+
+  t.ok(frame.framePlan({ width: 690, height: 1000, leftSpread: 0, rightSpread: 0 }).mode === 'extend' &&
+       frame.framePlan({ width: 690, height: 1000 }).anchor === 'centre',
+    'a small shortfall shares its trim when it cannot be widened');
+  t.ok(frame.framePlan({ width: 550, height: 1000 }).anchor === 'north',
+    'and a large one comes off the foot, where no title is');
+  t.ok(frame.framePlan({ width: 900, height: 1000 }).mode === 'crop' &&
+       frame.framePlan({ width: 900, height: 1000 }).anchor === 'centre',
+    'a cover wider than the box gives up the same from each side');
+  t.ok(frame.framePlan({ width: 0, height: 0 }).mode === 'crop' &&
+       frame.framePlan({}).mode === 'crop',
+    'and nothing measurable falls back to a plain centre crop');
+
+  // The two callers have to be reading the same module, not a copy of it.
+  const batchSource = readFileSync('scripts/resize-covers.mjs', 'utf8');
+  const portalSource = readFileSync('src/scripts/cover-review.ts', 'utf8');
+  t.ok(/from '\.\.\/src\/lib\/cover-frame\.mjs'/.test(batchSource) &&
+       /from '\.\.\/lib\/cover-frame\.mjs'/.test(portalSource),
+    'the batch script and the portal both take the rule from the one module');
+  t.ok(!/const BOX = |MAX_EXTEND = |PLAIN_EDGE = /.test(batchSource),
+    'and the script keeps no second copy of its constants');
+
+  // The upload has to carry the sized versions, and the delete has to take
+  // them away again, or a photo added and removed strands five files.
+  const uploadSource = readFileSync('src/pages/api/admin/upload.ts', 'utf8');
+  t.ok(uploadSource.includes("field.startsWith('variant:')") && uploadSource.includes('isPreset(preset)'),
+    'uploaded variants are stored only under a preset name the table knows');
+  t.ok(/bucket\.delete\(keys\)/.test(uploadSource) &&
+       uploadSource.includes('Object.keys(IMAGE_PRESETS).map'),
+    'and deleting a photo takes its sized versions with it');
+  t.ok(portalSource.includes('export async function dress'),
+    'the portal frames and cuts the photo before it is sent');
+
   const cardSource = readFileSync('src/components/BookCard.astro', 'utf8');
   const homeSource = readFileSync('src/pages/index.astro', 'utf8');
   t.ok(cardSource.includes('h-full w-full object-cover') && !cardSource.includes('object-contain p-3'),

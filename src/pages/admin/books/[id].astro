@@ -1271,7 +1271,29 @@ const previewCaption = book
           }
 
           status.textContent = 'Preparing…';
-          const { file, width, height, failed } = await shrink(original);
+
+          /*
+           * Framed and cut to size here, on the machine that already has the
+           * photo decoded.
+           *
+           * The alternative was what this used to do: send the photo and
+           * nothing else, leaving the listing with no variants until somebody
+           * remembered to run scripts/resize-covers.mjs. Until that happened
+           * `?p=card` fell back to the full-size original and the browser
+           * cropped it however object-fit saw fit, which is not the framing
+           * this shop follows. Sharp cannot run at Cloudflare's edge, so the
+           * only machine that can do this before the upload lands is this one.
+           */
+          const dressed = window.coverClean?.dress
+            ? await window.coverClean.dress(original)
+            : null;
+
+          // Falls back to the old path whenever the framing could not run, so
+          // an older browser still uploads a usable cover.
+          const { file, width, height, failed } = dressed?.variants?.size
+            ? { file: dressed.master, width: dressed.width, height: dressed.height, failed: false }
+            : await shrink(original);
+
           const saved = original.size - file.size;
           status.textContent = failed
             ? 'This phone could not shrink that photo - sending it as it is…'
@@ -1285,6 +1307,9 @@ const previewCaption = book
           if (width && height) {
             body.append('width', String(width));
             body.append('height', String(height));
+          }
+          for (const [name, variant] of dressed?.variants ?? []) {
+            body.append(`variant:${name}`, variant);
           }
 
           try {

@@ -31,6 +31,7 @@ import { dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
+import { framePlan, edgeSpread } from '../src/lib/cover-frame.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -196,13 +197,6 @@ async function prepareCover(input, primary) {
   return primary ? await extendToBox(trimmed) : trimmed;
 }
 
-/** The public frame, as a ratio. Every primary variant is cut to this. */
-const BOX = 5 / 7;
-/** The most width worth inventing, as a share of the cover's own. */
-const MAX_EXTEND = 0.12;
-/** How much an edge may vary and still count as plain enough to continue. */
-const PLAIN_EDGE = 12;
-
 /**
  * A cover too narrow for the box, widened along its own edges.
  *
@@ -212,26 +206,28 @@ const PLAIN_EDGE = 12;
  * These covers are not too tall, they are too narrow - so rather than take
  * height away, give width back.
  *
- * Only where the edge being continued is plain. The outermost column is
- * stretched outwards, which is seamless on the flat colour that runs down the
- * side of most covers and obvious nonsense on a photograph or a pattern, so
- * the edge is measured first and anything busy is left to be cropped as
- * before. Bounded too: past a point this stops being a cover with a wider
- * margin and starts being a cover somebody made up.
+ * The decision is `framePlan`'s, shared with the portal's uploader so a cover
+ * added there is framed the same way as one put through this script.
  */
 async function extendToBox(cover) {
   const { width: w, height: h } = cover;
-  const want = Math.round(h * BOX);
-  const pad = want - w;
-  if (pad <= 0 || pad > w * MAX_EXTEND) return cover;
-
   const { data, info } = await sharp(cover.data).ensureAlpha().raw()
     .toBuffer({ resolveWithObject: true });
-  if (!plainEdge(data, info, 0) || !plainEdge(data, info, info.width - 1)) return cover;
+  const column = (x) => (y) => {
+    const at = (y * info.width + x) * info.channels;
+    return [data[at], data[at + 1], data[at + 2]];
+  };
 
-  const left = Math.floor(pad / 2);
-  const right = pad - left;
-  const column = async (x, width) =>
+  const plan = framePlan({
+    width: w,
+    height: h,
+    leftSpread: edgeSpread(column(0), info.height),
+    rightSpread: edgeSpread(column(info.width - 1), info.height),
+  });
+  if (plan.mode !== 'extend') return cover;
+
+  const { left, right, width: want } = plan;
+  const stretch = async (x, width) =>
     sharp(cover.data).extract({ left: x, top: 0, width: 1, height: h })
       .resize(width, h, { fit: 'fill' }).png().toBuffer();
 
@@ -239,32 +235,16 @@ async function extendToBox(cover) {
     create: { width: want, height: h, channels: 3, background: '#ffffff' },
   })
     .composite([
-      ...(left ? [{ input: await column(0, left), left: 0, top: 0 }] : []),
+      ...(left ? [{ input: await stretch(0, left), left: 0, top: 0 }] : []),
       { input: await sharp(cover.data).png().toBuffer(), left, top: 0 },
-      ...(right ? [{ input: await column(w - 1, right), left: left + w, top: 0 }] : []),
+      ...(right ? [{ input: await stretch(w - 1, right), left: left + w, top: 0 }] : []),
     ])
     .png()
     .toBuffer();
 
-  return { ...cover, data: widened, width: want, height: h, extended: pad };
+  return { ...cover, data: widened, width: want, height: h, extended: right + left };
 }
 
-/** Whether one outer column is flat enough to be worth continuing outwards. */
-function plainEdge(data, info, x) {
-  const channels = info.channels;
-  const samples = [];
-  const steps = 60;
-  for (let i = 0; i < steps; i++) {
-    const y = Math.min(info.height - 1, Math.round(((i + 0.5) / steps) * info.height));
-    const at = (y * info.width + x) * channels;
-    samples.push([data[at], data[at + 1], data[at + 2]]);
-  }
-  const mean = [0, 1, 2].map((k) => samples.reduce((sum, v) => sum + v[k], 0) / samples.length);
-  const spread =
-    samples.reduce((sum, v) => sum + Math.max(...[0, 1, 2].map((k) => Math.abs(v[k] - mean[k]))), 0) /
-    samples.length;
-  return spread <= PLAIN_EDGE;
-}
 
 /**
  * One cover, one size.
@@ -282,7 +262,7 @@ async function resize(input, preset, primary, shape) {
       width,
       height,
       fit: fill ? 'cover' : 'inside',
-      position: fill ? anchor(shape, width / height) : 'centre',
+      position: fill ? framePlan(shape ?? {}).anchor ?? 'centre' : 'centre',
       // Primary variants need an exact common rectangle. The browser already
       // enlarged small covers to that slot; doing it once here also gives the
       // route predictable dimensions and a single crop everywhere.
@@ -291,33 +271,6 @@ async function resize(input, preset, primary, shape) {
     })
     .webp({ quality: 82 })
     .toBuffer();
-}
-
-/**
- * Which end of a too-tall cover gives way.
- *
- * Titles overwhelmingly sit at the top of these covers, so a cover that has to
- * lose real height loses it from the foot - a content-aware crop sometimes
- * chose a decorative centre and cut the title clean off, and north never does.
- *
- * But most covers are barely off the box: of the 117 taller than 5:7, 81% are
- * within 8% of it. Taking all of that off one end is what makes a framed cover
- * look damaged - the border rule along the bottom goes while the one along the
- * top stays, and the eye reads the difference immediately even though the
- * amount is small. Split between the two ends nothing is lost that was not
- * going anyway, and the frame stays a frame.
- *
- * So: share the loss when it is small enough that half of it cannot reach the
- * title, and fall back to protecting the title when it is not.
- */
-const SHARE_TRIM = 0.08;
-function anchor(shape, box) {
-  if (!shape?.width || !shape?.height) return 'north';
-  const ratio = shape.width / shape.height;
-  // Wider than the box: the trim lands on the sides, and centre is the only
-  // sensible reading of that - a cover is not lopsided.
-  if (ratio >= box) return 'centre';
-  return (box - ratio) / box <= SHARE_TRIM ? 'centre' : 'north';
 }
 
 /** Every image the catalogue knows about, newest keys last. */

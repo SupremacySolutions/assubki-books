@@ -24,6 +24,8 @@ import {
   refineMask,
   eraseBackground,
 } from './cover-clean';
+import { IMAGE_PRESETS } from '../lib/image-presets';
+import { BOX, framePlan, edgeSpread } from '../lib/cover-frame.mjs';
 
 export function mountCoverReview(): void {
   const panel = document.querySelector<HTMLDialogElement>('#cleanPanel');
@@ -681,6 +683,146 @@ export function mountCoverReview(): void {
       });
     }
 
-    (window as unknown as { coverClean?: unknown }).coverClean = { review };
+    (window as unknown as { coverClean?: unknown }).coverClean = { review, dress };
   }
+}
+
+/**
+ * A chosen photo, framed to the shop's box and cut into the sizes it serves.
+ *
+ * This is the step that was missing. The portal stored what the owner picked
+ * and nothing else, so a new listing had no variants at all: `?p=card` fell
+ * back to the full-size original, the browser cropped it with whatever
+ * `object-fit` decided, and the framing rule this shop actually follows only
+ * arrived later, if somebody remembered to run `scripts/resize-covers.mjs`.
+ *
+ * The rule itself is `framePlan`'s, shared with that script, so a cover added
+ * here is framed exactly as one put through the batch. What is deliberately
+ * not shared is the border trimming: the owner has just cropped this photo by
+ * hand, so there is no scanner margin left to find, and the script keeps that
+ * for the catalogue it inherited.
+ *
+ * Best effort throughout. Every failure returns what it was given rather than
+ * refusing the upload - a cover with no variants still displays, which is how
+ * this behaved before and is far better than turning the photo away.
+ */
+export async function dress(
+  file: File,
+): Promise<{ master: File; width: number; height: number; variants: Map<string, File> }> {
+  const bare = { master: file, width: 0, height: 0, variants: new Map<string, File>() };
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    return bare;
+  }
+
+  const framed = frameToBox(bitmap);
+  if (!framed) return bare;
+  const master = await toWebp(framed, 0.92);
+  if (!master) return bare;
+
+  const variants = new Map<string, File>();
+  for (const [name, preset] of Object.entries(IMAGE_PRESETS)) {
+    const width = preset.width * preset.scale;
+    const height = preset.height * preset.scale;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) continue;
+
+    if (name === 'social') {
+      /*
+       * The one square well, Telegram's. A cover goes into it whole rather
+       * than cropped, because a square crop of a book is a fragment of one.
+       */
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+      const scale = Math.min(width / framed.width, height / framed.height);
+      const w = Math.round(framed.width * scale);
+      const h = Math.round(framed.height * scale);
+      context.drawImage(framed, Math.round((width - w) / 2), Math.round((height - h) / 2), w, h);
+    } else {
+      // Already the shape of the box, so edge to edge is exact.
+      context.drawImage(framed, 0, 0, width, height);
+    }
+
+    const variant = await toWebp(canvas, 0.82, `${name}.webp`);
+    if (variant) variants.set(name, variant);
+  }
+
+  return { master, width: framed.width, height: framed.height, variants };
+}
+
+/** The photo on a canvas of the shop's shape, widened or cropped per the rule. */
+function frameToBox(bitmap: ImageBitmap): HTMLCanvasElement | null {
+  const source = document.createElement('canvas');
+  source.width = bitmap.width;
+  source.height = bitmap.height;
+  const from = source.getContext('2d', { willReadFrequently: true });
+  if (!from) return null;
+  from.drawImage(bitmap, 0, 0);
+
+  // Measured on the outermost column of each side, which is what decides
+  // whether widening would be seamless or would show its join.
+  const columnAt = (x: number) => {
+    const strip = from.getImageData(x, 0, 1, bitmap.height).data;
+    return (y: number): [number, number, number] => [
+      strip[y * 4],
+      strip[y * 4 + 1],
+      strip[y * 4 + 2],
+    ];
+  };
+  const plan = framePlan({
+    width: bitmap.width,
+    height: bitmap.height,
+    leftSpread: edgeSpread(columnAt(0), bitmap.height),
+    rightSpread: edgeSpread(columnAt(bitmap.width - 1), bitmap.height),
+  });
+
+  const out = document.createElement('canvas');
+  const to = out.getContext('2d');
+  if (!to) return null;
+
+  if (plan.mode === 'extend') {
+    out.width = plan.width;
+    out.height = plan.height;
+    if (plan.left) to.drawImage(source, 0, 0, 1, bitmap.height, 0, 0, plan.left, plan.height);
+    if (plan.right) {
+      to.drawImage(
+        source, bitmap.width - 1, 0, 1, bitmap.height,
+        plan.left + bitmap.width, 0, plan.right, plan.height,
+      );
+    }
+    to.drawImage(source, plan.left, 0);
+    return out;
+  }
+
+  const ratio = bitmap.width / bitmap.height;
+  if (ratio < BOX) {
+    out.width = bitmap.width;
+    out.height = Math.round(bitmap.width / BOX);
+    const spare = bitmap.height - out.height;
+    to.drawImage(source, 0, plan.anchor === 'north' ? 0 : -Math.round(spare / 2));
+  } else {
+    out.height = bitmap.height;
+    out.width = Math.round(bitmap.height * BOX);
+    to.drawImage(source, -Math.round((bitmap.width - out.width) / 2), 0);
+  }
+  return out;
+}
+
+function toWebp(
+  canvas: HTMLCanvasElement,
+  quality: number,
+  name = 'photo.webp',
+): Promise<File | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => resolve(blob ? new File([blob], name, { type: 'image/webp' }) : null),
+      'image/webp',
+      quality,
+    );
+  });
 }
