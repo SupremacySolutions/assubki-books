@@ -27,6 +27,18 @@ export const MAX_EXTEND = 0.12;
 export const PLAIN_EDGE = 12;
 
 /**
+ * How far the outer column may sit from the one behind it.
+ *
+ * Flatness alone is not enough, and trusting it caused exactly the fault this
+ * guards against: a warp that painted the outermost column white left a line
+ * that was perfectly uniform, so it passed the flatness test and was stretched
+ * into a band of white down the side of the cover. A real edge continues the
+ * cover; an artefact does not resemble it. So the outer column is compared
+ * with one a little inside, and it has to look like it.
+ */
+export const EDGE_MATCH = 22;
+
+/**
  * How much of the height may be lost before the title is worth protecting.
  *
  * Under this the trim is shared between both ends, which keeps a printed
@@ -58,17 +70,47 @@ export const SHARE_TRIM = 0.08;
  * @returns {number}
  */
 export function edgeSpread(read, height, steps = 60) {
-  const samples = [];
-  for (let i = 0; i < steps; i++) {
-    samples.push(read(Math.min(height - 1, Math.round(((i + 0.5) / steps) * height))));
-  }
-  const mean = [0, 1, 2].map((c) => samples.reduce((sum, v) => sum + v[c], 0) / samples.length);
+  const samples = readColumn(read, height, steps);
+  const mean = columnMean(samples);
   return (
     samples.reduce(
       (sum, v) => sum + Math.max(...[0, 1, 2].map((c) => Math.abs(v[c] - mean[c]))),
       0,
     ) / samples.length
   );
+}
+
+/**
+ * How far apart two columns are, at their furthest channel.
+ *
+ * Used to ask whether the outer column is the cover's own edge or something
+ * the processing left there.
+ *
+ * @param {ColumnReader} outer
+ * @param {ColumnReader} inner
+ * @param {number} height
+ * @param {number} [steps]
+ * @returns {number}
+ */
+export function edgeGap(outer, inner, height, steps = 60) {
+  const a = columnMean(readColumn(outer, height, steps));
+  const b = columnMean(readColumn(inner, height, steps));
+  return Math.max(...[0, 1, 2].map((c) => Math.abs(a[c] - b[c])));
+}
+
+/** @param {ColumnReader} read @param {number} height @param {number} steps */
+function readColumn(read, height, steps) {
+  const samples = [];
+  for (let i = 0; i < steps; i++) {
+    samples.push(read(Math.min(height - 1, Math.round(((i + 0.5) / steps) * height))));
+  }
+  return samples;
+}
+
+/** @param {[number, number, number][]} samples @returns {[number, number, number]} */
+function columnMean(samples) {
+  const mean = [0, 1, 2].map((c) => samples.reduce((sum, v) => sum + v[c], 0) / samples.length);
+  return /** @type {[number, number, number]} */ (mean);
 }
 
 /**
@@ -83,10 +125,11 @@ export function edgeSpread(read, height, steps = 60) {
  * `leftSpread`/`rightSpread` may be omitted, and then extending is not
  * considered - which is what a caller that cannot measure the edge should do.
  *
- * @param {{ width?: number, height?: number, leftSpread?: number, rightSpread?: number }} cover
+ * @param {{ width?: number, height?: number, leftSpread?: number, rightSpread?: number,
+ *           leftGap?: number, rightGap?: number }} cover
  * @returns {FramePlan}
  */
-export function framePlan({ width, height, leftSpread, rightSpread }) {
+export function framePlan({ width, height, leftSpread, rightSpread, leftGap, rightGap }) {
   if (!(typeof width === 'number' && width > 0) || !(typeof height === 'number' && height > 0)) {
     return { mode: 'crop', anchor: 'centre' };
   }
@@ -97,7 +140,15 @@ export function framePlan({ width, height, leftSpread, rightSpread }) {
     const pad = want - width;
     const measured = Number.isFinite(leftSpread) && Number.isFinite(rightSpread);
     const plain = measured && leftSpread <= PLAIN_EDGE && rightSpread <= PLAIN_EDGE;
-    if (pad > 0 && pad <= width * MAX_EXTEND && plain) {
+    /*
+     * A gap is only checked when it was measured. A caller that cannot look
+     * behind the edge gets the old behaviour rather than a refusal, which
+     * keeps this usable from somewhere with only the outer column to hand.
+     */
+    const belongs =
+      (!Number.isFinite(leftGap) || leftGap <= EDGE_MATCH) &&
+      (!Number.isFinite(rightGap) || rightGap <= EDGE_MATCH);
+    if (pad > 0 && pad <= width * MAX_EXTEND && plain && belongs) {
       const left = Math.floor(pad / 2);
       return { mode: 'extend', width: want, height, left, right: pad - left };
     }

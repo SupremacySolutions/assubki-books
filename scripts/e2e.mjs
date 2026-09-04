@@ -2190,6 +2190,65 @@ async function integrity() {
   t.ok(portalSource.includes('export async function dress'),
     'the portal frames and cuts the photo before it is sent');
 
+  /*
+   * The white hairline, and the band it grew into.
+   *
+   * Corners are clamped to the picture's edge, at `sw`, while the last pixel
+   * centre is at `sw - 1`. The outermost samples fell in the gap and were
+   * painted white, so every cover cropped to the edge of its own photo came
+   * out with a hairline down it - and the widening then measured that column,
+   * found pure white perfectly uniform, and stretched it into a band.
+   */
+  const solid = (width, height, colour) => {
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < width * height; i++) {
+      data[i * 4] = colour[0]; data[i * 4 + 1] = colour[1];
+      data[i * 4 + 2] = colour[2]; data[i * 4 + 3] = 255;
+    }
+    return { data, width, height };
+  };
+  const flatCover = solid(200, 300, [20, 68, 94]);
+  const squared = { data: new Uint8ClampedArray(200 * 300 * 4), width: 200, height: 300 };
+  clean.warp(flatCover, [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 300 }, { x: 0, y: 300 }], squared);
+  const shade = (x, y) => {
+    const i = (y * 200 + x) * 4;
+    return [squared.data[i], squared.data[i + 1], squared.data[i + 2]];
+  };
+  const paleAt = (x, y) => shade(x, y).every((v) => v > 200);
+  let paleEdges = 0;
+  for (let x = 0; x < 200; x++) { if (paleAt(x, 0)) paleEdges++; if (paleAt(x, 299)) paleEdges++; }
+  for (let y = 0; y < 300; y++) { if (paleAt(0, y)) paleEdges++; if (paleAt(199, y)) paleEdges++; }
+  t.ok(paleEdges === 0,
+    `a cover cropped to the edge of its photo keeps its colour there (${paleEdges} pale edge pixels)`);
+  t.ok(shade(199, 299).join(',') === '20,68,94',
+    'right down to the last corner');
+
+  const adrift = { data: new Uint8ClampedArray(200 * 300 * 4), width: 200, height: 300 };
+  clean.warp(flatCover, [{ x: -60, y: -60 }, { x: 200, y: 0 }, { x: 200, y: 300 }, { x: 0, y: 300 }], adrift);
+  t.ok(adrift.data[0] === 255 && adrift.data[1] === 255 && adrift.data[2] === 255,
+    'while a corner dragged well off the photo still reads as paper, not as cover');
+
+  // And the guard that stops such a line being stretched, if one ever appears.
+  const whiteLine = () => [252, 255, 255];
+  const blueBody = () => [20, 68, 94];
+  t.ok(frame.framePlan({
+    width: 940, height: 1385,
+    leftSpread: 0, rightSpread: 0,
+    leftGap: 4,
+    rightGap: frame.edgeGap(whiteLine, blueBody, 1385),
+  }).mode === 'crop',
+    'a flat edge that looks nothing like the cover behind it is not stretched outwards');
+  t.ok(frame.framePlan({
+    width: 940, height: 1385,
+    leftSpread: 0, rightSpread: 0,
+    leftGap: frame.edgeGap(blueBody, blueBody, 1385),
+    rightGap: frame.edgeGap(blueBody, blueBody, 1385),
+  }).mode === 'extend',
+    'and one that continues it still is');
+  t.ok(readFileSync('scripts/resize-covers.mjs', 'utf8').includes('rightGap: edgeGap(') &&
+       portalSource.includes('rightGap: edgeGap('),
+    'both callers measure that, not just one of them');
+
   const cardSource = readFileSync('src/components/BookCard.astro', 'utf8');
   const homeSource = readFileSync('src/pages/index.astro', 'utf8');
   t.ok(cardSource.includes('h-full w-full object-cover') && !cardSource.includes('object-contain p-3'),

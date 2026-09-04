@@ -607,20 +607,35 @@ export function warp(
       const p = project(inverse, { x: x + 0.5, y: y + 0.5 });
       const o = (y * w + x) * 4;
 
-      // Outside the source: white, so a corner dragged past the edge reads as
-      // paper rather than as a black wedge.
-      if (p.x < 0 || p.y < 0 || p.x > sw - 1 || p.y > sh - 1) {
+      /*
+       * Outside the source: white, so a corner dragged past the edge reads as
+       * paper rather than as a black wedge.
+       *
+       * A pixel of slack, because the last row and column are not outside and
+       * used to be treated as though they were. Corners are clamped to the
+       * picture's edge, at `sw`, while the last pixel centre is at `sw - 1` -
+       * so the outermost samples fell in the gap between the two and every
+       * cover cropped to the edge of its photo came out with a white hairline
+       * down it. Worse than it sounds: the widening downstream measures that
+       * column, finds a line of pure white perfectly uniform, and stretches it
+       * into a band. Within the slack the sample is clamped back onto the last
+       * real pixel instead.
+       */
+      const SLACK = 1;
+      if (p.x < -SLACK || p.y < -SLACK || p.x > sw - 1 + SLACK || p.y > sh - 1 + SLACK) {
         out.data[o] = out.data[o + 1] = out.data[o + 2] = 255;
         out.data[o + 3] = 255;
         continue;
       }
 
-      const x0 = Math.floor(p.x);
-      const y0 = Math.floor(p.y);
+      const px = Math.min(sw - 1, Math.max(0, p.x));
+      const py = Math.min(sh - 1, Math.max(0, p.y));
+      const x0 = Math.floor(px);
+      const y0 = Math.floor(py);
       const x1 = Math.min(sw - 1, x0 + 1);
       const y1 = Math.min(sh - 1, y0 + 1);
-      const fx = p.x - x0;
-      const fy = p.y - y0;
+      const fx = px - x0;
+      const fy = py - y0;
 
       for (let c = 0; c < 3; c++) {
         const tl = src[(y0 * sw + x0) * 4 + c];
