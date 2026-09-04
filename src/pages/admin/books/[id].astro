@@ -122,7 +122,7 @@ const previewCaption = book
   {
     error === 'held' && (
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
-        This listing cannot be deleted while copies are held by an open order. Cancel or complete
+        This listing cannot be deleted while copies are reserved by an open order. Cancel or complete
         that order first.
       </p>
     )
@@ -317,7 +317,7 @@ const previewCaption = book
             {
               book && book.reserved > 0 && (
                 <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-                  {book.reserved} held by open orders
+                  {book.reserved} reserved by open orders
                 </p>
               )
             }
@@ -988,7 +988,7 @@ const previewCaption = book
             </p>
             {book.reserved > 0 && (
               <p class="mt-2 text-[13px] text-[var(--color-outstock)]">
-                {book.reserved} {book.reserved === 1 ? 'copy is' : 'copies are'} held by an open
+                {book.reserved} {book.reserved === 1 ? 'copy is' : 'copies are'} reserved by an open
                 order, so this cannot be deleted yet.
               </p>
             )}

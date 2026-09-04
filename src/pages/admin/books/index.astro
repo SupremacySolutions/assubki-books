@@ -194,7 +194,7 @@ const windowed = () => {
               </a>
               <p class="text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-2">
                 <span class="price !text-[13px]">{price(b.price_pence)}</span>
-                {b.reserved > 0 && <span>{b.reserved} held</span>}
+                {b.reserved > 0 && <span>{b.reserved} reserved</span>}
                 {!b.has_description && <span class="text-[var(--color-outstock)]">no description</span>}
                 {b.cat_count === 0 && <span class="text-[var(--color-outstock)]">no subject</span>}
                 {b.status !== 'live' && <span class="text-[var(--color-outstock)]">{b.status}</span>}
