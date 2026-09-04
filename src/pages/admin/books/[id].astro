@@ -506,7 +506,7 @@ const previewCaption = book
                   >
                     <span class="block text-[14.5px] font-medium text-[var(--color-navy)]">Find a cover</span>
                     <span class="block mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                      Searches title and author, including spelling, punctuation and accent variants.
+                      Searches Open Library editions and Google Books using the title and author.
                     </span>
                   </button>
                   {/*
@@ -532,7 +532,7 @@ const previewCaption = book
                 <p id="coverCount" class="text-[13.5px] font-medium mb-2"></p>
                 <p id="coverTerms" class="text-[12.5px] text-[var(--color-ink-faint)] mb-3"></p>
 
-                <div id="coverGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+                <div id="coverGrid" class="space-y-5"></div>
 
                 <div id="coverRetry" hidden class="mt-3">
                   <label class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
@@ -545,9 +545,9 @@ const previewCaption = book
                 </div>
 
                 <p id="coverNote" class="mt-3 pt-3 border-t border-[var(--color-rule-faint)] text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                  Up to twelve likely editions are shown, closest matches first. Covers use the same
-                  full-bleed preview as the shop. Nothing is attached until you accept it, and nothing
-                  is saved until you save the page.
+                  Up to eight results from each source are shown. Covers use the same full-bleed
+                  preview as the shop. Nothing is attached until you accept it, and nothing is saved
+                  until you save the page.
                 </p>
               </div>
 
@@ -1368,16 +1368,12 @@ const previewCaption = book
         }
 
         /*
-         * Find a cover.
+         * Find a cover in two independent catalogues. Open Library work
+         * results are expanded into editions on our server; Google stays in
+         * its own provider block and in its native relevance order.
          *
-         * Open Library is keyless and free, and its coverage of Turath,
-         * Zamzam, Mustafah and Whitethread is thin - a search that finds
-         * nothing is the ordinary outcome here, not a fault, and the empty
-         * state says so rather than looking like a broken tool.
-         *
-         * Every image comes through /api/admin/covers/image because the site's
-         * CSP is `img-src 'self'`: a cover fetched straight from Open Library
-         * would simply not render, with no error anywhere.
+         * Candidate images still come through our id-only proxy. It satisfies
+         * the site's CSP and cannot be turned into an arbitrary URL fetcher.
          */
         const findBtn = document.querySelector('#findCover');
         if (findBtn) {
@@ -1389,16 +1385,7 @@ const previewCaption = book
           const words = document.querySelector('#coverWords');
           const note = document.querySelector('#coverNote');
 
-          /*
-           * Judged from the loaded image, because Open Library does not report
-           * dimensions until you have fetched the thing.
-           *
-           * Only what actually separates one candidate from another. Nearly
-           * every Open Library cover is around 350px and taller than the frame, so
-           * flagging either would put the same two warnings under all six and
-           * teach the owner to ignore them. Being smaller than a photograph is
-           * true of the whole source, and is said once beneath the grid.
-           */
+          // Dimensions are known only after the proxied image has loaded.
           function faults(w, h) {
             const out = [];
             if (w < 300) out.push('a thumbnail - too small to use');
@@ -1416,24 +1403,39 @@ const previewCaption = book
             findBtn.disabled = true;
 
             let covers = [];
+            let providers = {
+              openlibrary: { state: 'unavailable', count: 0 },
+              google: { state: 'unavailable', count: 0 },
+            };
             try {
               const params = new URLSearchParams(author
                 ? { title: terms, author }
                 : { q: terms });
               const res = await fetch(`/api/admin/covers/search?${params}`);
-              if (res.ok) covers = (await res.json()).covers ?? [];
+              if (res.ok) {
+                const payload = await res.json();
+                covers = payload.covers ?? [];
+                providers = payload.providers ?? providers;
+              }
             } catch {
-              /* Offered again below, same as finding nothing. */
+              /* The provider-aware empty state below explains an outage. */
             }
             findBtn.disabled = false;
 
-            // Said the same way whether the search returned nothing or every
-            // candidate turned out to be a dead cover id.
             function nothing() {
-              countLine.textContent = 'Nothing found';
+              const unavailable = Object.entries(providers)
+                .filter(([, report]) => report.state === 'unavailable')
+                .map(([provider]) => provider === 'google' ? 'Google Books' : 'Open Library');
+              const googleMissing = providers.google?.state === 'not-configured';
+              countLine.textContent = unavailable.length
+                ? 'Cover search unavailable'
+                : 'Nothing found';
               note.hidden = true;
-              termsLine.textContent =
-                'This is normal. Open Library covers well-known editions; most of what this shop sells is not in it. A photograph of the book is the reliable way, and often the better one.';
+              termsLine.textContent = unavailable.length
+                ? `${unavailable.join(' and ')} could not be reached. Try again, or upload a photo.`
+                : googleMissing
+                  ? 'No match in Open Library. Google Books is not connected yet, so upload a photo or try different words.'
+                  : 'Neither source has a matching cover. A photograph of the book is still the most reliable option.';
               retry.hidden = false;
               words.value = terms;
             }
@@ -1443,45 +1445,72 @@ const previewCaption = book
               return;
             }
 
-            termsLine.textContent = `Searched for “${terms}”. Nothing is attached until you accept it.`;
+            const unavailable = Object.entries(providers)
+              .filter(([, report]) => report.state === 'unavailable')
+              .map(([provider]) => provider === 'google' ? 'Google Books' : 'Open Library');
+            termsLine.textContent = providers.google?.state === 'not-configured'
+              ? `Searched for “${terms}”. Google Books is not connected yet.`
+              : unavailable.length
+                ? `Searched for “${terms}”. ${unavailable.join(' and ')} could not be reached, so these are partial results.`
+                : `Searched for “${terms}”. Nothing is attached until you accept it.`;
             retry.hidden = false;
             words.value = terms;
 
             let shown = 0;
-            for (const cover of covers) {
-              const cell = document.createElement('div');
+            let pending = covers.length;
+            for (const provider of ['openlibrary', 'google']) {
+              const providerCovers = covers.filter((cover) => cover.provider === provider);
+              if (providerCovers.length === 0) continue;
 
-              const btn = document.createElement('button');
-              btn.type = 'button';
-              btn.className =
-                'block w-full text-left rounded-[8px] overflow-hidden border border-[var(--color-rule-soft)] hover:border-[var(--color-navy)] transition-colors';
+              const section = document.createElement('section');
+              section.dataset.coverProvider = provider;
+              const heading = document.createElement('div');
+              heading.className = 'mb-2 flex min-h-8 items-center justify-between gap-3';
+              const headingText = document.createElement('h3');
+              headingText.className = 'text-[13px] font-medium text-[var(--color-ink-soft)]';
+              headingText.textContent = provider === 'google' ? 'Google Books' : 'Open Library editions';
+              heading.append(headingText);
+              if (provider === 'google') {
+                const brand = document.createElement('img');
+                brand.src = 'https://books.google.com/googlebooks/images/poweredby.png';
+                brand.alt = 'Powered by Google';
+                brand.width = 62;
+                brand.height = 30;
+                heading.append(brand);
+              }
+              const providerGrid = document.createElement('div');
+              providerGrid.className = 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4';
+              section.append(heading, providerGrid);
+              grid.append(section);
 
-              const img = document.createElement('img');
-              img.src = `/api/admin/covers/image?id=${cover.id}`;
-              img.alt = cover.title;
-              img.className = 'block w-full aspect-[5/7] object-cover bg-[var(--color-paper)]';
+              for (const cover of providerCovers) {
+                const cell = document.createElement('div');
 
-              const title = document.createElement('p');
-              title.className =
-                'mt-2 text-[12.5px] font-medium text-[var(--color-navy)] leading-tight line-clamp-2';
-              title.textContent = cover.title;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className =
+                  'block w-full text-left rounded-[8px] overflow-hidden border border-[var(--color-rule-soft)] hover:border-[var(--color-navy)] transition-colors';
 
-              const note = document.createElement('p');
-              note.className = 'mt-1 text-[11px] text-[var(--color-ink-faint)] leading-tight line-clamp-2';
-              note.textContent = cover.source;
+                const img = document.createElement('img');
+                img.alt = cover.title;
+                img.className = 'block w-full aspect-[5/7] object-cover bg-[var(--color-paper)]';
 
-              /*
-               * A cover id can 404 - `default=false` refuses the grey
-               * placeholder - so the tile earns its place by loading.
-               *
-               * Deliberately not `loading="lazy"`: a hidden image is never in
-               * the viewport, so a lazy one would wait for a scroll that can
-               * never happen and no tile would ever appear. There are six.
-               */
+                const title = document.createElement('p');
+                title.className =
+                  'mt-2 text-[12.5px] font-medium text-[var(--color-navy)] leading-tight line-clamp-2';
+                title.textContent = cover.title;
+
+                const note = document.createElement('p');
+                note.className = 'mt-1 text-[11px] text-[var(--color-ink-faint)] leading-tight line-clamp-2';
+                note.textContent = cover.source;
+
+              // A provider id can still point at an image which has since
+              // disappeared, so a tile earns its place by loading.
               cell.hidden = true;
               img.addEventListener('load', () => {
                 cell.hidden = false;
                 shown += 1;
+                pending -= 1;
                 countLine.textContent = shown === 1 ? '1 cover found' : `${shown} covers found`;
                 const bad = faults(img.naturalWidth, img.naturalHeight);
                 note.textContent = `${img.naturalWidth}×${img.naturalHeight} · ${cover.source}`;
@@ -1493,15 +1522,24 @@ const previewCaption = book
                 }
               });
               img.addEventListener('error', () => {
+                pending -= 1;
                 cell.remove();
-                if (shown === 0 && grid.children.length === 0) nothing();
+                if (providerGrid.children.length === 0) section.remove();
+                if (pending === 0 && shown === 0) {
+                  grid.innerHTML = '';
+                  nothing();
+                }
               });
 
               btn.addEventListener('click', async () => {
                 status.hidden = false;
                 status.textContent = 'Fetching that cover…';
                 try {
-                  const res = await fetch(`/api/admin/covers/image?id=${cover.id}`);
+                  const coverParams = new URLSearchParams({
+                    provider: cover.provider,
+                    id: String(cover.id),
+                  });
+                  const res = await fetch(`/api/admin/covers/image?${coverParams}`);
                   if (!res.ok) throw new Error('gone');
                   const blob = await res.blob();
                   // Straight into the same review the owner's own photo gets.
@@ -1513,7 +1551,24 @@ const previewCaption = book
 
               btn.append(img);
               cell.append(btn, title, note);
-              grid.append(cell);
+              if (provider === 'google') {
+                const sourceLink = document.createElement('a');
+                sourceLink.href = `https://books.google.com/books?id=${encodeURIComponent(cover.id)}`;
+                sourceLink.target = '_blank';
+                sourceLink.rel = 'noopener';
+                sourceLink.className =
+                  'mt-1.5 inline-block text-[11.5px] font-medium text-[var(--color-navy)] underline underline-offset-2';
+                sourceLink.textContent = 'View on Google Books';
+                cell.append(sourceLink);
+              }
+              providerGrid.append(cell);
+
+              const imageParams = new URLSearchParams({
+                provider: cover.provider,
+                id: String(cover.id),
+              });
+              img.src = `/api/admin/covers/image?${imageParams}`;
+              }
             }
           }
 

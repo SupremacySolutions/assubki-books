@@ -1,8 +1,9 @@
 # Turning the connections on
 
 Everything below is optional in the sense that the shop runs without it - orders
-are taken, stock is held, the portal works. What each one unlocks is the ability
-to *reach people*. Until they are set, the site logs what it would have sent.
+are taken, stock is held, and the portal works. Each connection unlocks an
+extra service. Until messaging connections are set, the site logs what it would
+have sent.
 
 Set secrets from the repo root. They are per-environment and never committed:
 
@@ -88,6 +89,28 @@ you can revoke a person rather than rotating a shared secret:
 
 The moment `ACCESS_AUD` is set, the password path stops working - deliberately,
 so there are never two ways in. Delete `ADMIN_PASSWORD` afterwards.
+
+## 4. Google Books cover lookup
+
+Open Library works without configuration. A Google Books API key adds a second,
+independent group of cover results in **Books → listing → Find a cover**.
+
+1. In Google Cloud, create or choose a project.
+2. Enable the **Books API**.
+3. Create an API key restricted to the Books API.
+4. Add it to the deployed Worker:
+
+```bash
+npx wrangler secret put GOOGLE_BOOKS_API_KEY
+```
+
+For local development, add `GOOGLE_BOOKS_API_KEY=...` to `.dev.vars`. Never put
+the key in `wrangler.jsonc` or commit it. Deploy again after setting the secret.
+
+The picker deliberately keeps Google results in their own labelled block,
+preserves Google's relevance order, shows the official Powered by Google mark,
+and links every result to Google Books. Those are product-branding requirements,
+not decorative choices.
 
 ---
 

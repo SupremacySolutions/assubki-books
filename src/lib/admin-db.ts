@@ -163,7 +163,8 @@ const FILTER_SQL: Record<BookFilter, string> = {
    */
   'thin-photo': `EXISTS (
      SELECT 1 FROM book_images i
-      WHERE i.book_id = b.id AND i.width IS NOT NULL AND i.height > 0
+      WHERE i.book_id = b.id AND i.sort = 0
+        AND i.width IS NOT NULL AND i.height > 0
         AND MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) < 300
    )`,
   'no-description': "(b.description_html IS NULL OR b.description_html = '')",

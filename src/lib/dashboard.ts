@@ -161,9 +161,9 @@ async function read(days: number): Promise<Dashboard> {
          (SELECT COUNT(*) FROM books b WHERE b.status='live'
             AND NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)) AS noCategory,
          (SELECT COUNT(*) FROM books b2 WHERE b2.status='live'
-            AND EXISTS (SELECT 1 FROM book_images i WHERE i.book_id = b2.id
+            AND EXISTS (SELECT 1 FROM book_images i WHERE i.book_id = b2.id AND i.sort = 0
                           AND i.width IS NOT NULL AND i.height > 0
-                          AND MIN(i.width, CAST(i.height * 0.75 AS INTEGER)) < 300)) AS thinImage,
+                          AND MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) < 300)) AS thinImage,
          (SELECT COUNT(*) FROM books WHERE status='live' AND telegram_message_id IS NULL) AS unposted,
          (SELECT COUNT(*) FROM books WHERE status='live' AND (stock - reserved) <= 0) AS outOfStock,
          (SELECT COUNT(*) FROM books WHERE status='live'

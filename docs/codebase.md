@@ -283,7 +283,8 @@ key never propagates; `IMAGE_VERSION` in the URL is what busts it.
   `null` for Cancel with it - so refusing a crooked photo uploaded it anyway.
   Where a function answers `null` on purpose, test for the thing that might be
   missing, not for the answer.
-- **The CSP is `img-src 'self'`.** An image from anywhere else does not render
-  and reports nothing. Anything found off-site is served through a route of our
-  own (`/api/admin/covers/image`), which takes an id rather than a URL so it
-  cannot turn into an open proxy.
+- **Candidate covers stay on our origin.** Anything found off-site is served
+  through `/api/admin/covers/image`, which takes a known provider and a
+  validated id rather than a URL, so it cannot become an open proxy. The CSP's
+  only cover-related exception is Google's fixed attribution image; the cover
+  images themselves still use `'self'`.

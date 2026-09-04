@@ -927,17 +927,31 @@ async function listings() {
   const searched = await get('/api/admin/covers/search?q=the+study+quran');
   const found = await searched.json();
   t.ok(searched.status === 200 && Array.isArray(found.covers), 'a cover search answers with a list');
-  t.ok(found.covers.every((c) => Number.isInteger(c.id) && !('url' in c)),
-    'candidates carry a cover id and never an off-site URL');
-  t.ok(found.covers.length <= 12 && found.covers.every((c) => c.title && c.source),
-    'and returns a readable, bounded set of visual edition choices');
+  t.ok(found.covers.every((c) =>
+    typeof c.id === 'string' && ['openlibrary', 'google'].includes(c.provider) && !('url' in c)),
+  'candidates carry a provider id and never an off-site URL');
+  t.ok(found.covers.length <= 16 && found.covers.every((c) => c.title && c.source),
+    'and returns readable, bounded provider blocks of visual edition choices');
+  t.ok(
+    found.providers?.openlibrary?.state && found.providers?.google?.state,
+    'and reports each source separately so an outage is not called no results',
+  );
 
-  // `img-src 'self'`: a candidate the browser cannot load is no candidate.
+  // Candidate covers stay on `self`: one the browser cannot load is no candidate.
   const proxied = await get('/api/admin/covers/image?id=12778208');
   t.ok(proxied.status === 200 && (proxied.headers.get('content-type') ?? '').startsWith('image/'),
     'and the image itself is served from this origin');
+  const googleProxied = await get('/api/admin/covers/image?provider=google&id=zyTCAlFPjgYC');
+  t.ok(
+    googleProxied.status === 200 &&
+      (googleProxied.headers.get('content-type') ?? '').startsWith('image/'),
+    'the Google Books cover host is served through the same safe-origin path',
+  );
   t.ok((await get('/api/admin/covers/image?id=../secret')).status === 400,
     'the proxy takes a cover id, never a URL to fetch');
+  t.ok((await get('/api/admin/covers/image?provider=google&id=../secret')).status === 400 &&
+    (await get('/api/admin/covers/image?provider=elsewhere&id=123')).status === 400,
+  'the second provider is also restricted to a safe id and a known host');
 
   const noPhoto = await makeBook();
   const editor = await html(`/admin/books/${noPhoto.id}`);
@@ -945,6 +959,12 @@ async function listings() {
     'a listing with no photo is offered the search');
   t.ok(editor.includes('Upload one myself'),
     'and uploading sits beside it as an equal, not as a fallback in small print');
+  t.ok(
+    editor.includes('Open Library editions') &&
+      editor.includes('https://books.google.com/googlebooks/images/poweredby.png') &&
+      editor.includes('View on Google Books'),
+    'provider results stay separated and Google results carry attribution and a source link',
+  );
 
   /*
    * Cancel used to upload anyway.
@@ -1364,6 +1384,12 @@ async function ownerSettings() {
     'and each one can be named');
   t.ok(!page.includes('Usual postage'),
     'and no longer asks for a postage default the owner types over anyway');
+  const connections = visibleText(await html('/admin/settings?s=alerts'));
+  t.ok(
+    connections.includes('Google Books covers') &&
+      (connections.includes('second cover source') || connections.includes('Open Library only')),
+    'connections says whether the second cover source is actually configured',
+  );
 
   await admin('/api/admin/settings', { contact_telegram: '@alsubkibooks' });
 }
@@ -1902,6 +1928,82 @@ async function integrity() {
     coverSearch.coverMatchScore('Riyad as-Salihin', '', { title: 'Riyāḍ al-Ṣāliḥīn' }) >
       coverSearch.coverMatchScore('Riyad as-Salihin', '', { title: 'Riyad Bank Annual Report' }),
     'accent variants rank above a merely partial word match',
+  );
+  const googleQuery = new URL(coverSearch.googleBooksQuery('Riyad as-Salihin', 'al-Nawawi', 'test-key'));
+  t.ok(
+    googleQuery.searchParams.get('q') === 'Riyad as-Salihin al-Nawawi' &&
+      googleQuery.searchParams.get('orderBy') === 'relevance' &&
+      googleQuery.searchParams.get('maxResults') === '20',
+    'Google Books receives one relevance-ordered title and author query',
+  );
+  const googleOnly = coverSearch.googleCandidates({ items: [
+    { id: 'second_result', volumeInfo: { title: 'Second', imageLinks: { thumbnail: 'x' } } },
+    { id: 'first-result', volumeInfo: { title: 'First', imageLinks: { thumbnail: 'x' } } },
+    { id: 'no-cover', volumeInfo: { title: 'No cover' } },
+    { id: '../unsafe', volumeInfo: { title: 'Unsafe', imageLinks: { thumbnail: 'x' } } },
+  ] });
+  t.ok(
+    googleOnly.map((cover) => cover.id).join(',') === 'second_result,first-result',
+    'Google results keep their native order and discard missing images and unsafe ids',
+  );
+
+  const fakeCoverFetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'openlibrary.org' && url.pathname === '/search.json') {
+      return Response.json({ docs: [{
+        key: 'OL123W', title: 'The Study Quran', cover_i: 100,
+        author_name: ['Seyyed Hossein Nasr'], publisher: ['HarperOne'], edition_count: 12,
+      }] });
+    }
+    if (url.hostname === 'openlibrary.org' && url.pathname === '/works/OL123W/editions.json') {
+      return Response.json({ entries: [
+        { title: 'The Study Quran', covers: [100, 101], publishers: ['HarperOne'] },
+        { title: 'The Study Quran', covers: [102], publishers: ['HarperOne'] },
+      ] });
+    }
+    if (url.hostname === 'www.googleapis.com') {
+      return Response.json({ items: [
+        { id: 'google_b', volumeInfo: { title: 'Google B', imageLinks: { thumbnail: 'x' } } },
+        { id: 'google_a', volumeInfo: { title: 'Google A', imageLinks: { thumbnail: 'x' } } },
+      ] });
+    }
+    return new Response('unexpected', { status: 500 });
+  };
+  const combinedCovers = await coverSearch.searchCovers('The Study Quran', 'Nasr', {
+    googleApiKey: 'test-key',
+    fetcher: fakeCoverFetch,
+  });
+  t.ok(
+    combinedCovers.covers.slice(0, 3).map((cover) => cover.id).join(',') === '100,101,102' &&
+      combinedCovers.covers.slice(-2).map((cover) => cover.id).join(',') === 'google_b,google_a',
+    'the best Open Library work expands to edition covers before the separate Google block',
+  );
+  t.ok(
+    combinedCovers.providers.openlibrary.state === 'available' &&
+      combinedCovers.providers.google.state === 'available',
+    'successful providers are reported independently',
+  );
+  const googleSurvives = await coverSearch.searchCovers('The Study Quran', '', {
+    googleApiKey: 'test-key',
+    fetcher: async (input) => String(input).includes('googleapis.com')
+      ? Response.json({ items: [{
+          id: 'still_found', volumeInfo: { title: 'Still found', imageLinks: { thumbnail: 'x' } },
+        }] })
+      : new Response('down', { status: 503 }),
+  });
+  t.ok(
+    googleSurvives.providers.openlibrary.state === 'unavailable' &&
+      googleSurvives.providers.google.state === 'available' &&
+      googleSurvives.covers[0]?.id === 'still_found',
+    'one provider outage does not hide results from the other',
+  );
+  const noGoogleKey = await coverSearch.searchCovers('The Study Quran', '', {
+    fetcher: fakeCoverFetch,
+  });
+  t.ok(
+    noGoogleKey.providers.google.state === 'not-configured' &&
+      noGoogleKey.providers.openlibrary.state === 'available',
+    'a missing Google key is reported without breaking the keyless source',
   );
 
   const cardSource = readFileSync('src/components/BookCard.astro', 'utf8');
@@ -3532,24 +3634,15 @@ async function frontPage() {
     'nor the two rows that repeated it');
 
   /*
-   * Every cover on the drifting shelf passes the rule the cards use.
-   *
-   * The strip crops each one to a single size, so a shape that would be padded
-   * on a card loses its title here. It used to carry a looser rule of its own.
+   * Every primary cover now has a pre-cut 5:7 hero variant. Its original
+   * dimensions no longer decide whether it can use the shelf; asking for the
+   * hero preset is the contract that keeps the strip uniform.
    */
-  const shelfKeys = [...home.matchAll(/class="shelf-book"[\s\S]{0,400}?src="\/img\/([^"?]+)/g)]
-    .map((m) => m[1]);
-  t.ok(shelfKeys.length > 0, 'the shelf strip renders covers');
-  const shapes = await db(
-    `SELECT width, height FROM book_images WHERE image_key IN (${
-      [...new Set(shelfKeys)].map((k) => `'${k}'`).join(',')
-    })`,
-  );
-  const ugly = shapes.filter((s) => {
-    const r = s.width / s.height;
-    return !(r >= 0.75 && (r - 0.75) / r <= 0.06);
-  });
-  t.ok(ugly.length === 0, 'every cover on it would crop cleanly', `${ugly.length} would not`);
+  const shelfImages = [...home.matchAll(/class="shelf-book"[\s\S]{0,400}?<img[^>]+src="([^"]+)"/g)]
+    .map((m) => m[1].replaceAll('&amp;', '&'));
+  t.ok(shelfImages.length > 0, 'the shelf strip renders covers');
+  t.ok(shelfImages.every((src) => /[?&]p=hero(?:&|$)/.test(src)),
+    'every shelf cover asks for the shared 5:7 hero variant');
 
   // Shuffled per render, so the shop looks different on a second visit.
   const again = await html('/');

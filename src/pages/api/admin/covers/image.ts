@@ -5,23 +5,47 @@ export const prerender = false;
 /**
  * One candidate cover, fetched by the server and served from our own origin.
  *
- * Not a convenience. The site's CSP is `img-src 'self'`, so a browser here
- * will not load an image from covers.openlibrary.org at all - it has to arrive
- * from this origin or not arrive.
+ * Not a convenience. Candidate covers are restricted to `img-src 'self'`, so
+ * they have to arrive from this origin. (Google's fixed attribution graphic is
+ * the narrow CSP exception, not its candidate artwork.)
  *
- * It takes a **cover id**, never a URL, so it cannot be turned into an open
- * proxy for fetching arbitrary things through the shop's domain.
+ * It takes a provider and that provider's **cover id**, never a URL, so it
+ * cannot be turned into an open proxy for fetching arbitrary things through
+ * the shop's domain.
  */
-export const GET: APIRoute = async ({ url }) => {
-  const id = Number(url.searchParams.get('id'));
-  if (!Number.isInteger(id) || id <= 0) return new Response('Bad cover id', { status: 400 });
+export const GET: APIRoute = async ({ request, url }) => {
+  const provider = url.searchParams.get('provider') ?? 'openlibrary';
+  const rawId = url.searchParams.get('id') ?? '';
+  let source: string;
 
-  // `default=false` so a missing cover 404s rather than returning Open
-  // Library's grey placeholder, which would otherwise be offered to the owner
-  // as though it were a real cover.
-  const res = await fetch(`https://covers.openlibrary.org/b/id/${id}-L.jpg?default=false`, {
-    headers: { 'User-Agent': 'assubki-books (shop cover lookup)' },
-  });
+  if (provider === 'openlibrary') {
+    const id = Number(rawId);
+    if (!Number.isInteger(id) || id <= 0) return new Response('Bad cover id', { status: 400 });
+    // `default=false` makes a missing cover 404 instead of returning Open
+    // Library's grey placeholder as though it were real artwork.
+    source = `https://covers.openlibrary.org/b/id/${id}-L.jpg?default=false`;
+  } else if (provider === 'google') {
+    if (!/^[A-Za-z0-9_-]{1,64}$/u.test(rawId)) {
+      return new Response('Bad cover id', { status: 400 });
+    }
+    // A documented Google Books content URL, assembled only from a validated
+    // volume id. zoom=4 requests the largest practical candidate for review.
+    source =
+      `https://books.google.com/books/content?id=${encodeURIComponent(rawId)}` +
+      '&printsec=frontcover&img=1&zoom=4&source=gbs_api';
+  } else {
+    return new Response('Bad cover provider', { status: 400 });
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(source, {
+      headers: { 'User-Agent': 'assubki-books (shop cover lookup)' },
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]),
+    });
+  } catch {
+    return new Response('Cover service unavailable', { status: 502 });
+  }
   if (!res.ok) return new Response('No cover', { status: 404 });
 
   const type = res.headers.get('content-type') ?? '';

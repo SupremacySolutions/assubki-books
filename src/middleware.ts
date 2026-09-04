@@ -192,7 +192,9 @@ function withSecurityHeaders(response: Response, secure: boolean, nonce: string)
       // covers them - which is why nothing here needs 'unsafe-inline'.
       `script-src 'self' 'nonce-${nonce}'`,
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      // The 62x30 official attribution image is shown beside Google Books
+      // cover results. Candidate covers themselves remain on our id-only proxy.
+      "img-src 'self' data: blob: https://books.google.com",
       "font-src 'self'",
       /*
        * `api.postcodes.io` is the one exception, and it is a deliberate one:

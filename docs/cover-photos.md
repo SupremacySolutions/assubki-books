@@ -72,5 +72,6 @@ because their books are a different shape from these. If the catalogue's mix
 changes a lot, measure again rather than assuming; the numbers above came from
 `book_images.width` and `.height`.
 
-A cover is cropped from the **top** when it has to lose something, because the
-title is nearly always at the top and the decoration at the foot.
+A cover that is only slightly taller than 5:7 shares the small crop between its
+top and bottom so a printed border stays balanced. If it is much taller, it is
+anchored at the top and loses the excess from the foot, protecting the title.
