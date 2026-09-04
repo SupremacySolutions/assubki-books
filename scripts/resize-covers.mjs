@@ -31,7 +31,7 @@ import { dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
-import { framePlan, edgeSpread, edgeGap } from '../src/lib/cover-frame.mjs';
+import { framePlan, edgeSpread } from '../src/lib/cover-frame.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -218,16 +218,11 @@ async function extendToBox(cover) {
     return [data[at], data[at + 1], data[at + 2]];
   };
 
-  // A little inside, to check the outer column is the cover's own edge and
-  // not something the processing left behind.
-  const inset = Math.max(2, Math.round(info.width * 0.02));
   const plan = framePlan({
     width: w,
     height: h,
     leftSpread: edgeSpread(column(0), info.height),
     rightSpread: edgeSpread(column(info.width - 1), info.height),
-    leftGap: edgeGap(column(0), column(inset), info.height),
-    rightGap: edgeGap(column(info.width - 1), column(info.width - 1 - inset), info.height),
   });
   if (plan.mode !== 'extend') return cover;
 

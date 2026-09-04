@@ -2231,32 +2231,21 @@ async function integrity() {
   // And the guard that stops such a line being stretched, if one ever appears.
   const whiteLine = () => [252, 255, 255];
   const blueBody = () => [20, 68, 94];
-  // The measurements the threshold was set from: a white artefact sits 170
-  // from the cover behind it, a real edge falling off in the light sits 44.
-  t.ok(frame.edgeGap(whiteLine, blueBody, 1383) > 150 && frame.EDGE_MATCH > 60 &&
-       frame.EDGE_MATCH < frame.edgeGap(whiteLine, blueBody, 1383),
-    'the guard sits between an artefact and an edge that merely catches the light');
+  /*
+   * There was a guard here comparing the outer column with one a little
+   * inside, to tell a real edge from an artefact. It could not: a warp's white
+   * line measured 170 from the cover behind it and Ulama-e-Deoband's perfectly
+   * genuine near-white edge measured 115, and no threshold between them spares
+   * the real covers. It was cropping twenty-two of them. The warp no longer
+   * paints that line, which is the fix that mattered, so the rule asks only
+   * whether the edge is flat enough to continue.
+   */
   t.ok(frame.framePlan({
-    width: 939, height: 1383, leftSpread: 5, rightSpread: 12, leftGap: 2, rightGap: 44,
+    width: 542, height: 800, leftSpread: 5, rightSpread: 4.2,
   }).mode === 'extend',
-    'so a cover whose edge falls off in the light is still widened, not trimmed');
-  t.ok(frame.framePlan({
-    width: 940, height: 1385,
-    leftSpread: 0, rightSpread: 0,
-    leftGap: 4,
-    rightGap: frame.edgeGap(whiteLine, blueBody, 1385),
-  }).mode === 'crop',
-    'a flat edge that looks nothing like the cover behind it is not stretched outwards');
-  t.ok(frame.framePlan({
-    width: 940, height: 1385,
-    leftSpread: 0, rightSpread: 0,
-    leftGap: frame.edgeGap(blueBody, blueBody, 1385),
-    rightGap: frame.edgeGap(blueBody, blueBody, 1385),
-  }).mode === 'extend',
-    'and one that continues it still is');
-  t.ok(readFileSync('scripts/resize-covers.mjs', 'utf8').includes('rightGap: edgeGap(') &&
-       portalSource.includes('rightGap: edgeGap('),
-    'both callers measure that, not just one of them');
+    'a cover whose own edge is near-white is still widened, not cropped for it');
+  t.ok(typeof frame.EDGE_MATCH === 'undefined' && typeof frame.edgeGap === 'undefined',
+    'and the measurement that could not tell them apart is gone, not left unread');
 
   const cardSource = readFileSync('src/components/BookCard.astro', 'utf8');
   const homeSource = readFileSync('src/pages/index.astro', 'utf8');

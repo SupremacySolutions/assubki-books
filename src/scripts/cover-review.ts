@@ -25,7 +25,7 @@ import {
   eraseBackground,
 } from './cover-clean';
 import { IMAGE_PRESETS } from '../lib/image-presets';
-import { BOX, framePlan, edgeSpread, edgeGap } from '../lib/cover-frame.mjs';
+import { BOX, framePlan, edgeSpread } from '../lib/cover-frame.mjs';
 
 export function mountCoverReview(): void {
   const panel = document.querySelector<HTMLDialogElement>('#cleanPanel');
@@ -774,18 +774,11 @@ function frameToBox(bitmap: ImageBitmap): HTMLCanvasElement | null {
       strip[y * 4 + 2],
     ];
   };
-  const inset = Math.max(2, Math.round(bitmap.width * 0.02));
   const plan = framePlan({
     width: bitmap.width,
     height: bitmap.height,
     leftSpread: edgeSpread(columnAt(0), bitmap.height),
     rightSpread: edgeSpread(columnAt(bitmap.width - 1), bitmap.height),
-    // Compared with a column a little inside, so a line the warp left behind
-    // is not mistaken for the cover's own edge and stretched into a band.
-    leftGap: edgeGap(columnAt(0), columnAt(inset), bitmap.height),
-    rightGap: edgeGap(
-      columnAt(bitmap.width - 1), columnAt(bitmap.width - 1 - inset), bitmap.height,
-    ),
   });
 
   const out = document.createElement('canvas');
