@@ -52,8 +52,11 @@
  *     before the numbers were compared and it was taken out again. Anyone who
  *     opened the shop in that window holds those covers for a year unless the
  *     version moves.
+ * 13: the three al-Hidayah covers re-cut. Their scan carried about 30px of
+ *     surplus plain field down the right and none down the left, so the
+ *     decorated border sat off-centre in every frame it was put in.
  */
-export const IMAGE_VERSION = 12;
+export const IMAGE_VERSION = 13;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */
