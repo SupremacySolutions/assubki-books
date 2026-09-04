@@ -95,17 +95,33 @@ so there are never two ways in. Delete `ADMIN_PASSWORD` afterwards.
 Open Library works without configuration. A Google Books API key adds a second,
 independent group of cover results in **Books → listing → Find a cover**.
 
-1. In Google Cloud, create or choose a project.
-2. Enable the **Books API**.
-3. Create an API key restricted to the Books API.
-4. Add it to the deployed Worker:
+The Books API is free and needs no billing account. There is a daily request
+quota; going over it returns an error, it does not produce a bill. Creating the
+project requires accepting Google Cloud's terms, which only the account holder
+can do.
+
+1. At <https://console.cloud.google.com/>, create or choose a project.
+2. Enable the **Books API** (APIs & Services → Library → "Books API" → Enable).
+3. APIs & Services → Credentials → Create credentials → API key.
+4. Restrict it: **Application restrictions → None**, and
+   **API restrictions → Restrict key → Books API**.
+
+   Not a referrer or IP restriction. This key is used from a Cloudflare Worker,
+   which sends no referrer and has no fixed address, so either of those would
+   simply block every request. Restricting it to one API is what stops a leaked
+   key being useful for anything else.
+5. Add it to the deployed Worker:
 
 ```bash
 npx wrangler secret put GOOGLE_BOOKS_API_KEY
 ```
 
 For local development, add `GOOGLE_BOOKS_API_KEY=...` to `.dev.vars`. Never put
-the key in `wrangler.jsonc` or commit it. Deploy again after setting the secret.
+the key in `wrangler.jsonc` or commit it.
+
+**Portal → Settings → Owner alerts** reports whether Google answered. Until a
+key is set it reads as not connected, and Open Library carries the picker on
+its own.
 
 The picker deliberately keeps Google results in their own labelled block,
 preserves Google's relevance order, shows the official Powered by Google mark,
