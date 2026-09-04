@@ -47,11 +47,16 @@ export function mountCoverReview(): void {
    * tall, so every listing added through the portal arrived already softened
    * and no amount of processing afterwards could put the detail back.
    *
-   * Capped rather than unbounded because a modern phone photo is 12MP, and
-   * `getImageData` on that is close to 50MB before anything has been warped.
-   * 2400 is comfortably more than the largest export can use.
+   * Capped rather than unbounded for two reasons. A modern phone photo is
+   * 12MP, and `getImageData` on that is close to 50MB before anything has been
+   * warped. And the warp samples bilinearly - one reading per output pixel -
+   * so a source far larger than the output is not extra quality, it is
+   * undersampling: 4000px reduced to 1400 that way skips most of what it
+   * passes over and aliases the fine work on a cover. Sitting just above
+   * MAX_EDGE means the browser does the big reduction, with a proper filter,
+   * when the photo is first drawn.
    */
-  const SOURCE_EDGE = 2400;
+  const SOURCE_EDGE = 1600;
   /**
    * The longest edge of the finished cover.
    *
@@ -127,16 +132,41 @@ export function mountCoverReview(): void {
      */
     let cropped: ImageData | null = null;
 
-    /** Re-warp into the preview. Cheap enough to do on every drag frame. */
-    const paintResult = () => {
-      if (!full) return;
-      const size = quadSize(corners, MAX_EDGE);
-      const src = full.getContext('2d')!.getImageData(0, 0, full.width, full.height);
+    /**
+     * The quad, warped out of whichever copy of the photo is asked for.
+     *
+     * The corners are held in `full`'s pixels, so they are scaled into the
+     * canvas being read - the same quad, measured on a different-sized print
+     * of the same picture.
+     */
+    const warpFrom = (canvas: HTMLCanvasElement, cap: number): ImageData | null => {
+      if (!full) return null;
+      const scale = canvas.width / full.width;
+      const corner = corners.map((p) => ({ x: p.x * scale, y: p.y * scale }));
+      const size = quadSize(corner, cap);
+      const src = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
       const out = new ImageData(size.width, size.height);
-      if (!warp(src, corners, out)) return;
+      return warp(src, corner, out) ? out : null;
+    };
+
+    /**
+     * Re-warp into the preview.
+     *
+     * Two speeds, because the pane is labelled "On the listing" and has to
+     * earn that. Warping the small copy is cheap enough to redo on every drag
+     * frame but it is a resample of an already-small picture, so it came out
+     * visibly softer than the photo beside it - the pane claiming to show the
+     * result was the worst-looking thing in the dialog, and the result itself
+     * was fine. So: the quick one only while a corner is actually moving, and
+     * the real one - the very warp the upload uses - the moment it stops.
+     */
+    const paintResult = (fine = true) => {
+      if (!full) return;
+      const out = fine && source ? warpFrom(source, MAX_EDGE) : warpFrom(full, STAGE_EDGE);
+      if (!out) return;
       cropped = out;
-      resultCanvas.width = size.width;
-      resultCanvas.height = size.height;
+      resultCanvas.width = out.width;
+      resultCanvas.height = out.height;
       resultCanvas.getContext('2d')!.putImageData(out, 0, 0);
     };
 
@@ -360,18 +390,24 @@ export function mountCoverReview(): void {
       };
       paintOverlay();
       // Back to the plain crop while they drag: the erased version belongs to
-      // the corners it was made from, not to wherever they have got to.
-      paintResult();
+      // the corners it was made from, not to wherever they have got to. Quick,
+      // because this runs on every frame a finger moves.
+      paintResult(false);
     });
 
     for (const event of ['pointerup', 'pointercancel'] as const) {
       stage.addEventListener(event, () => {
         const wasDragging = dragging !== null;
         dragging = null;
+        if (!wasDragging) return;
+        // Redraw properly now the corners have settled, so what is on the
+        // right is the file that will be uploaded rather than an approximation
+        // of it.
+        paintResult(true);
         // Re-erase once they let go. Without this the box stays ticked while
         // the preview quietly shows the un-erased crop, which is the preview
         // telling them something that is not true.
-        if (wasDragging && erase?.checked) void applyErase();
+        if (erase?.checked) void applyErase();
       });
     }
 
@@ -524,16 +560,9 @@ export function mountCoverReview(): void {
      * image it lands on is.
      */
     function exportCover(): ImageData | null {
-      if (!source || !full) return null;
-
-      const scale = source.width / full.width;
-      const corner = corners.map((p) => ({ x: p.x * scale, y: p.y * scale }));
-      const size = quadSize(corner, MAX_EDGE);
-
-      const src = source.getContext('2d')!.getImageData(0, 0, source.width, source.height);
-      const out = new ImageData(size.width, size.height);
-      if (!warp(src, corner, out)) return null;
-
+      if (!source) return null;
+      const out = warpFrom(source, MAX_EDGE);
+      if (!out) return null;
       if (erased) eraseBackground(out, erased, maskFit(out.width, out.height));
       return out;
     }
@@ -569,9 +598,27 @@ export function mountCoverReview(): void {
       full = draw(STAGE_EDGE);
       source = draw(SOURCE_EDGE);
 
-      sourceCanvas.width = full.width;
-      sourceCanvas.height = full.height;
-      sourceCanvas.getContext('2d')!.drawImage(full, 0, 0);
+      /*
+       * The photo pane is drawn from the large copy, not the working one.
+       *
+       * The dialog puts these two side by side and invites the comparison, so
+       * they have to be a fair one. Drawn from the 420px copy this pane was
+       * soft in its own right, and on a phone - where the canvas is stretched
+       * to the column width - visibly so. Its backing store is independent of
+       * the coordinates the corners live in: `toStage` scales into it and the
+       * overlay takes its viewBox from it, so this only makes the picture
+       * sharper and moves nothing.
+       */
+      // Checked once here rather than asserted at each use: if the dialog's
+      // canvas is not in the document there is nothing to review, and handing
+      // the file straight to the uploader is the behaviour that has always
+      // worked.
+      const pane = sourceCanvas;
+      if (!pane) return file;
+      const paneScale = Math.min(1, (STAGE_EDGE * 2) / Math.max(source.width, source.height));
+      pane.width = Math.max(1, Math.round(source.width * paneScale));
+      pane.height = Math.max(1, Math.round(source.height * paneScale));
+      pane.getContext('2d')!.drawImage(source, 0, 0, pane.width, pane.height);
 
       // Detection runs smaller again - it only needs to find a book, and
       // a quarter of a million pixels is enough for that.
