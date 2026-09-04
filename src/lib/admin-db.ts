@@ -156,7 +156,7 @@ const FILTER_SQL: Record<BookFilter, string> = {
    *
    * Every cover is cropped to 5:7, so what matters is the width that survives
    * that crop: a wide photo is trimmed at the sides and keeps only `height *
-   * 0.75`. Below 300px of usable width the card - which asks for 600 - is
+   * 5/7`. Below 300px of usable width the card - which asks for 600 - is
    * showing each pixel as four, and no amount of processing puts detail back
    * that the source never had. The originals these came from are gone, so
    * these are the listings that need photographing again.
@@ -164,7 +164,7 @@ const FILTER_SQL: Record<BookFilter, string> = {
   'thin-photo': `EXISTS (
      SELECT 1 FROM book_images i
       WHERE i.book_id = b.id AND i.width IS NOT NULL AND i.height > 0
-        AND MIN(i.width, CAST(i.height * 0.75 AS INTEGER)) < 300
+        AND MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) < 300
    )`,
   'no-description': "(b.description_html IS NULL OR b.description_html = '')",
   'no-subject': 'NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)',
