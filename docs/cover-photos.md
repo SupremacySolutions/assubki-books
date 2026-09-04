@@ -30,8 +30,25 @@ from both app stores, so don't go looking for it.
 3. Fill most of the frame with the book.
 4. Indirect daylight. **No flash** — it blows out a glossy cover and throws
    your own shadow across a matte one.
-5. Let the app find the edges itself. Nudge its corners only if it has clearly
+5. **Square the book in the frame.** More margin down one side than the other
+   is the one fault nothing downstream can fix - the pipeline never moves
+   artwork inside a picture, so a cover scanned off-centre stays off-centre in
+   every frame it is put in. The three al-Hidayah covers had 30px of field
+   down one side and none down the other, and had to be re-cut by hand.
+6. Let the app find the edges itself. Nudge its corners only if it has clearly
    missed. Export as JPEG or PNG.
+
+## How big it needs to be
+
+The largest thing the shop builds is 840x1176, so anything narrower than about
+**840px across the cover** is being enlarged to fill it, and no processing puts
+back detail the photograph never had. The portal keeps up to 1400 on the long
+edge, which is roughly 1000x1400 for a book - that is the size worth aiming
+for, and any phone of the last ten years clears it easily.
+
+The catalogue's own worst covers are 162 to 179px across. **Books → sort by
+"Poorest cover first"** ranks every listing by this, and a row says
+`cover 162px of 600` when it falls short of what the card alone asks for.
 
 That is all of it. The shops whose covers look best are not doing anything
 more than this — their filenames give them away as phone scans and WhatsApp
@@ -42,20 +59,25 @@ photos.
 Add the photo in the portal as usual. The cropper opens with the book's four
 corners already found; drag them if it has picked the wrong thing.
 
-**One step is not automatic.** The portal stores the photo you upload and
-nothing else — the sized versions the shop actually serves are made by a
-script, because the image library it needs cannot run on Cloudflare's edge.
-So after adding covers, run:
+That is the whole job now. The portal frames the photo to 5:7 and cuts the
+five sizes the shop serves before the upload leaves the browser, so the
+listing is right the moment it is saved.
+
+It did not always. The portal used to store the photo and nothing else, and
+the sized versions were made later by `scripts/resize-covers.mjs` - so until
+somebody remembered to run it, `?p=card` fell back to the full-size original
+and the browser cropped it however `object-fit` saw fit. That script is still
+the way to reprocess the catalogue in bulk, and still the only thing that
+trims scanner borders, but it is no longer a step you owe after every upload:
 
 ```
 node scripts/resize-covers.mjs                    # all of them
-node scripts/resize-covers.mjs --only=<slug>      # just the new book
+node scripts/resize-covers.mjs --only=<slug>      # one book
 npx wrangler d1 execute assubki-books --remote --file=<the SQL it prints>
 ```
 
-Until that runs, the new cover still shows — the shop falls back to the
-original photo — but at full file size and cropped by the browser rather than
-cut to the frame.
+Whenever it rewrites covers, bump `IMAGE_VERSION` in `src/lib/image-presets.ts`
+or nobody who has already opened the shop will see the difference.
 
 ## Why the frame is 5:7
 
