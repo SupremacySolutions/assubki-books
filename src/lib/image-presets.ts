@@ -42,8 +42,10 @@
  * 9: a small crop shared between both ends of a cover rather than taken
  *    entirely off the foot, which was removing the bottom rule of a framed
  *    cover while leaving the top one.
+ * 10: a cover too narrow for the box widened along its own edges rather than
+ *     trimmed at the ends, so a printed border survives intact.
  */
-export const IMAGE_VERSION = 9;
+export const IMAGE_VERSION = 10;
 
 export interface ImagePreset {
   /** Rendered width in CSS pixels - what the layout should reserve. */
