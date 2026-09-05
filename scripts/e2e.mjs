@@ -2159,6 +2159,60 @@ async function integrity() {
    * through the portal came out framed differently from the same cover put
    * through the script.
    */
+  /*
+   * Reading a shipment list.
+   *
+   * Checked here rather than in a script because a quiet mistake becomes forty
+   * listings with the wrong price, and because every one of these cases came
+   * from the real list rather than from imagination.
+   */
+  const ship = await import('../src/lib/shipment-parse.ts');
+  const line = (text) => ship.parseLine(text, 1);
+
+  const full = line('9. كشف الباري شرح صحيح البخاري — 25 مجلدًا — 120£ — 3');
+  t.ok(full.title === 'كشف الباري شرح صحيح البخاري' && full.volumes === 25 &&
+       full.pricePence === 12000 && full.stock === 3 && full.index === 9,
+    'a complete line gives up its title, volumes, price and count');
+  t.ok(full.problems.length === 0, 'and is offered without complaint');
+
+  t.ok(line('12. أنوار المحمود DELUXE —  ١٢ مجلدًا — 60£ — 1').volumes === 12,
+    'Arabic-Indic digits are read as numbers');
+  t.ok(line('1. کتاب — ۵ جلد — 10£ — 2').volumes === 5,
+    'and so are the extended set an Urdu keyboard produces');
+  t.ok(line('5. السمح المحمود - 9 مجلدات - 40£ - 2').pricePence === 4000,
+    'a plain hyphen separates as readily as an em dash');
+  t.ok(line('al-Hidayah Sharh — 5£ — 1').title === 'al-Hidayah Sharh',
+    'while a hyphen inside a word is left alone');
+
+  t.ok(line('27. كتاب المسائل DELUXE — ٥ مجلدات — 18£ — 4').note === 'Deluxe' &&
+       !line('27. كتاب المسائل DELUXE — ٥ مجلدات — 18£ — 4').title.includes('DELUXE'),
+    'an edition label is lifted out of the title');
+  /*
+   * The one that had to be taken back out. جديد means "modern" and is part of
+   * the name of three books on this list - reading it as "new edition" turned
+   * "Islam and modern economic issues" into "Islam and economic issues". A note
+   * is a convenience; a mangled title is a wrong listing.
+   */
+  t.ok(line('23. اسلام اور جديد معاش کے مسائل — 8 مجلدات — 35£ — 2').title
+         .includes('جديد'),
+    'but a word that only looks like one stays in the title');
+
+  t.ok(line('23. اسلام اور جديد معاش کے مسائل — 8 مجلدات — 35£ — 2').script === 'urdu' &&
+       line('9. كشف الباري — 25 مجلدًا — 120£ — 3').script === 'arabic',
+    'Urdu is told from Arabic, which is what files the title in the right column');
+
+  // Never a confident guess: a missing count is reported, not invented.
+  const noCount = line('33. تذكرة الخليل — 5£');
+  t.ok(noCount.stock === null && noCount.problems.includes('no number of copies'),
+    'a line with no count is flagged rather than assumed to be one copy');
+  const nonsense = line('total nonsense');
+  t.ok(nonsense.problems.length > 0 && nonsense.raw === 'total nonsense',
+    'and an unreadable line keeps its text for the owner to finish');
+
+  // Every line comes back, or a book would vanish between the paste and the page.
+  const many = ship.parseShipment('3. أول — 16£ — 1\n\n5. ثان — 9 مجلدات — 40£ — 2\n');
+  t.ok(many.length === 2, 'blank lines are skipped and nothing else is dropped');
+
   const frame = await import('../src/lib/cover-frame.mjs');
   const flat = () => () => [30, 60, 90];
   const busy = () => (y) => [y % 255, (y * 7) % 255, (y * 13) % 255];
