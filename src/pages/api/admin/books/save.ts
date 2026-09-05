@@ -54,6 +54,13 @@ export const POST: APIRoute = async ({ request }) => {
 
   const title = String(form.get('title') ?? '').trim();
   const titleAr = String(form.get('title_ar') ?? '').trim() || null;
+  /*
+   * The Urdu title, on the same terms as the Arabic one: optional, and blank
+   * means absent rather than empty. Which one is filled is also what decides
+   * the book's language - the database works that out from these two, so there
+   * is no third field here to keep in step with them.
+   */
+  const titleUr = String(form.get('title_ur') ?? '').trim() || null;
   const author = String(form.get('author') ?? '').trim() || null;
   const publisher = String(form.get('publisher') ?? '').trim() || null;
   /*
@@ -93,12 +100,13 @@ export const POST: APIRoute = async ({ request }) => {
     // Stock goes through setStock so the change is written to the ledger, and
     // so it cannot be dropped below what open orders have already promised.
     await env.DB.prepare(
-      `UPDATE books SET title = ?, title_ar = ?, author = ?, publisher = ?, volumes = ?,
-                        description_html = ?, price_pence = ?, status = ?, isbn = ?,
+      `UPDATE books SET title = ?, title_ar = ?, title_ur = ?, author = ?, publisher = ?,
+                        volumes = ?, description_html = ?, price_pence = ?, status = ?, isbn = ?,
                         updated_at = unixepoch()
         WHERE id = ?`,
     )
-      .bind(title, titleAr, author, publisher, volumes, description, pricePence, status, isbn, bookId)
+      .bind(title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
+            status, isbn, bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
     /* Anybody waiting is told once availability has settled - see stock-alerts. */
@@ -128,11 +136,12 @@ export const POST: APIRoute = async ({ request }) => {
   } else {
     const slug = await uniqueSlug(slugify(title), null);
     const created = await env.DB.prepare(
-      `INSERT INTO books (slug, title, title_ar, author, publisher, volumes, description_html,
-                          price_pence, stock, reserved, status, isbn)
-       VALUES (?,?,?,?,?,?,?,?,?,0,?,?) RETURNING id`,
+      `INSERT INTO books (slug, title, title_ar, title_ur, author, publisher, volumes,
+                          description_html, price_pence, stock, reserved, status, isbn)
+       VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?) RETURNING id`,
     )
-      .bind(slug, title, titleAr, author, publisher, volumes, description, pricePence, stock, status, isbn)
+      .bind(slug, title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
+            stock, status, isbn)
       .first<{ id: number }>();
     bookId = created!.id;
 

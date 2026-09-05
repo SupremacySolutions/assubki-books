@@ -3,7 +3,10 @@ import Base from '../../layouts/Base.astro';
 import BookCard from '../../components/BookCard.astro';
 import CategoryNav from '../../components/CategoryNav.astro';
 import Rosette from '../../components/Rosette.astro';
-import { categoryTree, categoryByPath, listBooks, arrivingBooks, type Sort } from '../../lib/db';
+import {
+  categoryTree, categoryByPath, listBooks, arrivingBooks, asLanguage, BOOK_LANGUAGES,
+  type Sort,
+} from '../../lib/db';
 import { buildQuery } from '../../lib/format';
 import { recordMiss } from '../../lib/searches';
 import { liveSale } from '../../lib/sales';
@@ -22,6 +25,9 @@ const q = params.get('q')?.trim() || null;
 const inStockOnly = params.get('stock') === 'in';
 const onSale = params.get('sale') === '1';
 const arriving = params.get('arriving') === '1';
+// Validated against the three the shop sells rather than passed through, so a
+// hand-typed `?lang=` cannot reach the query as anything else.
+const language = asLanguage(params.get('lang'));
 const sortParam = params.get('sort');
 const validSorts: Sort[] = ['relevance', 'title', 'price-asc', 'price-desc', 'newest', 'saving'];
 const sort = (validSorts.includes(sortParam as Sort) ? sortParam : null) as Sort | null;
@@ -30,7 +36,7 @@ const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
 const sale = await liveSale();
 const [tree, result, anyArriving] = await Promise.all([
   categoryTree(),
-  listBooks({ categoryPath, q, inStockOnly, onSale, arriving, sort: sort ?? undefined, page }),
+  listBooks({ categoryPath, q, inStockOnly, onSale, arriving, language, sort: sort ?? undefined, page }),
   arrivingBooks(1),
 ]);
 
@@ -59,12 +65,37 @@ const base = {
   stock: inStockOnly ? 'in' : null,
   sale: onSale ? '1' : null,
   arriving: arriving ? '1' : null,
+  lang: language,
 };
 const keep = buildQuery(base);
 const heading = category?.name ?? 'All titles';
 const crumbs = category
   ? category.path.split('/').map((seg, i, arr) => ({ seg, path: arr.slice(0, i + 1).join('/') }))
   : [];
+
+const LANGUAGE_LABEL: Record<string, string> = {
+  english: 'English',
+  arabic: 'Arabic',
+  urdu: 'Urdu',
+};
+
+/*
+ * One link per language, each keeping whatever else is already on.
+ *
+ * A language already chosen links back to "all", so the same control both
+ * applies and clears it - a filter with no way off is the one people abandon
+ * the page over.
+ */
+const languageLinks = BOOK_LANGUAGES.map((code) => ({
+  code,
+  label: LANGUAGE_LABEL[code],
+  on: language === code,
+  href: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({
+    ...base,
+    lang: language === code ? null : code,
+    page: null,
+  })}`,
+}));
 
 const sortOptions: { value: Sort; label: string }[] = [
   // Offered first on a sale view, where it is the question being asked.
@@ -105,6 +136,12 @@ if (arriving) {
   chips.push({
     label: 'Arriving soon',
     without: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, arriving: null })}`,
+  });
+}
+if (language) {
+  chips.push({
+    label: LANGUAGE_LABEL[language],
+    without: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, lang: null })}`,
   });
 }
 if (inStockOnly) {
@@ -163,6 +200,47 @@ const description = category
         <form method="get" class="mt-4 bg-white border border-[var(--color-rule-soft)] rounded-[10px] p-4">
           {q && <input type="hidden" name="q" value={q} />}
           {sort && <input type="hidden" name="sort" value={sort} />}
+          {/* Carried through the checkboxes, or ticking "In stock only" would
+              quietly drop the language the customer had chosen. */}
+          {language && <input type="hidden" name="lang" value={language} />}
+
+          {/*
+            * Language, as links rather than checkboxes.
+            *
+            * A book is in one language, so these are one choice and not three
+            * independent switches; and the one already chosen links back to
+            * "all", so the same control turns it off again.
+            */}
+          <p class="eyebrow !text-[10.5px] mb-2.5">Language</p>
+          <div class="flex flex-wrap gap-1.5 mb-4">
+            <a
+              href={`/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, lang: null, page: null })}`}
+              aria-current={language ? undefined : 'true'}
+              class:list={[
+                'px-2.5 py-1 rounded-[var(--radius-pill)] border text-[13px] transition-colors',
+                !language
+                  ? 'border-[var(--color-navy)] bg-[var(--color-navy)] text-white'
+                  : 'border-[var(--color-rule)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
+              ]}
+            >
+              Any
+            </a>
+            {languageLinks.map((l) => (
+              <a
+                href={l.href}
+                aria-current={l.on ? 'true' : undefined}
+                class:list={[
+                  'px-2.5 py-1 rounded-[var(--radius-pill)] border text-[13px] transition-colors',
+                  l.on
+                    ? 'border-[var(--color-navy)] bg-[var(--color-navy)] text-white'
+                    : 'border-[var(--color-rule)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
+                ]}
+              >
+                {l.label}
+              </a>
+            ))}
+          </div>
+
           <p class="eyebrow !text-[10.5px] mb-2.5">Refine</p>
           <label class="flex items-center gap-2.5 text-[14.5px] text-[var(--color-ink-soft)] cursor-pointer select-none">
             <input

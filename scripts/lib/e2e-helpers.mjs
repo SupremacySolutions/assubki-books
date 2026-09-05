@@ -225,6 +225,22 @@ async function viaWrangler(sql, where) {
 function parseSqlite(stdout) {
   const text = stdout.trim();
   if (!text) return [];
+  /*
+   * A query plan is drawn, not returned.
+   *
+   * `EXPLAIN QUERY PLAN` is the one read whose output ignores `-json`: the
+   * shell renders it as a tree whatever mode it is in. Handing those lines
+   * back as `{ detail }` is the shape wrangler already returns for the same
+   * query, so a test that asserts on a plan reads the same locally and
+   * against production.
+   */
+  if (text.startsWith('QUERY PLAN')) {
+    return text
+      .split('\n')
+      .slice(1)
+      .map((line) => ({ detail: line.replace(/^[\s|`+-]*/, '').trim() }))
+      .filter((row) => row.detail);
+  }
   try {
     return JSON.parse(text);
   } catch {

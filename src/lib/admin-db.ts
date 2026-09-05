@@ -4,6 +4,7 @@
  */
 
 import { env } from 'cloudflare:workers';
+import type { BookLanguage } from './db';
 
 export interface AdminOrderRow {
   id: number;
@@ -120,6 +121,8 @@ export interface AdminBookRow {
   slug: string;
   title: string;
   title_ar: string | null;
+  title_ur: string | null;
+  language: BookLanguage;
   price_pence: number;
   stock: number;
   reserved: number;
@@ -150,6 +153,9 @@ export type BookFilter =
   | 'all'
   | 'no-photo'
   | 'thin-photo'
+  | 'english'
+  | 'arabic'
+  | 'urdu'
   | 'no-description'
   | 'no-subject'
   | 'not-announced'
@@ -177,6 +183,15 @@ const FILTER_SQL: Record<BookFilter, string> = {
         AND i.width IS NOT NULL AND i.height > 0
         AND MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) < 300
    )`,
+  /*
+   * The three languages, straight off the generated column. `idx_books_language`
+   * carries status with it, so these cost an index search rather than a scan -
+   * which matters because the portal list is one of the few pages that runs a
+   * count and a page of rows against the whole catalogue at once.
+   */
+  english: "b.language = 'english'",
+  arabic: "b.language = 'arabic'",
+  urdu: "b.language = 'urdu'",
   'no-description': "(b.description_html IS NULL OR b.description_html = '')",
   'no-subject': 'NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)',
   'not-announced': 'b.telegram_message_id IS NULL',
@@ -275,8 +290,8 @@ export async function listBooksAdmin(opts: {
   const binds: unknown[] = [];
 
   if (search) {
-    clauses.push('(b.title LIKE ? OR b.title_ar LIKE ? OR b.slug LIKE ?)');
-    binds.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    clauses.push('(b.title LIKE ? OR b.title_ar LIKE ? OR b.title_ur LIKE ? OR b.slug LIKE ?)');
+    binds.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (FILTER_SQL[filter]) clauses.push(FILTER_SQL[filter]);
 
@@ -308,7 +323,8 @@ export async function listBooksAdmin(opts: {
       .bind(...binds)
       .first<{ n: number }>(),
     env.DB.prepare(
-      `SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved,
+      `SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language,
+              b.price_pence, b.stock, b.reserved,
               (b.stock - b.reserved) AS available, b.status, b.telegram_message_id,
               (SELECT image_key FROM book_images WHERE book_id = b.id ORDER BY sort LIMIT 1) AS image_key,
               (SELECT MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER))

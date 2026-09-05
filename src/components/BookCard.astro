@@ -144,7 +144,13 @@ const marks = (book.cat_slugs ?? '')
         {book.title}
       </h3>
 
-      {book.title_ar && <p class="ar mt-0.5 text-[14.5px] text-[var(--color-ink-soft)]">{book.title_ar}</p>}
+      {/* Whichever native title it has. A book carries one or the other, and
+          the language filter is drawn from the same pair. */}
+      {(book.title_ar ?? book.title_ur) && (
+        <p class="ar mt-0.5 text-[14.5px] text-[var(--color-ink-soft)]" lang={book.title_ar ? 'ar' : 'ur'}>
+          {book.title_ar ?? book.title_ur}
+        </p>
+      )}
 
       {/* Said before anyone clicks: a set and a single book cost differently
           and arrive differently, and that is worth knowing from the grid. */}

@@ -187,19 +187,51 @@ const previewCaption = book
           <input id="title" name="title" required maxlength="200" value={book?.title ?? ''} class="field" />
         </div>
 
-        <div>
-          <label for="title_ar" class="block text-[14.5px] font-medium mb-1.5">
-            Arabic title <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
-          </label>
-          <input
-            id="title_ar"
-            name="title_ar"
-            dir="rtl"
-            maxlength="200"
-            value={book?.title_ar ?? ''}
-            class="field ar"
-          />
+        {/*
+          * The two native titles, and with them the book's language.
+          *
+          * There is no language field to set. Filling in the Arabic title
+          * makes this an Arabic book and the Urdu one makes it Urdu; leaving
+          * both empty makes it English. That is how the owner describes the
+          * catalogue, and deriving it means a listing cannot end up filed
+          * under one language while reading as another.
+          */}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="title_ar" class="block text-[14.5px] font-medium mb-1.5">
+              Arabic title <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+            </label>
+            <input
+              id="title_ar"
+              name="title_ar"
+              dir="rtl"
+              maxlength="200"
+              value={book?.title_ar ?? ''}
+              class="field ar"
+            />
+          </div>
+          <div>
+            <label for="title_ur" class="block text-[14.5px] font-medium mb-1.5">
+              Urdu title <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+            </label>
+            <input
+              id="title_ur"
+              name="title_ur"
+              dir="rtl"
+              lang="ur"
+              maxlength="200"
+              value={book?.title_ur ?? ''}
+              class="field ar"
+            />
+          </div>
         </div>
+        <p class="-mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+          {book
+            ? `Filed under ${book.language}. `
+            : 'A listing with neither of these is filed as English. '}
+          An Arabic title files the book as Arabic, an Urdu title as Urdu, and
+          that is what customers filter the catalogue by.
+        </p>
 
         <div class="grid gap-4 sm:grid-cols-2">
           <div>

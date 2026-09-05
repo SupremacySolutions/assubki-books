@@ -74,10 +74,19 @@ const volumeLabel = (o: { set_from: number | null; set_to: number | null }) =>
   o.set_from === o.set_to ? `Volume ${o.set_from}` : `Volumes ${o.set_from}-${o.set_to}`;
 const plain = stripTags(book.description_html);
 
+/*
+ * The book's own name, in whichever script it has one.
+ *
+ * A book carries an Arabic title or an Urdu one, never both in practice, and
+ * the same pair decides the language it is filed under - so reading them in
+ * the same order here keeps the heading and the filter telling one story.
+ */
+const nativeTitle = book.title_ar ?? book.title_ur;
+
 // This is the description Telegram shows when the owner posts the link, so it
 // has to stand alone: what the book is, then price and availability.
 const shareDescription = truncate(
-  plain || `${book.title}${book.title_ar ? ` - ${book.title_ar}` : ''}`,
+  plain || `${book.title}${nativeTitle ? ` - ${nativeTitle}` : ''}`,
   160,
 );
 
@@ -104,7 +113,7 @@ const jsonLd = {
   url: new URL(`/book/${book.slug}`, Astro.url.origin).toString(),
   itemCondition: 'https://schema.org/NewCondition',
   brand: book.publisher ? { '@type': 'Brand', name: book.publisher } : undefined,
-  alternateName: book.title_ar ?? undefined,
+  alternateName: nativeTitle ?? undefined,
   author: book.author ? { '@type': 'Person', name: book.author } : undefined,
   publisher: book.publisher ? { '@type': 'Organization', name: book.publisher } : undefined,
   description: plain || undefined,
@@ -209,7 +218,11 @@ const jsonLd = {
         <h1 class="font-[family-name:var(--font-display)] text-[32px] md:text-[46px] font-semibold leading-[1.08] tracking-[-0.02em] text-[var(--color-navy-deep)]">
           {book.title}
         </h1>
-        {book.title_ar && <p class="ar mt-2 text-[26px] text-[var(--color-ink-soft)]">{book.title_ar}</p>}
+        {nativeTitle && (
+          <p class="ar mt-2 text-[26px] text-[var(--color-ink-soft)]" lang={book.title_ar ? 'ar' : 'ur'}>
+            {nativeTitle}
+          </p>
+        )}
 
         {/* Author, how many volumes, publisher - the three things a buyer
             wants before the price. Each part is left out when it is not known,

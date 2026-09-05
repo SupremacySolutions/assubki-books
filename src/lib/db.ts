@@ -27,6 +27,9 @@ export interface BookRow {
   slug: string;
   title: string;
   title_ar: string | null;
+  title_ur: string | null;
+  /** 'arabic' | 'urdu' | 'english', worked out by the database from the two. */
+  language: BookLanguage;
   price_pence: number;
   stock: number;
   reserved: number;
@@ -73,7 +76,8 @@ export interface BookDetail extends BookRow {
 const db = () => env.DB;
 
 const BOOK_SELECT = `
-  SELECT b.id, b.slug, b.title, b.title_ar, b.price_pence, b.stock, b.reserved, b.volumes,
+  SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language,
+         b.price_pence, b.stock, b.reserved, b.volumes,
          b.set_id, b.set_from, b.set_to, b.isbn,
          b.incoming, b.reserved_incoming, b.incoming_vague, b.incoming_month,
          (b.stock - b.reserved) AS available,
@@ -228,6 +232,24 @@ function ftsQuery(raw: string): string | null {
 export type Sort = 'relevance' | 'title' | 'price-asc' | 'price-desc' | 'newest' | 'saving';
 
 /**
+ * The three languages the shop sells in.
+ *
+ * Not a column the owner sets. It follows from the titles a book carries -
+ * `migrations/0031` computes it - so there is nothing to keep in step and no
+ * way for a book to be filed under one language while reading as another.
+ */
+export type BookLanguage = 'arabic' | 'urdu' | 'english';
+
+export const BOOK_LANGUAGES: BookLanguage[] = ['english', 'arabic', 'urdu'];
+
+/** A language from a query string, or null for anything else. */
+export function asLanguage(value: string | null | undefined): BookLanguage | null {
+  return value && (BOOK_LANGUAGES as string[]).includes(value)
+    ? (value as BookLanguage)
+    : null;
+}
+
+/**
  * What a book actually costs today, as the card renders it.
  *
  * The same rounding as `salePrice` in lib/sales.ts and as BookCard: whole
@@ -241,6 +263,7 @@ const SALE_PRICE =
 export interface ListOptions {
   categoryPath?: string | null;
   q?: string | null;
+  language?: BookLanguage | null;
   inStockOnly?: boolean;
   /** Only books in the sale that is running. */
   onSale?: boolean;
@@ -296,6 +319,17 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
                  WHERE c.path = ? OR c.path LIKE ? || '/%')`,
     );
     binds.push(opts.categoryPath, opts.categoryPath);
+  }
+
+  /*
+   * Straight equality on a generated column, which `idx_books_language` covers
+   * together with the status every one of these queries already carries. The
+   * planner answers it as `SEARCH books USING INDEX idx_books_language`, so
+   * narrowing to one language reads that language rather than the catalogue.
+   */
+  if (opts.language) {
+    where.push('b.language = ?');
+    binds.push(opts.language);
   }
 
   if (opts.inStockOnly) where.push('(b.stock - b.reserved) > 0');

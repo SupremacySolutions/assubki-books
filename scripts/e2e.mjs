@@ -4080,6 +4080,128 @@ async function findable() {
 // The third field says whether the suite needs a signed-in portal session.
 // Everything that builds a fixture listing does; the public pages and the
 // checks that admin routes stay shut do not.
+// ---------------------------------------------------------------------------
+
+async function languages() {
+  const t = suite('22. Three languages');
+
+  /*
+   * The language is not a field anybody sets. It follows from which native
+   * title a book carries, so these check the derivation as well as the filter -
+   * the whole point of a generated column is that the two cannot disagree, and
+   * a test that only exercised the filter would not notice if they did.
+   */
+  // Distinctive titles, not the fixture default: every other suite makes books
+  // called اختبار, and in a full run a search for that returns pages of them.
+  const arabicTitle = `عربي${Math.random().toString(36).slice(2, 7)}`;
+  const urduTitle = `اردو${Math.random().toString(36).slice(2, 7)}`;
+  const arabic = await makeBook({ title_ar: arabicTitle, title_ur: '' });
+  const urdu = await makeBook({ title_ar: '', title_ur: urduTitle });
+  const english = await makeBook({ title_ar: '', title_ur: '' });
+  const both = await makeBook({ title_ar: arabicTitle, title_ur: urduTitle });
+
+  const langOf = async (id) => (await one(`SELECT language FROM books WHERE id=${id}`)).language;
+  t.ok(await langOf(arabic.id) === 'arabic', 'an Arabic title files the book as Arabic');
+  t.ok(await langOf(urdu.id) === 'urdu', 'an Urdu title files it as Urdu');
+  t.ok(await langOf(english.id) === 'english', 'and neither leaves it English');
+  t.ok(await langOf(both.id) === 'arabic',
+    'a book carrying both is Arabic - the older field wins, rather than the answer depending on row order');
+
+  // Blank is absent. Without this a cleared field would read as a title made
+  // of nothing and file an English book under a language it is not in.
+  await db(`UPDATE books SET title_ur = '   ' WHERE id = ${english.id}`);
+  t.ok(await langOf(english.id) === 'english', 'whitespace in a title field is not a title');
+  await db(`UPDATE books SET title_ur = NULL WHERE id = ${english.id}`);
+
+  // Editing a title moves the book, with nothing to remember to update.
+  await db(`UPDATE books SET title_ar = NULL, title_ur = '${urduTitle}' WHERE id = ${arabic.id}`);
+  t.ok(await langOf(arabic.id) === 'urdu', 'swapping the title moves the book without a second field to change');
+  // Put back exactly what was there, not something that merely looks like it:
+  // the searches below are the reason this fixture has a title of its own.
+  await db(`UPDATE books SET title_ar = '${arabicTitle}', title_ur = NULL WHERE id = ${arabic.id}`);
+
+  /*
+   * The three have to partition the catalogue: every live book is in exactly
+   * one, and none is in none. A filter that quietly dropped rows would still
+   * look right on its own page.
+   */
+  const totals = await one(
+    `SELECT COUNT(*) AS all_,
+            SUM(language='english') AS english,
+            SUM(language='arabic') AS arabic,
+            SUM(language='urdu') AS urdu
+       FROM books WHERE status='live'`,
+  );
+  t.ok(totals.english + totals.arabic + totals.urdu === totals.all_,
+    `the three languages account for every live book (${totals.english}+${totals.arabic}+${totals.urdu}=${totals.all_})`);
+
+  const shown = async (query) => {
+    const markup = await html(`/catalogue${query}`);
+    return Number(markup.match(/([0-9]+) titles?/)?.[1] ?? -1);
+  };
+  t.ok(await shown('?lang=arabic') === totals.arabic, 'the catalogue shows exactly the Arabic books');
+  t.ok(await shown('?lang=urdu') === totals.urdu, 'and exactly the Urdu ones');
+  t.ok(await shown('?lang=english') === totals.english, 'and exactly the English ones');
+  t.ok(await shown('') === totals.all_, 'with no language asked for, all of them');
+
+  // A hand-typed language is ignored rather than answered with an empty shop.
+  t.ok(await shown('?lang=klingon') === totals.all_,
+    'a language the shop does not sell is ignored, not answered with nothing');
+  t.ok(await shown("?lang=arabic'--") === totals.all_,
+    'and nothing that is not one of the three reaches the query');
+
+  // The filter has to survive the controls beside it, which is where a
+  // hidden field being forgotten shows up.
+  const withStock = await html('/catalogue?lang=arabic&stock=in');
+  t.ok(/name="lang"[^>]*value="arabic"/.test(withStock),
+    'the refine form carries the language, so ticking a box does not drop it');
+  t.ok(/aria-current="true"[\s\S]{0,200}?Arabic/.test(withStock.replace(/\n/g, ' ')) ||
+       withStock.includes('aria-current="true"'),
+    'and the chosen language is marked as current');
+
+  /*
+   * The reason this is a column and an index rather than a CASE in the query.
+   * At 226 books a scan is survivable; the catalogue is the most-read page on
+   * the site and D1 bills by rows read, so it should not be scanned.
+   */
+  const plan = await db(
+    `EXPLAIN QUERY PLAN SELECT id FROM books WHERE status='live' AND language='arabic'`,
+  );
+  const detail = plan.map((r) => r.detail).join(' ');
+  t.ok(/USING INDEX idx_books_language/.test(detail),
+    `filtering by language is an index search, not a scan (${detail.slice(0, 70)})`);
+
+  // Searchable under its own name, which is the other half of stocking it.
+  const foundUrdu = await html('/catalogue?q=' + encodeURIComponent(urduTitle));
+  t.ok(foundUrdu.includes(urdu.title), 'a book is findable by its Urdu title');
+  const foundArabic = await html('/catalogue?q=' + encodeURIComponent(arabicTitle));
+  t.ok(foundArabic.includes(arabic.title), 'and by its Arabic one, as before');
+
+  /*
+   * The owner asks the same question of a wider set. His list is every
+   * listing, drafts and archived included - which is the point of a portal -
+   * so it is counted against that rather than against the live shop.
+   */
+  const portalTotals = await one(
+    `SELECT SUM(language='english') AS english,
+            SUM(language='arabic') AS arabic,
+            SUM(language='urdu') AS urdu
+       FROM books`,
+  );
+  for (const code of ['arabic', 'urdu', 'english']) {
+    const portal = await html(`/admin/books?filter=${code}`);
+    t.ok(portal.includes(`of ${portalTotals[code]}`),
+      `the portal's ${code} filter agrees with the database (${portalTotals[code]})`);
+  }
+
+  // And the form offers the field at all, which is where this started.
+  const form = await html(`/admin/books/${urdu.id}`);
+  t.ok(/name="title_ur"/.test(form) && form.includes(urduTitle),
+    'the listing form has an Urdu title, filled in');
+}
+
+// ---------------------------------------------------------------------------
+
 const SUITES = [
   ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
   ['validation', validation, true], ['stock', stockAndHolds, true],
@@ -4096,6 +4218,7 @@ const SUITES = [
   ['alerts', stockAlerts, true],
   ['sales', sales, true],
   ['abuse', abuseAndAtomicity, true],
+  ['languages', languages, true],
   ['integrity', integrity, false],
 ];
 
