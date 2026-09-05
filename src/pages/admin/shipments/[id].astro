@@ -33,6 +33,25 @@ const money = (pence: number) => (pence / 100).toFixed(2);
  * which row is a puzzle. Marking them here means the button's refusal is
  * already explained by the time it happens.
  */
+const listed = params.get('listed');
+/*
+ * What is left after the reservations were filled.
+ *
+ * Only these can become listings: a title whose every copy is spoken for has
+ * nothing to sell, and offering to list it would be offering to sell a book
+ * that is already somebody else's.
+ */
+const spare = (i: typeof items[number]) => i.stock - i.reserved_incoming - i.reserved;
+
+/*
+ * The rows are wrapped in the save form only while the shipment is a draft.
+ *
+ * After it has landed each row grows a form of its own for listing the spare
+ * copies, and a form inside a form is invalid HTML - the browser drops the
+ * inner one silently, so the button would render and do nothing.
+ */
+const Rows = isDraft ? 'form' : 'div';
+
 const incomplete = (i: typeof items[number]) =>
   !i.title || i.price_pence <= 0 || i.incoming <= 0;
 const holes = items.filter(incomplete).length;
@@ -58,6 +77,12 @@ const holes = items.filter(incomplete).length;
     </p>
   )}
   {error && <p class="mb-4 text-[14px] text-[var(--color-outstock)]">{error}.</p>}
+  {listed && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+      “{listed}” is now an ordinary listing. Add photos and a description to it in
+      Listings — it will not appear in the catalogue looking its best until you do.
+    </p>
+  )}
   {arrivedCount >= 0 && (
     <p class="mb-4 text-[14px] text-[var(--color-instock)]">
       Marked as arrived. The copies are on the shelf and
@@ -124,7 +149,12 @@ const holes = items.filter(incomplete).length;
   {items.length === 0 ? (
     <p class="text-[15px] text-[var(--color-ink-soft)]">Nothing on this shipment.</p>
   ) : (
-    <form method="post" action={`/api/admin/shipments/${id}/save`} class="grid gap-2">
+    <Rows
+      {...(isDraft
+        ? { method: 'post', action: `/api/admin/shipments/${id}/save` }
+        : {})}
+      class="grid gap-2"
+    >
       {items.map((i) => (
         <div
           class:list={[
@@ -202,15 +232,57 @@ const holes = items.filter(incomplete).length;
               {i.reserved_incoming} reserved — the number of copies cannot go below that.
             </p>
           )}
+
+          {/*
+            * Turning what is left into a listing.
+            *
+            * Needs an English title, because the shipment carried the book's own
+            * name - right for a list read in Arabic, wrong for a shop front and
+            * for the address the page will live at. Its own form rather than
+            * part of the row above, since it posts somewhere else and does
+            * something that cannot be undone by editing a field back.
+            */}
+          {shipment.status === 'arrived' && spare(i) > 0 && (
+            <form
+              method="post"
+              action={`/api/admin/shipments/${id}/promote`}
+              class="sm:col-span-5 mt-1 pt-3 border-t border-[var(--color-rule-soft)] flex flex-wrap items-end gap-2"
+            >
+              <input type="hidden" name="book" value={i.id} />
+              <div class="min-w-[16rem] flex-1">
+                <label for={`en_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+                  English title — {spare(i)} {spare(i) === 1 ? 'copy' : 'copies'} left to sell
+                </label>
+                <input
+                  id={`en_${i.id}`}
+                  name="title"
+                  required
+                  maxlength="200"
+                  placeholder="How it should read in the catalogue"
+                  class="field !text-[14px]"
+                />
+              </div>
+              <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">
+                List the spare copies
+              </button>
+            </form>
+          )}
+          {shipment.status === 'arrived' && spare(i) <= 0 && (
+            <p class="sm:col-span-5 text-[12.5px] text-[var(--color-ink-faint)]">
+              Every copy is spoken for, so there is nothing to list.
+            </p>
+          )}
         </div>
       ))}
 
-      <div class="mt-2 flex items-center gap-3">
-        <button type="submit" class="btn btn-primary !py-2">Save these</button>
-        <span class="text-[12.5px] text-[var(--color-ink-faint)]">
-          Clearing a title removes that row.
-        </span>
-      </div>
-    </form>
+      {isDraft && (
+        <div class="mt-2 flex items-center gap-3">
+          <button type="submit" class="btn btn-primary !py-2">Save these</button>
+          <span class="text-[12.5px] text-[var(--color-ink-faint)]">
+            Clearing a title removes that row.
+          </span>
+        </div>
+      )}
+    </Rows>
   )}
 </Admin>

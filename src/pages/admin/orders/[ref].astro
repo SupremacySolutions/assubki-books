@@ -36,6 +36,23 @@ const threadError = ({
   empty: THREAD.failed,
 } as Record<string, string>)[Astro.url.searchParams.get('e') ?? ''] ?? null;
 
+const extended = Astro.url.searchParams.get('extended');
+
+/*
+ * A reservation whose week is running.
+ *
+ * Shown above Next steps because it changes what the next step is: the
+ * question stops being "has this been paid" and becomes "is this customer
+ * still coming", and there is a date after which the copies leave.
+ */
+const replyBy = order.pay_by ? new Date(order.pay_by * 1000) : null;
+const waitingOnReply = Boolean(
+  replyBy && ['requested', 'awaiting_payment'].includes(order.status),
+);
+const daysLeft = replyBy
+  ? Math.ceil((replyBy.getTime() - Date.now()) / 86_400_000)
+  : 0;
+
 const isCollection = order.fulfilment === 'collection';
 // Cash applies to either journey now - on a posted order it means one handed
 // over in person - so this no longer depends on how the books are going.
@@ -473,6 +490,40 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
           </section>
         )
       }
+
+      {extended && (
+        <p class="p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[var(--radius-field)] text-[14.5px] text-[var(--color-instock)]">
+          Another week. Let them know in the messages below — nothing was sent.
+        </p>
+      )}
+
+      {waitingOnReply && (
+        <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] border-l-[3px] border-l-[var(--color-brass)] p-5">
+          <h2 class="text-[16px]">
+            {daysLeft > 0
+              ? `Reserved books — ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} to reply`
+              : 'Reserved books — the week is up'}
+          </h2>
+          <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)] leading-relaxed max-w-[38rem]">
+            Their books arrived and are held under this order until
+            {' '}<strong class="text-[var(--color-ink)]">
+              {replyBy!.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </strong>.
+            {daysLeft > 0
+              ? ' After that the copies go back on the shelf on their own.'
+              : ' The sweep will release them at its next run.'}
+          </p>
+          <form method="post" action={`/api/admin/orders/${order.ref}/extend`} class="mt-3">
+            <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">
+              Give them another week
+            </button>
+          </form>
+          <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
+            Counted from today, so this works even if the date has already passed.
+            Nothing is sent — tell them yourself in the messages below.
+          </p>
+        </section>
+      )}
 
       {/*
         * A customer has asked to cancel.

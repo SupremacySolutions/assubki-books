@@ -47,6 +47,8 @@ export interface ShipmentItem {
   incoming: number;
   reserved_incoming: number;
   stock: number;
+  /** Held by a filled claim. What is left to sell is stock less this. */
+  reserved: number;
   status: string;
   shipment_sort: number | null;
 }
@@ -85,7 +87,7 @@ export async function publicShipmentItems(id: number): Promise<
 > {
   const { results } = await env.DB.prepare(
     `SELECT id, slug, title, title_ar, title_ur, price_pence, volumes,
-            incoming, reserved_incoming, stock, status, shipment_sort,
+            incoming, reserved_incoming, stock, reserved, status, shipment_sort,
             MAX(0, incoming - reserved_incoming) AS free
        FROM books WHERE shipment_id = ?
       ORDER BY shipment_sort, id`,
@@ -99,7 +101,7 @@ export async function publicShipmentItems(id: number): Promise<
 export async function shipmentItems(id: number): Promise<ShipmentItem[]> {
   const { results } = await env.DB.prepare(
     `SELECT id, slug, title, title_ar, title_ur, price_pence, volumes,
-            incoming, reserved_incoming, stock, status, shipment_sort
+            incoming, reserved_incoming, stock, reserved, status, shipment_sort
        FROM books WHERE shipment_id = ?
       ORDER BY shipment_sort, id`,
   )

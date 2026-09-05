@@ -4743,6 +4743,58 @@ async function shipments() {
   t.ok(swept.some((r) => r.id === order.id),
     'an unanswered reservation is what the sweep selects once its week is up');
 
+  /*
+   * Another week.
+   *
+   * Without it the owner's only answer to "can I have a few more days" is to
+   * cancel and ask them to start again, which loses their place in a queue for
+   * a book somebody else is waiting on.
+   */
+  const orderPage = await html(`/admin/orders/${first.ref}`);
+  t.ok(/days to reply|week is up/.test(orderPage) && orderPage.includes('Give them another week'),
+    'a reservation on the clock says so in the portal, with a way to extend it');
+
+  await db(`UPDATE orders SET pay_by = unixepoch() - 86400 WHERE id = ${order.id}`);
+  const extended = await postForm(`/api/admin/orders/${first.ref}/extend`, []);
+  t.ok(extended.location.includes('extended=1'), 'and the week can be given');
+  const newDeadline = await one(`SELECT pay_by AS p FROM orders WHERE id=${order.id}`);
+  const extraDays = (newDeadline.p - Math.floor(Date.now() / 1000)) / 86400;
+  t.ok(extraDays > 6.9 && extraDays < 7.1,
+    `counted from today, so a deadline that already passed gets a full week (${extraDays.toFixed(1)})`);
+
+  /*
+   * Listing what nobody reserved.
+   *
+   * The English title is required here and nowhere earlier: the shipment
+   * carried the book's own name, which is right for a list read in Arabic and
+   * wrong for a shop front. This is also the one place in the codebase a slug
+   * is allowed to change, and only from the shape the importer assigns.
+   */
+  const spareBook = rows[1].id;
+  const shipPage = await html(`/admin/shipments/${sid}`);
+  t.ok(shipPage.includes('List the spare copies'),
+    'an arrived shipment offers to list the copies nobody reserved');
+  t.ok(!/<form[^>]*>(?:(?!<\/form>)[\s\S])*<form/.test(shipPage),
+    'and does it without nesting a form inside a form, which a browser drops');
+
+  const noTitle = await postForm(`/api/admin/shipments/${sid}/promote`, [['book', spareBook], ['title', '']]);
+  t.ok(decodeURIComponent(noTitle.location).includes('English title'),
+    'listing without an English title is refused');
+
+  const oldSlug = (await one(`SELECT slug FROM books WHERE id=${spareBook}`)).slug;
+  const promoted = await postForm(`/api/admin/shipments/${sid}/promote`,
+    [['book', spareBook], ['title', 'A Spare Copy E2E']]);
+  t.ok(promoted.location.includes('listed='), 'with a title it becomes a listing');
+  const nowLive = await one(
+    `SELECT slug, title, status, shipment_id AS sid FROM books WHERE id=${spareBook}`);
+  t.ok(nowLive.status === 'live' && nowLive.sid === null && nowLive.title === 'A Spare Copy E2E',
+    'live, off the shipment, and under its English name');
+  t.ok(/^sh\d+-\d+$/.test(oldSlug) && nowLive.slug === 'a-spare-copy-e2e',
+    `re-slugged from the importer's own shape (${oldSlug} -> ${nowLive.slug})`);
+  t.ok((await get(`/book/${nowLive.slug}`, { redirect: 'follow' })).status === 200,
+    'and has a product page of its own at last');
+  created.books.push(spareBook);
+
   // The owner's two queues.
   const shopQueue = await html('/admin/orders');
   const resQueue = await html('/admin/orders?kind=reservations');

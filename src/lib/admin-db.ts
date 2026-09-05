@@ -24,6 +24,10 @@ export interface AdminOrderRow {
   created_at: number;
   updated_at: number;
   expires_at: number | null;
+  /** The reply deadline a landed delivery starts. Null on an ordinary order. */
+  pay_by: number | null;
+  /** Which shipment this came from, if it is a reservation. */
+  shipment_id: number | null;
   confirmed_at: number | null;
   /** Set when payment was recorded, and when the order was closed. */
   paid_at: number | null;
