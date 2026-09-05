@@ -116,40 +116,64 @@ export const POST: APIRoute = async ({ params, request, url }) => {
                   SELECT SUM(oi.qty) FROM order_items oi
                     JOIN books b ON b.id = oi.book_id
                    WHERE oi.order_id = ?1
+                     AND oi.from_incoming = 0
                      AND b.set_id = book_set_stock.set_id
                      AND book_set_stock.volume BETWEEN b.set_from AND b.set_to
                 ), 0))
           WHERE set_id IN (
                   SELECT DISTINCT b.set_id FROM order_items oi
                     JOIN books b ON b.id = oi.book_id
-                   WHERE oi.order_id = ?1 AND b.set_id IS NOT NULL
+                   WHERE oi.order_id = ?1 AND oi.from_incoming = 0
+                     AND b.set_id IS NOT NULL
                 )`,
       ).bind(order.id),
     );
   }
 
-  // Payment received converts the hold into a real reduction in stock: the
-  // copies are leaving the shop, so they come off both counters.
+  /*
+   * Payment received converts the hold into a real reduction in stock: the
+   * copies are leaving the shop, so they come off both counters.
+   *
+   * Shelf lines only. A line with `from_incoming = 1` is a claim on a delivery
+   * that has not landed - its count lives in `reserved_incoming`, never in
+   * `reserved`, and there is no copy on a shelf to take away. Without the
+   * filter, paying an order that is still waiting on a book would decrement
+   * `stock` for copies that were never there (silently floored at 0 by the
+   * MAX), decrement `reserved` for a hold that was never taken, and write two
+   * ledger rows for movements that did not happen - breaking the invariant the
+   * suite checks, that `books.reserved` equals the sum of its ledger deltas.
+   *
+   * Barely reachable while nothing in the shop had a delivery coming. It
+   * becomes the ordinary case the moment reservations are used in anger, which
+   * is why it is fixed on its own rather than inside that work.
+   */
   if (recordsPayment) {
     statements.push(
       env.DB.prepare(
         `UPDATE books
             SET reserved = MAX(0, reserved - COALESCE(
-                  (SELECT SUM(qty) FROM order_items WHERE order_id = ?1 AND book_id = books.id), 0)),
+                  (SELECT SUM(qty) FROM order_items
+                    WHERE order_id = ?1 AND book_id = books.id AND from_incoming = 0), 0)),
                 stock = MAX(0, stock - COALESCE(
-                  (SELECT SUM(qty) FROM order_items WHERE order_id = ?1 AND book_id = books.id), 0)),
+                  (SELECT SUM(qty) FROM order_items
+                    WHERE order_id = ?1 AND book_id = books.id AND from_incoming = 0), 0)),
                 updated_at = unixepoch()
-          WHERE id IN (SELECT book_id FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL)`,
+          WHERE id IN (SELECT book_id FROM order_items
+                        WHERE order_id = ?1 AND book_id IS NOT NULL AND from_incoming = 0)`,
       ).bind(order.id),
       env.DB.prepare(
         `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
          SELECT book_id, -SUM(qty), 'stock', 'order paid', ?1
-           FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL GROUP BY book_id`,
+           FROM order_items
+          WHERE order_id = ?1 AND book_id IS NOT NULL AND from_incoming = 0
+          GROUP BY book_id`,
       ).bind(order.id),
       env.DB.prepare(
         `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
          SELECT book_id, -SUM(qty), 'reserved', 'hold converted to sale', ?1
-           FROM order_items WHERE order_id = ?1 AND book_id IS NOT NULL GROUP BY book_id`,
+           FROM order_items
+          WHERE order_id = ?1 AND book_id IS NOT NULL AND from_incoming = 0
+          GROUP BY book_id`,
       ).bind(order.id),
     );
   }

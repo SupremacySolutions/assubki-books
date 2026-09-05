@@ -2784,6 +2784,46 @@ async function integrity() {
   const claimOrder = await one(`SELECT expires_at AS e FROM orders WHERE ref = '${claimA.ref}'`);
   t.ok(claimOrder.e === null, 'an order waiting on a delivery is given no expiry to lapse at');
 
+  /*
+   * Paying for a claim must not take stock that never arrived.
+   *
+   * `recordsPayment` converts a hold into a real reduction - `reserved` and
+   * `stock` both drop, and two ledger rows are written. A claim has neither:
+   * its count lives in `reserved_incoming`, and there is no copy on a shelf.
+   * Counting it anyway decremented `stock` for books that were not there,
+   * `reserved` for a hold never taken, and wrote ledger rows for movements
+   * that did not happen - breaking the reserved-equals-its-ledger invariant.
+   *
+   * Barely reachable while nothing had a delivery coming; the ordinary case as
+   * soon as reservations are used.
+   */
+  const payClaim = await makeBook({ stock: '0' });
+  await db(`UPDATE books SET incoming = 2 WHERE id = ${payClaim.id}`);
+  const claimPaid = await placeOrder(payClaim.id, 'collection');
+  /*
+   * Shelf copies added *after* the claim, so the decrement would be visible.
+   *
+   * With stock at 0 the bug hides: `MAX(0, 0 - 1)` is 0 either way, and the
+   * assertion passes against broken code. Copies on the shelf are what make
+   * the wrong subtraction show up as a number.
+   */
+  await db(`UPDATE books SET stock = 5 WHERE id = ${payClaim.id}`);
+  const beforePay = await one(
+    `SELECT stock AS s, reserved AS r, reserved_incoming AS ri FROM books WHERE id = ${payClaim.id}`,
+  );
+  await admin(`/api/admin/orders/${claimPaid.ref}/confirm`, { postage: '0', message: 'Pay please' });
+  await admin(`/api/admin/orders/${claimPaid.ref}/status`, { status: 'paid' });
+  const afterPay = await one(
+    `SELECT stock AS s, reserved AS r, reserved_incoming AS ri FROM books WHERE id = ${payClaim.id}`,
+  );
+  t.ok(afterPay.s === beforePay.s && afterPay.r === beforePay.r,
+    `paying for books that have not arrived takes nothing off the shelf (stock ${beforePay.s}->${afterPay.s}, reserved ${beforePay.r}->${afterPay.r})`);
+  const claimLedger = await one(
+    `SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id = ${payClaim.id}
+       AND reason IN ('order paid','hold converted to sale')`,
+  );
+  t.ok(claimLedger.n === 0, 'and writes no ledger row for a movement that did not happen');
+
   const resPage = visibleText(await html(`/order?ref=${claimA.ref}&t=${claimA.token}`));
   t.ok(!resPage.includes('Held until'), 'and is not told its books are held for 48 hours');
   t.ok(resPage.includes('Reserved for you until the delivery arrives'),
