@@ -1,6 +1,8 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
+import { env } from 'cloudflare:workers';
 import { getShipment, shipmentItems } from '../../../lib/shipments';
+import { pendingNotices } from '../../../lib/shipment-notify';
 import { whenText } from '../../../lib/incoming';
 
 const id = Number.parseInt(Astro.params.id ?? '', 10);
@@ -16,6 +18,12 @@ const opened = params.get('opened');
 const error = params.get('e');
 
 const isDraft = shipment.status === 'draft';
+const arrivedCount = Number(params.get('arrived') ?? -1);
+// What is still waiting to go out, so the owner can see the queue draining
+// rather than wondering whether anything happened.
+const waitingToSend = shipment.status === 'arrived'
+  ? await pendingNotices(env.DB, id)
+  : 0;
 const money = (pence: number) => (pence / 100).toFixed(2);
 
 /*
@@ -49,7 +57,22 @@ const holes = items.filter(incomplete).length;
       Open. Customers can reserve from these now.
     </p>
   )}
-  {error && <p class="mb-4 text-[14px] text-[var(--color-outstock)]">Not opened — {error}.</p>}
+  {error && <p class="mb-4 text-[14px] text-[var(--color-outstock)]">{error}.</p>}
+  {arrivedCount >= 0 && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+      Marked as arrived. The copies are on the shelf and
+      {arrivedCount === 0
+        ? ' nobody had reserved any.'
+        : ` ${arrivedCount} ${arrivedCount === 1 ? 'customer is' : 'customers are'} being told — they have seven days to reply.`}
+    </p>
+  )}
+  {waitingToSend > 0 && (
+    <p class="mb-4 text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
+      {waitingToSend} {waitingToSend === 1 ? 'customer has' : 'customers have'} still
+      to be told. They go out a few at a time, so a large shipment does not spend
+      the day's email in one go — check back in a quarter of an hour.
+    </p>
+  )}
 
   <div class="mb-5 flex flex-wrap items-center gap-3">
     <span class="text-[13px] text-[var(--color-ink-faint)]">
@@ -58,6 +81,12 @@ const holes = items.filter(incomplete).length;
       {shipment.claimed > 0 && ` · ${shipment.claimed} reserved`}
     </span>
 
+    {shipment.status === 'open' && (
+      <span class="text-[13px] text-[var(--color-ink-faint)]">
+        Correct the copy counts before marking it arrived — that is what customers
+        are given.
+      </span>
+    )}
     {isDraft && (
       <form method="post" action={`/api/admin/shipments/${id}/open`}>
         <button
@@ -66,6 +95,13 @@ const holes = items.filter(incomplete).length;
           disabled={holes > 0 || items.length === 0}
         >
           Open for reservations
+        </button>
+      </form>
+    )}
+    {shipment.status === 'open' && (
+      <form method="post" action={`/api/admin/shipments/${id}/arrived`} data-confirm="arrived">
+        <button type="submit" class="btn btn-primary !py-1.5 !text-[13.5px]">
+          The shipment has arrived
         </button>
       </form>
     )}

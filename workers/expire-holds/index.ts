@@ -18,6 +18,8 @@
 import { releaseHold } from '../../src/lib/stock-release';
 import { pruneSearches } from '../../src/lib/searches';
 import { pruneAlerts } from '../../src/lib/stock-alerts';
+import { drainArrivalNotices } from '../../src/lib/shipment-notify';
+import { SITE } from '../../src/lib/format';
 
 interface Env {
   DB: D1Database;
@@ -53,6 +55,62 @@ export async function expireHolds(db: D1Database): Promise<{ orders: number; cop
   await db.batch(statements);
 
   return { orders: stale.length, copies: stale.reduce((n, s) => n + s.copies, 0) };
+}
+
+/**
+ * Reservations that were never answered after the books landed.
+ *
+ * Keyed on `pay_by` and never on `expires_at`, which matters more than it
+ * looks. `confirm.ts` does not clear `expires_at`, so every order sitting in
+ * awaiting_payment still carries the stale forty-eight hour value it was
+ * created with, long in the past - sweeping that column across both statuses
+ * would expire every live confirmed order in the shop the first time this ran.
+ * `pay_by` is set only when a delivery lands, so nothing that predates
+ * shipments carries one.
+ *
+ * `requested` and `awaiting_payment` both, because the clock starts when the
+ * box arrives and the owner may not have sent a total yet. The claim has
+ * already been converted to an ordinary hold by then, so releasing it returns
+ * the copies to the shelf and writes the ledger row - which is the point: the
+ * whole reason for the deadline is that the copies become sellable again.
+ *
+ * The `NOT EXISTS` is a guard rather than a nicety. An order that has since
+ * acquired a fresh claim on a later delivery is waiting again, and must not be
+ * released for not answering about the last one.
+ */
+export async function expireUnpaidReservations(
+  db: D1Database,
+): Promise<{ orders: number; copies: number }> {
+  const now = Math.floor(Date.now() / 1000);
+
+  const { results: lapsed } = await db
+    .prepare(
+      `SELECT o.id, COALESCE(SUM(oi.qty), 0) AS copies
+         FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.status IN ('requested', 'awaiting_payment')
+          AND o.pay_by IS NOT NULL AND o.pay_by <= ?
+          AND NOT EXISTS (SELECT 1 FROM order_items x
+                           WHERE x.order_id = o.id AND x.from_incoming = 1)
+        GROUP BY o.id`,
+    )
+    .bind(now)
+    .all<{ id: number; copies: number }>();
+
+  if (!lapsed.length) return { orders: 0, copies: 0 };
+
+  const statements = [];
+  for (const { id } of lapsed) {
+    statements.push(
+      ...releaseHold(id, 'reservation not paid', db),
+      db
+        .prepare(`UPDATE orders SET status = 'expired', updated_at = unixepoch() WHERE id = ?`)
+        .bind(id),
+    );
+  }
+
+  await db.batch(statements);
+
+  return { orders: lapsed.length, copies: lapsed.reduce((n, l) => n + l.copies, 0) };
 }
 
 /**
@@ -155,6 +213,24 @@ export default {
     const { orders, copies } = await expireHolds(env.DB);
     if (orders) console.log(`expired ${orders} hold(s), released ${copies} cop(ies)`);
 
+    const unpaid = await expireUnpaidReservations(env.DB);
+    if (unpaid.orders) {
+      console.log(`released ${unpaid.copies} cop(ies) from ${unpaid.orders} unanswered reservation(s)`);
+    }
+
+    /*
+     * Telling people their shipment landed, a few at a time.
+     *
+     * Deliberately here rather than in the request that marks a shipment
+     * arrived: forty customers is forty outbound requests, which is more than
+     * one handler may make and most of a day's mail allowance. Spread over
+     * quarter-hours it stays inside both, and a failure becomes a retry.
+     */
+    const told = await drainArrivalNotices(env.DB, SITE.url);
+    if (told.sent || told.failed) {
+      console.log(`told ${told.sent} customer(s) their shipment arrived, ${told.failed} to retry`);
+    }
+
     const groups = await expireGroupBaskets(env.DB);
     if (groups) console.log(`cleared ${groups} abandoned group basket(s)`);
 
@@ -216,10 +292,20 @@ export default {
     for (let i = 0; i < a.length && i < b.length; i++) diff |= a[i] ^ b[i];
     if (diff !== 0) return new Response('Not found', { status: 404 });
 
+    /*
+     * The same passes the timer runs, in the same order.
+     *
+     * A manual trigger that does less than the scheduled one is a trigger you
+     * cannot test the scheduled one with - and these two are the passes most
+     * worth being able to run on demand, because one releases stock and the
+     * other writes to customers.
+     */
     const result = await expireHolds(env.DB);
+    const unpaid = await expireUnpaidReservations(env.DB);
+    const told = await drainArrivalNotices(env.DB, SITE.url);
     const groups = await expireGroupBaskets(env.DB);
     const proofs = await sweepProofs(env.DB, env.UPLOADS);
     const searches = await pruneSearches(env.DB);
-    return Response.json({ ...result, groups, proofs, searches });
+    return Response.json({ ...result, unpaid, told, groups, proofs, searches });
   },
 } satisfies ExportedHandler<Env>;
