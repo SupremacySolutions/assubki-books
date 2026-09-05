@@ -290,8 +290,38 @@ export function plainCaption(post: ListingPost): string {
   if (post.blurb) lines.push(post.blurb, '');
   lines.push(`£${(post.pricePence / 100).toFixed(2)}`);
   lines.push(post.available > 0 ? `${post.available} available` : 'out of stock');
-  lines.push('', post.url);
+  lines.push('', ORDER_HERE);
   return lines.join('\n');
+}
+
+/**
+ * The words that become the link to the book.
+ *
+ * A phrase rather than the address, because the address is what the owner was
+ * looking at: plain text has no way to say "these words, that link", so the
+ * URL went out bare and the channel showed the whole of it. Telegram can be
+ * told separately - see `linkEntities` - and then the post reads the way the
+ * generated one always did.
+ */
+export const ORDER_HERE = 'Order here';
+
+/**
+ * Where to draw the link in a post the owner wrote.
+ *
+ * Telegram takes formatting either as markup in the text or as a list of
+ * ranges beside it. Ranges are the answer here: the text stays exactly as it
+ * was typed - no escaping, nothing to learn - and the link is described
+ * separately. Offsets are UTF-16 code units, which is what a JavaScript string
+ * index already is, so an Arabic title earlier in the caption does not shift
+ * them.
+ *
+ * If he deleted the phrase, he gets no link, which is his to decide. A bare
+ * URL left in the text still becomes one - Telegram finds those itself.
+ */
+function linkEntities(text: string, url: string) {
+  const at = text.indexOf(ORDER_HERE);
+  if (at < 0) return undefined;
+  return [{ type: 'text_link', offset: at, length: ORDER_HERE.length, url }];
 }
 
 /** The caption shown under a listing in the channel. */
@@ -304,7 +334,7 @@ export function listingCaption(post: ListingPost): string {
   if (post.blurb) lines.push(esc(post.blurb), '');
   lines.push(`*${esc(price)}*`);
   lines.push(post.available > 0 ? esc(`${post.available} available`) : esc('out of stock'));
-  lines.push('', mdLink('Order here', post.url));
+  lines.push('', mdLink(ORDER_HERE, post.url));
   return lines.join('\n');
 }
 
@@ -336,9 +366,14 @@ export interface PostedListing {
  * somebody's typing to a markup parser is how a stray bracket in a book title
  * silently fails the whole post.
  */
-function captionFor(post: ListingPost): { text: string; parse?: 'MarkdownV2' } {
+function captionFor(post: ListingPost): {
+  text: string;
+  parse?: 'MarkdownV2';
+  entities?: { type: string; offset: number; length: number; url: string }[];
+} {
   const own = post.caption?.trim();
-  return own ? { text: own } : { text: listingCaption(post), parse: 'MarkdownV2' };
+  if (!own) return { text: listingCaption(post), parse: 'MarkdownV2' };
+  return { text: own, entities: linkEntities(own, post.url) };
 }
 
 export async function postListing(post: ListingPost): Promise<PostedListing | null> {
@@ -348,7 +383,14 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
     return null;
   }
 
-  const { text: caption, parse } = captionFor(post);
+  const { text: caption, parse, entities } = captionFor(post);
+  /*
+   * A caption's ranges are `caption_entities`; a plain message's are
+   * `entities`. Sending the wrong name is not an error, it is silently
+   * ignored - the post goes out with the link missing and nothing says so.
+   */
+  const captionMarkup = parse ? { parse_mode: parse } : entities ? { caption_entities: entities } : {};
+  const textMarkup = parse ? { parse_mode: parse } : entities ? { entities } : {};
   const photos = (post.imageUrls?.length ? post.imageUrls : [post.imageUrl])
     .filter((url): url is string => Boolean(url))
     .slice(0, ALBUM_MAX);
@@ -364,7 +406,7 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
     const media = photos.map((url, i) => ({
       type: 'photo',
       media: url,
-      ...(i === 0 ? { caption, ...(parse ? { parse_mode: parse } : {}) } : {}),
+      ...(i === 0 ? { caption, ...captionMarkup } : {}),
     }));
     const group = await call<{ message_id: number }[]>('sendMediaGroup', {
       chat_id: channel,
@@ -383,7 +425,7 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
       chat_id: channel,
       photo: photos[0],
       caption,
-      ...(parse ? { parse_mode: parse } : {}),
+      ...captionMarkup,
     });
     if (result) return { messageId: result.message_id, albumIds: [result.message_id] };
     // A photo Telegram cannot fetch should not cost the announcement.
@@ -393,7 +435,7 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
   const result = await call<{ message_id: number }>('sendMessage', {
     chat_id: channel,
     text: caption,
-    ...(parse ? { parse_mode: parse } : {}),
+    ...textMarkup,
     disable_web_page_preview: false,
   });
   return result?.message_id ? { messageId: result.message_id, albumIds: [result.message_id] } : null;
@@ -404,7 +446,9 @@ export async function editListing(messageId: number, post: ListingPost): Promise
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) return false;
 
-  const { text: caption, parse } = captionFor(post);
+  const { text: caption, parse, entities } = captionFor(post);
+  const captionMarkup = parse ? { parse_mode: parse } : entities ? { caption_entities: entities } : {};
+  const textMarkup = parse ? { parse_mode: parse } : entities ? { entities } : {};
   let notModified = false;
   const recordError = (description: string) => {
     if (description.includes('message is not modified')) notModified = true;
@@ -416,7 +460,7 @@ export async function editListing(messageId: number, post: ListingPost): Promise
     chat_id: channel,
     message_id: messageId,
     caption,
-    ...(parse ? { parse_mode: parse } : {}),
+    ...captionMarkup,
   }, recordError);
   if (asCaption !== null) return true;
 
@@ -424,7 +468,7 @@ export async function editListing(messageId: number, post: ListingPost): Promise
     chat_id: channel,
     message_id: messageId,
     text: caption,
-    ...(parse ? { parse_mode: parse } : {}),
+    ...textMarkup,
   }, recordError);
   return asText !== null || notModified;
 }

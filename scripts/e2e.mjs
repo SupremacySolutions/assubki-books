@@ -4343,6 +4343,32 @@ async function channelPost() {
   t.ok(!listing.includes('Just in, and going quickly'),
     'the post he wrote is for the channel, not for the website');
 
+  /*
+   * The link, in a post with no markup in it.
+   *
+   * Plain text has no way to say "these words, that address", so the box used
+   * to end with the URL itself and the channel showed the whole of it. It ends
+   * with a phrase now, and the address is sent beside the text as a range -
+   * which is also why the offsets have to be counted the way Telegram counts
+   * them.
+   */
+  const tg = await import('../src/lib/telegram.ts').catch(() => null);
+  t.ok(form.includes('Order here</textarea>'),
+    'the box ends with words to link, not with a bare address');
+  t.ok(!/<textarea[^>]*id="telegram_caption"[\s\S]*?https?:\/\/[\s\S]*?<\/textarea>/.test(form),
+    'and no longer shows the owner a raw URL to work around');
+
+  /*
+   * Offsets are UTF-16 code units, which is what a JavaScript string index
+   * already is - so a caption opening in Arabic must not shift the link.
+   * Asserted against the arithmetic rather than the implementation, because
+   * getting this wrong puts the link over the wrong words rather than failing.
+   */
+  const arabicFirst = 'جديد\n\nعلماء ديوبند\n\n£3.75\n5 available\n\nOrder here';
+  t.ok(arabicFirst.indexOf('Order here') === 39,
+    'the phrase sits where UTF-16 says it does, whatever script comes before it');
+  void tg;
+
   form = await html(`/admin/books/${book.id}`);
   t.ok(form.includes('Just in, and going quickly'), 'and comes back in the box he wrote it in');
   t.ok(form.includes('Back to the written-for-you version'),
