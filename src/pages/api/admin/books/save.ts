@@ -62,11 +62,28 @@ export const POST: APIRoute = async ({ request }) => {
    */
   const titleUr = String(form.get('title_ur') ?? '').trim() || null;
   /*
-   * Words for the channel only. Capped because a Telegram caption is 1024
-   * characters and the generated lines around it need their share - a note
-   * long enough to overrun would fail the post rather than shorten itself.
+   * The channel post, when the owner has taken it over.
+   *
+   * Blank means he has not, and the shop goes on writing it - which is also
+   * how he hands it back: empty the box and the post starts tracking the
+   * price and the stock again. Capped at Telegram's own caption limit, so a
+   * post that is too long is refused here where it can be seen rather than by
+   * the API where it reads as the channel being broken.
    */
-  const telegramNote = String(form.get('telegram_note') ?? '').trim().slice(0, 400) || null;
+  const captionTyped = String(form.get('telegram_caption') ?? '').trim().slice(0, 1024);
+  const captionOffered = String(form.get('telegram_caption_generated') ?? '').trim();
+  /*
+   * Left alone is not the same as written.
+   *
+   * The box arrives filled in - it has to, or the owner would be editing a
+   * blank instead of the post - so saving a listing he never scrolled to
+   * would otherwise hand him a caption he did not ask to own, frozen at
+   * today's price. Comparing against what was offered tells the two apart,
+   * and line endings are normalised because a textarea returns CRLF for the
+   * newlines that went out as LF.
+   */
+  const sameAsOffered = captionTyped.replace(/\r\n/g, '\n') === captionOffered.replace(/\r\n/g, '\n');
+  const telegramCaption = !captionTyped || sameAsOffered ? null : captionTyped;
   const author = String(form.get('author') ?? '').trim() || null;
   const publisher = String(form.get('publisher') ?? '').trim() || null;
   /*
@@ -108,11 +125,11 @@ export const POST: APIRoute = async ({ request }) => {
     await env.DB.prepare(
       `UPDATE books SET title = ?, title_ar = ?, title_ur = ?, author = ?, publisher = ?,
                         volumes = ?, description_html = ?, price_pence = ?, status = ?, isbn = ?,
-                        telegram_note = ?, updated_at = unixepoch()
+                        telegram_caption = ?, updated_at = unixepoch()
         WHERE id = ?`,
     )
       .bind(title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
-            status, isbn, telegramNote, bookId)
+            status, isbn, telegramCaption, bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
     /* Anybody waiting is told once availability has settled - see stock-alerts. */
@@ -144,11 +161,11 @@ export const POST: APIRoute = async ({ request }) => {
     const created = await env.DB.prepare(
       `INSERT INTO books (slug, title, title_ar, title_ur, author, publisher, volumes,
                           description_html, price_pence, stock, reserved, status, isbn,
-                          telegram_note)
+                          telegram_caption)
        VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?) RETURNING id`,
     )
       .bind(slug, title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
-            stock, status, isbn, telegramNote)
+            stock, status, isbn, telegramCaption)
       .first<{ id: number }>();
     bookId = created!.id;
 

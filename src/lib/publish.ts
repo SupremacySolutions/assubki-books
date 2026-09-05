@@ -37,7 +37,7 @@ export async function publishListing(bookId: number, origin: string): Promise<Pu
     titleAr: book.title_ar,
     pricePence: book.price_pence,
     blurb: truncate(stripTags(book.description_html), 180) || null,
-    note: book.telegram_note,
+    caption: book.telegram_caption,
     available: book.available,
     volumes: book.volumes,
     url: `${origin}/book/${book.slug}`,

@@ -4302,26 +4302,74 @@ async function channelPost() {
   };
 
   /*
-   * The owner's own words.
+   * The post is the owner's to rewrite.
    *
-   * The point of the field is that it reaches the channel and stops there:
-   * something he wants said to the people following the shop that has no
-   * business on a product page a stranger arrives at from a search.
+   * Not an addition to a caption the shop still writes - the whole thing, so
+   * he can open with something of his own or move a line. Which means the box
+   * arrives filled in, and the interesting case is telling "he left it alone"
+   * from "he wrote one".
    */
-  const note = 'Two sets left at this price - collection from the shop.';
-  const book = await makeBook({ telegram_note: note });
+  const book = await makeBook();
+  const slug = (await one(`SELECT slug FROM books WHERE id=${book.id}`)).slug;
 
-  const saved = await one(`SELECT telegram_note FROM books WHERE id=${book.id}`);
-  t.ok(saved.telegram_note === note, 'the note is saved with the listing');
+  let form = await html(`/admin/books/${book.id}`);
+  t.ok(/name="telegram_caption"/.test(form), 'the portal offers the post itself, not a note beside it');
+  t.ok(/name="telegram_caption_generated"/.test(form),
+    'and sends what it offered, so the server can tell an untouched box from a written one');
+  t.ok(form.includes('£12.50') && form.includes('4 available'),
+    'the box starts as the post the shop would have written');
 
-  const listing = await html(`/book/${(await one(`SELECT slug FROM books WHERE id=${book.id}`)).slug}`);
-  t.ok(!listing.includes(note), 'and stays off the website, which is the whole reason for it');
+  // Saving a listing without touching the box must not hand him a frozen post.
+  await admin('/api/admin/books/save', {
+    id: String(book.id), title: book.title, title_ar: 'اختبار', price: '12.50',
+    stock: '4', status: 'live', categories: '20',
+    telegram_caption: `${book.title}\nاختبار\n\nFirst paragraph. Second paragraph.\n\n£12.50\n4 available\n\nhttp://localhost:4330/book/${slug}`,
+    telegram_caption_generated: `${book.title}\nاختبار\n\nFirst paragraph. Second paragraph.\n\n£12.50\n4 available\n\nhttp://localhost:4330/book/${slug}`,
+  });
+  t.ok((await one(`SELECT telegram_caption FROM books WHERE id=${book.id}`)).telegram_caption === null,
+    'a box that came back as it went out leaves the post the shop\'s to write');
 
-  const form = await html(`/admin/books/${book.id}`);
-  t.ok(/name="telegram_note"/.test(form) && form.includes(note),
-    'the portal offers the field, filled in');
-  t.ok(form.includes('Two sets left at this price'),
-    'and the channel preview shows what will actually be posted');
+  const written = 'Just in, and going quickly.\n\nUlama of Deoband\n\n£12.50\n4 available';
+  await admin('/api/admin/books/save', {
+    id: String(book.id), title: book.title, title_ar: 'اختبار', price: '12.50',
+    stock: '4', status: 'live', categories: '20',
+    telegram_caption: written,
+    telegram_caption_generated: 'something else entirely',
+  });
+  t.ok((await one(`SELECT telegram_caption FROM books WHERE id=${book.id}`)).telegram_caption === written,
+    'and one he actually changed is kept as he wrote it');
+
+  const listing = await html(`/book/${slug}`);
+  t.ok(!listing.includes('Just in, and going quickly'),
+    'the post he wrote is for the channel, not for the website');
+
+  form = await html(`/admin/books/${book.id}`);
+  t.ok(form.includes('Just in, and going quickly'), 'and comes back in the box he wrote it in');
+  t.ok(form.includes('Back to the written-for-you version'),
+    'with a way to hand it back');
+
+  // Emptying the box is the same as never having written one.
+  await admin('/api/admin/books/save', {
+    id: String(book.id), title: book.title, title_ar: 'اختبار', price: '12.50',
+    stock: '4', status: 'live', categories: '20',
+    telegram_caption: '', telegram_caption_generated: 'anything',
+  });
+  t.ok((await one(`SELECT telegram_caption FROM books WHERE id=${book.id}`)).telegram_caption === null,
+    'clearing it gives the post back to the shop');
+
+  // Put one back for the posting checks below.
+  await db(`UPDATE books SET telegram_caption = '${written.replace(/'/g, "''")}' WHERE id = ${book.id}`);
+
+  /*
+   * A post he wrote is a post that stops tracking the row - that is the trade -
+   * so the portal has to say when it has drifted rather than let the channel
+   * quietly advertise last week's price.
+   */
+  await db(`UPDATE books SET price_pence = 9999 WHERE id = ${book.id}`);
+  const stale = await html(`/admin/books/${book.id}`);
+  t.ok(stale.includes('no longer matches the listing'),
+    'a post written before the price moved is flagged, not left to go quietly wrong');
+  await db(`UPDATE books SET price_pence = 1250 WHERE id = ${book.id}`);
 
   /*
    * Every photo, not just the cover.

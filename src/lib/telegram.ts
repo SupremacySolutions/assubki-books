@@ -259,17 +259,39 @@ export interface ListingPost {
   /** Only when it is a set, so the channel says the same as the card. */
   volumes?: number | null;
   /**
-   * The owner's own words for the channel, which are not on the listing.
+   * The post as the owner wrote it, replacing everything below.
    *
-   * An addition to the caption rather than the caption itself. Everything
-   * around it - the price, what is left, the link - is generated from the row
-   * as it stands today, and has to be: a caption the owner had typed out in
-   * full would put a fortnight-old price back in the channel the next time
-   * anything republished it.
+   * Sent exactly as typed, with no parse mode. MarkdownV2 would mean hand
+   * escaping every full stop, hyphen and bracket - `£3.75` is a syntax error
+   * without it - which is not a thing to ask of somebody writing a sentence
+   * about a book. Plain text is what he sees and what the channel gets, and
+   * Telegram makes a link of a bare URL by itself.
    */
-  note?: string | null;
+  caption?: string | null;
   /** Every photo on the listing. The first carries the caption. */
   imageUrls?: string[];
+}
+
+/**
+ * The same post as plain text, which is what the owner edits.
+ *
+ * Not a rendering of the markdown one - the markdown is what it is so that
+ * Telegram will draw a bold title and a worded link, and neither survives
+ * being handed to somebody to edit: MarkdownV2 escapes every full stop, so
+ * `£3.75` reaches the owner as `£3\.75` and comes back broken. This is the
+ * same facts written the way a person would type them, with the URL bare
+ * because Telegram links that by itself.
+ */
+export function plainCaption(post: ListingPost): string {
+  const lines = [post.title];
+  if (post.titleAr) lines.push(post.titleAr);
+  if (post.volumes && post.volumes > 1) lines.push(`${post.volumes} volume set`);
+  lines.push('');
+  if (post.blurb) lines.push(post.blurb, '');
+  lines.push(`£${(post.pricePence / 100).toFixed(2)}`);
+  lines.push(post.available > 0 ? `${post.available} available` : 'out of stock');
+  lines.push('', post.url);
+  return lines.join('\n');
 }
 
 /** The caption shown under a listing in the channel. */
@@ -280,10 +302,6 @@ export function listingCaption(post: ListingPost): string {
   if (post.volumes && post.volumes > 1) lines.push(esc(`${post.volumes} volume set`));
   lines.push('');
   if (post.blurb) lines.push(esc(post.blurb), '');
-  // After the description and before the price, which is where a human would
-  // put an aside - and far enough from the generated lines that it reads as
-  // the shop talking rather than as part of the listing.
-  if (post.note) lines.push(esc(post.note), '');
   lines.push(`*${esc(price)}*`);
   lines.push(post.available > 0 ? esc(`${post.available} available`) : esc('out of stock'));
   lines.push('', mdLink('Order here', post.url));
@@ -310,6 +328,19 @@ export interface PostedListing {
   albumIds: number[];
 }
 
+/**
+ * What to send, and whether Telegram should read markup in it.
+ *
+ * A caption the owner wrote goes as he wrote it. Only the generated one is
+ * MarkdownV2, because only the generated one is escaped for it - handing
+ * somebody's typing to a markup parser is how a stray bracket in a book title
+ * silently fails the whole post.
+ */
+function captionFor(post: ListingPost): { text: string; parse?: 'MarkdownV2' } {
+  const own = post.caption?.trim();
+  return own ? { text: own } : { text: listingCaption(post), parse: 'MarkdownV2' };
+}
+
 export async function postListing(post: ListingPost): Promise<PostedListing | null> {
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) {
@@ -317,7 +348,7 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
     return null;
   }
 
-  const caption = listingCaption(post);
+  const { text: caption, parse } = captionFor(post);
   const photos = (post.imageUrls?.length ? post.imageUrls : [post.imageUrl])
     .filter((url): url is string => Boolean(url))
     .slice(0, ALBUM_MAX);
@@ -333,7 +364,7 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
     const media = photos.map((url, i) => ({
       type: 'photo',
       media: url,
-      ...(i === 0 ? { caption, parse_mode: 'MarkdownV2' } : {}),
+      ...(i === 0 ? { caption, ...(parse ? { parse_mode: parse } : {}) } : {}),
     }));
     const group = await call<{ message_id: number }[]>('sendMediaGroup', {
       chat_id: channel,
@@ -352,7 +383,7 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
       chat_id: channel,
       photo: photos[0],
       caption,
-      parse_mode: 'MarkdownV2',
+      ...(parse ? { parse_mode: parse } : {}),
     });
     if (result) return { messageId: result.message_id, albumIds: [result.message_id] };
     // A photo Telegram cannot fetch should not cost the announcement.
@@ -362,7 +393,7 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
   const result = await call<{ message_id: number }>('sendMessage', {
     chat_id: channel,
     text: caption,
-    parse_mode: 'MarkdownV2',
+    ...(parse ? { parse_mode: parse } : {}),
     disable_web_page_preview: false,
   });
   return result?.message_id ? { messageId: result.message_id, albumIds: [result.message_id] } : null;
@@ -373,7 +404,7 @@ export async function editListing(messageId: number, post: ListingPost): Promise
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) return false;
 
-  const caption = listingCaption(post);
+  const { text: caption, parse } = captionFor(post);
   let notModified = false;
   const recordError = (description: string) => {
     if (description.includes('message is not modified')) notModified = true;
@@ -385,7 +416,7 @@ export async function editListing(messageId: number, post: ListingPost): Promise
     chat_id: channel,
     message_id: messageId,
     caption,
-    parse_mode: 'MarkdownV2',
+    ...(parse ? { parse_mode: parse } : {}),
   }, recordError);
   if (asCaption !== null) return true;
 
@@ -393,7 +424,7 @@ export async function editListing(messageId: number, post: ListingPost): Promise
     chat_id: channel,
     message_id: messageId,
     text: caption,
-    parse_mode: 'MarkdownV2',
+    ...(parse ? { parse_mode: parse } : {}),
   }, recordError);
   return asText !== null || notModified;
 }

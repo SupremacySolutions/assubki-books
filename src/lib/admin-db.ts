@@ -373,8 +373,8 @@ export interface AdminBookDetail extends AdminBookRow {
   author: string | null;
   publisher: string | null;
   legacy_slug: string | null;
-  /** The owner's extra words for the channel post, not shown on the listing. */
-  telegram_note: string | null;
+  /** The channel post as the owner rewrote it; null while the shop writes it. */
+  telegram_caption: string | null;
   /** Every message the channel post occupies, so a delete can clear all of it. */
   telegram_album_ids: string | null;
   images: { id: number; image_key: string; alt: string | null; sort: number }[];

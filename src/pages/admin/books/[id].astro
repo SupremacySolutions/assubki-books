@@ -5,7 +5,7 @@ import CoverReview from '../../../components/CoverReview.astro';
 import { getBookAdmin, partCandidates } from '../../../lib/admin-db';
 import { allCategories, setOptionsForOwner } from '../../../lib/db';
 import { imageUrl, price, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
-import { botConfigured, listingCaption } from '../../../lib/telegram';
+import { botConfigured, plainCaption } from '../../../lib/telegram';
 
 const { id } = Astro.params;
 const isNew = id === 'new';
@@ -78,20 +78,45 @@ const channelStale = Boolean(
     (book.telegram_posted_at === null || book.updated_at > book.telegram_posted_at),
 );
 
-const previewCaption = book
-  ? listingCaption({
+/*
+ * What the shop would write for this listing, as plain text.
+ *
+ * This is what the box below starts with, so the owner edits the post itself
+ * rather than describing changes to it. Built from `plainCaption` and not by
+ * unescaping the markdown one: MarkdownV2 escapes every full stop, so the
+ * price would reach him as `£3\.75` and come back with the backslash in it.
+ */
+const generatedCaption = book
+  ? plainCaption({
       title: book.title,
-      titleAr: book.title_ar,
-      note: book.telegram_note,
+      titleAr: book.title_ar ?? book.title_ur,
       pricePence: book.price_pence,
       blurb: truncate(stripTags(book.description_html), 180) || null,
       available: book.available,
+      volumes: book.volumes,
       url: `${Astro.url.origin}/book/${book.slug}`,
     })
-      // Undo the MarkdownV2 escaping for display only.
-      .replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1')
-      .replace(/\*(.+?)\*/g, '$1')
   : '';
+
+/** His, if he has written one; otherwise the shop's, ready to be edited. */
+const captionValue = book?.telegram_caption ?? generatedCaption;
+
+/*
+ * A post he wrote before the price or the stock moved.
+ *
+ * The shop cannot keep a hand-written post true - that is the trade for
+ * letting him write it - but it can notice, and saying so is better than a
+ * channel quietly advertising last week's price.
+ */
+const currentPrice = book ? `£${(book.price_pence / 100).toFixed(2)}` : '';
+const currentStock = book
+  ? book.available > 0 ? `${book.available} available` : 'out of stock'
+  : '';
+const captionStale = Boolean(
+  book?.telegram_caption &&
+    (!book.telegram_caption.includes(currentPrice) ||
+      !book.telegram_caption.includes(currentStock)),
+);
 ---
 
 <Admin
@@ -631,9 +656,9 @@ const previewCaption = book
               <p class="text-[13.5px] text-[var(--color-ink-soft)] mb-3">Not announced yet.</p>
             )}
 
-            <details class="mb-3">
+            <details class="mb-3" open={Boolean(book.telegram_caption) || captionStale}>
               <summary class="text-[14px] text-[var(--color-navy)] cursor-pointer">
-                Preview the post
+                The post, and the photos that go with it
               </summary>
               <div class="mt-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]">
                 {/* Every photo, because every photo is what goes to the
@@ -655,32 +680,43 @@ const previewCaption = book
                     Telegram allows ten photos in one post; the first ten go.
                   </p>
                 )}
-                <pre class="text-[13px] whitespace-pre-wrap font-[family-name:var(--font-body)] text-[var(--color-ink-soft)] leading-relaxed">{previewCaption}</pre>
+                {/* What the shop would have written, so the server can tell
+                    "he left it alone" from "he wrote one that happens to read
+                    the same". Sent as a field rather than compared in the
+                    browser, so it still works with scripting off. */}
+                {captionStale && (
+                  <p class="mb-2 text-[13px] text-[var(--color-outstock)] leading-relaxed">
+                    This post no longer matches the listing - it says something other than
+                    {' '}{currentPrice} or {currentStock}. A post you have written is yours to
+                    keep true; the button below puts the written-for-you version back.
+                  </p>
+                )}
+                <input type="hidden" name="telegram_caption_generated" form="bookForm" value={generatedCaption} />
+                <textarea
+                  id="telegram_caption"
+                  name="telegram_caption"
+                  form="bookForm"
+                  rows="12"
+                  maxlength="1024"
+                  data-generated={generatedCaption}
+                  class="field !text-[13px] leading-relaxed font-[family-name:var(--font-body)]"
+                >{captionValue}</textarea>
+                <div class="mt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    id="resetCaption"
+                    class="btn btn-ghost !py-1 !text-[13px]"
+                  >
+                    Back to the written-for-you version
+                  </button>
+                  <span class="text-[12.5px] text-[var(--color-ink-faint)]">
+                    {book.telegram_caption
+                      ? 'You are writing this one.'
+                      : 'Written for you, and kept up to date until you change it.'}
+                  </span>
+                </div>
               </div>
             </details>
-
-            <div class="mt-3">
-              <label for="telegram_note" class="block text-[14.5px] font-medium mb-1.5">
-                Extra words for the channel
-                <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
-              </label>
-              <textarea
-                id="telegram_note"
-                name="telegram_note"
-                form="bookForm"
-                rows="2"
-                maxlength="400"
-                class="field"
-                placeholder="Anything to say in the channel that does not belong on the listing"
-              >{book.telegram_note ?? ''}</textarea>
-              <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                Goes in the channel post only, never on the website. The price, what is
-                left and the link are written for you and stay correct on their own -
-                this is the part that is yours. Saved with the listing; use
-                {book.telegram_message_id ? ' Update the channel ' : ' Post to the channel '}
-                to send it.
-              </p>
-            </div>
 
             {botConfigured() ? (
               <>
@@ -1217,6 +1253,21 @@ const previewCaption = book
         // enabled invites a second click that posts twice.
         bookForm?.addEventListener('submit', () => {
           if (saveBtn) { saveBtn.disabled = true; saveHint.textContent = 'Saving…'; }
+        });
+
+        /*
+         * Back to the written-for-you post.
+         *
+         * The generated text travels on the textarea itself, so this needs no
+         * round trip and works before anything has been saved. With scripting
+         * off the button is not there and emptying the box does the same job:
+         * a blank caption is the shop's to write again.
+         */
+        const captionBox = document.querySelector('#telegram_caption');
+        document.querySelector('#resetCaption')?.addEventListener('click', () => {
+          if (!captionBox) return;
+          captionBox.value = captionBox.dataset.generated ?? '';
+          captionBox.focus();
         });
 
         document.querySelector('#telegramForm')?.addEventListener('submit', () => {
