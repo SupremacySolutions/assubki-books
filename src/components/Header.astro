@@ -63,6 +63,15 @@ const isCatalogue = path.startsWith('/catalogue');
           ]}>Catalogue</a
         >
         <a
+          href="/reservations"
+          class:list={[
+            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)]',
+            path.startsWith('/reservations')
+              ? 'text-[var(--color-navy)] font-medium'
+              : 'text-[var(--color-ink-soft)]',
+          ]}>Reservations</a
+        >
+        <a
           href="/order"
           class:list={[
             'hidden lg:block px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] whitespace-nowrap',
@@ -108,6 +117,15 @@ const isCatalogue = path.startsWith('/catalogue');
             : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',
         ]}
       >Catalogue</a>
+      <a
+        href="/reservations"
+        class:list={[
+          'shrink-0 rounded-sm px-3 py-2 text-[14px]',
+          path.startsWith('/reservations')
+            ? 'bg-[var(--color-navy)] text-white'
+            : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',
+        ]}
+      >Reservations</a>
       <a
         href="/order"
         class:list={[

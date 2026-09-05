@@ -1,0 +1,157 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getShipment, publicShipmentItems } from '../../lib/shipments';
+import { whenText } from '../../lib/incoming';
+import { price } from '../../lib/format';
+import { collectionAddress } from '../../lib/settings';
+
+const params = Astro.url.searchParams;
+const shipmentId = Number.parseInt(params.get('s') ?? '', 10);
+const shipment = Number.isInteger(shipmentId) ? await getShipment(shipmentId) : null;
+if (!shipment || shipment.status !== 'open') return Astro.redirect('/reservations');
+
+const items = await publicShipmentItems(shipmentId);
+
+/*
+ * What was chosen, read back out of the address.
+ *
+ * The quantities travel in the URL rather than in a session, so this page
+ * needs no memory of the last one: a customer can go back, change their mind
+ * and come again, and a rejected form can be handed back with everything they
+ * typed still in it.
+ */
+const chosen = items
+  .map((item) => ({
+    item,
+    qty: Math.max(0, Math.min(item.free, Math.round(Number(params.get(`q${item.id}`)) || 0))),
+  }))
+  .filter((row) => row.qty > 0);
+
+if (!chosen.length) return Astro.redirect(`/reservations#s${shipmentId}`);
+
+const total = chosen.reduce((sum, r) => sum + r.item.price_pence * r.qty, 0);
+const error = params.get('e');
+const keep = (field: string) => params.get(field) ?? '';
+const collecting = keep('fulfilment') === 'collection';
+const where = await collectionAddress();
+---
+
+<Base title="Reserve these books" noindex>
+  <div class="wrap py-10 max-w-[46rem]">
+    <a href="/reservations" class="text-[13.5px] text-[var(--color-navy)] underline">
+      ← Back to the shipment
+    </a>
+
+    <h1 class="mt-3 text-[28px] leading-tight">Reserve these books</h1>
+    <p class="mt-2 text-[15px] text-[var(--color-ink-soft)] leading-relaxed">
+      From {shipment.title}
+      {whenText(shipment.incoming_vague, shipment.incoming_month)
+        ? `, expected ${whenText(shipment.incoming_vague, shipment.incoming_month)}`
+        : ''}.
+    </p>
+
+    {error && (
+      <p class="mt-4 p-3 bg-white border border-[var(--color-outstock)] rounded-[var(--radius-panel)] text-[14px] text-[var(--color-outstock)]">
+        {error}
+      </p>
+    )}
+
+    <ul class="mt-6 grid gap-1.5">
+      {chosen.map(({ item, qty }) => (
+        <li class="flex items-baseline justify-between gap-4 text-[14.5px]">
+          <span class="ar min-w-0">{item.title}</span>
+          <span class="shrink-0 text-[var(--color-ink-soft)]">
+            {qty} × <span class="price !text-[14px]">{price(item.price_pence)}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+    <p class="mt-3 pt-3 border-t border-[var(--color-rule-soft)] flex justify-between text-[15px]">
+      <span>Total when they arrive</span>
+      <span class="price">{price(total)}</span>
+    </p>
+    <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">
+      Nothing is paid now, and no payment is ever taken on this website. Postage,
+      if you need it, is added when we write to you.
+    </p>
+
+    <form method="post" action="/api/reservations" class="mt-8 grid gap-5">
+      <input type="hidden" name="s" value={shipmentId} />
+      {chosen.map(({ item, qty }) => (
+        <input type="hidden" name={`q${item.id}`} value={qty} />
+      ))}
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="name" class="block text-[14.5px] font-medium mb-1.5">Your name</label>
+          <input id="name" name="name" required maxlength="120" value={keep('name')} class="field" />
+        </div>
+        <div>
+          <label for="email" class="block text-[14.5px] font-medium mb-1.5">Email</label>
+          <input id="email" name="email" type="email" required maxlength="160" value={keep('email')} class="field" />
+        </div>
+      </div>
+
+      <div>
+        {/* Required, because `checkOrder` requires it - the same validation the
+            ordinary checkout runs. Calling it optional here would only mean
+            being refused after typing everything else. */}
+        <label for="phone" class="block text-[14.5px] font-medium mb-1.5">Phone</label>
+        <input id="phone" name="phone" required maxlength="40" value={keep('phone')} class="field sm:max-w-[16rem]" />
+      </div>
+
+      <fieldset>
+        <legend class="text-[14.5px] font-medium mb-2">How you would like them</legend>
+        <label class="flex items-center gap-2.5 text-[14.5px]">
+          <input type="radio" name="fulfilment" value="delivery" checked={!collecting}
+                 class="accent-[var(--color-navy)]" data-fulfilment />
+          Posted to me
+        </label>
+        <label class="mt-2 flex items-center gap-2.5 text-[14.5px]">
+          <input type="radio" name="fulfilment" value="collection" checked={collecting}
+                 class="accent-[var(--color-navy)]" data-fulfilment />
+          Collect {where ? `from ${where}` : 'from the shop'}
+        </label>
+      </fieldset>
+
+      {/*
+        * Shown always rather than revealed by script, so the form is complete
+        * with scripting off. `checkOrder` is what decides whether an address
+        * was needed, and it reads the same fulfilment the customer picked.
+        */}
+      <div data-address class="grid gap-4">
+        <div>
+          <label for="line1" class="block text-[14.5px] font-medium mb-1.5">Address</label>
+          <input id="line1" name="line1" maxlength="120" value={keep('line1')} class="field" placeholder="First line" />
+        </div>
+        <input name="line2" maxlength="120" value={keep('line2')} class="field" placeholder="Second line (optional)" aria-label="Second line of the address" />
+        <div class="grid gap-4 sm:grid-cols-2">
+          <input name="city" maxlength="80" value={keep('city')} class="field" placeholder="Town or city" aria-label="Town or city" />
+          <input name="postcode" maxlength="16" value={keep('postcode')} class="field" placeholder="Postcode" aria-label="Postcode" />
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <input name="region" maxlength="80" value={keep('region')} class="field" placeholder="County (optional)" aria-label="County" />
+          <input name="country" maxlength="80" value={keep('country') || 'United Kingdom'} class="field" placeholder="Country" aria-label="Country" />
+        </div>
+      </div>
+
+      <div>
+        <label for="notes" class="block text-[14.5px] font-medium mb-1.5">
+          Anything to tell us <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+        </label>
+        <textarea id="notes" name="notes" rows="3" maxlength="600" class="field">{keep('notes')}</textarea>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary !py-2.5 w-full sm:w-auto">
+          Reserve these books
+        </button>
+        <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+          Your reservation stands until the shipment arrives, however long that takes.
+          When it lands we write to you with the total, and you have seven days to
+          reply before the copies go back on the shelf.
+        </p>
+      </div>
+    </form>
+  </div>
+</Base>

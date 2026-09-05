@@ -30,6 +30,8 @@ export interface BookRow {
   title_ur: string | null;
   /** 'arabic' | 'urdu' | 'english', worked out by the database from the two. */
   language: BookLanguage;
+  /** Set when this book is on a shipment rather than on the shelf. */
+  shipment_id: number | null;
   price_pence: number;
   stock: number;
   reserved: number;
@@ -76,7 +78,7 @@ export interface BookDetail extends BookRow {
 const db = () => env.DB;
 
 const BOOK_SELECT = `
-  SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language,
+  SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language, b.shipment_id,
          b.price_pence, b.stock, b.reserved, b.volumes,
          b.set_id, b.set_from, b.set_to, b.isbn,
          b.incoming, b.reserved_incoming, b.incoming_vague, b.incoming_month,
@@ -911,7 +913,20 @@ export async function booksByIds(ids: number[]): Promise<BookRow[]> {
   if (!ids.length) return [];
   const placeholders = ids.map(() => '?').join(',');
   const { results } = await db()
-    .prepare(`${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND b.status = 'live'`)
+    /*
+     * The same admission the order query makes, and for the same reason: this
+     * is what the reservation page reads to show what is still free to claim,
+     * so refusing a shipment's books here would make every one of them look
+     * sold out. A shipment that is not open is not admitted, which is what
+     * stops a closed list still taking claims.
+     */
+    .prepare(
+      `${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND (
+         b.status = 'live'
+         OR EXISTS (SELECT 1 FROM shipments s
+                     WHERE s.id = b.shipment_id AND s.status = 'open')
+       )`,
+    )
     .bind(...ids)
     .all<BookRow>();
   return applySetAvailability(results);

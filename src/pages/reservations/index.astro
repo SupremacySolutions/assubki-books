@@ -1,0 +1,123 @@
+---
+import Base from '../../layouts/Base.astro';
+import { publicShipments, publicShipmentItems } from '../../lib/shipments';
+import { whenText } from '../../lib/incoming';
+import { price } from '../../lib/format';
+
+const shipments = await publicShipments();
+const withItems = await Promise.all(
+  shipments.map(async (s) => ({ shipment: s, items: await publicShipmentItems(s.id) })),
+);
+---
+
+<Base
+  title="Upcoming shipment reservations"
+  description="Books arriving in our next shipment, and how to reserve a copy before they land."
+>
+  <div class="wrap py-10">
+    <h1 class="text-[30px] sm:text-[34px] leading-tight">Upcoming shipment reservations</h1>
+    <p class="mt-3 max-w-[44rem] text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+      These books are on their way to us. Reserving one puts a copy aside in your
+      name — nothing is paid now, and nothing is charged on this website at any
+      point. We write to you when the shipment lands.
+    </p>
+
+    {withItems.length === 0 && (
+      <p class="mt-8 text-[15.5px] text-[var(--color-ink-soft)]">
+        Nothing on its way just now. Everything we have is in
+        {' '}<a href="/catalogue" class="underline">the catalogue</a>.
+      </p>
+    )}
+
+    {withItems.map(({ shipment, items }) => (
+      <section class="mt-10">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 class="text-[21px]">{shipment.title}</h2>
+          <span
+            class:list={[
+              'text-[13.5px]',
+              shipment.status === 'open'
+                ? 'text-[var(--color-instock)]'
+                : 'text-[var(--color-ink-faint)]',
+            ]}
+          >
+            {shipment.status === 'open'
+              ? whenText(shipment.incoming_vague, shipment.incoming_month)
+                ? `Expected ${whenText(shipment.incoming_vague, shipment.incoming_month)}`
+                : 'Open for reservations'
+              : 'Arrived — reservations closed'}
+          </span>
+        </div>
+
+        {shipment.note && (
+          <p class="mt-2 max-w-[44rem] text-[14px] text-[var(--color-ink-soft)] leading-relaxed whitespace-pre-line">
+            {shipment.note}
+          </p>
+        )}
+
+        {/*
+          * One form for the whole shipment.
+          *
+          * A reservation is made a shipment at a time and does not go through
+          * the ordinary basket: an order that mixed books off the shelf with
+          * books still at sea would be half held and half promised, and the
+          * seven days that start when a box lands would be counting down on
+          * copies that were never in it.
+          *
+          * A GET, so what was chosen travels in the address and the next page
+          * needs no memory of it - which also means it works with scripting
+          * off, and a customer can go back and change their mind.
+          */}
+        <form method="get" action="/reservations/checkout" class="mt-4">
+          <input type="hidden" name="s" value={shipment.id} />
+
+          <ul class="grid gap-2">
+            {items.map((item) => (
+              <li class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div class="min-w-0 flex-1">
+                  <p class="ar text-[16px] leading-snug">{item.title}</p>
+                  <p class="mt-0.5 text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-3">
+                    {item.volumes && item.volumes > 1 && <span>{item.volumes} volumes</span>}
+                    <span class="price !text-[13px]">{price(item.price_pence)}</span>
+                    {shipment.status === 'open' && (
+                      <span class={item.free > 0 ? '' : 'text-[var(--color-outstock)]'}>
+                        {item.free > 0 ? `${item.free} free to reserve` : 'fully reserved'}
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                {shipment.status === 'open' && item.free > 0 && (
+                  <label class="flex items-center gap-2 text-[13.5px] text-[var(--color-ink-soft)]">
+                    <span class="sr-only">How many copies of {item.title}</span>
+                    <input
+                      type="number"
+                      name={`q${item.id}`}
+                      min="0"
+                      max={item.free}
+                      value="0"
+                      inputmode="numeric"
+                      class="field !w-[4.5rem] !py-1.5 !text-[14px]"
+                    />
+                  </label>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          {shipment.status === 'open' && (
+            <div class="mt-4">
+              <button type="submit" class="btn btn-primary !py-2">
+                Reserve these
+              </button>
+              <p class="mt-2 text-[13px] text-[var(--color-ink-faint)]">
+                You give us your details on the next page. Nothing is paid until the
+                books arrive.
+              </p>
+            </div>
+          )}
+        </form>
+      </section>
+    ))}
+  </div>
+</Base>

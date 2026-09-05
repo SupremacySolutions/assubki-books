@@ -35,6 +35,15 @@ export interface OrderInput {
   paymentPreference?: string | null;
   notes?: string | null;
   items: RequestedItem[];
+  /**
+   * Set when this order came from a shipment page.
+   *
+   * It is what puts the order in the owner's reservations queue rather than
+   * among the shop's ordinary orders, and what the arrival run reads to find
+   * everyone who needs telling. Reservations are made a shipment at a time, so
+   * one order belongs to one shipment or to none.
+   */
+  shipmentId?: number | null;
 }
 
 export interface CreatedOrder {
@@ -134,7 +143,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
      * what turns it into a sentence naming the title rather than a rolled-back
      * batch.
      */
-    `SELECT b.id, b.title, b.price_pence,
+    `SELECT b.id, b.title, b.price_pence, b.shipment_id,
             CASE WHEN b.set_id IS NULL THEN (b.stock - b.reserved)
                  ELSE MAX(0, COALESCE((
                    SELECT MIN(v.have - COALESCE((
@@ -153,11 +162,25 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
        FROM books b
        LEFT JOIN sale_items si ON si.book_id = b.id
             AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
-      WHERE b.id IN (${placeholders}) AND b.status = 'live'`,
+      WHERE b.id IN (${placeholders}) AND (
+              b.status = 'live'
+              /*
+               * Or it is a book on a shipment that is open for reservations.
+               *
+               * Written as its own positive condition rather than by loosening
+               * the status check, so it admits exactly one thing: a row whose
+               * shipment is taking reservations right now. A draft with no
+               * shipment stays unbuyable, and marking a shipment arrived shuts
+               * new reservations here rather than in the page that offers them
+               * - there is no second flag to keep in step.
+               */
+              OR EXISTS (SELECT 1 FROM shipments s
+                          WHERE s.id = b.shipment_id AND s.status = 'open')
+            )`,
   )
     .bind(...ids)
     .all<{
-      id: number; title: string; price_pence: number;
+      id: number; title: string; price_pence: number; shipment_id: number | null;
       available: number; reservable: number;
       sale_percent: number | null; sale_id: number | null;
     }>();
@@ -206,8 +229,19 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
        */
       saleId: book.sale_percent ? book.sale_id : null,
       fullPricePence: book.price_pence,
-      // On the shelf if it can be; a claim on the delivery only when it cannot.
-      fromIncoming: book.available < item.qty,
+      /*
+       * On the shelf if it can be; a claim on the delivery only when it cannot.
+       *
+       * Except on a shipment, where it is always a claim. Once a box has landed
+       * its books have real stock, and deriving this would quietly turn the
+       * next reservation into an ordinary sale of a listing that has no cover,
+       * no description and no page to read - which is not what somebody
+       * browsing a shipment is agreeing to. Marking a shipment arrived closes
+       * it to new reservations, so this only matters in the gap between the
+       * stock landing and that happening; it should not depend on the owner
+       * pressing things in the right order.
+       */
+      fromIncoming: book.shipment_id !== null || book.available < item.qty,
     };
   });
   /*
@@ -273,12 +307,12 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
       env.DB.prepare(
         `INSERT INTO orders (ref, access_token, customer_name, email, phone,
                              fulfilment, address, notes, status, subtotal_pence, discount_pence,
-                             expires_at,
+                             expires_at, shipment_id,
                              telegram_chat_id, telegram_linked_at,
                              address_line1, address_line2, address_city,
                              address_region, address_postcode, address_country,
                              payment_preference, cash_payment)
-         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         ref,
         token,
@@ -291,6 +325,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
         subtotalPence,
         discountPence,
         expiresAt,
+        input.shipmentId ?? null,
         priorLink?.telegram_chat_id ?? null,
         priorLink ? Math.floor(Date.now() / 1000) : null,
         input.addressParts?.line1 ?? null,

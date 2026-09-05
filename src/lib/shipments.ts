@@ -73,6 +73,28 @@ export async function getShipment(id: number): Promise<Shipment | null> {
     .first<Shipment>();
 }
 
+/**
+ * The books on a shipment as a customer sees them, with what is left to claim.
+ *
+ * `free` is the same arithmetic the rest of the shop uses for a delivery -
+ * what is coming, less what is already spoken for - so a shipment page and a
+ * book page can never disagree about whether a copy is available.
+ */
+export async function publicShipmentItems(id: number): Promise<
+  (ShipmentItem & { free: number })[]
+> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, slug, title, title_ar, title_ur, price_pence, volumes,
+            incoming, reserved_incoming, stock, status, shipment_sort,
+            MAX(0, incoming - reserved_incoming) AS free
+       FROM books WHERE shipment_id = ?
+      ORDER BY shipment_sort, id`,
+  )
+    .bind(id)
+    .all<ShipmentItem & { free: number }>();
+  return results;
+}
+
 /** The books on a shipment, in the order the owner arranged them. */
 export async function shipmentItems(id: number): Promise<ShipmentItem[]> {
   const { results } = await env.DB.prepare(
