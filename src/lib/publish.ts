@@ -23,18 +23,26 @@ export async function publishListing(bookId: number, origin: string): Promise<Pu
   // Announcing a draft would send the channel to a page the shop does not serve.
   if (book.status !== 'live') return 'not-live';
 
-  const cover = book.images[0] ? imageUrl(book.images[0].image_key, 'social') : null;
+  /*
+   * Every photo on the listing, in the order the owner arranged them.
+   *
+   * Telegram fetches these itself, so they have to be public absolute URLs -
+   * and `social` because that is the one square variant, which is the shape
+   * Telegram crops an album to anyway.
+   */
+  const photos = book.images.map((img) => `${origin}${imageUrl(img.image_key, 'social')}`);
 
   const post: ListingPost = {
     title: book.title,
     titleAr: book.title_ar,
     pricePence: book.price_pence,
     blurb: truncate(stripTags(book.description_html), 180) || null,
+    note: book.telegram_note,
     available: book.available,
     volumes: book.volumes,
     url: `${origin}/book/${book.slug}`,
-    // Telegram fetches the photo itself, so it has to be a public absolute URL.
-    imageUrl: cover ? `${origin}${cover}` : null,
+    imageUrl: photos[0] ?? null,
+    imageUrls: photos,
   };
 
   if (book.telegram_message_id) {
@@ -42,13 +50,15 @@ export async function publishListing(bookId: number, origin: string): Promise<Pu
     return ok ? 'updated' : 'failed';
   }
 
-  const messageId = await postListing(post);
-  if (!messageId) return 'failed';
+  const posted = await postListing(post);
+  if (!posted) return 'failed';
 
   await env.DB.prepare(
-    'UPDATE books SET telegram_message_id = ?, telegram_posted_at = unixepoch() WHERE id = ?',
+    `UPDATE books SET telegram_message_id = ?, telegram_album_ids = ?,
+                      telegram_posted_at = unixepoch()
+      WHERE id = ?`,
   )
-    .bind(messageId, bookId)
+    .bind(posted.messageId, JSON.stringify(posted.albumIds), bookId)
     .run();
 
   return 'posted';

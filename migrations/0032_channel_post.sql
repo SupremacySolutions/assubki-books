@@ -1,0 +1,23 @@
+-- Words for the channel that are not words for the shop, and room for an album.
+--
+-- Two things the owner asked for, and they share a migration because they are
+-- the same post.
+--
+-- `telegram_note` is his to write. The rest of a channel caption is generated -
+-- the price, what is left in stock, the link - and has to stay that way, or an
+-- edit made a fortnight ago would put yesterday's price back on the channel the
+-- next time anything touched the listing. So the note is an addition to the
+-- caption rather than the caption itself: he writes the sentence he wants in
+-- the channel and nowhere else, and the shop keeps saying what is true.
+--
+-- `telegram_album_ids` is what makes posting every photo reversible. A single
+-- photo is one message and `telegram_message_id` has always been enough; an
+-- album is one message per photo, and Telegram will only delete them one at a
+-- time. Without the full set, removing a listing would clear the first photo
+-- and leave the rest of the album in the channel pointing at a dead page.
+--
+-- The first id stays in `telegram_message_id` whether the post is one photo or
+-- ten, because it is the one that carries the caption and therefore the one an
+-- edit has to target. Everything already written keeps working.
+ALTER TABLE books ADD COLUMN telegram_note TEXT;
+ALTER TABLE books ADD COLUMN telegram_album_ids TEXT;

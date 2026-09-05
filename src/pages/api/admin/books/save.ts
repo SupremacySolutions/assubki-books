@@ -61,6 +61,12 @@ export const POST: APIRoute = async ({ request }) => {
    * is no third field here to keep in step with them.
    */
   const titleUr = String(form.get('title_ur') ?? '').trim() || null;
+  /*
+   * Words for the channel only. Capped because a Telegram caption is 1024
+   * characters and the generated lines around it need their share - a note
+   * long enough to overrun would fail the post rather than shorten itself.
+   */
+  const telegramNote = String(form.get('telegram_note') ?? '').trim().slice(0, 400) || null;
   const author = String(form.get('author') ?? '').trim() || null;
   const publisher = String(form.get('publisher') ?? '').trim() || null;
   /*
@@ -102,11 +108,11 @@ export const POST: APIRoute = async ({ request }) => {
     await env.DB.prepare(
       `UPDATE books SET title = ?, title_ar = ?, title_ur = ?, author = ?, publisher = ?,
                         volumes = ?, description_html = ?, price_pence = ?, status = ?, isbn = ?,
-                        updated_at = unixepoch()
+                        telegram_note = ?, updated_at = unixepoch()
         WHERE id = ?`,
     )
       .bind(title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
-            status, isbn, bookId)
+            status, isbn, telegramNote, bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
     /* Anybody waiting is told once availability has settled - see stock-alerts. */
@@ -137,11 +143,12 @@ export const POST: APIRoute = async ({ request }) => {
     const slug = await uniqueSlug(slugify(title), null);
     const created = await env.DB.prepare(
       `INSERT INTO books (slug, title, title_ar, title_ur, author, publisher, volumes,
-                          description_html, price_pence, stock, reserved, status, isbn)
-       VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?) RETURNING id`,
+                          description_html, price_pence, stock, reserved, status, isbn,
+                          telegram_note)
+       VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?) RETURNING id`,
     )
       .bind(slug, title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
-            stock, status, isbn)
+            stock, status, isbn, telegramNote)
       .first<{ id: number }>();
     bookId = created!.id;
 

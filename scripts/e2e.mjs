@@ -4284,6 +4284,95 @@ async function languages() {
 
 // ---------------------------------------------------------------------------
 
+async function channelPost() {
+  const t = suite('23. The channel post');
+
+  // A 1x1 PNG, the smallest thing the upload endpoint will accept.
+  const png = Uint8Array.from(atob(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  ), (ch) => ch.charCodeAt(0));
+
+  const attach = async (bookId, name) => {
+    const form = new FormData();
+    form.append('bookId', String(bookId));
+    form.append('photo', new File([png], name, { type: 'image/png' }));
+    form.append('width', '600');
+    form.append('height', '800');
+    return adminUpload('/api/admin/upload', form);
+  };
+
+  /*
+   * The owner's own words.
+   *
+   * The point of the field is that it reaches the channel and stops there:
+   * something he wants said to the people following the shop that has no
+   * business on a product page a stranger arrives at from a search.
+   */
+  const note = 'Two sets left at this price - collection from the shop.';
+  const book = await makeBook({ telegram_note: note });
+
+  const saved = await one(`SELECT telegram_note FROM books WHERE id=${book.id}`);
+  t.ok(saved.telegram_note === note, 'the note is saved with the listing');
+
+  const listing = await html(`/book/${(await one(`SELECT slug FROM books WHERE id=${book.id}`)).slug}`);
+  t.ok(!listing.includes(note), 'and stays off the website, which is the whole reason for it');
+
+  const form = await html(`/admin/books/${book.id}`);
+  t.ok(/name="telegram_note"/.test(form) && form.includes(note),
+    'the portal offers the field, filled in');
+  t.ok(form.includes('Two sets left at this price'),
+    'and the channel preview shows what will actually be posted');
+
+  /*
+   * Every photo, not just the cover.
+   *
+   * Telegram takes an album as `sendMediaGroup` - one message per photo, with
+   * the caption on the first only. Repeating it would show it once per photo
+   * when the album is opened.
+   */
+  await attach(book.id, 'cover.png');
+  await attach(book.id, 'spine.png');
+  await attach(book.id, 'inside.png');
+  const photos = await one(`SELECT COUNT(*) AS n FROM book_images WHERE book_id=${book.id}`);
+  t.ok(photos.n === 3, 'three photos on the listing');
+
+  const posted = await admin(`/api/admin/books/${book.id}/telegram`);
+  t.ok(posted.status < 400, 'the listing posts to the channel');
+
+  const row = await one(
+    `SELECT telegram_message_id AS id, telegram_album_ids AS album FROM books WHERE id=${book.id}`,
+  );
+  t.ok(row.id, 'and records the message that carries the caption');
+  const album = JSON.parse(row.album ?? '[]');
+  t.ok(Array.isArray(album) && album.length === 3,
+    `every photo is its own message, and all of them are remembered (${album.length})`);
+  t.ok(album[0] === row.id,
+    'with the captioned one first, because that is what an edit has to target');
+
+  // A listing with one photo is not an album - Telegram wants two or more, so
+  // this has to keep working the way it always did.
+  const single = await makeBook();
+  await attach(single.id, 'only.png');
+  const singlePosted = await admin(`/api/admin/books/${single.id}/telegram`);
+  t.ok(singlePosted.status < 400, 'a listing with one photo still posts');
+  const singleRow = await one(
+    `SELECT telegram_message_id AS id, telegram_album_ids AS album FROM books WHERE id=${single.id}`,
+  );
+  t.ok(JSON.parse(singleRow.album ?? '[]').length === 1,
+    'and is remembered as the single message it is');
+
+  /*
+   * Deleting has to clear the whole album. Clearing only the captioned message
+   * would leave the other photographs in the channel with nothing to click.
+   */
+  const del = await admin(`/api/admin/books/${book.id}/delete`);
+  t.ok(del.status < 400 && !del.location.includes('deleted-orphan'),
+    'deleting the listing clears every message the album occupies');
+  created.books = created.books.filter((id) => id !== book.id);
+}
+
+// ---------------------------------------------------------------------------
+
 const SUITES = [
   ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
   ['validation', validation, true], ['stock', stockAndHolds, true],
@@ -4301,6 +4390,7 @@ const SUITES = [
   ['sales', sales, true],
   ['abuse', abuseAndAtomicity, true],
   ['languages', languages, true],
+  ['channel', channelPost, true],
   ['integrity', integrity, false],
 ];
 

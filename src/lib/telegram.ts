@@ -152,6 +152,18 @@ async function call<T = unknown>(
 
   if (dryRun()) {
     console.log(`[telegram] DRY RUN - would have called ${method}:`, JSON.stringify(body).slice(0, 300));
+    /*
+     * Shaped like the real answer, because the caller reads it.
+     *
+     * A media group comes back as one message per photo, and code that has to
+     * remember every id would take a single object here as a failed album and
+     * quietly fall back to posting one photo - so the dry run would exercise a
+     * path the real thing never takes.
+     */
+    if (method === 'sendMediaGroup') {
+      const media = (body as { media?: unknown[] })?.media ?? [];
+      return media.map((_, i) => ({ message_id: 999_900 + i })) as T;
+    }
     // Deliberately not 0: callers test the returned id for truthiness, so a
     // zero would read as a failed post and the success path would never run.
     return { message_id: 999_999 } as T;
@@ -246,6 +258,18 @@ export interface ListingPost {
   imageUrl?: string | null;
   /** Only when it is a set, so the channel says the same as the card. */
   volumes?: number | null;
+  /**
+   * The owner's own words for the channel, which are not on the listing.
+   *
+   * An addition to the caption rather than the caption itself. Everything
+   * around it - the price, what is left, the link - is generated from the row
+   * as it stands today, and has to be: a caption the owner had typed out in
+   * full would put a fortnight-old price back in the channel the next time
+   * anything republished it.
+   */
+  note?: string | null;
+  /** Every photo on the listing. The first carries the caption. */
+  imageUrls?: string[];
 }
 
 /** The caption shown under a listing in the channel. */
@@ -256,6 +280,10 @@ export function listingCaption(post: ListingPost): string {
   if (post.volumes && post.volumes > 1) lines.push(esc(`${post.volumes} volume set`));
   lines.push('');
   if (post.blurb) lines.push(esc(post.blurb), '');
+  // After the description and before the price, which is where a human would
+  // put an aside - and far enough from the generated lines that it reads as
+  // the shop talking rather than as part of the listing.
+  if (post.note) lines.push(esc(post.note), '');
   lines.push(`*${esc(price)}*`);
   lines.push(post.available > 0 ? esc(`${post.available} available`) : esc('out of stock'));
   lines.push('', mdLink('Order here', post.url));
@@ -266,7 +294,23 @@ export function listingCaption(post: ListingPost): string {
  * Announces a listing in the channel, returning the message id so a later edit
  * updates this post rather than announcing the same book twice.
  */
-export async function postListing(post: ListingPost): Promise<number | null> {
+/**
+ * The most photos Telegram will put in one album.
+ *
+ * A listing with more than this posts the first ten. Refusing to post at all
+ * because a book has eleven photographs would be a worse answer than posting
+ * ten of them.
+ */
+const ALBUM_MAX = 10;
+
+export interface PostedListing {
+  /** The message carrying the caption - what an edit has to target. */
+  messageId: number;
+  /** Every message the post occupies, which is what a delete has to remove. */
+  albumIds: number[];
+}
+
+export async function postListing(post: ListingPost): Promise<PostedListing | null> {
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) {
     console.log('[telegram] channel post skipped - no channel id');
@@ -274,15 +318,43 @@ export async function postListing(post: ListingPost): Promise<number | null> {
   }
 
   const caption = listingCaption(post);
+  const photos = (post.imageUrls?.length ? post.imageUrls : [post.imageUrl])
+    .filter((url): url is string => Boolean(url))
+    .slice(0, ALBUM_MAX);
 
-  if (post.imageUrl) {
+  /*
+   * Every photo on the listing, as one album.
+   *
+   * Telegram wants at least two items for a media group and gives back one
+   * message per photo. The caption goes on the first only - repeating it on
+   * each would show it once per photo when the album is opened.
+   */
+  if (photos.length > 1) {
+    const media = photos.map((url, i) => ({
+      type: 'photo',
+      media: url,
+      ...(i === 0 ? { caption, parse_mode: 'MarkdownV2' } : {}),
+    }));
+    const group = await call<{ message_id: number }[]>('sendMediaGroup', {
+      chat_id: channel,
+      media,
+    });
+    if (Array.isArray(group) && group.length) {
+      return { messageId: group[0].message_id, albumIds: group.map((m) => m.message_id) };
+    }
+    // One unfetchable photo fails the whole group, so the cover alone is a
+    // better answer than no announcement.
+    console.warn('[telegram] sendMediaGroup failed, falling back to a single photo');
+  }
+
+  if (photos.length) {
     const result = await call<{ message_id: number }>('sendPhoto', {
       chat_id: channel,
-      photo: post.imageUrl,
+      photo: photos[0],
       caption,
       parse_mode: 'MarkdownV2',
     });
-    if (result) return result.message_id;
+    if (result) return { messageId: result.message_id, albumIds: [result.message_id] };
     // A photo Telegram cannot fetch should not cost the announcement.
     console.warn('[telegram] sendPhoto failed, falling back to a text post');
   }
@@ -293,7 +365,7 @@ export async function postListing(post: ListingPost): Promise<number | null> {
     parse_mode: 'MarkdownV2',
     disable_web_page_preview: false,
   });
-  return result?.message_id ?? null;
+  return result?.message_id ? { messageId: result.message_id, albumIds: [result.message_id] } : null;
 }
 
 /** Updates an existing channel post after the owner edits a listing. */
@@ -334,6 +406,22 @@ export async function editListing(messageId: number, post: ListingPost): Promise
  * hours of posting. An older post has to be removed by hand, so this reports
  * whether it succeeded rather than pretending.
  */
+/**
+ * Removes every message a listing occupies in the channel.
+ *
+ * An album is one message per photo, and Telegram deletes them one at a time.
+ * Clearing only the first would leave the rest of the photographs in the
+ * channel with no caption and nothing to click - which is worse than leaving
+ * the whole post up, because it does not even say what it is.
+ *
+ * All of them are attempted before reporting, so one message too old to delete
+ * does not strand the others behind it.
+ */
+export async function deleteChannelPost(messageIds: number[]): Promise<boolean> {
+  const results = await Promise.all(messageIds.map((id) => deleteChannelMessage(id)));
+  return results.every(Boolean);
+}
+
 export async function deleteChannelMessage(messageId: number): Promise<boolean> {
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) return false;

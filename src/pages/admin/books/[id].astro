@@ -82,6 +82,7 @@ const previewCaption = book
   ? listingCaption({
       title: book.title,
       titleAr: book.title_ar,
+      note: book.telegram_note,
       pricePence: book.price_pence,
       blurb: truncate(stripTags(book.description_html), 180) || null,
       available: book.available,
@@ -635,16 +636,51 @@ const previewCaption = book
                 Preview the post
               </summary>
               <div class="mt-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[3px]">
-                {book.images[0] && (
-                  <img
-                    src={imageUrl(book.images[0].image_key, 'social')}
-                    alt=""
-                    class="w-full max-h-40 object-contain mb-2"
-                  />
+                {/* Every photo, because every photo is what goes to the
+                    channel now - a preview showing only the cover would be
+                    telling the owner something that is no longer true. */}
+                {book.images.length > 0 && (
+                  <div class="flex gap-1.5 overflow-x-auto mb-2 pb-1">
+                    {book.images.slice(0, 10).map((img) => (
+                      <img
+                        src={imageUrl(img.image_key, 'social')}
+                        alt=""
+                        class="h-28 w-28 shrink-0 object-contain bg-white rounded-[3px] border border-[var(--color-rule-soft)]"
+                      />
+                    ))}
+                  </div>
+                )}
+                {book.images.length > 10 && (
+                  <p class="text-[12px] text-[var(--color-ink-faint)] mb-2">
+                    Telegram allows ten photos in one post; the first ten go.
+                  </p>
                 )}
                 <pre class="text-[13px] whitespace-pre-wrap font-[family-name:var(--font-body)] text-[var(--color-ink-soft)] leading-relaxed">{previewCaption}</pre>
               </div>
             </details>
+
+            <div class="mt-3">
+              <label for="telegram_note" class="block text-[14.5px] font-medium mb-1.5">
+                Extra words for the channel
+                <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+              </label>
+              <textarea
+                id="telegram_note"
+                name="telegram_note"
+                form="bookForm"
+                rows="2"
+                maxlength="400"
+                class="field"
+                placeholder="Anything to say in the channel that does not belong on the listing"
+              >{book.telegram_note ?? ''}</textarea>
+              <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                Goes in the channel post only, never on the website. The price, what is
+                left and the link are written for you and stay correct on their own -
+                this is the part that is yours. Saved with the listing; use
+                {book.telegram_message_id ? ' Update the channel ' : ' Post to the channel '}
+                to send it.
+              </p>
+            </div>
 
             {botConfigured() ? (
               <>

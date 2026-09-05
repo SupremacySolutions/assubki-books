@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { deleteChannelMessage } from '../../../../../lib/telegram';
+import { deleteChannelPost } from '../../../../../lib/telegram';
 import { forgetCategoryCounts, forgetHomeRows } from '../../../../../lib/db';
 
 export const prerender = false;
@@ -21,10 +21,16 @@ export const POST: APIRoute = async ({ params, request }) => {
   if (!Number.isInteger(id)) return new Response('Bad request', { status: 400 });
 
   const book = await env.DB.prepare(
-    'SELECT id, title, reserved, telegram_message_id FROM books WHERE id = ?',
+    'SELECT id, title, reserved, telegram_message_id, telegram_album_ids FROM books WHERE id = ?',
   )
     .bind(id)
-    .first<{ id: number; title: string; reserved: number; telegram_message_id: number | null }>();
+    .first<{
+      id: number;
+      title: string;
+      reserved: number;
+      telegram_message_id: number | null;
+      telegram_album_ids: string | null;
+    }>();
 
   if (!book) return new Response(null, { status: 302, headers: { Location: '/admin/books' } });
 
@@ -51,10 +57,28 @@ export const POST: APIRoute = async ({ params, request }) => {
     }
   }
 
-  // Leaving the announcement up would advertise a book that no longer exists.
+  /*
+   * Leaving the announcement up would advertise a book that no longer exists.
+   *
+   * Every message it occupies, not just the first. A listing posted with
+   * several photographs is an album - one message each - and clearing only the
+   * captioned one would leave the photographs behind with nothing to click.
+   *
+   * `telegram_album_ids` is absent on anything posted before albums existed,
+   * and those really are a single message, so the id already recorded is the
+   * whole post.
+   */
   let channelCleared = true;
   if (book.telegram_message_id) {
-    channelCleared = await deleteChannelMessage(book.telegram_message_id);
+    let ids: number[] = [book.telegram_message_id];
+    try {
+      const stored = book.telegram_album_ids ? JSON.parse(book.telegram_album_ids) : null;
+      if (Array.isArray(stored) && stored.length) ids = stored.filter((n) => Number.isInteger(n));
+    } catch {
+      // Unreadable is not a reason to leave the post up: fall back to the id
+      // that has always been there and clear what can be cleared.
+    }
+    channelCleared = await deleteChannelPost(ids);
   }
 
   // book_images, book_categories and stock_ledger cascade; order_items null out.
