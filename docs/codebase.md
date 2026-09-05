@@ -118,9 +118,22 @@ held out of `stock` and there is nothing on the shelf to hold. The equivalent
 guard needed a trigger (`books_incoming_not_oversold`) since SQLite cannot add
 a cross-column CHECK to an existing table without rebuilding it.
 
-**A reservation never expires.** The 48-hour sweep releases anything still
-`requested` *with an expiry*; a reservation is given none, because the customer
-cannot be asked to complete an order for books that do not exist yet.
+**A reservation has no deadline until the books land.** The 48-hour sweep
+releases anything still `requested` *with an expiry*; a reservation is given
+none, because the customer cannot be asked to complete an order for books that
+do not exist yet.
+
+When the delivery arrives that changes, and it changes in a *different column*.
+`orders.pay_by` is set to seven days out, and a second sweep releases anything
+still unanswered by then - the copies are real now, and holding them for
+somebody who has stopped replying costs the next customer.
+
+The two are deliberately not the same column. `confirm.ts` has never cleared
+`expires_at`, so every order in `awaiting_payment` still carries the stale
+48-hour value it was created with, long in the past; a sweep keyed on that
+across both statuses would expire every live confirmed order in the shop. When
+this was written, production had one such order. `pay_by` is set only by an
+arrival, so nothing that predates shipments carries one.
 
 ---
 

@@ -129,6 +129,19 @@ const paidFor = order ? moneyReceived(order.status, cashPayment) : false;
 const dropped = order?.status === 'cancelled' || order?.status === 'expired';
 
 /*
+ * The deadline that starts when a delivery lands.
+ *
+ * A different promise from the 48-hour hold and kept in a different column, so
+ * the two cannot be confused: this one exists only after the books arrived, and
+ * it counts the days the customer has to answer before the copies go back on
+ * the shelf.
+ */
+const replyBy = order?.pay_by ? new Date(order.pay_by * 1000) : null;
+const replyDue = Boolean(
+  replyBy && !dropped && ['requested', 'awaiting_payment'].includes(order!.status),
+);
+
+/*
  * Cancelling: which of the three this customer is entitled to, and whether
  * they have asked for the confirmation panel. Both server-side, because the
  * whole flow is form posts and this page must work without JavaScript.
@@ -221,6 +234,14 @@ if (offerTelegram && telegramLink) {
         {!stillHeld && waitingWhen && !dropped && (
           <p class="mt-3 text-[14px] text-[var(--color-brass)]">
             Reserved for you until the delivery arrives, expected {waitingWhen}.
+          </p>
+        )}
+        {replyDue && (
+          <p class="mt-3 text-[14px] text-[var(--color-brass)]">
+            Your books have arrived and are set aside for you. Please let us know by
+            {' '}{replyBy!.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {' '}— after that the copies go back on the shelf. If you need longer, or
+            would rather not go ahead, tell us below.
           </p>
         )}
 

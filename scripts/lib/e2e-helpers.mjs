@@ -280,6 +280,16 @@ export async function signIn() {
   return cookie.startsWith('asb_admin=');
 }
 
+/**
+ * The signed-in cookie, for a request this file cannot shape for you.
+ *
+ * `admin()` builds its body from an object, which cannot express a repeated
+ * field - and a form with one row per book sends `row` many times. Rather than
+ * widen that helper for one caller, this exposes the cookie so a suite can
+ * build its own body and still be signed in.
+ */
+export const adminCookie = () => cookie;
+
 /** A form POST to the portal, as a browser would send it. */
 /**
  * A fetch that retries the one failure this harness causes itself.

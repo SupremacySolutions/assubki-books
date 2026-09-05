@@ -498,6 +498,8 @@ export interface OrderView {
   subtotal_pence: number;
   created_at: number;
   expires_at: number | null;
+  /** The reply deadline a landed delivery starts. Null on an ordinary order. */
+  pay_by: number | null;
   telegram_chat_id: string | null;
   postage_pence: number | null;
   total_pence: number | null;

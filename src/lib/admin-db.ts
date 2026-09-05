@@ -56,17 +56,45 @@ export interface AdminOrderItem {
   slug: string | null;
 }
 
-export async function listOrders(status?: string | null): Promise<AdminOrderRow[]> {
-  const where = status ? 'WHERE o.status = ?' : '';
+/**
+ * The owner's order list, in two halves.
+ *
+ * Reservations are kept apart from the shop's ordinary orders because they are
+ * worked through differently: nothing to pack until a box lands, a deadline
+ * that only starts then, and a whole shipment's worth arriving at once. Mixing
+ * them into one queue would bury today's parcels under next month's promises.
+ *
+ * `shipment_id` is what tells them apart - one indexed column rather than a
+ * second table, so the order page, the thread, confirming and taking payment
+ * are all the same code they have always been.
+ */
+export async function listOrders(
+  status?: string | null,
+  kind: 'shop' | 'reservation' = 'shop',
+): Promise<AdminOrderRow[]> {
+  const clauses = [kind === 'reservation' ? 'o.shipment_id IS NOT NULL' : 'o.shipment_id IS NULL'];
+  if (status) clauses.push('o.status = ?');
   const stmt = env.DB.prepare(
     `SELECT o.*, (SELECT COALESCE(SUM(qty),0) FROM order_items WHERE order_id = o.id) AS item_count
-       FROM orders o ${where}
+       FROM orders o WHERE ${clauses.join(' AND ')}
       ORDER BY CASE o.status WHEN 'requested' THEN 0 WHEN 'awaiting_payment' THEN 1
                              WHEN 'paid' THEN 2 ELSE 3 END, o.created_at DESC
       LIMIT 200`,
   );
   const { results } = await (status ? stmt.bind(status) : stmt).all<AdminOrderRow>();
   return results;
+}
+
+/** How many reservation orders are waiting, for the tab to show. */
+export async function reservationCount(): Promise<number> {
+  const row = await env.DB
+    .prepare(
+      `SELECT COUNT(*) AS n FROM orders
+        WHERE shipment_id IS NOT NULL
+          AND status IN ('requested','awaiting_payment','paid','dispatched')`,
+    )
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 /**
@@ -105,9 +133,15 @@ export async function getOrderItems(orderId: number): Promise<AdminOrderItem[]> 
   return results;
 }
 
-export async function orderCounts(): Promise<Record<string, number>> {
+export async function orderCounts(
+  kind: 'shop' | 'reservation' = 'shop',
+): Promise<Record<string, number>> {
+  // Counted over the same half the list shows, or the chips would promise work
+  // the page they lead to does not have.
   const { results } = await env.DB.prepare(
-    'SELECT status, COUNT(*) AS n FROM orders GROUP BY status',
+    `SELECT status, COUNT(*) AS n FROM orders
+      WHERE shipment_id IS ${kind === 'reservation' ? 'NOT NULL' : 'NULL'}
+      GROUP BY status`,
   ).all<{ status: string; n: number }>();
   return Object.fromEntries(results.map((r) => [r.status, r.n]));
 }

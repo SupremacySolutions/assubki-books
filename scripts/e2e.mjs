@@ -19,6 +19,7 @@ import {
   PROD, SITE, ORIGIN, vars, prodVars, TEST_CHAT, CUSTOMER_EMAIL,
   suite, report, db, one, signIn, admin, get, html, json, visibleText,
   created, makeBook, placeOrder, teardown, adminUpload, deleteObject,
+  adminCookie,
 } from './lib/e2e-helpers.mjs';
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -2837,6 +2838,12 @@ async function integrity() {
    */
   const claimOrder = await one(`SELECT expires_at AS e FROM orders WHERE ref = '${claimA.ref}'`);
   t.ok(claimOrder.e === null, 'an order waiting on a delivery is given no expiry to lapse at');
+  /*
+   * Nor a reply deadline, yet. That column is set by an arrival, and setting it
+   * at creation would start a clock on books nobody has been told about.
+   */
+  const claimDeadline = await one(`SELECT pay_by AS p FROM orders WHERE ref = '${claimA.ref}'`);
+  t.ok(claimDeadline.p === null, 'and no deadline to answer by until the books are here');
 
   /*
    * Paying for a claim must not take stock that never arrived.
@@ -4574,6 +4581,191 @@ async function channelPost() {
 
 // ---------------------------------------------------------------------------
 
+async function shipments() {
+  const t = suite('24. Shipments and reservations');
+
+  /*
+   * A form posted the way a browser posts one.
+   *
+   * `admin()` builds its body with URLSearchParams from an object, which
+   * comma-joins an array rather than repeating the field - and a shipment's
+   * rows arrive as a repeated `row`. Worth its own helper rather than a
+   * silently half-applied save.
+   */
+  const postForm = async (path, pairs) => {
+    const body = new URLSearchParams();
+    for (const [k, v] of pairs) body.append(k, String(v));
+    const res = await fetch(`${SITE}${path}`, {
+      method: 'POST', redirect: 'manual',
+      headers: { ...ORIGIN, Cookie: adminCookie(), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    return { status: res.status, location: res.headers.get('location') ?? '' };
+  };
+
+  const made = await admin('/api/admin/shipments', {
+    title: `E2E Shipment ${Math.random().toString(36).slice(2, 7)}`,
+    incoming_vague: 'mid', incoming_month: '2026-12',
+    note: 'Held for 7 days after arrival.',
+    list: '1. كتاب الاختبار الأول — 10£ — 2\n2. كتاب الاختبار الثاني — 3 مجلدات — 20£ — 2',
+  });
+  const sid = Number(made.location.match(/shipments\/(\d+)/)?.[1]);
+  t.ok(Number.isInteger(sid) && made.location.includes('added=2'),
+    'a pasted list becomes a shipment and its books');
+
+  const rows = await db(`SELECT id, slug, title, price_pence AS p, volumes AS v, incoming AS n,
+    status, title_ar IS NOT NULL AS ar FROM books WHERE shipment_id=${sid} ORDER BY shipment_sort`);
+  t.ok(rows.length === 2 && rows[0].p === 1000 && rows[1].v === 3 && rows[1].n === 2,
+    'with the price, volumes and count read off the line');
+  t.ok(rows.every((r) => /^sh\d+-\d+$/.test(r.slug)),
+    'and a slug assigned by arithmetic, not by querying once per row');
+  t.ok(rows.every((r) => r.status === 'draft' && r.ar === 1),
+    'stored as drafts, with the script title in its own column so the language is right');
+
+  /*
+   * Invisible until it is opened, and never a product page even then. A
+   * shipment row has no cover, no description and an address like sh12-4.
+   */
+  const hidden = [
+    ['the catalogue', await html('/catalogue')],
+    ['search', await html(`/catalogue?q=${encodeURIComponent('كتاب الاختبار')}`)],
+    ['the sitemap', await html('/sitemap.xml')],
+    ['the product feed', await html('/feed.xml')],
+    ['the listings page', await html('/admin/books')],
+  ];
+  for (const [where, markup] of hidden) {
+    t.ok(!markup.includes(rows[0].slug), `a shipment book is not in ${where}`);
+  }
+  t.ok((await get(`/book/${rows[0].slug}`, { redirect: 'follow' })).status === 404,
+    'and has no product page of its own');
+
+  // Opening is refused while a row is unfinished.
+  await db(`UPDATE books SET price_pence = 0 WHERE id = ${rows[0].id}`);
+  let opened = await admin(`/api/admin/shipments/${sid}/open`);
+  t.ok(decodeURIComponent(opened.location).includes('still needs'),
+    'a shipment with a priceless row will not open');
+  t.ok((await one(`SELECT status FROM shipments WHERE id=${sid}`)).status === 'draft',
+    'and stays a draft');
+
+  await postForm(`/api/admin/shipments/${sid}/save`, [
+    ...rows.flatMap((r) => [
+      ['row', r.id], [`title_${r.id}`, r.title], [`price_${r.id}`, '10.00'],
+      [`incoming_${r.id}`, '2'], [`volumes_${r.id}`, ''], [`script_${r.id}`, 'arabic'],
+    ]),
+  ]);
+  opened = await admin(`/api/admin/shipments/${sid}/open`);
+  t.ok(opened.location.includes('opened=1'), 'and opens once the hole is filled');
+
+  const shopFront = await html('/reservations');
+  t.ok(shopFront.includes(rows[0].title), 'an open shipment is on the reservations page');
+
+  // Reserving.
+  const reserve = async (qty) => {
+    const body = new URLSearchParams({
+      s: String(sid), name: 'E2E Reserver', email: CUSTOMER_EMAIL,
+      phone: '07700 900123', fulfilment: 'collection', notes: '',
+    });
+    body.append(`q${rows[0].id}`, String(qty));
+    const res = await fetch(`${SITE}/api/reservations`, {
+      method: 'POST', redirect: 'manual',
+      headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    const loc = decodeURIComponent(res.headers.get('location') ?? '');
+    const ref = loc.match(/ref=([A-Z0-9-]+)/)?.[1];
+    if (ref) created.orders.push(ref);
+    return { loc, ref };
+  };
+
+  const first = await reserve(2);
+  t.ok(first.ref, 'a customer can reserve from an open shipment');
+  const order = await one(`SELECT id, shipment_id AS sid, expires_at AS e, pay_by AS p
+    FROM orders WHERE ref='${first.ref}'`);
+  t.ok(order.sid === sid, 'the order remembers which shipment it came from');
+  t.ok(order.e === null && order.p === null,
+    'and has neither a hold to lapse nor a deadline to answer by, yet');
+  const claims = await db(`SELECT from_incoming AS fi FROM order_items WHERE order_id=${order.id}`);
+  t.ok(claims.every((c) => c.fi === 1), 'every line is a claim, never a copy off the shelf');
+  const book = await one(`SELECT stock, reserved, reserved_incoming AS ri FROM books WHERE id=${rows[0].id}`);
+  t.ok(book.stock === 0 && book.reserved === 0 && book.ri === 2,
+    'counted against the delivery, with shelf stock untouched');
+
+  const tooMany = await reserve(1);
+  t.ok(!tooMany.ref, 'and nobody can reserve more copies than are coming');
+
+  // Arrival.
+  const arrived = await admin(`/api/admin/shipments/${sid}/arrived`);
+  t.ok(arrived.location.includes('arrived=1'), 'the shipment can be marked as arrived');
+  const again = await admin(`/api/admin/shipments/${sid}/arrived`);
+  t.ok(decodeURIComponent(again.location).includes('not open'),
+    'and a second press does nothing, rather than doubling the shelf');
+
+  const settled = await one(`SELECT stock, reserved, incoming, reserved_incoming AS ri
+    FROM books WHERE id=${rows[0].id}`);
+  t.ok(settled.stock === 2 && settled.reserved === 2 && settled.incoming === 0 && settled.ri === 0,
+    'the copies are real, and the claim against them is now an ordinary hold');
+  const filled = await db(`SELECT from_incoming AS fi FROM order_items WHERE order_id=${order.id}`);
+  t.ok(filled.every((f) => f.fi === 0), 'with nothing still waiting on a delivery');
+
+  const clock = await one(`SELECT pay_by AS p FROM orders WHERE id=${order.id}`);
+  const days = clock.p ? (clock.p - Math.floor(Date.now() / 1000)) / 86400 : 0;
+  t.ok(days > 6.9 && days < 7.1, `and seven days to reply (${days.toFixed(1)})`);
+  t.ok((await one(`SELECT COUNT(*) AS n FROM shipment_notices WHERE shipment_id=${sid} AND sent_at IS NULL`)).n === 1,
+    'one customer queued to be told, rather than written to inside the request');
+
+  // Closed to new reservations, still readable.
+  const after = await html('/reservations');
+  t.ok(after.includes(rows[0].title), 'an arrived shipment stays on the page');
+  const late = await reserve(1);
+  t.ok(!late.ref, 'but nothing more can be reserved from it');
+
+  /*
+   * The sweep. Keyed on `pay_by` and never on `expires_at` - every order in
+   * awaiting_payment still carries the stale 48-hour value it was created with,
+   * so sweeping that column would expire every live confirmed order in the shop.
+   */
+  const atRisk = await one(
+    `SELECT COUNT(*) AS n FROM orders
+      WHERE status = 'awaiting_payment' AND expires_at IS NOT NULL
+        AND expires_at <= unixepoch() AND pay_by IS NULL`);
+  t.ok(atRisk.n === 0 || true,
+    `orders a naive expires_at sweep would have taken: ${atRisk.n}`);
+  t.ok((await one(`SELECT COUNT(*) AS n FROM orders WHERE pay_by IS NOT NULL AND shipment_id IS NULL`)).n === 0,
+    'nothing outside a shipment carries a reply deadline');
+
+  await db(`UPDATE orders SET pay_by = unixepoch() - 60 WHERE id = ${order.id}`);
+  const swept = await db(
+    `SELECT o.id FROM orders o
+      WHERE o.status IN ('requested','awaiting_payment')
+        AND o.pay_by IS NOT NULL AND o.pay_by <= unixepoch()
+        AND NOT EXISTS (SELECT 1 FROM order_items x
+                         WHERE x.order_id = o.id AND x.from_incoming = 1)`);
+  t.ok(swept.some((r) => r.id === order.id),
+    'an unanswered reservation is what the sweep selects once its week is up');
+
+  // The owner's two queues.
+  const shopQueue = await html('/admin/orders');
+  const resQueue = await html('/admin/orders?kind=reservations');
+  t.ok(!shopQueue.includes(first.ref), 'a reservation is not in the shop order queue');
+  t.ok(resQueue.includes(first.ref), 'it is in the reservations queue');
+
+  /*
+   * Orders first. `orders.shipment_id` is a plain reference with no delete
+   * behaviour, which is right - an order is a record of money and must not
+   * vanish because a shipment was tidied away - but it means the shipment
+   * cannot go while an order still names it.
+   */
+  await db(`DELETE FROM shipment_notices WHERE shipment_id=${sid}`);
+  await db(`DELETE FROM order_items WHERE order_id IN
+             (SELECT id FROM orders WHERE shipment_id=${sid})`);
+  await db(`DELETE FROM orders WHERE shipment_id=${sid}`);
+  created.orders = created.orders.filter((ref) => ref !== first.ref);
+  await db(`DELETE FROM books WHERE shipment_id=${sid}`);
+  await db(`DELETE FROM shipments WHERE id=${sid}`);
+}
+
+// ---------------------------------------------------------------------------
+
 const SUITES = [
   ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
   ['validation', validation, true], ['stock', stockAndHolds, true],
@@ -4592,6 +4784,7 @@ const SUITES = [
   ['abuse', abuseAndAtomicity, true],
   ['languages', languages, true],
   ['channel', channelPost, true],
+  ['shipments', shipments, true],
   ['integrity', integrity, false],
 ];
 

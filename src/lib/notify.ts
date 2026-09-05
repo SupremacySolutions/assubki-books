@@ -56,7 +56,8 @@ function customerPlaced(input: PlacedInput) {
    * true for one of them.
    *
    * A reservation is not "held for 48 hours" - the books are not here to hold,
-   * and there is no deadline for the customer to meet. A mixed order is neither
+   * and there is no deadline to meet *yet*: one starts when the delivery lands,
+   * and this message is sent long before that. A mixed order is neither
    * one nor the other: part of it is on the shelf and part of it is on a lorry,
    * and the only thing that matters is that it all travels together.
    */
@@ -74,8 +75,8 @@ function customerPlaced(input: PlacedInput) {
 
   const closing = {
     held: `We hold these copies until ${escapeHtml(expires ?? '')}. If we have not heard from you by then the hold lapses and the books return to the shelf - nothing is charged and there is nothing to cancel. No payment is taken on our website at any point.`,
-    reserved: 'Your reservation does not run out - it stands until the delivery arrives, however long that takes. We will write again the moment it is in. No payment is taken on our website at any point.',
-    mixed: 'Your whole order goes out in one parcel once everything has arrived, so nothing is sent before then. The reservation does not run out, and we will write again the moment the delivery is in. No payment is taken on our website at any point.',
+    reserved: 'Your reservation does not run out while you wait - it stands until the delivery arrives, however long that takes. We will write the moment it is in, and from then you have seven days to reply before the copies go back on the shelf. No payment is taken on our website at any point.',
+    mixed: 'Your whole order goes out in one parcel once everything has arrived, so nothing is sent before then. The reservation does not run out while you wait, and we will write the moment the delivery is in - from then you have seven days to reply. No payment is taken on our website at any point.',
   }[kind];
 
   // Offered to everyone, as on the order page: checkout no longer asks for a
@@ -183,7 +184,7 @@ function ownerPlaced(input: PlacedInput) {
      <p style="margin:18px 0 0;font-size:13.5px;color:#8b93a1">
        ${
          ownerWaiting.length > 0
-           ? 'This order has no 48-hour hold - a reservation stands until the delivery lands.'
+           ? 'This order has no 48-hour hold - a reservation stands until the delivery lands, and the seven days to reply start from then.'
            : 'Stock is held for 48 hours from now, then released automatically.'
        }
      </p>`,

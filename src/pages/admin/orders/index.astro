@@ -1,11 +1,32 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
 import { portalLabel } from '../../../lib/order-status';
-import { listOrders, orderCounts } from '../../../lib/admin-db';
+import { listOrders, orderCounts, reservationCount } from '../../../lib/admin-db';
 import { price } from '../../../lib/format';
 
 const status = Astro.url.searchParams.get('status');
-const [orders, counts] = await Promise.all([listOrders(status), orderCounts()]);
+/*
+ * Two queues, not one.
+ *
+ * A reservation is worked through differently - nothing to pack until a box
+ * lands, a deadline that only starts then, and a shipment's worth arriving at
+ * once - so mixing them in would bury today's parcels under next month's
+ * promises. Same page, same rows, same everything downstream; one column
+ * decides which half is being looked at.
+ */
+const kind = Astro.url.searchParams.get('kind') === 'reservations' ? 'reservation' : 'shop';
+const [orders, counts, reservations] = await Promise.all([
+  listOrders(status, kind),
+  orderCounts(kind),
+  reservationCount(),
+]);
+const keep = (extra: Record<string, string | null>) => {
+  const q = new URLSearchParams();
+  if (kind === 'reservation') q.set('kind', 'reservations');
+  for (const [k, v] of Object.entries(extra)) v === null ? q.delete(k) : q.set(k, v);
+  const s = q.toString();
+  return s ? `?${s}` : '';
+};
 const cleared = Astro.url.searchParams.get('cleared');
 const deleted = Astro.url.searchParams.get('deleted');
 const clearable = (counts.cancelled ?? 0) + (counts.expired ?? 0);
@@ -95,11 +116,32 @@ function facts(o: (typeof orders)[number]): string[] {
     )
   }
 
+  <nav class="flex flex-wrap gap-1.5 mb-4" aria-label="Which orders">
+    <a
+      href="/admin/orders"
+      class:list={[
+        'px-3.5 py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors',
+        kind === 'shop'
+          ? 'bg-[var(--color-ink)] text-white border-[var(--color-ink)]'
+          : 'bg-white border-[var(--color-rule-soft)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
+      ]}
+    >Shop orders</a>
+    <a
+      href="/admin/orders?kind=reservations"
+      class:list={[
+        'px-3.5 py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors',
+        kind === 'reservation'
+          ? 'bg-[var(--color-ink)] text-white border-[var(--color-ink)]'
+          : 'bg-white border-[var(--color-rule-soft)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
+      ]}
+    >Reservations{reservations ? ` (${reservations})` : ''}</a>
+  </nav>
+
   <nav class="flex flex-wrap gap-1.5 mb-5" aria-label="Filter by status">
     {
       TABS.map((tab) => (
         <a
-          href={tab.key ? `/admin/orders?status=${tab.key}` : '/admin/orders'}
+          href={`/admin/orders${keep({ status: tab.key })}`}
           class:list={[
             'px-3.5 py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors',
             status === tab.key || (!status && !tab.key)
