@@ -1,0 +1,54 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { listShipments } from '../../../lib/shipments';
+import { whenText } from '../../../lib/incoming';
+import { price } from '../../../lib/format';
+
+const shipments = await listShipments();
+
+const LABEL: Record<string, { text: string; tone: string }> = {
+  draft: { text: 'Being written', tone: 'text-[var(--color-ink-faint)]' },
+  open: { text: 'Open for reservations', tone: 'text-[var(--color-instock)]' },
+  arrived: { text: 'Arrived', tone: 'text-[var(--color-navy)]' },
+  closed: { text: 'Put away', tone: 'text-[var(--color-ink-faint)]' },
+};
+---
+
+<Admin title="Shipments" sub="A box of books, from the supplier's list to the shelf">
+  <a href="/admin/shipments/new" class="btn btn-primary !py-2">Paste a new shipment</a>
+
+  {shipments.length === 0 ? (
+    <p class="mt-6 text-[15px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
+      Nothing here yet. Paste the list your supplier sends and it will be read into
+      rows you can check over before anybody sees them.
+    </p>
+  ) : (
+    <ul class="mt-6 grid gap-2.5">
+      {shipments.map((s) => (
+        <li>
+          <a
+            href={`/admin/shipments/${s.id}`}
+            class="block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors"
+          >
+            <div class="flex items-baseline justify-between gap-4">
+              <span class="text-[15.5px] font-medium">{s.title}</span>
+              <span class:list={['text-[13px] shrink-0', LABEL[s.status]?.tone]}>
+                {LABEL[s.status]?.text ?? s.status}
+              </span>
+            </div>
+            <p class="mt-1 text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-3">
+              <span>{s.items} {s.items === 1 ? 'title' : 'titles'}</span>
+              <span>{s.copies} {s.copies === 1 ? 'copy' : 'copies'}</span>
+              {s.claimed > 0 && (
+                <span class="text-[var(--color-navy)]">{s.claimed} reserved</span>
+              )}
+              {whenText(s.incoming_vague, s.incoming_month) && (
+                <span>expected {whenText(s.incoming_vague, s.incoming_month)}</span>
+              )}
+            </p>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )}
+</Admin>

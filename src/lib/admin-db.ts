@@ -286,7 +286,16 @@ export async function listBooksAdmin(opts: {
   const perPage = Math.min(Math.max(opts.perPage ?? 40, 10), 200);
   const page = Math.max(1, opts.page ?? 1);
 
-  const clauses: string[] = [];
+  /*
+   * A shipment's books are not listings yet.
+   *
+   * They live in `books` so that orders, holds and the arrival logic need no
+   * knowledge of shipments - but a paste of sixty titles would otherwise land
+   * sixty draft rows in this list, and two shipments would bury everything the
+   * owner actually sells. They have their own page until one is promoted, at
+   * which point `shipment_id` is cleared and it appears here like any other.
+   */
+  const clauses: string[] = ['b.shipment_id IS NULL'];
   const binds: unknown[] = [];
 
   if (search) {
@@ -360,9 +369,11 @@ export async function bookFilterCounts(): Promise<Record<BookFilter, number>> {
       ? 'COUNT(*) AS "all"'
       : `SUM(CASE WHEN ${FILTER_SQL[key]} THEN 1 ELSE 0 END) AS "${key}"`,
   );
-  const row = await env.DB.prepare(`SELECT ${parts.join(', ')} FROM books b`).first<
-    Record<string, number>
-  >();
+  // The same exclusion the list itself makes, or the chips would promise work
+  // that the page they lead to does not show.
+  const row = await env.DB.prepare(
+    `SELECT ${parts.join(', ')} FROM books b WHERE b.shipment_id IS NULL`,
+  ).first<Record<string, number>>();
   return (row ?? {}) as Record<BookFilter, number>;
 }
 

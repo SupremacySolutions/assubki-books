@@ -466,7 +466,19 @@ export async function bookBySlug(slug: string): Promise<BookDetail | null> {
                 WHERE book_id = b.id
                   AND sale_id = (SELECT id FROM sales WHERE status = 'live')) AS sale_percent,
               NULL AS image_key, NULL AS width, NULL AS height, NULL AS cat_slugs
-         FROM books b WHERE b.slug = ? AND b.status != 'archived'`,
+         FROM books b
+         WHERE b.slug = ? AND b.status != 'archived'
+           /*
+            * A shipment's book has no page of its own.
+            *
+            * Draft listings are reachable here on purpose, so the owner can
+            * look at one before it goes live. A shipment row is a different
+            * kind of draft: it has no cover, no description, an Arabic-only
+            * title and an address like sh12-4, and it is meant to be read on
+            * its shipment's page among the rest of the box. Serving it here
+            * would publish forty of those the moment a list was pasted.
+            */
+           AND b.shipment_id IS NULL`,
     )
     .bind(slug)
     .first<BookDetail>();

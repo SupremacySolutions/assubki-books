@@ -1,0 +1,180 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { getShipment, shipmentItems } from '../../../lib/shipments';
+import { whenText } from '../../../lib/incoming';
+
+const id = Number.parseInt(Astro.params.id ?? '', 10);
+const shipment = Number.isInteger(id) ? await getShipment(id) : null;
+if (!shipment) return Astro.rewrite('/404');
+
+const items = await shipmentItems(id);
+const params = Astro.url.searchParams;
+const added = Number(params.get('added') ?? 0);
+const unread = Number(params.get('unread') ?? 0);
+const saved = params.get('saved');
+const opened = params.get('opened');
+const error = params.get('e');
+
+const isDraft = shipment.status === 'draft';
+const money = (pence: number) => (pence / 100).toFixed(2);
+
+/*
+ * A row nobody can reserve yet, spelled out.
+ *
+ * `openShipment` refuses a list with holes in it, and refusing without saying
+ * which row is a puzzle. Marking them here means the button's refusal is
+ * already explained by the time it happens.
+ */
+const incomplete = (i: typeof items[number]) =>
+  !i.title || i.price_pence <= 0 || i.incoming <= 0;
+const holes = items.filter(incomplete).length;
+---
+
+<Admin
+  title={shipment.title}
+  sub={whenText(shipment.incoming_vague, shipment.incoming_month)
+    ? `Expected ${whenText(shipment.incoming_vague, shipment.incoming_month)}`
+    : undefined}
+  back={{ href: '/admin/shipments', label: 'Shipments' }}
+>
+  {added > 0 && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+      Read {added} {added === 1 ? 'title' : 'titles'} from the list.
+      {unread > 0 && ` ${unread} ${unread === 1 ? 'line' : 'lines'} could not be read and ${unread === 1 ? 'was' : 'were'} left out — add ${unread === 1 ? 'it' : 'them'} by hand below.`}
+    </p>
+  )}
+  {saved && <p class="mb-4 text-[14px] text-[var(--color-instock)]">Saved.</p>}
+  {opened && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+      Open. Customers can reserve from these now.
+    </p>
+  )}
+  {error && <p class="mb-4 text-[14px] text-[var(--color-outstock)]">Not opened — {error}.</p>}
+
+  <div class="mb-5 flex flex-wrap items-center gap-3">
+    <span class="text-[13px] text-[var(--color-ink-faint)]">
+      {items.length} {items.length === 1 ? 'title' : 'titles'} ·
+      {' '}{shipment.copies} {shipment.copies === 1 ? 'copy' : 'copies'}
+      {shipment.claimed > 0 && ` · ${shipment.claimed} reserved`}
+    </span>
+
+    {isDraft && (
+      <form method="post" action={`/api/admin/shipments/${id}/open`}>
+        <button
+          type="submit"
+          class="btn btn-primary !py-1.5 !text-[13.5px]"
+          disabled={holes > 0 || items.length === 0}
+        >
+          Open for reservations
+        </button>
+      </form>
+    )}
+    {shipment.status === 'arrived' && (
+      <form method="post" action={`/api/admin/shipments/${id}/open`}>
+        <input type="hidden" name="action" value="close" />
+        <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">Put away</button>
+      </form>
+    )}
+  </div>
+
+  {holes > 0 && isDraft && (
+    <p class="mb-4 text-[13.5px] text-[var(--color-outstock)] leading-relaxed max-w-[46rem]">
+      {holes} {holes === 1 ? 'row still needs' : 'rows still need'} a title, a price
+      or a number of copies. They are marked below, and the shipment cannot open
+      until they are filled in — a customer cannot reserve a book with no price.
+    </p>
+  )}
+
+  {items.length === 0 ? (
+    <p class="text-[15px] text-[var(--color-ink-soft)]">Nothing on this shipment.</p>
+  ) : (
+    <form method="post" action={`/api/admin/shipments/${id}/save`} class="grid gap-2">
+      {items.map((i) => (
+        <div
+          class:list={[
+            'bg-white border rounded-[var(--radius-panel)] p-3 grid gap-2 sm:grid-cols-[1fr_5rem_5rem_5rem_7rem] sm:items-end',
+            incomplete(i) ? 'border-[var(--color-outstock)]' : 'border-[var(--color-rule-soft)]',
+          ]}
+        >
+          <input type="hidden" name="row" value={i.id} />
+          <div>
+            <label for={`title_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+              Title
+            </label>
+            <input
+              id={`title_${i.id}`}
+              name={`title_${i.id}`}
+              value={i.title}
+              maxlength="200"
+              dir="auto"
+              class="field ar !text-[14px]"
+            />
+          </div>
+          <div>
+            <label for={`price_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+              Price £
+            </label>
+            <input
+              id={`price_${i.id}`}
+              name={`price_${i.id}`}
+              type="number"
+              step="0.01"
+              min="0"
+              value={money(i.price_pence)}
+              class="field !text-[14px]"
+            />
+          </div>
+          <div>
+            <label for={`volumes_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+              Volumes
+            </label>
+            <input
+              id={`volumes_${i.id}`}
+              name={`volumes_${i.id}`}
+              type="number"
+              min="0"
+              max="200"
+              value={i.volumes ?? ''}
+              class="field !text-[14px]"
+            />
+          </div>
+          <div>
+            <label for={`incoming_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+              Copies
+            </label>
+            <input
+              id={`incoming_${i.id}`}
+              name={`incoming_${i.id}`}
+              type="number"
+              min={i.reserved_incoming}
+              max="999"
+              value={i.incoming}
+              class="field !text-[14px]"
+            />
+          </div>
+          <div>
+            <label for={`script_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+              Language
+            </label>
+            <select id={`script_${i.id}`} name={`script_${i.id}`} class="field !text-[14px]">
+              <option value="arabic" selected={Boolean(i.title_ar)}>Arabic</option>
+              <option value="urdu" selected={Boolean(i.title_ur)}>Urdu</option>
+            </select>
+          </div>
+          {i.reserved_incoming > 0 && (
+            <p class="sm:col-span-5 text-[12.5px] text-[var(--color-navy)]">
+              {i.reserved_incoming} reserved — the number of copies cannot go below that.
+            </p>
+          )}
+        </div>
+      ))}
+
+      <div class="mt-2 flex items-center gap-3">
+        <button type="submit" class="btn btn-primary !py-2">Save these</button>
+        <span class="text-[12.5px] text-[var(--color-ink-faint)]">
+          Clearing a title removes that row.
+        </span>
+      </div>
+    </form>
+  )}
+</Admin>

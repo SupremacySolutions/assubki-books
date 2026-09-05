@@ -1,0 +1,100 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { VAGUE, monthOptions } from '../../../lib/incoming';
+
+const months = monthOptions();
+---
+
+<Admin
+  title="Paste a shipment"
+  sub="The list your supplier sends, read into rows you can check"
+  back={{ href: '/admin/shipments', label: 'Shipments' }}
+>
+  <form method="post" action="/api/admin/shipments" class="grid gap-5 max-w-[52rem]">
+    <div>
+      <label for="title" class="block text-[14.5px] font-medium mb-1.5">
+        What to call it
+      </label>
+      <input
+        id="title"
+        name="title"
+        required
+        maxlength="160"
+        placeholder="India Shipment August 2026"
+        class="field"
+      />
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div>
+        <label for="incoming_vague" class="block text-[14.5px] font-medium mb-1.5">
+          Expected
+        </label>
+        <select id="incoming_vague" name="incoming_vague" class="field">
+          {VAGUE.map((v) => <option value={v.value} selected={v.value === 'mid'}>{v.label}</option>)}
+        </select>
+      </div>
+      <div>
+        <label for="incoming_month" class="block text-[14.5px] font-medium mb-1.5">
+          Month
+        </label>
+        <select id="incoming_month" name="incoming_month" class="field">
+          <option value="">Not sure yet</option>
+          {months.map((m) => <option value={m.value}>{m.label}</option>)}
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label for="note" class="block text-[14.5px] font-medium mb-1.5">
+        What customers should know <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+      </label>
+      <textarea
+        id="note"
+        name="note"
+        rows="3"
+        maxlength="1000"
+        class="field"
+        placeholder="Reservations are held for 7 days after the shipment arrives, after which the copies go back on the shelf. To extend or cancel, message us on Telegram or by email."
+      ></textarea>
+    </div>
+
+    <div>
+      <label for="list" class="block text-[14.5px] font-medium mb-1.5">The list</label>
+      {/*
+        * A worked line rather than a description of one.
+        *
+        * The parser reads the fields by what they look like, not where they
+        * sit, so most of this is forgiving - but the number of copies is a bare
+        * number and the only thing that tells it from any other number on the
+        * line is that it comes after the price. Showing that is cheaper than
+        * explaining it.
+        */}
+      <p class="mb-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+        One book a line. The count of copies goes last, after the price:
+      </p>
+      <pre class="mb-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule-soft)] rounded-[3px] text-[13px] overflow-x-auto"><code>9. كشف الباري شرح صحيح البخاري — 25 مجلدًا — 120£ — 3
+33. تذكرة الخليل — 5£ — 4</code></pre>
+      <p class="mb-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+        Volumes and the leading number can be left out. Arabic numerals, plain
+        hyphens and long dashes all read the same. Anything it cannot make sense
+        of is shown back to you rather than dropped.
+      </p>
+      <textarea
+        id="list"
+        name="list"
+        rows="16"
+        required
+        class="field !text-[13.5px] leading-relaxed"
+        dir="auto"
+      ></textarea>
+    </div>
+
+    <div>
+      <button type="submit" class="btn btn-primary !py-2">Read the list</button>
+      <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
+        Nothing is shown to customers yet. You check the rows over first.
+      </p>
+    </div>
+  </form>
+</Admin>
