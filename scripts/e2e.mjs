@@ -4693,6 +4693,34 @@ async function shipments() {
   const tooMany = await reserve(1);
   t.ok(!tooMany.ref, 'and nobody can reserve more copies than are coming');
 
+  /*
+   * A shipment book cannot reach the ordinary checkout.
+   *
+   * The whole design rests on an order being one thing or the other: a basket
+   * of books off the shelf, posted today, or a claim on one shipment, promised
+   * for months away. A single order carrying both would be posted in two
+   * pieces, filed in neither queue, and carry a deadline about a box that only
+   * half of it came from.
+   *
+   * The books are admitted by naming the shipment the order is a reservation
+   * against, not by loosening what counts as buyable - so the ordinary
+   * checkout, which names none, cannot see them however the basket was built.
+   */
+  const shelfBook = await makeBook({ stock: '3' });
+  const smuggled = await json('/api/orders', {
+    name: 'E2E Mixer', email: CUSTOMER_EMAIL, phone: '07700 900123',
+    fulfilment: 'collection', notes: '',
+    items: [{ bookId: shelfBook.id, qty: 1 }, { bookId: rows[0].id, qty: 1 }],
+  });
+  t.ok(!smuggled.body?.ref,
+    'a shipment book put in the ordinary basket is refused at checkout');
+  if (smuggled.body?.ref) created.orders.push(smuggled.body.ref);
+
+  const basketSees = await get(`/api/basket?ids=${rows[0].id}`);
+  const basketBody = await basketSees.json();
+  t.ok((basketBody.books ?? basketBody).length === 0,
+    'and the basket cannot even read one, so it never gets that far');
+
   // Arrival.
   const arrived = await admin(`/api/admin/shipments/${sid}/arrived`);
   t.ok(arrived.location.includes('arrived=1'), 'the shipment can be marked as arrived');

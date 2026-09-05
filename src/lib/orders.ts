@@ -165,20 +165,29 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
       WHERE b.id IN (${placeholders}) AND (
               b.status = 'live'
               /*
-               * Or it is a book on a shipment that is open for reservations.
+               * Or it is a book on the one shipment this order is a
+               * reservation against.
                *
-               * Written as its own positive condition rather than by loosening
-               * the status check, so it admits exactly one thing: a row whose
-               * shipment is taking reservations right now. A draft with no
-               * shipment stays unbuyable, and marking a shipment arrived shuts
-               * new reservations here rather than in the page that offers them
-               * - there is no second flag to keep in step.
+               * Tied to the caller's intent rather than written as a general
+               * loosening, which is the difference between admitting a book
+               * and admitting a kind of order. Without the bound shipment id
+               * below, an ordinary basket could carry a shipment book to
+               * the ordinary checkout and come back as a single order that is
+               * half posted-today and half promised-for-February - filed as
+               * neither, in nobody's queue, with a deadline nothing started.
+               *
+               * It also means marking a shipment arrived shuts new
+               * reservations here rather than in the page that offers them,
+               * with no second flag to keep in step.
                */
               OR EXISTS (SELECT 1 FROM shipments s
-                          WHERE s.id = b.shipment_id AND s.status = 'open')
+                          WHERE s.id = b.shipment_id AND s.id = ?
+                            AND s.status = 'open')
             )`,
   )
-    .bind(...ids)
+    // The shipment is the last placeholder, so a null here admits nothing
+    // beyond live books - which is exactly what an ordinary basket should get.
+    .bind(...ids, input.shipmentId ?? null)
     .all<{
       id: number; title: string; price_pence: number; shipment_id: number | null;
       available: number; reservable: number;

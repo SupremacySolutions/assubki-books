@@ -914,19 +914,16 @@ export async function booksByIds(ids: number[]): Promise<BookRow[]> {
   const placeholders = ids.map(() => '?').join(',');
   const { results } = await db()
     /*
-     * The same admission the order query makes, and for the same reason: this
-     * is what the reservation page reads to show what is still free to claim,
-     * so refusing a shipment's books here would make every one of them look
-     * sold out. A shipment that is not open is not admitted, which is what
-     * stops a closed list still taking claims.
+     * Live books only, and deliberately not shipment books.
+     *
+     * This is what the shop basket and a group basket read. A reservation
+     * never goes through either - it has its own page, its own quantities and
+     * its own checkout - so admitting a shipment book here buys nothing and
+     * costs the one rule the whole design rests on: that an order is either a
+     * basket of books off the shelf or a claim on one shipment, never a
+     * half-and-half that is posted in two pieces and filed under neither.
      */
-    .prepare(
-      `${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND (
-         b.status = 'live'
-         OR EXISTS (SELECT 1 FROM shipments s
-                     WHERE s.id = b.shipment_id AND s.status = 'open')
-       )`,
-    )
+    .prepare(`${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND b.status = 'live'`)
     .bind(...ids)
     .all<BookRow>();
   return applySetAvailability(results);
