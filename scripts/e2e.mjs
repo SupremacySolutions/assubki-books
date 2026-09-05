@@ -4194,6 +4194,88 @@ async function languages() {
       `the portal's ${code} filter agrees with the database (${portalTotals[code]})`);
   }
 
+  /*
+   * The shelves are filtered too, or the sidebar contradicts the grid.
+   *
+   * A shelf offering "Hadith (42)" that turns out to hold thirteen Arabic
+   * books is a wrong answer, and a shelf holding none of them has no business
+   * on the page while that language is chosen.
+   */
+  const shelfCounts = await db(
+    `SELECT c.path AS path,
+            COUNT(*) AS any_,
+            SUM(b.language='arabic') AS arabic
+       FROM book_categories bc
+       JOIN categories c ON c.id = bc.category_id
+       JOIN books b ON b.id = bc.book_id AND b.status='live'
+      GROUP BY c.path HAVING any_ > 0 ORDER BY arabic DESC`,
+  );
+  const withArabic = shelfCounts.find((r) => r.arabic > 0 && r.arabic < r.any_);
+  const withoutArabic = shelfCounts.find((r) => r.arabic === 0);
+
+  const sidebar = await html('/catalogue?lang=arabic');
+  const plainSidebar = await html('/catalogue');
+
+  /*
+   * Compared page against page rather than against SQL.
+   *
+   * `categoryCounts` is cached for a minute, so a query run here and a badge
+   * rendered there are answering at different moments - and in a full run the
+   * other suites are creating and deleting fixtures throughout. The invariant
+   * that matters is not that a badge equals a number this test computed, it
+   * is that the sidebar and the shelf behind it tell the same story.
+   */
+  // The sidebar puts the count in its own span; the mobile picker writes it as
+  // "Name (n)". Either is the same fact, so this reads whichever comes first.
+  const badgeFor = (markup, path) => {
+    const link = markup.match(
+      new RegExp(`href="/catalogue/${path}[?"][\\s\\S]{0,700}?(?:>(\\d+)</span>|\\((\\d+)\\))`),
+    );
+    return link ? Number(link[1] ?? link[2]) : null;
+  };
+
+  if (withArabic) {
+    const shelfPage = await html(`/catalogue/${withArabic.path}?lang=arabic`);
+    const onShelf = Number(shelfPage.match(/([0-9]+) titles?/)?.[1] ?? -1);
+    const badge = badgeFor(sidebar, withArabic.path);
+    t.ok(badge !== null && badge === onShelf,
+      `the sidebar and the shelf agree in one language (${withArabic.path}: ${badge} vs ${onShelf})`);
+
+    const plainShelf = await html(`/catalogue/${withArabic.path}`);
+    const onPlain = Number(plainShelf.match(/([0-9]+) titles?/)?.[1] ?? -1);
+    t.ok(onPlain >= onShelf,
+      'and a shelf never holds fewer books unfiltered than it does in one language');
+    const plainBadge = badgeFor(plainSidebar, withArabic.path);
+    t.ok(plainBadge !== null && plainBadge === onPlain,
+      'with the unfiltered sidebar agreeing with the unfiltered shelf too');
+  }
+
+  if (withoutArabic) {
+    t.ok(!sidebar.includes(`/catalogue/${withoutArabic.path}?`),
+      `a shelf with no Arabic books is not offered while Arabic is chosen (${withoutArabic.path})`);
+    t.ok(plainSidebar.includes(`/catalogue/${withoutArabic.path}`),
+      'and comes back as soon as it is not');
+  }
+
+  t.ok(/href="\/catalogue\/[a-z0-9-]+\?[^"]*lang=arabic/.test(sidebar),
+    'every shelf link carries the language, so choosing a shelf does not lose it');
+
+  /*
+   * All four counts come from one read.
+   *
+   * The comment on readCategoryCounts is the reason: counting shelves the
+   * obvious way once cost 5.7 million rows a day against an allowance of
+   * five, and asking again per language would have undone that four times
+   * over. The language rides along on the query that was already being made.
+   */
+  const source = readFileSync('src/lib/db.ts', 'utf8');
+  const body = source.slice(source.indexOf('async function readCategoryCounts'));
+  const fn = body.slice(0, body.indexOf('\n}'));
+  t.ok((fn.match(/\.prepare\(/g) ?? []).length === 1,
+    'the shelf counts are still one query, not one per language');
+  t.ok(fn.includes('b.language AS language'),
+    'and the language rides along on it rather than being asked for separately');
+
   // And the form offers the field at all, which is where this started.
   const form = await html(`/admin/books/${urdu.id}`);
   t.ok(/name="title_ur"/.test(form) && form.includes(urduTitle),

@@ -134,26 +134,54 @@ export async function allCategories(): Promise<Category[]> {
  * here, where a string prefix costs nothing. Distinct book ids per ancestor,
  * so a book filed under two children of one parent still counts once.
  */
-async function readCategoryCounts(): Promise<Map<number, number>> {
+async function readCategoryCounts(): Promise<ShelfCounts> {
   const [cats, links] = await Promise.all([
     allCategories(),
     db()
       .prepare(
-        `SELECT c.path AS path, bc.book_id AS bookId
+        `SELECT c.path AS path, bc.book_id AS bookId, b.language AS language
            FROM book_categories bc
            JOIN categories c ON c.id = bc.category_id
            JOIN books b ON b.id = bc.book_id AND b.status = 'live'`,
       )
-      .all<{ path: string; bookId: number }>(),
+      .all<{ path: string; bookId: number; language: BookLanguage }>(),
   ]);
 
-  const counts = new Map<number, number>();
+  /*
+   * Every shelf counted four ways in the one pass: as it stands, and as it
+   * stands in each language.
+   *
+   * The language could not be a second query. The note above is the whole
+   * reason this function exists - counting shelves the obvious way cost 5.7
+   * million rows a day against an allowance of five - and asking it again per
+   * language would have undone that four times over. The rows are already
+   * here and the language came with them, so the extra counts cost one more
+   * column on a query that was being made anyway.
+   */
+  const counts: ShelfCounts = {
+    any: new Map(),
+    english: new Map(),
+    arabic: new Map(),
+    urdu: new Map(),
+  };
+
   for (const cat of cats) {
-    const seen = new Set<number>();
+    const seen: Record<keyof ShelfCounts, Set<number>> = {
+      any: new Set(),
+      english: new Set(),
+      arabic: new Set(),
+      urdu: new Set(),
+    };
     for (const link of links.results) {
-      if (link.path === cat.path || link.path.startsWith(`${cat.path}/`)) seen.add(link.bookId);
+      if (link.path !== cat.path && !link.path.startsWith(`${cat.path}/`)) continue;
+      seen.any.add(link.bookId);
+      // A row whose language is somehow none of the three still counts in
+      // `any`, so a shelf can never total less than the sum of its parts.
+      seen[link.language]?.add(link.bookId);
     }
-    counts.set(cat.id, seen.size);
+    for (const key of Object.keys(counts) as (keyof ShelfCounts)[]) {
+      counts[key].set(cat.id, seen[key].size);
+    }
   }
   return counts;
 }
@@ -166,9 +194,17 @@ async function readCategoryCounts(): Promise<Map<number, number>> {
  * minute of staleness in a book count is worth nothing to anyone and saves
  * almost every call.
  */
-let countsCache: { at: number; value: Map<number, number> } | null = null;
+/** A shelf's book count, as it stands and as it stands in each language. */
+export interface ShelfCounts {
+  any: Map<number, number>;
+  english: Map<number, number>;
+  arabic: Map<number, number>;
+  urdu: Map<number, number>;
+}
 
-export async function categoryCounts(): Promise<Map<number, number>> {
+let countsCache: { at: number; value: ShelfCounts } | null = null;
+
+export async function categoryCounts(): Promise<ShelfCounts> {
   const now = Date.now();
   if (countsCache && now - countsCache.at < 60_000) return countsCache.value;
   const value = await readCategoryCounts();
@@ -181,10 +217,19 @@ export function forgetCategoryCounts(): void {
   countsCache = null;
 }
 
-export async function categoryTree(): Promise<CategoryNode[]> {
+/**
+ * The shelves, counted in whatever language is being browsed.
+ *
+ * Passing the language matters as much as filtering the grid did: a shelf
+ * offering "Hadith (38)" that turns out to hold four Arabic books is a wrong
+ * answer, and a shelf with none of them at all should not be on the page
+ * while that language is chosen. Both fall out of counting the right column.
+ */
+export async function categoryTree(language: BookLanguage | null = null): Promise<CategoryNode[]> {
   const [cats, counts] = await Promise.all([allCategories(), categoryCounts()]);
+  const scoped = counts[language ?? 'any'];
   const nodes = new Map<number, CategoryNode>(
-    cats.map((c) => [c.id, { ...c, children: [], count: counts.get(c.id) ?? 0 }]),
+    cats.map((c) => [c.id, { ...c, children: [], count: scoped.get(c.id) ?? 0 }]),
   );
   const roots: CategoryNode[] = [];
   for (const node of nodes.values()) {
@@ -665,7 +710,8 @@ export async function homeRows(perRow = 10): Promise<HomeRow[]> {
         path: shelf.path,
         title: shelf.title,
         books,
-        total: cat ? (counts.get(cat.id) ?? 0) : 0,
+        // The home page is not language-filtered, so it wants the plain count.
+        total: cat ? (counts.any.get(cat.id) ?? 0) : 0,
       };
     }),
   );

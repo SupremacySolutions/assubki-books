@@ -35,7 +35,9 @@ const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
 
 const sale = await liveSale();
 const [tree, result, anyArriving] = await Promise.all([
-  categoryTree(),
+  // Counted in the language being browsed, so a shelf's number is the number
+  // of books actually behind it and a shelf with none of them drops away.
+  categoryTree(language),
   listBooks({ categoryPath, q, inStockOnly, onSale, arriving, language, sort: sort ?? undefined, page }),
   arrivingBooks(1),
 ]);
