@@ -4357,8 +4357,41 @@ async function channelPost() {
   t.ok((await one(`SELECT telegram_caption FROM books WHERE id=${book.id}`)).telegram_caption === null,
     'clearing it gives the post back to the shop');
 
+  /*
+   * The post is not part of the listing, so it does not wait on the listing.
+   *
+   * Editing the box and pressing the channel button is one action: it saves
+   * what was typed and sends it. Asking the owner to save the listing first
+   * was a small lie about how the two relate.
+   */
+  const straightThrough = 'Written and sent in one go.\n\n£12.50\n4 available';
+  const sent = await admin(`/api/admin/books/${book.id}/telegram`, {
+    telegram_caption: straightThrough,
+    telegram_caption_generated: 'something else',
+  });
+  t.ok(sent.status < 400 && sent.location.includes('posted=1'),
+    'the channel button posts without the listing being saved first');
+  t.ok((await one(`SELECT telegram_caption FROM books WHERE id=${book.id}`)).telegram_caption === straightThrough,
+    'and keeps what was typed, without a separate save');
+
+  /*
+   * And the listing save must not reach across and clear it. The caption is
+   * not on that form any more, and treating its silence as an empty box would
+   * wipe the post every time the owner corrected a price.
+   */
+  await admin('/api/admin/books/save', {
+    id: String(book.id), title: book.title, title_ar: 'اختبار', price: '13.50',
+    stock: '4', status: 'live', categories: '20',
+  });
+  t.ok((await one(`SELECT telegram_caption FROM books WHERE id=${book.id}`)).telegram_caption === straightThrough,
+    'saving the listing leaves the post alone rather than clearing it');
+  await db(`UPDATE books SET price_pence = 1250 WHERE id = ${book.id}`);
+
   // Put one back for the posting checks below.
   await db(`UPDATE books SET telegram_caption = '${written.replace(/'/g, "''")}' WHERE id = ${book.id}`);
+  await db(
+    `UPDATE books SET telegram_message_id = NULL, telegram_album_ids = NULL WHERE id = ${book.id}`,
+  );
 
   /*
    * A post he wrote is a post that stops tracking the row - that is the trade -

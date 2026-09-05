@@ -691,11 +691,11 @@ const captionStale = Boolean(
                     keep true; the button below puts the written-for-you version back.
                   </p>
                 )}
-                <input type="hidden" name="telegram_caption_generated" form="bookForm" value={generatedCaption} />
+                <input type="hidden" name="telegram_caption_generated" form="telegramForm" value={generatedCaption} />
                 <textarea
                   id="telegram_caption"
                   name="telegram_caption"
-                  form="bookForm"
+                  form="telegramForm"
                   rows="12"
                   maxlength="1024"
                   data-generated={generatedCaption}
@@ -725,24 +725,26 @@ const captionStale = Boolean(
                   form="telegramForm"
                   id="postBtn"
                   class="btn btn-primary w-full !py-2"
-                  disabled={book.status !== 'live' || (!!book.telegram_message_id && !channelStale)}
-                  data-blocked={book.status !== 'live' || (!!book.telegram_message_id && !channelStale) ? '1' : '0'}
-                  data-reason={
-                    book.status !== 'live'
-                      ? 'Only live listings can be announced.'
-                      : book.telegram_message_id && !channelStale
-                        ? 'The channel already matches this listing.'
-                        : ''
-                  }
+                  {/*
+                    * Only a draft blocks this now.
+                    *
+                    * It used to refuse when the channel already matched the
+                    * listing, which was true of the listing and said nothing
+                    * about the post - the box above can have been rewritten
+                    * since, and this button is what saves it. Sending an
+                    * unchanged post costs a call that Telegram answers "not
+                    * modified", which is already treated as success.
+                    */}
+                  disabled={book.status !== 'live'}
+                  data-blocked={book.status !== 'live' ? '1' : '0'}
+                  data-reason={book.status !== 'live' ? 'Only live listings can be announced.' : ''}
                 >
                   {book.telegram_message_id ? 'Update channel post' : 'Post to channel'}
                 </button>
                 <p id="postHint" class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
                   {book.status !== 'live'
                     ? 'Only live listings can be announced.'
-                    : book.telegram_message_id && !channelStale
-                      ? 'The channel already matches this listing.'
-                      : ''}
+                    : 'Sends the post above and remembers it. Nothing else on this page needs saving first.'}
                 </p>
               </>
             ) : (

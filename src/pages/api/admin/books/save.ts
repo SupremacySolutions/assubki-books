@@ -4,6 +4,7 @@ import { setStock } from '../../../../lib/admin-db';
 import { forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
 import { tellWaiting } from '../../../../lib/stock-alerts';
 import { validIsbn, normaliseIsbn } from '../../../../lib/isbn-search';
+import { captionToStore } from '../../../../lib/channel-caption';
 
 export const prerender = false;
 
@@ -70,20 +71,18 @@ export const POST: APIRoute = async ({ request }) => {
    * post that is too long is refused here where it can be seen rather than by
    * the API where it reads as the channel being broken.
    */
-  const captionTyped = String(form.get('telegram_caption') ?? '').trim().slice(0, 1024);
-  const captionOffered = String(form.get('telegram_caption_generated') ?? '').trim();
   /*
-   * Left alone is not the same as written.
+   * The channel post belongs to the channel form, not this one.
    *
-   * The box arrives filled in - it has to, or the owner would be editing a
-   * blank instead of the post - so saving a listing he never scrolled to
-   * would otherwise hand him a caption he did not ask to own, frozen at
-   * today's price. Comparing against what was offered tells the two apart,
-   * and line endings are normalised because a textarea returns CRLF for the
-   * newlines that went out as LF.
+   * `has` rather than a value, and it decides whether the column is written at
+   * all. Saving a listing does not carry the caption any more, and treating
+   * that silence as an empty box would wipe a post the owner had written every
+   * time he corrected a price. A new listing has no channel section to submit
+   * one from, so this is null there and the shop writes the post, which is
+   * what it does for every listing until he says otherwise.
    */
-  const sameAsOffered = captionTyped.replace(/\r\n/g, '\n') === captionOffered.replace(/\r\n/g, '\n');
-  const telegramCaption = !captionTyped || sameAsOffered ? null : captionTyped;
+  const captionOffered = form.has('telegram_caption');
+  const telegramCaption = captionOffered ? captionToStore(form) : null;
   const author = String(form.get('author') ?? '').trim() || null;
   const publisher = String(form.get('publisher') ?? '').trim() || null;
   /*
@@ -125,11 +124,12 @@ export const POST: APIRoute = async ({ request }) => {
     await env.DB.prepare(
       `UPDATE books SET title = ?, title_ar = ?, title_ur = ?, author = ?, publisher = ?,
                         volumes = ?, description_html = ?, price_pence = ?, status = ?, isbn = ?,
-                        telegram_caption = ?, updated_at = unixepoch()
+                        ${captionOffered ? 'telegram_caption = ?,' : ''}
+                        updated_at = unixepoch()
         WHERE id = ?`,
     )
       .bind(title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
-            status, isbn, telegramCaption, bookId)
+            status, isbn, ...(captionOffered ? [telegramCaption] : []), bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
     /* Anybody waiting is told once availability has settled - see stock-alerts. */
