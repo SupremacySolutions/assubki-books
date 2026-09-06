@@ -506,15 +506,30 @@ import Rosette from '../components/Rosette.astro';
         if (qty !== basket[String(book.id)]) setQty(book.id, qty);
       }
 
+      /*
+       * What happens to a basket holding both kinds, said before they commit.
+       *
+       * It used to promise one parcel once everything was here, and that has
+       * stopped being true: a mixed basket becomes two orders so the books we
+       * already have are not held hostage to a box that is months away. The
+       * customer should meet that here rather than discover it on a
+       * confirmation page carrying a reference they did not expect.
+       */
       const waiting = live.filter((b) => b.available <= 0 && b.reservable > 0);
+      const inHand = live.filter((b) => b.available > 0);
       const notice = document.querySelector<HTMLElement>('#waiting');
       if (notice) {
         const when = waiting.find((b) => b.expected)?.expected;
+        const count = waiting.length === 1
+          ? 'One book in your basket has'
+          : `${waiting.length} books in your basket have`;
         notice.hidden = waiting.length === 0;
-        notice.querySelector('[data-waiting-text]')!.textContent =
-          `${waiting.length === 1 ? 'One book in your basket has' : `${waiting.length} books in your basket have`} not arrived yet, ` +
-          `so the whole order goes out in one parcel once everything is here` +
-          (when ? ` - expected ${when}.` : '.');
+        notice.querySelector('[data-waiting-text]')!.textContent = inHand.length
+          ? `${count} not arrived yet${when ? ` - expected ${when}` : ''}. ` +
+            'Those come as a separate order, so the rest can be sent to you now. ' +
+            'Nothing is paid for them until they land.'
+          : `${count} not arrived yet${when ? ` - expected ${when}` : ''}. ` +
+            'Nothing is paid now - we write to you when the shipment lands.';
       }
 
       document.querySelector<HTMLElement>('#subtotal')!.textContent =

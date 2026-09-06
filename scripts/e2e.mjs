@@ -4723,14 +4723,14 @@ async function shipments() {
   t.ok(!tooMany.ref, 'and nobody can reserve more copies than are coming');
 
   /*
-   * One basket, holding both kinds.
+   * One basket holding both kinds becomes two orders.
    *
-   * A book still at sea goes in beside one off the shelf and through the same
-   * checkout. What makes that safe is not a rule about baskets but the one
-   * `createOrder` has always had: a line the shelf cannot cover becomes a
-   * claim, and an order carrying any claim gets no 48-hour hold - so the half
-   * that is here is not released out from under the half still coming. It is
-   * filed by what is in it, which is the reservations queue.
+   * They carry promises that cannot both live on one record: the shelf half is
+   * packable today and held for 48 hours, the shipment half cannot be packed
+   * until a box lands and has no clock until it does. Kept together, the shelf
+   * copies were held indefinitely - neither sweep could see an order missing
+   * its column - so a customer could park in-demand stock for months by adding
+   * one cheap reserved book.
    */
   const shelfBook = await makeBook({ stock: '3' });
   /* The first title is spoken for by now, so this uses the second. */
@@ -4739,21 +4739,42 @@ async function shipments() {
     fulfilment: 'collection',
     items: [{ bookId: shelfBook.id, qty: 1 }, { bookId: rows[1].id, qty: 1 }],
   });
-  const mixed = { ref: mixedSent.body?.ref };
-  if (mixed.ref) created.orders.push(mixed.ref);
-  t.ok(mixed.ref, 'a shelf book and a shipment book check out as one order');
-  const mixedOrder = await one(`SELECT id, shipment_id AS sid, expires_at AS e
-    FROM orders WHERE ref='${mixed.ref}'`);
-  t.ok(mixedOrder.sid === sid,
-    'filed under the shipment, because it cannot be packed until that lands');
-  t.ok(mixedOrder.e === null,
-    'and given no 48-hour hold, or the shelf half would lapse while the rest is at sea');
-  const mixedLines = await db(
-    `SELECT book_id AS b, from_incoming AS fi FROM order_items WHERE order_id=${mixedOrder.id}`);
-  t.ok(mixedLines.find((l) => l.b === shelfBook.id)?.fi === 0,
-    'the shelf line is a copy in hand');
-  t.ok(mixedLines.find((l) => l.b === rows[1].id)?.fi === 1,
-    'and the shipment line is a claim');
+  const madeRefs = (mixedSent.body?.orders ?? []).map((o) => o.ref);
+  for (const ref of madeRefs) created.orders.push(ref);
+  t.ok(madeRefs.length === 2, 'a shelf book and a shipment book check out as two orders');
+
+  const parcels = await db(`SELECT id, ref, shipment_id AS sid, expires_at AS e, split_group AS g
+    FROM orders WHERE ref IN (${madeRefs.map((r) => `'${r}'`).join(',')}) ORDER BY id`);
+  const shopParcel = parcels.find((o) => o.sid === null);
+  const shipParcel = parcels.find((o) => o.sid === sid);
+
+  t.ok(shopParcel && shipParcel, 'one for the shelf and one for the shipment');
+  t.ok(shopParcel?.e !== null,
+    'the shelf one keeps its 48-hour hold, so unclaimed stock comes back');
+  t.ok(shipParcel?.e === null,
+    'and the reservation has none, because the thing it is for does not exist yet');
+  t.ok(shopParcel?.g && shopParcel.g === shipParcel?.g,
+    'both carry the same token, so each page can point at the other');
+  t.ok(mixedSent.body?.ref === shopParcel?.ref,
+    'and the customer lands on the one that actually moves this week');
+
+  const shopLines = await db(
+    `SELECT book_id AS b, from_incoming AS fi FROM order_items WHERE order_id=${shopParcel.id}`);
+  t.ok(shopLines.length === 1 && shopLines[0].b === shelfBook.id && shopLines[0].fi === 0,
+    'the shelf order holds only the copy in hand');
+  const shipLines = await db(
+    `SELECT book_id AS b, from_incoming AS fi FROM order_items WHERE order_id=${shipParcel.id}`);
+  t.ok(shipLines.length === 1 && shipLines[0].b === rows[1].id && shipLines[0].fi === 1,
+    'and the reservation holds only the claim');
+
+  /* Each page names the other, or the customer is left with two references
+     and nothing saying they came from one press of one button. */
+  const shopPage = await html(
+    `/order?ref=${shopParcel.ref}&t=${(await one(`SELECT access_token AS t FROM orders WHERE id=${shopParcel.id}`)).t}`);
+  t.ok(shopPage.includes(shipParcel.ref), 'the shop order points at the reservation');
+
+  /* Only the reservation goes in the reservations queue now. */
+  const mixedOrder = shipParcel;
 
   const basketSees = await get(`/api/basket?ids=${rows[0].id}`);
   const basketBody = await basketSees.json();

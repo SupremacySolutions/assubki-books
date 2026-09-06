@@ -1,5 +1,7 @@
 import type { APIRoute } from 'astro';
+import { env } from 'cloudflare:workers';
 import { createOrder, StockConflict, type RequestedItem } from '../../lib/orders';
+import { releaseHold } from '../../lib/stock-release';
 import { notifyOrderPlaced } from '../../lib/notify';
 import { groupForOrder, markGroupSent, claimGroup, releaseGroup } from '../../lib/group';
 import { checkOrder, clean, type Field } from '../../lib/validate';
@@ -166,23 +168,90 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
    * with a real order already placed and the group reopened, so the organiser
    * retried and bought everything twice.
    */
+  /*
+   * A basket holding both kinds becomes more than one order.
+   *
+   * Books off the shelf can be packed this afternoon and are held for 48
+   * hours. Books on a shipment cannot be packed until a box arrives, and carry
+   * no clock until it does. As a single order those promises cannot both be
+   * kept: the order took the shelf half's stock and then, because it also held
+   * a claim, was given no expiry - so the copies sat off the market until the
+   * shipment landed, months later, with nothing able to release them.
+   *
+   * So they are split, one order per shipment plus one for the shelf, sharing
+   * a token so the pages can show them together. Each then gets the promise
+   * that is actually true of it.
+   */
+  const shipmentOf = new Map<number, number | null>();
+  if (finalItems.length) {
+    const holes = finalItems.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(
+      `SELECT id, shipment_id FROM books WHERE id IN (${holes})`,
+    )
+      .bind(...finalItems.map((i) => i.bookId))
+      .all<{ id: number; shipment_id: number | null }>();
+    for (const row of results) shipmentOf.set(row.id, row.shipment_id);
+  }
+
+  /* The shelf first, then each shipment, so the order the customer lands on
+     is the one that actually moves today. */
+  const parcels = new Map<number | null, typeof finalItems>();
+  for (const item of finalItems) {
+    const key = shipmentOf.get(item.bookId) ?? null;
+    parcels.set(key, [...(parcels.get(key) ?? []), item]);
+  }
+  const groups = [...parcels.entries()].sort((a, b) =>
+    a[0] === null ? -1 : b[0] === null ? 1 : a[0] - b[0],
+  );
+
+  /*
+   * Shared only when there is something to share. A single-parcel checkout is
+   * the ordinary case and should look exactly as it always did.
+   */
+  const splitGroup = groups.length > 1 ? crypto.randomUUID().slice(0, 12) : null;
+
+  const placed: Awaited<ReturnType<typeof createOrder>>[] = [];
   let order: Awaited<ReturnType<typeof createOrder>>;
   try {
-    order = await createOrder({
-      name,
-      email,
-      phone: phone || null,
-      fulfilment: fulfilment as 'delivery' | 'collection',
-      address,
-      addressParts: fulfilment === 'delivery' ? parts : null,
-      paymentPreference: paymentPreference || null,
-      notes: finalNotes,
-      items: finalItems,
-    });
+    for (const [shipmentId, groupItems] of groups) {
+      placed.push(
+        await createOrder({
+          name,
+          email,
+          phone: phone || null,
+          fulfilment: fulfilment as 'delivery' | 'collection',
+          address,
+          addressParts: fulfilment === 'delivery' ? parts : null,
+          paymentPreference: paymentPreference || null,
+          notes: finalNotes,
+          items: groupItems,
+          shipmentId: shipmentId ?? undefined,
+          splitGroup,
+        }),
+      );
+    }
+    order = placed[0];
 
   } catch (err) {
     // Nothing was committed, so the basket goes back to being unsent.
     if (group) await releaseGroup(groupCode).catch(() => {});
+
+    /*
+     * A later parcel failing must not leave the earlier ones standing.
+     *
+     * The customer pressed one button and got a stock conflict; being told
+     * that, while quietly holding half of what they asked for, is worse than
+     * either outcome. Undone in the same way a cancellation is, so the stock
+     * and the ledger end up where they would have.
+     */
+    for (const made of placed) {
+      await env.DB.batch([
+        ...releaseHold(made.id, 'split checkout could not be completed'),
+        env.DB.prepare(
+          `UPDATE orders SET status = 'cancelled', updated_at = unixepoch() WHERE id = ?`,
+        ).bind(made.id),
+      ]).catch((e) => console.error('could not undo half a split checkout', made.ref, e));
+    }
 
     if (err instanceof StockConflict) {
       return bad(
@@ -223,12 +292,21 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     // Notifications must never cost the customer their order - the books are
     // already held and the confirmation page renders from the database.
     const origin = url.origin;
-    const notify = notifyOrderPlaced({
-      order, name, email, phone: phone || null,
-      fulfilment: fulfilment as 'delivery' | 'collection',
-      address, paymentPreference: paymentPreference || null, notes: finalNotes, origin,
-    }).catch(
-      (err) => console.error('order notification failed', order.ref, err),
+    /*
+     * One confirmation per order, because they say genuinely different things:
+     * one names a 48-hour hold and a parcel that can go out this week, the
+     * other says nothing runs out while you wait and the seven days start when
+     * the shipment lands. A single message covering both would have to hedge
+     * every sentence.
+     */
+    const notify = Promise.all(
+      placed.map((made) =>
+        notifyOrderPlaced({
+          order: made, name, email, phone: phone || null,
+          fulfilment: fulfilment as 'delivery' | 'collection',
+          address, paymentPreference: paymentPreference || null, notes: finalNotes, origin,
+        }).catch((err) => console.error('order notification failed', made.ref, err)),
+      ),
     );
     // `locals.runtime.ctx` was removed in Astro v6; `cfContext` is the
     // ExecutionContext now. If it is unavailable, await rather than drop the
@@ -237,5 +315,11 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     if (ctx?.waitUntil) ctx.waitUntil(notify);
     else await notify;
 
-    return Response.json({ ok: true, ref: order.ref, token: order.token });
+    return Response.json({
+      ok: true,
+      ref: order.ref,
+      token: order.token,
+      /* Everything this checkout produced, so the page can name the rest. */
+      orders: placed.map((o) => ({ ref: o.ref, token: o.token })),
+    });
 };

@@ -33,6 +33,16 @@ export interface OrderInput {
   addressParts?: AddressParts | null;
   /** What the customer said they would rather do: 'transfer' or 'cash'. */
   paymentPreference?: string | null;
+  /**
+   * Ties the orders one checkout produced together.
+   *
+   * A basket holding shelf books and shipment books becomes one order per
+   * parcel, because the two carry different promises and cannot both be kept
+   * on one record. This is what lets the order page say "the rest of what you
+   * asked for is over here" rather than leaving the customer with two
+   * references and no way to tell they belong together.
+   */
+  splitGroup?: string | null;
   notes?: string | null;
   items: RequestedItem[];
   /**
@@ -47,6 +57,8 @@ export interface OrderInput {
 }
 
 export interface CreatedOrder {
+  /** The row's own id, for anything that has to undo it. */
+  id: number;
   ref: string;
   token: string;
   subtotalPence: number;
@@ -313,12 +325,12 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
       env.DB.prepare(
         `INSERT INTO orders (ref, access_token, customer_name, email, phone,
                              fulfilment, address, notes, status, subtotal_pence, discount_pence,
-                             expires_at, shipment_id,
+                             expires_at, shipment_id, split_group,
                              telegram_chat_id, telegram_linked_at,
                              address_line1, address_line2, address_city,
                              address_region, address_postcode, address_country,
                              payment_preference, cash_payment)
-         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         ref,
         token,
@@ -343,6 +355,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
          * visible on the order either way.
          */
         input.shipmentId ?? shipmentWaitedOn,
+        input.splitGroup ?? null,
         priorLink?.telegram_chat_id ?? null,
         priorLink ? Math.floor(Date.now() / 1000) : null,
         input.addressParts?.line1 ?? null,
@@ -413,7 +426,13 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
 
     try {
       await env.DB.batch(statements);
+      /* Read back rather than guessed at: the insert above is one of several
+         statements in a batch, so there is no lastRowId to trust. */
+      const made = await env.DB.prepare('SELECT id FROM orders WHERE ref = ?')
+        .bind(ref)
+        .first<{ id: number }>();
       return {
+        id: made?.id ?? 0,
         ref,
         token,
         subtotalPence,
@@ -517,6 +536,8 @@ export interface OrderView {
   expires_at: number | null;
   /** The reply deadline a landed delivery starts. Null on an ordinary order. */
   pay_by: number | null;
+  /** Ties together the orders one checkout produced. See `splitGroup`. */
+  split_group: string | null;
   /**
    * The shipment this was reserved from, if it was one.
    *
@@ -577,12 +598,36 @@ export interface OrderView {
   }[];
 }
 
+/**
+ * The other orders the same checkout produced.
+ *
+ * A basket holding shelf books and shipment books becomes one order per
+ * parcel. Without this the customer is handed two references and nothing
+ * saying they belong together - and no way back to the other one.
+ *
+ * Reachable only from an order whose token the reader already holds. They came
+ * from one press of one button by one person, so somebody holding one of them
+ * is entitled to the rest.
+ */
+export async function siblingOrders(
+  splitGroup: string,
+  exceptId: number,
+): Promise<{ ref: string; access_token: string; shipment_id: number | null; status: string }[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT ref, access_token, shipment_id, status FROM orders
+      WHERE split_group = ? AND id != ? ORDER BY id`,
+  )
+    .bind(splitGroup, exceptId)
+    .all<{ ref: string; access_token: string; shipment_id: number | null; status: string }>();
+  return results;
+}
+
 /** Token-checked so a guessed reference cannot expose someone else's order. */
 export async function getOrder(ref: string, token: string): Promise<OrderView | null> {
   const order = await env.DB.prepare(
     `SELECT id, ref, status, customer_name, email, fulfilment, address, notes,
             subtotal_pence, postage_pence, total_pence, created_at, expires_at, pay_by,
-            shipment_id,
+            shipment_id, split_group,
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
             postage_provider, postage_service, telegram, cancel_note,
             customer_cancel_note, cancel_requested_at,

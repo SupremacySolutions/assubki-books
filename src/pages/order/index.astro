@@ -10,7 +10,7 @@
 import Base from '../../layouts/Base.astro';
 import Rosette from '../../components/Rosette.astro';
 import OrderJourney from '../../components/OrderJourney.astro';
-import { getOrder, findOrder, ordersForCustomer, type OrderSummary } from '../../lib/orders';
+import { getOrder, findOrder, ordersForCustomer, type OrderSummary, siblingOrders } from '../../lib/orders';
 import { optInLink } from '../../lib/telegram';
 import MessageUs from '../../components/MessageUs.astro';
 import Dialog from '../../components/Dialog.astro';
@@ -120,6 +120,18 @@ const waitingLine = order?.items.find((i) => i.from_incoming);
  * arrived, and a `pay_by` means a shipment landed and started the seven days.
  * See `statusLabel` for what each changes.
  */
+/*
+ * The rest of what they asked for.
+ *
+ * A basket holding shelf books and shipment books becomes one order per
+ * parcel, because the two carry promises that cannot both live on one record.
+ * Splitting them without saying so would hand somebody two references and
+ * leave them wondering what happened to half their basket.
+ */
+const siblings = order?.split_group
+  ? await siblingOrders(order.split_group, order.id)
+  : [];
+
 const status = order
   ? statusLabel(order.status, order.fulfilment, whereToCollect, cashPayment, {
       waiting: Boolean(waitingLine),
@@ -249,6 +261,39 @@ if (offerTelegram && telegramLink) {
             Reserved for you until the delivery arrives, expected {waitingWhen}.
           </p>
         )}
+        {/*
+          * The other half of the same checkout.
+          *
+          * Placed right under the status, because the first question somebody
+          * looking at half their basket asks is where the rest of it went.
+          */}
+        {siblings.length > 0 && (
+          <div class="mt-4 p-4 bg-white border border-[var(--color-rule)] rounded-[3px]">
+            <p class="text-[14.5px] leading-relaxed">
+              {siblings.length === 1 ? 'The rest of' : 'The rest of'} what you asked for is on
+              {siblings.length === 1 ? ' a separate order' : ' separate orders'}, because
+              {order!.shipment_id
+                ? ' books we already have can be sent without waiting for the shipment.'
+                : ' books still on their way cannot be sent with the ones we have.'}
+            </p>
+            <ul class="mt-2 grid gap-1">
+              {siblings.map((other) => (
+                <li class="text-[14.5px]">
+                  <a
+                    href={`/order?ref=${encodeURIComponent(other.ref)}&t=${encodeURIComponent(other.access_token)}`}
+                    class="text-[var(--color-navy)] underline underline-offset-2"
+                  >
+                    {other.ref}
+                  </a>
+                  <span class="text-[var(--color-ink-faint)]">
+                    {' '}— {other.shipment_id ? 'reserved from a shipment' : 'in stock now'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {replyDue && (
           <p class="mt-3 text-[14px] text-[var(--color-brass)]">
             Your books have arrived and are set aside for you. Please let us know by
