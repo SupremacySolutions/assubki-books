@@ -4889,6 +4889,24 @@ async function shipments() {
    * wrong for a shop front. This is also the one place in the codebase a slug
    * is allowed to change, and only from the shape the importer assigns.
    */
+  /*
+   * The portal's own page for an Arabic title.
+   *
+   * `partCandidates` builds a LIKE pattern from the first 40 *characters* of
+   * the title, and D1 refuses a pattern over 50 *bytes*. Arabic is two bytes a
+   * letter, so every listing past about twenty-four letters threw a 500 - on
+   * the very page the owner is sent to after listing a shipment's spares, and
+   * on every shipment row besides. English titles were all fine, which is why
+   * it went unnoticed until a shipment filled the shop with Arabic ones.
+   */
+  for (const row of rows) {
+    const page = await get(`/admin/books/${row.id}`);
+    t.ok(page.status === 200,
+      `the portal can open ${row.title.slice(0, 24)} (${page.status})`);
+  }
+  t.ok((await get(`/admin/books?q=${encodeURIComponent('إيضاح الطحاوي شرح معاني الآثار مكمل جديد')}`)).status === 200,
+    'and a long Arabic search does not fall over either');
+
   const spareBook = rows[1].id;
   const shipPage = await html(`/admin/shipments/${sid}`);
   t.ok(shipPage.includes('spare cop'),

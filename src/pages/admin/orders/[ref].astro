@@ -207,7 +207,12 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
               <li class="py-2.5 flex justify-between gap-4 text-[15px]">
                 <span class="min-w-0">
                   {item.slug ? (
-                    <a href={`/book/${item.slug}`} class="hover:text-[var(--color-navy)]">
+                    <a
+                      href={item.shipment_id
+                        ? `/shipments/${item.shipment_id}`
+                        : `/book/${item.slug}`}
+                      class="hover:text-[var(--color-navy)]"
+                    >
                       {item.title_snapshot}
                     </a>
                   ) : (

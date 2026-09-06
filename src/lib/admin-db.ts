@@ -60,6 +60,8 @@ export interface AdminOrderItem {
   price_pence_snapshot: number;
   qty: number;
   slug: string | null;
+  /** Still on a shipment, which is where it links - it has no product page. */
+  shipment_id: number | null;
 }
 
 /**
@@ -130,7 +132,8 @@ export async function getOrderByRef(ref: string): Promise<AdminOrderRow | null> 
 
 export async function getOrderItems(orderId: number): Promise<AdminOrderItem[]> {
   const { results } = await env.DB.prepare(
-    `SELECT oi.from_incoming, oi.book_id, oi.title_snapshot, oi.price_pence_snapshot, oi.qty, b.slug
+    `SELECT oi.from_incoming, oi.book_id, oi.title_snapshot, oi.price_pence_snapshot, oi.qty,
+            b.slug, b.shipment_id
        FROM order_items oi LEFT JOIN books b ON b.id = oi.book_id
       WHERE oi.order_id = ?`,
   )
@@ -289,11 +292,43 @@ export interface BookListResult {
  * The stem is whatever comes before the first colon, falling back to the first
  * few words. Anything already in a set is excluded, and so is this listing.
  */
+/**
+ * The longest LIKE pattern D1 will accept, in **bytes**.
+ *
+ * SQLite refuses a pattern over `SQLITE_MAX_LIKE_PATTERN_LENGTH` with
+ * "LIKE or GLOB pattern too complex", and on D1 that ceiling is 50 bytes -
+ * counted in UTF-8, not in characters, and counting the wildcards.
+ *
+ * That distinction is the whole bug. A 40-character stem is 40 bytes of
+ * English and about 80 of Arabic, because Arabic sits in the two-byte range.
+ * So every listing whose title ran past roughly twenty-four Arabic letters
+ * threw a 500 on the portal's own page for it, while every English one was
+ * fine - and a shipment import is nothing but long Arabic titles.
+ */
+const LIKE_BYTES = 40;
+
+/** Cut to at most `bytes` UTF-8 bytes, never through the middle of a letter. */
+function clipToBytes(value: string, bytes: number): string {
+  const encoder = new TextEncoder();
+  if (encoder.encode(value).length <= bytes) return value;
+  let out = '';
+  let used = 0;
+  /* Iterating the string yields whole code points, so a surrogate pair is
+     never split - which would leave a lone half and a broken pattern. */
+  for (const ch of value) {
+    const size = encoder.encode(ch).length;
+    if (used + size > bytes) break;
+    out += ch;
+    used += size;
+  }
+  return out;
+}
+
 export async function partCandidates(book: {
   id: number;
   title: string;
 }): Promise<{ id: number; title: string; volumes: number | null; price_pence: number }[]> {
-  const stem = (book.title.split(':')[0] ?? book.title).trim().slice(0, 40);
+  const stem = clipToBytes((book.title.split(':')[0] ?? book.title).trim(), LIKE_BYTES);
   if (stem.length < 6) return [];
 
   const { results } = await env.DB.prepare(
@@ -339,8 +374,11 @@ export async function listBooksAdmin(opts: {
   const binds: unknown[] = [];
 
   if (search) {
+    /* Clipped for the same reason as `partCandidates`: the two `%` count
+       towards the ceiling too, so this leaves room for them. */
+    const needle = clipToBytes(search, LIKE_BYTES);
     clauses.push('(b.title LIKE ? OR b.title_ar LIKE ? OR b.title_ur LIKE ? OR b.slug LIKE ?)');
-    binds.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    binds.push(`%${needle}%`, `%${needle}%`, `%${needle}%`, `%${needle}%`);
   }
   if (FILTER_SQL[filter]) clauses.push(FILTER_SQL[filter]);
 

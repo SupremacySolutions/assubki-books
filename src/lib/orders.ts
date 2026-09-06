@@ -472,6 +472,14 @@ export interface OrderView {
     title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null;
     /** This line is a claim on a delivery, not a copy off the shelf. */
     from_incoming: number;
+    /**
+     * The shipment it is still on, if it is on one.
+     *
+     * A shipment row has no product page - deliberately, since it has no
+     * cover, no description and an address like `sh61-4` - so a link to
+     * `/book/<slug>` is a 404. It has a page all the same: the shipment's.
+     */
+    shipment_id: number | null;
     incoming_vague: string | null;
     incoming_month: string | null;
   }[];
@@ -532,7 +540,7 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
 
   const { results: items } = await env.DB.prepare(
     `SELECT oi.title_snapshot, oi.price_pence_snapshot, oi.qty, b.slug,
-            oi.from_incoming, b.incoming_vague, b.incoming_month
+            oi.from_incoming, b.incoming_vague, b.incoming_month, b.shipment_id
        FROM order_items oi LEFT JOIN books b ON b.id = oi.book_id
       WHERE oi.order_id = (SELECT id FROM orders WHERE ref = ?)`,
   )
