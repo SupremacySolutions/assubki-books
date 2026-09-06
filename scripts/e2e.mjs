@@ -2899,8 +2899,12 @@ async function integrity() {
 
   const resPage = visibleText(await html(`/order?ref=${claimA.ref}&t=${claimA.token}`));
   t.ok(!resPage.includes('Held until'), 'and is not told its books are held for 48 hours');
-  t.ok(resPage.includes('Reserved for you until the delivery arrives'),
-    'but is told what it is actually waiting for');
+  /* The wording changed with the reservation panels - what has to survive is
+     the promise, not the sentence it was once made in. */
+  t.ok(resPage.includes('does not run out while you wait'),
+    'but is told the reservation stands until the books arrive');
+  t.ok(/still to arrive|from /.test(resPage) && resPage.includes('Nothing is paid now'),
+    'and what it is waiting for, with nothing to pay yet');
 
   const notifySrc = readFileSync('src/lib/notify.ts', 'utf8');
   t.ok(/reserved: `Thank you[^]{0,120}reserved for you from our next delivery/.test(notifySrc),
@@ -2971,40 +2975,62 @@ async function integrity() {
     `every field of the parts builder names that form (${strays.length} did not)`);
 
   /*
-   * The listing editor, in sections.
+   * The listing editor: four steps on the first pass, sections after it.
    *
-   * Still one form with one Save - the sections are same-page anchors, so no
-   * navigation happens and the unsaved-changes tracking is untouched. A
-   * wizard here would have meant either losing that or saving per section.
+   * Still one form with one Save. The steps are shown and hidden inside the
+   * same document - nothing navigates - so the unsaved-changes tracking is
+   * untouched, and with scripting off all four render open one after another.
    */
   const editorPage = await html('/admin/books/new');
-  for (const id of ['s-identity', 's-description', 's-commerce', 's-subjects', 's-photos', 's-telegram', 's-parts']) {
+  for (const id of ['s-identity', 's-description', 's-commerce', 's-subjects']) {
     t.ok(editorPage.includes(`id="${id}"`), `the editor has a ${id.slice(2)} section`);
   }
-  t.ok((editorPage.match(/href="#s-/g) ?? []).length >= 7, 'and a jump nav of same-page anchors');
+  for (const n of [1, 2, 3, 4]) {
+    t.ok(editorPage.includes(`data-step="${n}"`), `step ${n} is a panel of the one form`);
+  }
   t.ok(!/href="\/admin\/books\/new\?step/.test(editorPage), 'which never navigates');
   t.ok((editorPage.match(/id="saveBtn"/g) ?? []).length === 1, 'one Save covers the whole form');
+  t.ok((editorPage.match(/<form\b/g) ?? []).length === 1,
+    'and the steps add no second form to submit');
 
-  // What cannot be used yet says so rather than vanishing.
-  t.ok((editorPage.match(/border-dashed/g) ?? []).length >= 3,
-    'photos, Telegram and parts are locked on a new listing');
-  for (const why of ['needs something to attach to', 'page to link to', 'split it into parts']) {
-    t.ok(editorPage.includes(why), `and each says why (${why.slice(0, 24)})`);
+  /*
+   * What cannot be used yet is named once, in the rail.
+   *
+   * It used to be three full-width dashed panels down the page, which said the
+   * right thing and cost a third of the screen to say it.
+   */
+  t.ok(/After saving/i.test(editorPage), 'the rail says what waits for a saved listing');
+  for (const waits of ['Photos', 'Telegram', 'Sold in parts', 'Delete']) {
+    t.ok(editorPage.includes(waits), `and names ${waits}`);
   }
+  t.ok(editorPage.includes('need a listing to attach to'), 'and says why, once rather than thrice');
+  t.ok(!/id="s-(telegram|parts)"/.test(editorPage),
+    'so no locked placeholder panel is rendered at all');
 
   const existingEditor = await html(`/admin/books/${cx.id}`);
-  t.ok(!/id="s-(photos|telegram|parts)"[^>]*border-dashed/.test(existingEditor),
-    'an existing listing has no locked sections');
+  t.ok(!/id="s-photos"[^>]*border-dashed/.test(existingEditor),
+    'photos are never locked on an existing listing');
+  t.ok((existingEditor.match(/href="#s-/g) ?? []).length >= 6,
+    'and an existing listing keeps its jump nav of same-page anchors');
+
+  /*
+   * A single book cannot be split, and says so instead of offering a builder
+   * asking for the first and last volume of a one-volume set.
+   */
+  t.ok(/id="s-parts"[\s\S]{0,400}more than one volume/.test(existingEditor),
+    'sold in parts on a single book names what it needs');
 
   /*
    * Sold in parts. The column headers are the fix that matters: the only
    * labelling used to be placeholder text, which disappears exactly when
    * somebody is typing into the column it labels.
    */
+  const splittable = await makeBook({ volumes: '6' });
+  const setEditor = await html(`/admin/books/${splittable.id}`);
   for (const head of ['Name of the part', 'First volume', 'Last volume']) {
-    t.ok(existingEditor.includes(head), `the parts grid labels "${head}"`);
+    t.ok(setEditor.includes(head), `the parts grid labels "${head}"`);
   }
-  const placeholders = [...existingEditor.matchAll(/name="part_\d_name"[^>]*placeholder="([^"]*)"/g)]
+  const placeholders = [...setEditor.matchAll(/name="part_\d_name"[^>]*placeholder="([^"]*)"/g)]
     .map((m) => m[1]);
   t.ok(placeholders.length === 4 && new Set(placeholders).size === 1,
     'and all four rows are the same shape');
