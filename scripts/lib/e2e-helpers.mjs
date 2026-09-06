@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 export const PROD = process.argv.includes('--prod');
-export const SITE = PROD ? 'https://assubkibooks.co.uk' : 'http://localhost:4330';
+export const SITE = PROD ? 'https://assubkibooks.co.uk' : (process.env.E2E_SITE ?? 'http://localhost:4330');
 export const ORIGIN = { Origin: SITE };
 
 export const vars = Object.fromEntries(

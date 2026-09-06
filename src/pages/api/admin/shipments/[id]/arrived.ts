@@ -1,87 +1,38 @@
 import type { APIRoute } from 'astro';
-import { env } from 'cloudflare:workers';
-import { fillClaims, startPaymentWindow } from '../../../../../lib/arrival';
-import { queueArrivalNotices } from '../../../../../lib/shipment-notify';
+import { getShipment, shipmentItems } from '../../../../../lib/shipments';
+import { receiveDelivery, ReceiptConflict } from '../../../../../lib/arrival';
 import { forgetHomeRows } from '../../../../../lib/db';
 import { forgetDashboard } from '../../../../../lib/dashboard';
 
 export const prerender = false;
 
-/** Statements per batch. Keeps one press well inside a Worker's limits. */
-const CHUNK = 40;
-
-/**
- * The box has landed.
- *
- * Three things happen, in an order that matters:
- *
- *   1. The shipment is claimed. Everything after this is safe to run once and
- *      only once, which is the whole reason it comes first.
- *   2. Each book's copies become real stock and the claims against them become
- *      ordinary holds, oldest claim first. A short delivery leaves later claims
- *      waiting rather than cancelling them.
- *   3. The seven days start, and everybody who got a copy is queued to be told.
- *
- * The claim is what makes a double press harmless. `arrived.ts` for a single
- * book has never had that guard and did not need one - a slip added stock to
- * one listing and was easy to see. Doing it to sixty at once is not, so the
- * shipment is moved out of 'open' by a conditional update and the rest only
- * runs if that update changed a row.
- */
-export const POST: APIRoute = async ({ params, url }) => {
-  const shipmentId = Number.parseInt(params.id ?? '', 10);
-  if (!Number.isInteger(shipmentId)) return new Response('Bad request', { status: 400 });
-
-  const back = (query: string) =>
-    new Response(null, {
-      status: 302,
-      headers: { Location: `/admin/shipments/${shipmentId}${query}` },
-    });
-
-  const claimed = await env.DB.prepare(
-    `UPDATE shipments SET status = 'arrived', arrived_at = unixepoch(), updated_at = unixepoch()
-      WHERE id = ? AND status = 'open'`,
-  )
-    .bind(shipmentId)
-    .run();
-  if (!claimed.meta.changes) {
-    return back('?e=' + encodeURIComponent('this shipment is not open, so it cannot arrive'));
+export const POST: APIRoute = async ({ params, request }) => {
+  const shipmentId = Number(params.id);
+  const form = await request.formData();
+  const key = String(form.get('receipt_key') ?? '');
+  const version = Number(form.get('delivery_version'));
+  if (!Number.isSafeInteger(shipmentId) || !/^[\w-]{16,80}$/.test(key) ||
+      !form.has('delivery_version') || !Number.isSafeInteger(version) || version < 0) {
+    return new Response('Reload the shipment before recording a delivery.', {status:400});
   }
-
-  const { results: books } = await env.DB.prepare(
-    `SELECT id, incoming FROM books WHERE shipment_id = ? AND incoming > 0`,
-  )
-    .bind(shipmentId)
-    .all<{ id: number; incoming: number }>();
-
-  /*
-   * Every copy that was said to be coming is treated as having come.
-   *
-   * If the box was short the owner corrects the numbers before pressing this;
-   * doing it the other way round - arriving, then discovering - would mean
-   * unwinding holds that customers have already been told about.
-   */
-  const touched = new Set<number>();
-  for (const book of books) {
-    const { orderIds } = await fillClaims(book.id, book.incoming);
-    for (const id of orderIds) touched.add(id);
+  const shipment = await getShipment(shipmentId);
+  if (!shipment) return new Response('Not found', {status:404});
+  const back = (query: string) => new Response(null, {status:302,headers:{Location:`/admin/shipments/${shipmentId}${query}`}});
+  const books = await shipmentItems(shipmentId);
+  const lines = books.map(b=>({bookId:b.id,qty:Number(form.get(`received_${b.id}`))}));
+  if (lines.some(l=>!form.has(`received_${l.bookId}`) || !Number.isSafeInteger(l.qty) || l.qty<0 || l.qty>999)) {
+    return back('?e='+encodeURIComponent('Enter the actual received count for every title, including zero for missing books'));
   }
-
-  const orderIds = [...touched];
-  await startPaymentWindow(orderIds);
-
-  /*
-   * Queued, not sent. Forty customers is forty outbound requests, which is
-   * more than one handler may make and more than a day's mail allowance; the
-   * sweep drains this a few at a time.
-   */
-  const notices = queueArrivalNotices(env.DB, shipmentId, orderIds);
-  for (let i = 0; i < notices.length; i += CHUNK) {
-    await env.DB.batch(notices.slice(i, i + CHUNK));
+  if (!lines.some(line => line.qty > 0)) {
+    return back('?e=' + encodeURIComponent('Enter at least one received copy to record a delivery.'));
   }
-
-  forgetHomeRows();
-  forgetDashboard();
-
-  return back(`?arrived=${orderIds.length}`);
+  try {
+    const result = await receiveDelivery({shipmentId,key,version,lines});
+    forgetHomeRows();
+    forgetDashboard();
+    return back(`?arrived=${result.orderIds.length}`);
+  } catch (err) {
+    if (!(err instanceof ReceiptConflict)) throw err;
+    return back('?e='+encodeURIComponent(err.message));
+  }
 };

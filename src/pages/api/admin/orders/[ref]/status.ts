@@ -87,13 +87,17 @@ export const POST: APIRoute = async ({ params, request, url }) => {
 
   binds.push(order.id);
 
-  const statements = [
-    env.DB.prepare(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`).bind(...binds),
-  ];
+  const ready = `NOT EXISTS (SELECT 1 FROM order_items WHERE order_id=o.id AND from_incoming=1)`;
+  const guard = `o.status='${order.status}'${recordsPayment || next === 'completed' || next === 'dispatched' ? ` AND ${ready}` : ''}`;
+  const allowed = `EXISTS (SELECT 1 FROM orders o WHERE o.id=?1 AND ${guard})`;
+  const guarded = (query: string) => env.DB.prepare(query.includes('GROUP BY book_id')
+    ? query.replace('GROUP BY book_id', `AND ${allowed} GROUP BY book_id`)
+    : `${query} AND ${allowed}`);
+  const statements: D1PreparedStatement[] = [];
 
   if (RELEASES_STOCK.has(next) && ['requested', 'awaiting_payment'].includes(order.status)) {
     statements.push(
-      ...releaseHold(order.id, 'order cancelled'),
+      ...releaseHold(order.id, 'order cancelled', env.DB, guard),
     );
   }
 
@@ -110,7 +114,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
    */
   if (recordsPayment) {
     statements.push(
-      env.DB.prepare(
+      guarded(
         `UPDATE book_set_stock
             SET have = MAX(0, have - COALESCE((
                   SELECT SUM(oi.qty) FROM order_items oi
@@ -149,7 +153,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
    */
   if (recordsPayment) {
     statements.push(
-      env.DB.prepare(
+      guarded(
         `UPDATE books
             SET reserved = MAX(0, reserved - COALESCE(
                   (SELECT SUM(qty) FROM order_items
@@ -161,14 +165,14 @@ export const POST: APIRoute = async ({ params, request, url }) => {
           WHERE id IN (SELECT book_id FROM order_items
                         WHERE order_id = ?1 AND book_id IS NOT NULL AND from_incoming = 0)`,
       ).bind(order.id),
-      env.DB.prepare(
+      guarded(
         `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
          SELECT book_id, -SUM(qty), 'stock', 'order paid', ?1
            FROM order_items
           WHERE order_id = ?1 AND book_id IS NOT NULL AND from_incoming = 0
           GROUP BY book_id`,
       ).bind(order.id),
-      env.DB.prepare(
+      guarded(
         `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
          SELECT book_id, -SUM(qty), 'reserved', 'hold converted to sale', ?1
            FROM order_items
@@ -178,7 +182,11 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     );
   }
 
-  await env.DB.batch(statements);
+  statements.push(env.DB.prepare(`UPDATE orders AS o SET ${sets.join(', ')} WHERE id=? AND ${guard}`).bind(...binds));
+  const changed = await env.DB.batch(statements);
+  if (!changed[changed.length-1].meta.changes) {
+    return new Response(null, {status:302,headers:{Location:`/admin/orders/${ref}?e=state`}});
+  }
   forgetDashboard();
 
   // A collection customer who has just paid needs to know where to come.

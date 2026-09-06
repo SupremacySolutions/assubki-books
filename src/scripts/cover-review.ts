@@ -577,6 +577,7 @@ export function mountCoverReview(): void {
      * has always worked, not lose the owner their photo.
      */
     async function review(file: File): Promise<File | null> {
+      if (!panel || !note) return null;
       let bitmap: ImageBitmap;
       try {
         bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });

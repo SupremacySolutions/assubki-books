@@ -49,7 +49,8 @@ export const POST: APIRoute = async ({ params, request, url }) => {
         SET status = 'awaiting_payment', postage_pence = ?, total_pence = ?,
             payment_message = ?, confirmed_at = unixepoch(),
             payment_sent_at = unixepoch(), updated_at = unixepoch()
-      WHERE id = ? AND status = 'requested'`,
+      WHERE id = ? AND status = 'requested'
+        AND NOT EXISTS (SELECT 1 FROM order_items WHERE order_id=orders.id AND from_incoming=1)`,
   )
     .bind(postagePence, totalPence, paymentInstructions, order.id)
     .run();
@@ -90,7 +91,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
       `UPDATE orders
           SET status = 'requested', confirmed_at = NULL, payment_sent_at = NULL,
               updated_at = unixepoch()
-        WHERE id = ?`,
+        WHERE id = ? AND status = 'awaiting_payment'`,
     )
       .bind(order.id)
       .run();

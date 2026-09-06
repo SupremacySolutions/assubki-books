@@ -99,7 +99,7 @@ async function verifyAccessJwt(token: string): Promise<AdminIdentity | null> {
   const valid = await crypto.subtle.verify(
     'RSASSA-PKCS1-v1_5',
     key,
-    b64urlToBytes(signatureB64),
+    new Uint8Array(b64urlToBytes(signatureB64)),
     new TextEncoder().encode(`${headerB64}.${payloadB64}`),
   );
   if (!valid) return null;

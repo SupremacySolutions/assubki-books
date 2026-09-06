@@ -138,7 +138,8 @@ if (order.status === 'cancelled') {
 }
 
 history.sort((a, b) => a.at - b.at);
-const canConfirm = order.status === 'requested';
+const waitingForBooks = items.some((item) => Boolean(item.from_incoming));
+const canConfirm = order.status === 'requested' && !waitingForBooks;
 const hoursLeft = order.expires_at
   ? Math.max(0, Math.round((order.expires_at * 1000 - Date.now()) / 3_600_000))
   : null;
@@ -149,7 +150,8 @@ const problem = Astro.url.searchParams.get('e');
 
 // What can happen next, and what it is called, both come from lib/order-status
 // so a collection order is never offered "Mark as posted".
-const steps = nextActions(order.status, order.fulfilment, isCash);
+const steps = nextActions(order.status, order.fulfilment, isCash)
+  .filter((step) => !waitingForBooks || step.action === 'cancelled');
 ---
 
 <Admin
@@ -244,6 +246,9 @@ const steps = nextActions(order.status, order.fulfilment, isCash);
         }
       </section>
 
+      {waitingForBooks && (
+        <p class="p-4 bg-[var(--color-brass)]/10 text-[14px]">Waiting for reserved books to arrive. Payment and dispatch become available once every copy is here.</p>
+      )}
       {
         canConfirm && (
           <section class="bg-white border-2 border-[var(--color-navy)] rounded-[3px] p-5">

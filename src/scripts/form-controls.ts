@@ -20,9 +20,10 @@
  * so anything else listening - a confirmation, a disabled button - still gets
  * its say. `submit()` skips all of it.
  */
-for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+for (const el of document.querySelectorAll<HTMLElement>(
   '[data-autosubmit]',
 )) {
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) continue;
   el.addEventListener('change', () => {
     const form = el.form;
     if (!form) return;
@@ -32,7 +33,8 @@ for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>
 }
 
 /** A select whose options are URLs, and picking one goes there. */
-for (const el of document.querySelectorAll<HTMLSelectElement>('select[data-go]')) {
+for (const el of document.querySelectorAll<HTMLElement>('select[data-go]')) {
+  if (!(el instanceof HTMLSelectElement)) continue;
   el.addEventListener('change', () => {
     if (el.value) window.location.href = el.value;
   });

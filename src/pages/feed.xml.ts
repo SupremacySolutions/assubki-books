@@ -39,12 +39,13 @@ export const GET: APIRoute = async ({ site, url }) => {
 
   // Every live book. `perPage` is the whole catalogue rather than a page: a
   // feed that stops at 24 tells Google the shop sells 24 books.
-  const { books } = await listBooks({ perPage: 1000, withTotal: false });
+  const { books } = await listBooks({ perPage: 1000, withTotal: false, withDetails: true });
 
   const item = (b: (typeof books)[number]) => {
     const pence = salePrice(b.price_pence, b.sale_percent);
-    const description = truncate(stripTags(b.description_html) || b.title, 4000);
-    const image = b.image_key ? new URL(imageUrl(b.image_key, 'detail'), origin).toString() : null;
+    const description = truncate(stripTags(b.description_html ?? '') || b.title, 4000);
+    const imagePath = imageUrl(b.image_key, 'detail');
+    const image = imagePath ? new URL(imagePath, origin).toString() : null;
 
     return [
       '    <item>',

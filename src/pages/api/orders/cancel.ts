@@ -46,7 +46,7 @@ export const POST: APIRoute = async ({ request }) => {
     await env.DB.prepare(
       `UPDATE orders SET cancel_requested_at = unixepoch(), customer_cancel_note = ?,
                          updated_at = unixepoch()
-        WHERE id = ? AND cancel_requested_at IS NULL`,
+        WHERE id = ? AND cancel_requested_at IS NULL AND status IN ('awaiting_payment','paid','dispatched')`,
     )
       .bind(reason, order.id)
       .run();
@@ -70,16 +70,13 @@ export const POST: APIRoute = async ({ request }) => {
    * safe: the second one changes no rows, so the release below cannot run
    * against an order that already gave its copies back.
    */
-  const changed = await env.DB.prepare(
-    `UPDATE orders SET status = 'cancelled', customer_cancel_note = ?, updated_at = unixepoch()
-      WHERE id = ? AND status = 'requested'`,
-  )
-    .bind(reason, order.id)
-    .run();
+  const done = await env.DB.batch([
+    ...releaseHold(order.id, 'customer cancelled', env.DB, "o.status='requested'"),
+    env.DB.prepare(`UPDATE orders SET status='cancelled',customer_cancel_note=?,updated_at=unixepoch()
+      WHERE id=? AND status='requested'`).bind(reason,order.id),
+  ]);
+  if (!done[3].meta.changes) return back('&e=cancel');
 
-  if (!changed.meta.changes) return back('&e=cancel');
-
-  await env.DB.batch(releaseHold(order.id, 'customer cancelled'));
   forgetDashboard();
   return back('&cancelled=1');
 };

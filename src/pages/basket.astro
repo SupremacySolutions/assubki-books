@@ -169,6 +169,7 @@ import Rosette from '../components/Rosette.astro';
   </div>
 
   <script>
+    import {planBasketLine,basketDeliveryNote} from "../lib/basket-plan";
     import { read, setQty, remove, setBadge, count } from '../scripts/basket.ts';
     import { readGroup, joinGroup, leaveGroup, shareLink, parseShare } from '../scripts/group.ts';
     import { IMAGE_VERSION } from '../lib/image-presets.ts';
@@ -242,7 +243,7 @@ import Rosette from '../components/Rosette.astro';
     type GroupLine = {
       bookId: number; slug: string; title: string; titleAr: string | null;
       pricePence: number; available: number; imageKey: string | null;
-      qty: number; addedBy: string;
+      qty: number; addedBy: string; reservable: number; shipmentId: number | null;
     };
     type GroupView = {
       code: string; organiser: string; expiresAt: number; orderRef: string | null;
@@ -290,7 +291,7 @@ import Rosette from '../components/Rosette.astro';
         const res = await fetch(
           `/api/group?g=${encodeURIComponent(member.code)}&k=${encodeURIComponent(member.token)}`,
         );
-        const data = await res.json();
+        const data = await res.json() as {ok:boolean;error?:string;group:GroupView;code:string;ownerToken:string;token:string;emailed:boolean};
         if (!res.ok || !data.ok) {
           // Expired or sent: stop pretending this is still a shared basket.
           leaveGroup();
@@ -320,29 +321,31 @@ import Rosette from '../components/Rosette.astro';
       // Short against what the *group* asked for, not against this one line: two
       // people each wanting the last two copies is a shortfall neither line
       // shows on its own.
-      const overrun = wantedByAll > line.available;
+      const {ceiling,waiting} = planBasketLine(line,wantedByAll);
+      const overrun = wantedByAll > ceiling;
+      const href = line.shipmentId != null ? `/shipments/${line.shipmentId}` : `/book/${line.slug}`;
       return `
         <li class="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-4 gap-y-3 py-4 items-start sm:flex sm:gap-4">
-          <a href="/book/${line.slug}" class="shrink-0 w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[3px] grid place-items-center overflow-hidden">
+          <a href="${href}" class="shrink-0 w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[3px] grid place-items-center overflow-hidden">
             ${line.imageKey ? `<img src="/img/${line.imageKey}?p=card&v=${IMAGE_VERSION}" alt="" class="h-full w-full object-cover">` : ''}
           </a>
           <div class="flex-1 min-w-0">
-            <a href="/book/${line.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${line.title}</a>
+            <a href="${href}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${line.title}</a>
             <p class="price text-[15px] mt-1">${gbp(line.pricePence)}</p>
             <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">Added by ${line.addedBy}${mine ? ' (you)' : ''}</p>
             ${
-              line.available <= 0
+              ceiling <= 0
                 ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Out of stock - it will not be included</p>`
                 : overrun
-                  ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Only ${line.available} available, and the group has asked for ${wantedByAll}</p>`
-                  : ''
+                  ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Only ${ceiling} available, and the group has asked for ${wantedByAll}</p>`
+                  : waiting ? '<p class="mt-1 text-[13px]">Reserved from an incoming delivery</p>' : ''
             }
           </div>
           <div class="col-start-2 flex items-center gap-4 justify-start sm:ml-auto sm:shrink-0">
             ${
               mine
                 ? `<label class="sr-only" for="g${line.bookId}">Quantity for ${line.title}</label>
-                   <input id="g${line.bookId}" type="number" min="0" max="${Math.max(line.available, 0)}" value="${line.qty}"
+                   <input id="g${line.bookId}" type="number" min="0" max="${ceiling}" value="${line.qty}"
                           class="field !w-16 !py-1.5 tabular-nums" data-group-id="${line.bookId}">`
                 : `<span class="text-[15px] tabular-nums text-[var(--color-ink-soft)]">×${line.qty}</span>`
             }
@@ -358,7 +361,7 @@ import Rosette from '../components/Rosette.astro';
         body: JSON.stringify({ code: member.code, token: member.token, name: member.name, bookId, qty }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json().catch(() => ({})) as {error?:string};
         groupError(data?.error ?? 'That did not save.');
       }
       await render();
@@ -387,6 +390,9 @@ import Rosette from '../components/Rosette.astro';
       // The badge counts what this reader put in, not the whole group's pile.
       setBadge(view.lines.filter((l) => l.addedBy === member!.name).reduce((n, l) => n + l.qty, 0));
 
+      const waitingNote = el('#waitingNote');
+      waitingNote.textContent = basketDeliveryNote(view.lines.map(l=>({...l,id:l.bookId})),Object.fromEntries(wantedByAll));
+      waitingNote.hidden = !waitingNote.textContent;
       el('#subtotal').textContent = gbp(view.subtotalPence);
       el('#basket').hidden = false;
       el('#empty').hidden = true;
@@ -433,7 +439,7 @@ import Rosette from '../components/Rosette.astro';
         books: {
           id: number; slug: string; title: string; titleAr: string | null;
           pricePence: number; available: number; imageKey: string | null;
-          reservable?: number; expected?: string | null; salePercent?: number;
+          reservable?: number; expected?: string | null; salePercent?: number; shipmentId?:number|null;
         }[];
       };
       const books = payload.books;
@@ -462,9 +468,7 @@ import Rosette from '../components/Rosette.astro';
          * against whichever number applies, never their sum - a customer must
          * never be sold "two, one of which is imaginary".
          */
-        const onOrder = book.available <= 0 && book.reservable > 0;
-        const ceiling = onOrder ? book.reservable : book.available;
-        const qty = Math.min(basket[String(book.id)], Math.max(ceiling, 0));
+        const {waiting:onOrder,ceiling,qty} = planBasketLine(book,basket[String(book.id)]);
         const overrun = basket[String(book.id)] > ceiling;
         subtotal += salePence(book) * qty;
         fullPrice += book.pricePence * qty;
@@ -472,15 +476,15 @@ import Rosette from '../components/Rosette.astro';
         const li = document.createElement('li');
         li.className = 'grid grid-cols-[4rem_minmax(0,1fr)] gap-x-4 gap-y-3 px-4 py-4 items-start sm:flex sm:gap-4 sm:items-center';
         li.innerHTML = `
-          <a href="/book/${book.slug}" class="shrink-0 w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[3px] grid place-items-center overflow-hidden">
+          <a href="${book.shipmentId != null ? '/shipments/'+book.shipmentId : '/book/'+book.slug}" class="shrink-0 w-16 h-20 bg-white border border-[var(--color-rule)] rounded-[3px] grid place-items-center overflow-hidden">
             ${book.imageKey ? `<img src="/img/${book.imageKey}?p=card&v=${IMAGE_VERSION}" alt="" class="h-full w-full object-cover">` : ''}
           </a>
           <div class="flex-1 min-w-0">
-            <a href="/book/${book.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${book.title}</a>
+            <a href="${book.shipmentId != null ? '/shipments/'+book.shipmentId : '/book/'+book.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${book.title}</a>
             ${book.titleAr ? `<p class="ar text-[14.5px] text-[var(--color-ink-soft)]">${book.titleAr}</p>` : ''}
             <p class="mt-1 flex items-baseline gap-2 flex-wrap">
               <span class="price text-[15px]">${gbp(salePence(book))}</span>
-              ${book.salePercent > 0
+              ${(book.salePercent ?? 0) > 0
                 ? `<span class="text-[13px] text-[var(--color-ink-faint)] line-through decoration-1">${gbp(book.pricePence)}</span>`
                   + `<span class="text-[12.5px] text-[var(--color-outstock)]">${book.salePercent}% off</span>`
                 : ''}
@@ -515,21 +519,11 @@ import Rosette from '../components/Rosette.astro';
        * customer should meet that here rather than discover it on a
        * confirmation page carrying a reference they did not expect.
        */
-      const waiting = live.filter((b) => b.available <= 0 && b.reservable > 0);
-      const inHand = live.filter((b) => b.available > 0);
       const notice = document.querySelector<HTMLElement>('#waiting');
       if (notice) {
-        const when = waiting.find((b) => b.expected)?.expected;
-        const count = waiting.length === 1
-          ? 'One book in your basket has'
-          : `${waiting.length} books in your basket have`;
-        notice.hidden = waiting.length === 0;
-        notice.querySelector('[data-waiting-text]')!.textContent = inHand.length
-          ? `${count} not arrived yet${when ? ` - expected ${when}` : ''}. ` +
-            'Those come as a separate order, so the rest can be sent to you now. ' +
-            'Nothing is paid for them until they land.'
-          : `${count} not arrived yet${when ? ` - expected ${when}` : ''}. ` +
-            'Nothing is paid now - we write to you when the shipment lands.';
+        const text=basketDeliveryNote(live,read());
+        notice.hidden=!text;
+        notice.querySelector('[data-waiting-text]')!.textContent=text;
       }
 
       document.querySelector<HTMLElement>('#subtotal')!.textContent =
@@ -596,7 +590,7 @@ import Rosette from '../components/Rosette.astro';
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email }),
       });
-      const data = await res.json();
+      const data = await res.json() as {ok:boolean;error?:string;group:GroupView;code:string;ownerToken:string;token:string;emailed:boolean};
       if (!res.ok || !data.ok) return groupError(data?.error ?? 'Could not start a group just now.');
 
       // This browser holds the organiser's key; the shared one is kept beside

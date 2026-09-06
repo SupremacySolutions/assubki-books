@@ -9,7 +9,7 @@
 import { env } from 'cloudflare:workers';
 import { whenText } from './incoming';
 import { salePrice, orderDiscount, totals } from './sales';
-import { releaseHold } from './stock-release';
+import { expireOrders } from './stock-release';
 import type { AddressParts } from './address';
 
 export const HOLD_HOURS = 48;
@@ -33,27 +33,8 @@ export interface OrderInput {
   addressParts?: AddressParts | null;
   /** What the customer said they would rather do: 'transfer' or 'cash'. */
   paymentPreference?: string | null;
-  /**
-   * Ties the orders one checkout produced together.
-   *
-   * A basket holding shelf books and shipment books becomes one order per
-   * parcel, because the two carry different promises and cannot both be kept
-   * on one record. This is what lets the order page say "the rest of what you
-   * asked for is over here" rather than leaving the customer with two
-   * references and no way to tell they belong together.
-   */
-  splitGroup?: string | null;
   notes?: string | null;
   items: RequestedItem[];
-  /**
-   * Set when this order came from a shipment page.
-   *
-   * It is what puts the order in the owner's reservations queue rather than
-   * among the shop's ordinary orders, and what the arrival run reads to find
-   * everyone who needs telling. Reservations are made a shipment at a time, so
-   * one order belongs to one shipment or to none.
-   */
-  shipmentId?: number | null;
 }
 
 export interface CreatedOrder {
@@ -107,31 +88,10 @@ function randomToken(): string {
  * on when a scheduled job last fired.
  */
 export async function expireStaleHolds(): Promise<number> {
-  const now = Math.floor(Date.now() / 1000);
-
-  const { results: stale } = await env.DB.prepare(
-    `SELECT id FROM orders WHERE status = 'requested' AND expires_at IS NOT NULL AND expires_at <= ?`,
-  )
-    .bind(now)
-    .all<{ id: number }>();
-
-  if (!stale.length) return 0;
-
-  const statements = [];
-  for (const { id } of stale) {
-    statements.push(
-      ...releaseHold(id, 'hold expired'),
-      env.DB.prepare(
-        `UPDATE orders SET status = 'expired', updated_at = unixepoch() WHERE id = ?`,
-      ).bind(id),
-    );
-  }
-
-  await env.DB.batch(statements);
-  return stale.length;
+  return (await expireOrders(env.DB)).orders;
 }
 
-export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
+export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]> {
   await expireStaleHolds();
 
   const ids = input.items.map((i) => i.bookId);
@@ -175,7 +135,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
        LEFT JOIN sale_items si ON si.book_id = b.id
             AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
       WHERE b.id IN (${placeholders}) AND (
-              b.status = 'live'
+              (b.status = 'live' AND b.shipment_id IS NULL)
               /*
                * Or it is on a shipment that is open for reservations.
                *
@@ -210,7 +170,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     const book = byId.get(item.bookId);
     if (!book) {
       problems.push({ bookId: item.bookId, title: 'Unavailable title', wanted: item.qty, available: 0 });
-    } else if (book.available < item.qty && book.reservable < item.qty) {
+    } else if ((book.shipment_id !== null ? book.reservable < item.qty : book.available < item.qty && book.reservable < item.qty)) {
       /*
        * Neither on the shelf nor claimable from a delivery. The two are checked
        * separately and never added together: a line is one or the other, so a
@@ -274,7 +234,6 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     discountRule,
   );
   const discountPence = figures.orderDiscountPence;
-  const subtotalPence = figures.subtotalPence;
 
   // A customer who has already started the bot stays reachable: Telegram grants
   // that permission per person, not per order, so making them tap Connect again
@@ -296,164 +255,84 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   )
     .bind(input.email)
     .first<{ telegram_chat_id: string }>();
-  /*
-   * An order containing a claim on a delivery is never given an expiry. The
-   * customer cannot complete it inside 48 hours because the books are not here
-   * - sweeping it would release a copy somebody was promised.
-   */
-  const shipmentWaitedOn =
-    books.find((b) => b.shipment_id !== null)?.shipment_id ?? null;
-  const waitsForStock = items.some((i) => i.fromIncoming);
-  const expiresAt = waitsForStock ? null : Math.floor(Date.now() / 1000) + HOLD_HOURS * 3600;
+  // Shelf copies and future deliveries carry different expiry promises.
+  const parcels = new Map<string, typeof items>();
+  for (const item of items) {
+    const shipment = byId.get(item.bookId)!.shipment_id;
+    const group = !item.fromIncoming ? 'shelf' : shipment === null ? 'incoming' : `shipment:${shipment}`;
+    parcels.set(group, [...(parcels.get(group) ?? []), item]);
+  }
+  const groups = [...parcels].sort(([a],[b])=>a==='shelf'?-1:b==='shelf'?1:a.localeCompare(b));
+  const splitGroup = groups.length>1 ? crypto.randomUUID() : null;
+  // Apply the discount the customer saw to the whole basket, then allocate it
+  // proportionally. Splitting parcels must not silently remove that discount.
+  const gross = items.reduce((n,i)=>n+i.pricePence*i.qty,0);
+  const discounts = groups.map(([,lines])=>Math.floor(discountPence * lines.reduce((n,i)=>n+i.pricePence*i.qty,0) / (gross || 1)));
+  let pennies = discountPence-discounts.reduce((n,d)=>n+d,0);
+  for(let i=0;pennies>0;i=(i+1)%discounts.length,pennies--) discounts[i]++;
 
-  const waitingWhen = waitsForStock
-    ? await (async () => {
-        const row = await env.DB.prepare(
-          `SELECT incoming_vague AS v, incoming_month AS m FROM books WHERE id = ?`,
-        )
-          .bind(items.find((i) => i.fromIncoming)!.bookId)
-          .first<{ v: string | null; m: string | null }>();
-        return whenText(row?.v ?? null, row?.m ?? null);
-      })()
-    : null;
-  const token = randomToken();
-
-  // A ref collision is a 1-in-a-million event, not an error worth surfacing.
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const ref = randomRef();
-    const statements = [
-      env.DB.prepare(
-        `INSERT INTO orders (ref, access_token, customer_name, email, phone,
-                             fulfilment, address, notes, status, subtotal_pence, discount_pence,
-                             expires_at, shipment_id, split_group,
-                             telegram_chat_id, telegram_linked_at,
-                             address_line1, address_line2, address_city,
-                             address_region, address_postcode, address_country,
-                             payment_preference, cash_payment)
-         VALUES (?,?,?,?,?,?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      ).bind(
-        ref,
-        token,
-        input.name,
-        input.email,
-        input.phone ?? null,
-        input.fulfilment,
-        input.address ?? null,
-        input.notes ?? null,
-        subtotalPence,
-        discountPence,
-        expiresAt,
-        /*
-         * Which shipment this order is waiting on, if any.
-         *
-         * Taken from the books rather than from the caller now that an
-         * ordinary basket can carry them: it is what files the order in the
-         * owner's reservations queue instead of among the ones he can pack
-         * this afternoon, and an order holding a shipment line cannot be
-         * packed whatever else is in it. A basket spanning two shipments
-         * records the first - the queue groups by it, and every line is
-         * visible on the order either way.
-         */
-        input.shipmentId ?? shipmentWaitedOn,
-        input.splitGroup ?? null,
-        priorLink?.telegram_chat_id ?? null,
-        priorLink ? Math.floor(Date.now() / 1000) : null,
-        input.addressParts?.line1 ?? null,
-        input.addressParts?.line2 ?? null,
-        input.addressParts?.city ?? null,
-        input.addressParts?.region ?? null,
-        input.addressParts?.postcode ?? null,
-        input.addressParts?.country ?? null,
-        input.paymentPreference ?? null,
-        // Their stated preference pre-sets the owner's tick, so the common case
-        // needs no action. It stays the owner's to change - the two are kept in
-        // separate columns precisely so this is a starting point, not a fact.
-        input.paymentPreference === 'cash' ? 1 : 0,
-      ),
-    ];
-
-    for (const item of items) {
-      statements.push(
-        env.DB.prepare(
-          `INSERT INTO order_items (order_id, book_id, title_snapshot, price_pence_snapshot,
-                                    qty, from_incoming, sale_id, full_price_pence)
-           VALUES ((SELECT id FROM orders WHERE ref = ?), ?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(
-          ref, item.bookId, item.title, item.pricePence, item.qty,
-          item.fromIncoming ? 1 : 0, item.saleId, item.fullPricePence,
-        ),
-      );
-
-      if (item.fromIncoming) {
-        /*
-         * A claim on a delivery. It cannot use `reserved`, which counts copies
-         * held out of `stock` and is bounded by CHECK (reserved <= stock) -
-         * there is nothing on the shelf to hold.
-         *
-         * Safe against two people claiming the last free copy at once for the
-         * same reason shelf stock is: the books_incoming_not_oversold trigger
-         * aborts the statement and D1 rolls the whole batch back. The read
-         * above is for a readable message, not for correctness.
-         *
-         * No ledger row - stock_ledger.field is CHECK (field IN
-         * ('stock','reserved')) and a claim moved neither. Nothing has come
-         * off any shelf yet.
-         */
-        statements.push(
-          env.DB.prepare(
-            `UPDATE books SET reserved_incoming = reserved_incoming + ? WHERE id = ?`,
-          ).bind(item.qty, item.bookId),
-        );
-      } else {
-        statements.push(
-          // If this pushes reserved past stock the CHECK constraint fails, and
-          // for a split set the books_set_not_oversold trigger does the same
-          // when the shared pool of volumes cannot cover it. Either way the
-          // statement errors and D1 rolls the whole batch back. That - not the
-          // read above - is what makes two simultaneous requests for the last
-          // copy safe.
-          env.DB.prepare(`UPDATE books SET reserved = reserved + ? WHERE id = ?`).bind(
-            item.qty,
-            item.bookId,
-          ),
-          env.DB.prepare(
-            `INSERT INTO stock_ledger (book_id, delta, field, reason, order_id)
-             VALUES (?, ?, 'reserved', 'order requested', (SELECT id FROM orders WHERE ref = ?))`,
-          ).bind(item.bookId, item.qty, ref),
-        );
+  for (let attempt=0;attempt<5;attempt++) {
+    const statements: D1PreparedStatement[] = [];
+    const created: CreatedOrder[] = [];
+    const insertPositions: number[] = [];
+    for (const [index,[group,lines]] of groups.entries()) {
+      const ref=randomRef(), token=randomToken();
+      const shipmentId=group.startsWith('shipment:')?Number(group.slice(9)):null;
+      const expiresAt=group==='shelf'?Math.floor(Date.now()/1000)+HOLD_HOURS*3600:null;
+      const lineTotal=lines.reduce((n,i)=>n+i.pricePence*i.qty,0)-discounts[index];
+      const data=JSON.stringify(lines);
+      insertPositions.push(statements.length);
+      statements.push(env.DB.prepare(`INSERT INTO orders
+        (ref,access_token,customer_name,email,phone,fulfilment,address,notes,status,
+         subtotal_pence,discount_pence,expires_at,shipment_id,split_group,telegram_chat_id,telegram_linked_at,
+         address_line1,address_line2,address_city,address_region,address_postcode,address_country,payment_preference,cash_payment)
+        SELECT ?1,?2,?3,?4,?5,?6,?7,?8,'requested',?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23
+        WHERE NOT EXISTS (SELECT 1 FROM json_each(?24) j WHERE NOT EXISTS (
+          SELECT 1 FROM books b WHERE b.id=json_extract(j.value,'$.bookId') AND
+            ((?12 IS NULL AND b.shipment_id IS NULL AND b.status='live') OR
+             (b.shipment_id=?12 AND EXISTS (SELECT 1 FROM shipments WHERE id=b.shipment_id AND status='open')))
+        )) RETURNING id`).bind(ref,token,input.name,input.email,input.phone??null,input.fulfilment,input.address??null,
+          input.notes??null,lineTotal,discounts[index],expiresAt,shipmentId,splitGroup,priorLink?.telegram_chat_id??null,
+          priorLink?Math.floor(Date.now()/1000):null,input.addressParts?.line1??null,input.addressParts?.line2??null,
+          input.addressParts?.city??null,input.addressParts?.region??null,input.addressParts?.postcode??null,
+          input.addressParts?.country??null,input.paymentPreference??null,input.paymentPreference==='cash'?1:0,data));
+      statements.push(env.DB.prepare(`INSERT INTO order_items(order_id,book_id,title_snapshot,price_pence_snapshot,qty,from_incoming,sale_id,full_price_pence)
+        SELECT (SELECT id FROM orders WHERE ref=?1),json_extract(value,'$.bookId'),json_extract(value,'$.title'),
+          json_extract(value,'$.pricePence'),json_extract(value,'$.qty'),json_extract(value,'$.fromIncoming'),
+          json_extract(value,'$.saleId'),json_extract(value,'$.fullPricePence') FROM json_each(?2)`).bind(ref,data));
+      statements.push(env.DB.prepare(`UPDATE books SET
+        reserved=reserved+COALESCE((SELECT SUM(qty) FROM order_items WHERE order_id=(SELECT id FROM orders WHERE ref=?1) AND book_id=books.id AND from_incoming=0),0),
+        reserved_incoming=reserved_incoming+COALESCE((SELECT SUM(qty) FROM order_items WHERE order_id=(SELECT id FROM orders WHERE ref=?1) AND book_id=books.id AND from_incoming=1),0)
+        WHERE id IN (SELECT book_id FROM order_items WHERE order_id=(SELECT id FROM orders WHERE ref=?1))`).bind(ref));
+      statements.push(env.DB.prepare(`INSERT INTO stock_ledger(book_id,delta,field,reason,order_id)
+        SELECT book_id,qty,'reserved','order requested',order_id FROM order_items
+        WHERE order_id=(SELECT id FROM orders WHERE ref=?) AND from_incoming=0`).bind(ref));
+      created.push({id:0,ref,token,subtotalPence:lineTotal,expiresAt,waitingWhen:null,
+        telegramChatId:priorLink?.telegram_chat_id??null,items:lines});
+    }
+    // This read only supplies wording; order creation and every hold commit as
+    // one batch. There is no compensating cancellation that can itself fail.
+    for(const made of created) {
+      const incoming=made.items.find(i=>i.fromIncoming);
+      if(incoming) {
+        const date=await env.DB.prepare('SELECT incoming_vague AS v,incoming_month AS m FROM books WHERE id=?')
+          .bind(incoming.bookId).first<{v:string|null;m:string|null}>();
+        made.waitingWhen=whenText(date?.v??null,date?.m??null);
       }
     }
-
     try {
-      await env.DB.batch(statements);
-      /* Read back rather than guessed at: the insert above is one of several
-         statements in a batch, so there is no lastRowId to trust. */
-      const made = await env.DB.prepare('SELECT id FROM orders WHERE ref = ?')
-        .bind(ref)
-        .first<{ id: number }>();
-      return {
-        id: made?.id ?? 0,
-        ref,
-        token,
-        subtotalPence,
-        expiresAt,
-        waitingWhen,
-        telegramChatId: priorLink?.telegram_chat_id ?? null,
-        items,
-      };
-    } catch (err) {
-      const message = String(err);
-      if (message.includes('orders.ref') || message.includes('UNIQUE')) continue; // ref clash, retry
-      if (message.includes('reserved <= stock') || message.includes('set pool oversold')) {
-        // Someone took the last copy between the read and the write.
-        throw new StockConflict(
-          items.map((i) => ({ bookId: i.bookId, title: i.title, wanted: i.qty, available: -1 })),
-        );
+      const result=await env.DB.batch(statements);
+      created.forEach((made,i)=>{made.id=(result[insertPositions[i]].results[0] as {id:number}).id;});
+      return created;
+    } catch(err) {
+      const message=String(err);
+      if(message.includes('orders.ref')) continue;
+      if(/reserved <= stock|set pool oversold|more copies claimed|shipment is not open|order_items.order_id/.test(message)) {
+        throw new StockConflict(items.map(i=>({bookId:i.bookId,title:i.title,wanted:i.qty,available:-1})));
       }
       throw err;
     }
   }
-
   throw new Error('Could not allocate an order reference');
 }
 

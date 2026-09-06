@@ -72,9 +72,6 @@ const marks = (book.cat_slugs ?? '')
           <img
             src={img}
             alt={book.title}
-            {/* The box's own size, not the stored image's: an owner-uploaded
-                photo has no stored dimensions at all, which is what used to
-                shift the grid as it loaded. */}
             width={IMAGE_PRESETS.card.width}
             height={IMAGE_PRESETS.card.height}
             loading={eager ? 'eager' : 'lazy'}

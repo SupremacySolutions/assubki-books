@@ -7,6 +7,7 @@ import { env } from 'cloudflare:workers';
 import type { BookLanguage } from './db';
 
 export interface AdminOrderRow {
+  unread_for_owner: number;
   id: number;
   ref: string;
   access_token: string;
@@ -53,6 +54,7 @@ export interface AdminOrderRow {
 }
 
 export interface AdminOrderItem {
+  from_incoming: number;
   book_id: number | null;
   title_snapshot: string;
   price_pence_snapshot: number;
@@ -128,7 +130,7 @@ export async function getOrderByRef(ref: string): Promise<AdminOrderRow | null> 
 
 export async function getOrderItems(orderId: number): Promise<AdminOrderItem[]> {
   const { results } = await env.DB.prepare(
-    `SELECT oi.book_id, oi.title_snapshot, oi.price_pence_snapshot, oi.qty, b.slug
+    `SELECT oi.from_incoming, oi.book_id, oi.title_snapshot, oi.price_pence_snapshot, oi.qty, b.slug
        FROM order_items oi LEFT JOIN books b ON b.id = oi.book_id
       WHERE oi.order_id = ?`,
   )
@@ -416,6 +418,17 @@ export async function bookFilterCounts(): Promise<Record<BookFilter, number>> {
 }
 
 export interface AdminBookDetail extends AdminBookRow {
+  delivery_version: number;
+  incoming: number;
+  reserved_incoming: number;
+  incoming_vague: string | null;
+  incoming_month: string | null;
+  volumes: number | null;
+  isbn: string | null;
+  set_id: number | null;
+  set_from: number | null;
+  set_to: number | null;
+  telegram_note: string | null;
   description_html: string | null;
   updated_at: number;
   telegram_posted_at: number | null;

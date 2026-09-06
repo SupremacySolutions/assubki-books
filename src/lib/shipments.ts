@@ -30,6 +30,7 @@ export interface Shipment {
   created_at: number;
   opened_at: number | null;
   arrived_at: number | null;
+  delivery_version: number;
   /** How many books are on it, and how many copies are spoken for. */
   items: number;
   copies: number;
@@ -227,38 +228,18 @@ export async function importLines(
   const usable = lines.filter((l) => l.title && l.pricePence !== null);
   if (!usable.length) return 0;
 
-  const statements = usable.map((line, i) => {
-    const script = line.script;
-    /*
-     * The script title goes in `title` as well as its own column. `title` is
-     * NOT NULL and is what the portal lists, and leaving `title_ar`/`title_ur`
-     * empty would make the generated `language` column call an Arabic book
-     * English - and being generated, it cannot be corrected except at source.
-     */
-    const titleAr = script === 'arabic' ? line.title : null;
-    const titleUr = script === 'urdu' ? line.title : null;
-    return env.DB.prepare(
-      `INSERT INTO books
-         (slug, title, title_ar, title_ur, price_pence, volumes, stock, reserved,
-          status, incoming, reserved_incoming, incoming_vague, incoming_month,
-          shipment_id, shipment_sort)
-       VALUES (?,?,?,?,?,?,0,0,'draft',?,0,?,?,?,?)`,
-    ).bind(
-      `sh${shipmentId}-${i + 1}`,
-      line.title,
-      titleAr,
-      titleUr,
-      line.pricePence,
-      line.volumes,
-      line.stock ?? 0,
-      when.month ? when.vague : null,
-      when.month,
-      shipmentId,
-      line.index ?? i + 1,
-    );
-  });
-
-  await env.DB.batch(statements);
+  const data=JSON.stringify(usable.map((line,i)=>({
+    slug:`sh${shipmentId}-${i+1}`,title:line.title,
+    ar:line.script==='arabic'?line.title:null,ur:line.script==='urdu'?line.title:null,
+    price:line.pricePence,volumes:line.volumes,incoming:line.stock??0,sort:line.index??i+1,
+  })));
+  await env.DB.prepare(`INSERT INTO books
+    (slug,title,title_ar,title_ur,price_pence,volumes,stock,reserved,status,incoming,reserved_incoming,
+     incoming_vague,incoming_month,shipment_id,shipment_sort)
+    SELECT json_extract(value,'$.slug'),json_extract(value,'$.title'),json_extract(value,'$.ar'),
+      json_extract(value,'$.ur'),json_extract(value,'$.price'),json_extract(value,'$.volumes'),0,0,'draft',
+      json_extract(value,'$.incoming'),0,?2,?3,?4,json_extract(value,'$.sort') FROM json_each(?1)`)
+    .bind(data,when.month?when.vague:null,when.month,shipmentId).run();
   return usable.length;
 }
 

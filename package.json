@@ -18,7 +18,8 @@
     "test:e2e": "node --experimental-strip-types --no-warnings scripts/e2e.mjs",
     "test:e2e:prod": "node --experimental-strip-types --no-warnings scripts/e2e.mjs --prod",
     "typecheck": "astro check --minimumSeverity error",
-    "deploy:sweep": "wrangler deploy -c workers/expire-holds/wrangler.jsonc"
+    "deploy:sweep": "wrangler deploy -c workers/expire-holds/wrangler.jsonc",
+    "test:reservations": "node scripts/test-reservations.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.2.5",
@@ -36,6 +37,7 @@
     "onnxruntime-web": "^1.29.0",
     "sharp": "^0.35.4",
     "typescript": "^5.9.3",
-    "wrangler": "^4.127.0"
+    "wrangler": "^4.127.0",
+    "esbuild": "0.28.2"
   }
 }

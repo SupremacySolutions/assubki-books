@@ -78,7 +78,7 @@ if (root) {
     checking = true;
     try {
       const res = await fetch(`/api/orders/status?${params()}`);
-      const data = await res.json();
+      const data = await res.json() as {status?:string;messages?:Incoming[]};
 
       // A status move rewrites the whole page - the journey bar, the payment
       // panel, what the customer is being asked to do - so it is a reload
@@ -194,7 +194,7 @@ if (root) {
       const p = document.createElement('p');
       p.className = 'text-[14.5px] leading-relaxed whitespace-pre-line break-words';
       p.textContent = message.body;
-      box.append(p);
+      box.appendChild(p);
     }
 
     if (message.image_key) {
@@ -210,15 +210,15 @@ if (root) {
       img.src = href;
       img.alt = 'Photo sent with this message';
       img.className = 'rounded-[8px] max-h-64 w-auto';
-      link.append(img);
-      box.append(link);
+      link.appendChild(img);
+      box.appendChild(link);
     }
 
     if (!message.image_key && message.had_image === 1) {
       const gone = document.createElement('p');
       gone.className = `text-[13px] italic opacity-75${message.body ? ' mt-1.5' : ''}`;
       gone.textContent = 'Photo removed - this order closed over six months ago.';
-      box.append(gone);
+      box.appendChild(gone);
     }
 
     const stamp = document.createElement('p');
@@ -226,9 +226,9 @@ if (root) {
       ours ? 'text-white/65' : 'text-[var(--color-ink-faint)]'
     }`;
     stamp.textContent = when(message.created_at) + (message.via === 'telegram' ? ' · via Telegram' : '');
-    box.append(stamp);
+    box.appendChild(stamp);
 
-    item.append(box);
+    item.appendChild(box);
     return item;
   }
 
@@ -237,7 +237,7 @@ if (root) {
     const target = ensureList();
     if (!target) return;
     if (target.querySelector(`[data-message-id="${message.id}"]`)) return;
-    target.append(bubble(message));
+    target.appendChild(bubble(message));
     target.scrollTop = target.scrollHeight;
   }
 
@@ -256,7 +256,7 @@ if (root) {
     const made = document.createElement('ol');
     made.className = 'max-h-[26rem] overflow-y-auto p-4 space-y-3';
     made.setAttribute('data-thread-list', '');
-    panel.prepend(made);
+    panel.insertBefore(made,panel.firstChild);
     return made;
   }
 
@@ -384,7 +384,7 @@ if (root) {
         headers: { Accept: 'application/json' },
         body: data,
       });
-      const result = await res.json().catch(() => null);
+      const result = await res.json().catch(() => null) as {ok?:boolean;error?:string;message:Incoming}|null;
 
       if (!res.ok || !result?.ok) {
         /*

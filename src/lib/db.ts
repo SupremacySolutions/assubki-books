@@ -23,6 +23,8 @@ export interface CategoryNode extends Category {
 }
 
 export interface BookRow {
+  publisher?: string | null;
+  description_html?: string | null;
   id: number;
   slug: string;
   title: string;
@@ -328,6 +330,7 @@ export interface ListOptions {
    * were not asked for.
    */
   withTotal?: boolean;
+  withDetails?: boolean;
   sort?: Sort;
   page?: number;
   perPage?: number;
@@ -348,7 +351,7 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   const page = Math.max(1, opts.page ?? 1);
   const where: string[] = [`b.status = 'live'`];
   const binds: unknown[] = [];
-  let from = BOOK_SELECT;
+  let from = opts.withDetails ? BOOK_SELECT.replace('SELECT b.id,', 'SELECT b.publisher, b.description_html, b.id,') : BOOK_SELECT;
 
   const match = opts.q ? ftsQuery(opts.q) : null;
   if (match) {
@@ -920,12 +923,8 @@ export async function booksByIds(ids: number[]): Promise<BookRow[]> {
      * now goes through both: a customer adds a book they can have today and a
      * book still at sea the same way, and the shop works out which is which.
      *
-     * A mixed basket is safe because the order machinery already handles it,
-     * and did long before shipments existed - a line the shelf cannot cover
-     * has always become a claim. `createOrder` gives any order carrying a
-     * claim no 48-hour clock, so the shelf half is not released out from under
-     * the half still coming, and the confirmation already has wording for an
-     * order that goes out in one parcel once everything is in.
+     * Checkout separates shelf stock and each incoming shipment into orders,
+     * with a 48-hour hold only for the shelf order.
      *
      * The condition is written out rather than loosened. A draft with no
      * shipment stays unbuyable, and so does one whose shipment has arrived or
@@ -934,7 +933,7 @@ export async function booksByIds(ids: number[]): Promise<BookRow[]> {
      */
     .prepare(
       `${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND (
-         b.status = 'live'
+         (b.status = 'live' AND b.shipment_id IS NULL)
          OR EXISTS (SELECT 1 FROM shipments s
                      WHERE s.id = b.shipment_id AND s.status = 'open')
        )`,

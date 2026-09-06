@@ -2885,6 +2885,7 @@ async function integrity() {
   );
   await admin(`/api/admin/orders/${claimPaid.ref}/confirm`, { postage: '0', message: 'Pay please' });
   await admin(`/api/admin/orders/${claimPaid.ref}/status`, { status: 'paid' });
+  t.ok((await one(`SELECT status FROM orders WHERE ref='${claimPaid.ref}'`)).status === 'requested', 'payment is refused while a reservation is still incoming');
   const afterPay = await one(
     `SELECT stock AS s, reserved AS r, reserved_incoming AS ri FROM books WHERE id = ${payClaim.id}`,
   );
@@ -2919,7 +2920,7 @@ async function integrity() {
   // A short delivery fills the oldest claims and leaves the rest waiting.
   const claimB = await placeOrder(rb.id, 'collection');
   await db(`UPDATE books SET reserved_incoming = 2 WHERE id = ${rb.id}`);
-  await admin(`/api/admin/books/${rb.id}/arrived`, { arrived: '1' });
+  await admin(`/api/admin/books/${rb.id}/arrived`, { arrived: '1', receipt_key: crypto.randomUUID(), delivery_version: '0' });
   const afterArrival = await one(
     `SELECT stock AS s, reserved AS r, incoming AS inc, reserved_incoming AS ri
        FROM books WHERE id = ${rb.id}`,
@@ -4784,11 +4785,13 @@ async function shipments() {
   // Arrival.
   /* Two orders hold claims on this shipment by now: the reservation above and
      the mixed basket just after it. Both are told. */
-  const arrived = await admin(`/api/admin/shipments/${sid}/arrived`);
+  const receipt = {receipt_key: crypto.randomUUID(), delivery_version: '0',
+    ...Object.fromEntries(rows.map(r=>[`received_${r.id}`,'2']))};
+  const arrived = await admin(`/api/admin/shipments/${sid}/arrived`,receipt);
   t.ok(arrived.location.includes('arrived=2'),
     'the shipment can be marked as arrived, telling everyone who claimed from it');
-  const again = await admin(`/api/admin/shipments/${sid}/arrived`);
-  t.ok(decodeURIComponent(again.location).includes('not open'),
+  const again = await admin(`/api/admin/shipments/${sid}/arrived`,receipt);
+  t.ok(again.location.includes('arrived=2'),
     'and a second press does nothing, rather than doubling the shelf');
 
   const settled = await one(`SELECT stock, reserved, incoming, reserved_incoming AS ri
@@ -4804,6 +4807,35 @@ async function shipments() {
   t.ok((await one(`SELECT COUNT(*) AS n FROM shipment_notices WHERE shipment_id=${sid} AND sent_at IS NULL`)).n === 2,
     'both customers queued to be told, rather than written to inside the request');
 
+  /*
+   * A notice that keeps failing has to be visible.
+   *
+   * A reservation is deliberately not expired while its notice is unsent, and
+   * the retry backs off and tries again indefinitely rather than giving up.
+   * Together that means one unreachable address holds its copies for ever -
+   * right, because it is the shop's failure and not the customer's, but only
+   * defensible if the owner can see it happening.
+   */
+  const aNotice = await one(
+    `SELECT id FROM shipment_notices WHERE shipment_id=${sid} AND sent_at IS NULL LIMIT 1`);
+  await db(`UPDATE shipment_notices SET attempts=4, last_error='550 mailbox unavailable'
+              WHERE id=${aNotice.id}`);
+  const stuckPage = await html(`/admin/shipments/${sid}`);
+  t.ok(/not been reachable/.test(stuckPage),
+    'the shipment page says a customer could not be told');
+  t.ok(stuckPage.includes('550 mailbox unavailable'),
+    'and what the provider actually said');
+  t.ok(/not been told/.test(await html('/admin')),
+    'and the dashboard says it too, since nobody opens a shipment page for weeks');
+  const stillSafe = await db(`SELECT o.id FROM orders o
+     WHERE o.pay_by IS NOT NULL AND o.pay_by <= unixepoch()
+       AND NOT EXISTS (SELECT 1 FROM order_items x WHERE x.order_id=o.id AND x.from_incoming=1)
+       AND NOT EXISTS (SELECT 1 FROM shipment_notices n
+                        WHERE n.order_id=o.id AND n.sent_at IS NULL)`);
+  t.ok(!stillSafe.some((r) => r.id === order.id),
+    'while the sweep still refuses to expire somebody nobody managed to tell');
+  await db(`UPDATE shipment_notices SET attempts=0, last_error=NULL WHERE id=${aNotice.id}`);
+
   // Closed to new reservations, still readable.
   const after = await html(`/shipments/${sid}`);
   t.ok(after.includes(rows[0].title), 'an arrived shipment stays readable');
@@ -4816,14 +4848,9 @@ async function shipments() {
    * awaiting_payment still carries the stale 48-hour value it was created with,
    * so sweeping that column would expire every live confirmed order in the shop.
    */
-  const atRisk = await one(
-    `SELECT COUNT(*) AS n FROM orders
-      WHERE status = 'awaiting_payment' AND expires_at IS NOT NULL
-        AND expires_at <= unixepoch() AND pay_by IS NULL`);
-  t.ok(atRisk.n === 0 || true,
-    `orders a naive expires_at sweep would have taken: ${atRisk.n}`);
-  t.ok((await one(`SELECT COUNT(*) AS n FROM orders WHERE pay_by IS NOT NULL AND shipment_id IS NULL`)).n === 0,
-    'nothing outside a shipment carries a reply deadline');
+  t.ok((await one(`SELECT COUNT(*) AS n FROM orders o WHERE pay_by IS NOT NULL
+    AND EXISTS (SELECT 1 FROM order_items WHERE order_id=o.id AND from_incoming=1)`)).n === 0,
+    'a reply deadline only starts once every reserved line has arrived');
 
   await db(`UPDATE orders SET pay_by = unixepoch() - 60 WHERE id = ${order.id}`);
   const swept = await db(

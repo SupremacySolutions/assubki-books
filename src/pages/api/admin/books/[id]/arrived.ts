@@ -1,51 +1,28 @@
 import type { APIRoute } from 'astro';
 import { forgetHomeRows } from '../../../../../lib/db';
+import { forgetDashboard } from '../../../../../lib/dashboard';
 import { tellWaiting } from '../../../../../lib/stock-alerts';
-import { fillClaims, startPaymentWindow } from '../../../../../lib/arrival';
+import { fillClaims, ReceiptConflict } from '../../../../../lib/arrival';
 
 export const prerender = false;
-
-/**
- * A delivery has come in, for one listing.
- *
- * The work itself lives in `lib/arrival.ts`, because a whole shipment landing
- * has to do exactly the same thing sixty times and two implementations of
- * "first promised, first served" would eventually disagree.
- */
 export const POST: APIRoute = async ({ params, request }) => {
-  const bookId = Number.parseInt(params.id ?? '', 10);
-  if (!Number.isInteger(bookId)) return new Response('Bad request', { status: 400 });
-
+  const bookId = Number(params.id);
   const form = await request.formData();
-  const arrived = Math.max(0, Math.min(999, Math.round(Number(form.get('arrived')) || 0)));
-  const back = new Response(null, {
-    status: 302,
-    headers: { Location: `/admin/books/${bookId}?arrived=1` },
-  });
-  if (arrived === 0) return back;
-
-  const { orderIds } = await fillClaims(bookId, arrived);
-
-  /*
-   * The seven days start here too, not only for a shipment.
-   *
-   * The promise is the same either way - a reservation stands until the books
-   * land, and then there is a week to answer - so a copy promised through the
-   * per-book form should not be held forever while one promised through a
-   * shipment is not.
-   */
-  await startPaymentWindow(orderIds);
-
-  // A landed delivery is exactly what takes a book out of the arriving row.
+  const arrived = Number(form.get('arrived'));
+  const key = String(form.get('receipt_key') ?? '');
+  const version = Number(form.get('delivery_version'));
+  if (!Number.isSafeInteger(bookId) || !Number.isSafeInteger(arrived) || arrived<1 || arrived>999 ||
+      !/^[\w-]{16,80}$/.test(key) || !form.has('delivery_version') || !Number.isSafeInteger(version)) {
+    return new Response('Reload the listing and enter the number received.', {status:400});
+  }
+  try {
+    await fillClaims(bookId,arrived,key,version);
+  } catch (err) {
+    if (!(err instanceof ReceiptConflict)) throw err;
+    return new Response(err.message,{status:409});
+  }
   forgetHomeRows();
-
-  /*
-   * Anybody who asked to be told is told now, at the end, when availability
-   * has settled - a delivery raises stock and then hands copies to the people
-   * who reserved them, so a check half way through would announce copies that
-   * were already spoken for.
-   */
-  await tellWaiting(bookId, new URL(request.url).origin);
-
-  return back;
+  forgetDashboard();
+  await tellWaiting(bookId,new URL(request.url).origin);
+  return new Response(null,{status:302,headers:{Location:`/admin/books/${bookId}?arrived=1`}});
 };

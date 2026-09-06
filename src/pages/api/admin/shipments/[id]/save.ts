@@ -2,63 +2,63 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 
 export const prerender = false;
-
-/**
- * The owner's corrections to a pasted shipment.
- *
- * Every row arrives at once, keyed by book id, and only rows that belong to
- * this shipment are touched - a forged `row_<id>` for somebody else's listing
- * reaches nothing, because the WHERE names the shipment as well as the row.
- *
- * A row the owner emptied the title of is deleted rather than saved blank: on
- * a pasted list, clearing a line is how you say the parser invented it.
- */
 export const POST: APIRoute = async ({ params, request }) => {
-  const shipmentId = Number.parseInt(params.id ?? '', 10);
-  if (!Number.isInteger(shipmentId)) return new Response('Bad request', { status: 400 });
-
+  const shipmentId = Number(params.id);
+  if (!Number.isSafeInteger(shipmentId)) return new Response('Bad request', { status: 400 });
   const form = await request.formData();
-  const ids = form.getAll('row').map((v) => Number(v)).filter(Number.isInteger);
-
-  const statements = [];
-  for (const id of ids) {
-    const title = String(form.get(`title_${id}`) ?? '').trim().slice(0, 200);
-    const price = Math.max(0, Math.round(Number(form.get(`price_${id}`)) * 100 || 0));
-    const copies = Math.max(0, Math.min(999, Math.round(Number(form.get(`incoming_${id}`)) || 0)));
-    const volumesRaw = Math.round(Number(form.get(`volumes_${id}`)) || 0);
-    const volumes = volumesRaw > 1 ? Math.min(200, volumesRaw) : null;
-    const script = String(form.get(`script_${id}`) ?? 'arabic');
-
-    if (!title) {
-      statements.push(
-        env.DB.prepare('DELETE FROM books WHERE id = ? AND shipment_id = ?').bind(id, shipmentId),
-      );
-      continue;
-    }
-
-    /*
-     * `incoming` is floored at what customers have already claimed, the same
-     * way stock is floored at `reserved`. Lowering it below that would strand
-     * people holding a promise the shop has quietly withdrawn.
-     */
-    statements.push(
-      env.DB.prepare(
-        `UPDATE books
-            SET title = ?,
-                title_ar = CASE WHEN ? = 'arabic' THEN ? ELSE NULL END,
-                title_ur = CASE WHEN ? = 'urdu'   THEN ? ELSE NULL END,
-                price_pence = ?, volumes = ?,
-                incoming = MAX(?, reserved_incoming),
-                updated_at = unixepoch()
-          WHERE id = ? AND shipment_id = ?`,
-      ).bind(title, script, title, script, title, price, volumes, copies, id, shipmentId),
-    );
-  }
-
-  if (statements.length) await env.DB.batch(statements);
-
-  return new Response(null, {
-    status: 302,
-    headers: { Location: `/admin/shipments/${shipmentId}?saved=1` },
-  });
+  const rows = form
+    .getAll('row')
+    .map((v) => Number(v))
+    .filter(Number.isSafeInteger)
+    .map((id) => ({
+      id,
+      title: String(form.get(`title_${id}`) ?? '')
+        .trim()
+        .slice(0, 200),
+      price: Math.max(0, Math.round(Number(form.get(`price_${id}`)) * 100 || 0)),
+      incoming: Math.max(0, Math.min(999, Math.round(Number(form.get(`incoming_${id}`)) || 0))),
+      volumes: Math.max(0, Math.min(200, Math.round(Number(form.get(`volumes_${id}`)) || 0))),
+      script: String(form.get(`script_${id}`) ?? 'arabic'),
+    }));
+  const current = await env.DB.prepare('SELECT status FROM shipments WHERE id=?')
+    .bind(shipmentId)
+    .first<{ status: string }>();
+  const back = (query: string) =>
+    new Response(null, {
+      status: 302,
+      headers: { Location: `/admin/shipments/${shipmentId}${query}` },
+    });
+  if (!current || !['draft', 'open'].includes(current.status))
+    return back('?e=This+shipment+is+no+longer+editable');
+  if (current.status === 'open' && rows.some((r) => !r.title || r.price <= 0))
+    return back('?e=Open+shipment+titles+must+keep+a+title+and+positive+price');
+  if (
+    rows.some(
+      (r) => !Number.isSafeInteger(r.price) || !['arabic', 'urdu', 'english'].includes(r.script),
+    )
+  )
+    return back('?e=Invalid+price+or+language');
+  const data = JSON.stringify(rows);
+  await env.DB.batch([
+    env.DB.prepare(
+      `DELETE FROM books WHERE shipment_id=?1
+      AND id IN (SELECT json_extract(value,'$.id') FROM json_each(?2) WHERE json_extract(value,'$.title')='')
+      AND EXISTS (SELECT 1 FROM shipments WHERE id=?1 AND status='draft')
+      AND NOT EXISTS (SELECT 1 FROM order_items WHERE book_id=books.id)`,
+    ).bind(shipmentId, data),
+    env.DB.prepare(
+      `UPDATE books SET
+      title=json_extract(j.value,'$.title'),
+      title_ar=CASE WHEN json_extract(j.value,'$.script')='arabic' THEN json_extract(j.value,'$.title') ELSE NULL END,
+      title_ur=CASE WHEN json_extract(j.value,'$.script')='urdu' THEN json_extract(j.value,'$.title') ELSE NULL END,
+      price_pence=json_extract(j.value,'$.price'),
+      volumes=CASE WHEN json_extract(j.value,'$.volumes')>1 THEN json_extract(j.value,'$.volumes') ELSE NULL END,
+      incoming=MAX(json_extract(j.value,'$.incoming'),reserved_incoming),updated_at=unixepoch()
+      FROM json_each(?2) j WHERE books.id=json_extract(j.value,'$.id') AND books.shipment_id=?1
+        AND json_extract(j.value,'$.title')!=''
+        AND EXISTS (SELECT 1 FROM shipments WHERE id=?1 AND
+          (status='draft' OR (status='open' AND json_extract(j.value,'$.price')>0)))`,
+    ).bind(shipmentId, data),
+  ]);
+  return back('?saved=1');
 };

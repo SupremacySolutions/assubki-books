@@ -2,7 +2,7 @@
 import Admin from '../../../layouts/Admin.astro';
 import { env } from 'cloudflare:workers';
 import { getShipment, shipmentItems } from '../../../lib/shipments';
-import { pendingNotices } from '../../../lib/shipment-notify';
+import { pendingNotices, stuckNotices } from '../../../lib/shipment-notify';
 import { VAGUE, monthOptions, whenText } from '../../../lib/incoming';
 
 const id = Number.parseInt(Astro.params.id ?? '', 10);
@@ -18,12 +18,26 @@ const opened = params.get('opened');
 const error = params.get('e');
 
 const isDraft = shipment.status === 'draft';
+const editable = isDraft || shipment.status === 'open';
+const receiptKey = crypto.randomUUID();
 const arrivedCount = Number(params.get('arrived') ?? -1);
 // What is still waiting to go out, so the owner can see the queue draining
 // rather than wondering whether anything happened.
 const waitingToSend = shipment.status === 'arrived'
   ? await pendingNotices(env.DB, id)
   : 0;
+
+/*
+ * The ones that are not merely queued but failing.
+ *
+ * A reservation is not expired while its notice is unsent, and the retry keeps
+ * going indefinitely, so a customer who cannot be reached holds their copies
+ * for ever. That is the right default - it is the shop's fault, not theirs -
+ * but it has to be visible or the stock is simply gone.
+ */
+const stuck = shipment.status === 'arrived'
+  ? await stuckNotices(env.DB, id)
+  : { orders: 0, lastError: null };
 const money = (pence: number) => (pence / 100).toFixed(2);
 
 /*
@@ -41,7 +55,7 @@ const listed = params.get('listed');
  * nothing to sell, and offering to list it would be offering to sell a book
  * that is already somebody else's.
  */
-const spare = (i: typeof items[number]) => i.stock - i.reserved_incoming - i.reserved;
+const spare = (i: typeof items[number]) => i.incoming > 0 ? 0 : i.stock - i.reserved;
 
 /*
  * The rows are wrapped in the save form only while the shipment is a draft.
@@ -50,7 +64,7 @@ const spare = (i: typeof items[number]) => i.stock - i.reserved_incoming - i.res
  * copies, and a form inside a form is invalid HTML - the browser drops the
  * inner one silently, so the button would render and do nothing.
  */
-const Rows = isDraft ? 'form' : 'div';
+const Rows = editable ? 'form' : 'div';
 
 /*
  * The months on offer.
@@ -117,6 +131,27 @@ const holes = items.filter(incomplete).length;
         : ` ${arrivedCount} ${arrivedCount === 1 ? 'customer is' : 'customers are'} being told — they have seven days to reply.`}
     </p>
   )}
+  {stuck.orders > 0 && (
+    <div class="mb-4 p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14px] leading-relaxed max-w-[46rem]">
+      <p class="text-[var(--color-outstock)]">
+        {stuck.orders} {stuck.orders === 1 ? 'customer has' : 'customers have'} not been
+        reachable. {stuck.orders === 1 ? 'Their copies stay' : 'Their copies stay'} reserved
+        and {stuck.orders === 1 ? 'their reservation will not' : 'their reservations will not'}
+        {' '}lapse — nobody loses books over a message the shop failed to send.
+      </p>
+      {stuck.lastError && (
+        <p class="mt-1.5 text-[13px] text-[var(--color-ink-soft)]">
+          Last error: {stuck.lastError}
+        </p>
+      )}
+      <p class="mt-1.5 text-[13px] text-[var(--color-ink-soft)]">
+        It keeps retrying. If it never gets through, reach them yourself from
+        {' '}<a href="/admin/orders?kind=reservations" class="underline">the reservations queue</a>
+        {' '}— or cancel the order there to put the copies back on the shelf.
+      </p>
+    </div>
+  )}
+
   {waitingToSend > 0 && (
     <p class="mb-4 text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
       {waitingToSend} {waitingToSend === 1 ? 'customer has' : 'customers have'} still
@@ -212,8 +247,7 @@ const holes = items.filter(incomplete).length;
 
     {shipment.status === 'open' && (
       <span class="text-[13px] text-[var(--color-ink-faint)]">
-        Correct the copy counts before marking it arrived — that is what customers
-        are given.
+        Expected counts describe what is still coming. Record the actual copies received below when a delivery lands.
       </span>
     )}
     {isDraft && (
@@ -224,13 +258,6 @@ const holes = items.filter(incomplete).length;
           disabled={holes > 0 || items.length === 0}
         >
           Open for reservations
-        </button>
-      </form>
-    )}
-    {shipment.status === 'open' && (
-      <form method="post" action={`/api/admin/shipments/${id}/arrived`} data-confirm="Mark this shipment as arrived? The copies go on the shelf, everyone who reserved is told, and their seven days start.">
-        <button type="submit" class="btn btn-primary !py-1.5 !text-[13.5px]">
-          The shipment has arrived
         </button>
       </form>
     )}
@@ -272,11 +299,29 @@ const holes = items.filter(incomplete).length;
     </p>
   )}
 
+  {!isDraft && items.some(i=>i.incoming>0) && (
+    <section class="my-6 p-5 bg-white border border-[var(--color-rule)] rounded-[var(--radius-panel)]">
+      <h2 class="text-[20px]">Record a delivery</h2>
+      <p class="mt-2 text-[14px] text-[var(--color-ink-soft)]">Enter the copies actually received. Use zero for missing titles. Short deliveries keep the remaining reservations waiting; customers are contacted once all their copies are here.</p>
+      <form method="post" action={`/api/admin/shipments/${id}/arrived`} class="mt-4 grid gap-3" data-confirm="Record these received quantities? Available copies will be set aside for reservations.">
+        <input type="hidden" name="receipt_key" value={receiptKey} />
+        <input type="hidden" name="delivery_version" value={shipment.delivery_version} />
+        {items.map(i=>(
+          <label class="flex items-center justify-between gap-4 text-[14px]">
+            <span dir="auto">{i.title}<span class="block text-[12px] text-[var(--color-ink-faint)]">{i.incoming} still expected · {i.reserved_incoming} reserved</span></span>
+            <input class="field !w-24" type="number" name={`received_${i.id}`} min="0" max="999" step="1" required value={i.incoming} aria-label={`Copies received: ${i.title}`} />
+          </label>
+        ))}
+        <button class="btn btn-primary justify-self-start mt-2" type="submit">Record received copies</button>
+      </form>
+    </section>
+  )}
+
   {items.length === 0 ? (
     <p class="text-[15px] text-[var(--color-ink-soft)]">Nothing on this shipment.</p>
   ) : (
     <Rows
-      {...(isDraft
+      {...(editable
         ? { method: 'post', action: `/api/admin/shipments/${id}/save` }
         : {})}
       class="grid gap-2"
@@ -297,6 +342,7 @@ const holes = items.filter(incomplete).length;
               id={`title_${i.id}`}
               name={`title_${i.id}`}
               value={i.title}
+              readonly={!editable}
               maxlength="200"
               dir="auto"
               class="field ar !text-[14px]"
@@ -312,6 +358,7 @@ const holes = items.filter(incomplete).length;
               type="number"
               step="0.01"
               min="0"
+              readonly={!editable}
               value={money(i.price_pence)}
               class="field !text-[14px]"
             />
@@ -326,6 +373,7 @@ const holes = items.filter(incomplete).length;
               type="number"
               min="0"
               max="200"
+              readonly={!editable}
               value={i.volumes ?? ''}
               class="field !text-[14px]"
             />
@@ -340,6 +388,7 @@ const holes = items.filter(incomplete).length;
               type="number"
               min={i.reserved_incoming}
               max="999"
+              readonly={!editable}
               value={i.incoming}
               class="field !text-[14px]"
             />
@@ -348,7 +397,8 @@ const holes = items.filter(incomplete).length;
             <label for={`script_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
               Language
             </label>
-            <select id={`script_${i.id}`} name={`script_${i.id}`} class="field !text-[14px]">
+            <select id={`script_${i.id}`} name={`script_${i.id}`} disabled={!editable} class="field !text-[14px]">
+              <option value="english" selected={!i.title_ar && !i.title_ur}>English</option>
               <option value="arabic" selected={Boolean(i.title_ar)}>Arabic</option>
               <option value="urdu" selected={Boolean(i.title_ur)}>Urdu</option>
             </select>
@@ -368,7 +418,7 @@ const holes = items.filter(incomplete).length;
             * part of the row above, since it posts somewhere else and does
             * something that cannot be undone by editing a field back.
             */}
-          {shipment.status === 'arrived' && spare(i) > 0 && (
+          {['arrived','closed'].includes(shipment.status) && spare(i) > 0 && (
             <form
               method="post"
               action={`/api/admin/shipments/${id}/promote`}
@@ -384,19 +434,21 @@ const holes = items.filter(incomplete).length;
               </span>
             </form>
           )}
-          {shipment.status === 'arrived' && spare(i) <= 0 && (
+          {['arrived','closed'].includes(shipment.status) && !(spare(i) > 0) && (
             <p class="sm:col-span-5 text-[12.5px] text-[var(--color-ink-faint)]">
-              Every copy is spoken for, so there is nothing to list.
+              {i.incoming > 0
+                ? 'Receive the remaining copies before moving this title to listings.'
+                : 'There are no unreserved copies to list.'}
             </p>
           )}
         </div>
       ))}
 
-      {isDraft && (
+      {editable && (
         <div class="mt-2 flex items-center gap-3">
           <button type="submit" class="btn btn-primary !py-2">Save these</button>
           <span class="text-[12.5px] text-[var(--color-ink-faint)]">
-            Clearing a title removes that row.
+            Draft rows can be removed by clearing their title. Once opened, reserved titles are kept.
           </span>
         </div>
       )}

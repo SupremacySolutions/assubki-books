@@ -3,7 +3,7 @@
  *
  * The shape follows the rest of the shop: holding the link is the permission,
  * the code is readable aloud, and nothing here reserves stock. Copies are taken
- * off the shelf only when the organiser submits, through the same createOrder
+ * off the shelf only when the organiser submits, through the same createCheckout
  * path with the same CHECK constraint behind it - so a group basket cannot
  * promise a copy that a single-customer order then takes.
  */
@@ -50,6 +50,8 @@ export interface GroupLine {
   titleAr: string | null;
   pricePence: number;
   available: number;
+  reservable: number;
+  shipmentId: number | null;
   imageKey: string | null;
   qty: number;
   addedBy: string;
@@ -168,6 +170,8 @@ export async function getGroup(code: string, key: string): Promise<GroupView | n
       titleAr: book.title_ar,
       pricePence: book.price_pence,
       available: Math.max(0, book.available),
+      reservable: book.reservable,
+      shipmentId: book.shipment_id,
       imageKey: book.image_key,
       qty: row.qty,
       addedBy: row.added_by,

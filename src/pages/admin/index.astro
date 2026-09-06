@@ -6,12 +6,15 @@ import { botConfigured } from '../../lib/telegram';
 import { emailConfigured, lastEmailError, fromAddress } from '../../lib/email';
 import { lastNotifyError } from '../../lib/notify';
 import { dashboard } from '../../lib/dashboard';
+import { stuckNotices } from '../../lib/shipment-notify';
+import { env } from 'cloudflare:workers';
 
-const [counts, pending, emailError, notifyError] = await Promise.all([
+const [counts, pending, emailError, notifyError, stuck] = await Promise.all([
   orderCounts(),
   listOrders('requested'),
   lastEmailError(),
   lastNotifyError(),
+  stuckNotices(env.DB),
 ]);
 
 const days = Astro.url.searchParams.get('d') === '90' ? 90 : 30;
@@ -27,6 +30,17 @@ const warnings = [
   !botConfigured() && 'Telegram is not configured, so new listings cannot be posted to the channel. Add TELEGRAM_BOT_TOKEN.',
   // A message that never left is invisible unless something says so.
   notifyError && `A customer was not told their order changed: ${notifyError}`,
+  /*
+   * A reservation is never expired while its arrival notice is unsent, and the
+   * notice retries for as long as it takes. So a customer nobody can reach
+   * keeps their copies indefinitely - correct, since it is the shop's failure
+   * and not theirs, but invisible without this. The shipment page says the
+   * same thing; this is here because nobody opens a shipment page for weeks.
+   */
+  stuck.orders > 0 &&
+    `${stuck.orders} ${stuck.orders === 1 ? 'customer has' : 'customers have'} not been told ` +
+    `their reserved books arrived, so those copies stay reserved and cannot lapse` +
+    `${stuck.lastError ? `. Last error: ${stuck.lastError}` : '.'}`,
 ].filter(Boolean) as string[];
 
 const CARDS = [

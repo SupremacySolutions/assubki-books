@@ -44,13 +44,13 @@ function wire(form: HTMLFormElement, input: HTMLInputElement): void {
   list.id = `suggest-${Math.random().toString(36).slice(2, 8)}`;
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', 'Matching titles');
-  panel.append(list);
+  panel.appendChild(list);
 
   // Announced politely, so a screen reader hears how many rather than nothing.
   const status = document.createElement('p');
   status.className = 'sr-only';
   status.setAttribute('role', 'status');
-  panel.append(status);
+  panel.appendChild(status);
 
   /*
    * The form is the anchor, not the nearest div.
@@ -60,7 +60,7 @@ function wire(form: HTMLFormElement, input: HTMLInputElement): void {
    * nearest div in the header is the whole header bar.
    */
   form.style.position = form.style.position || 'relative';
-  form.append(panel);
+  form.appendChild(panel);
 
   input.setAttribute('role', 'combobox');
   input.setAttribute('aria-expanded', 'false');
@@ -114,7 +114,7 @@ function wire(form: HTMLFormElement, input: HTMLInputElement): void {
       const li = document.createElement('li');
       li.className = 'search-suggest-empty';
       li.textContent = 'No titles match that yet.';
-      list.append(li);
+      list.appendChild(li);
       status.textContent = 'No titles match that yet.';
       panel.hidden = false;
       input.setAttribute('aria-expanded', 'true');
@@ -137,9 +137,9 @@ function wire(form: HTMLFormElement, input: HTMLInputElement): void {
         img.src = r.image;
         img.alt = '';
         img.loading = 'lazy';
-        link.append(img);
+        link.appendChild(img);
       } else {
-        link.append(document.createElement('span')).className = 'search-suggest-blank';
+        link.appendChild(document.createElement('span')).className = 'search-suggest-blank';
       }
 
       const text = document.createElement('span');
@@ -150,33 +150,33 @@ function wire(form: HTMLFormElement, input: HTMLInputElement): void {
       // textContent throughout: these are titles from the database, and the
       // one thing this must never do is hand them to the parser as markup.
       title.textContent = r.title;
-      text.append(title);
+      text.appendChild(title);
 
       if (r.titleAr) {
         const ar = document.createElement('span');
         ar.className = 'search-suggest-ar ar';
         ar.dir = 'rtl';
         ar.textContent = r.titleAr;
-        text.append(ar);
+        text.appendChild(ar);
       }
-      link.append(text);
+      link.appendChild(text);
 
       const meta = document.createElement('span');
       meta.className = 'search-suggest-meta';
       const cost = document.createElement('span');
       cost.className = 'search-suggest-price';
       cost.textContent = r.price;
-      meta.append(cost);
+      meta.appendChild(cost);
       if (!r.inStock) {
         const out = document.createElement('span');
         out.className = 'search-suggest-out';
         out.textContent = 'Out of stock';
-        meta.append(out);
+        meta.appendChild(out);
       }
-      link.append(meta);
+      link.appendChild(meta);
 
-      li.append(link);
-      list.append(li);
+      li.appendChild(link);
+      list.appendChild(li);
     }
 
     status.textContent = `${results.length} ${results.length === 1 ? 'title' : 'titles'} for ${q}`;

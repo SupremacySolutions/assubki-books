@@ -160,8 +160,6 @@ const jsonLd = {
                 id="cover"
                 src={cover}
                 alt={book.images[0]?.alt ?? book.title}
-                {/* The box, not the stored image: an owner-uploaded photo has
-                    no stored size at all. */}
                 width={IMAGE_PRESETS.detail.width}
                 height={IMAGE_PRESETS.detail.height}
                 class="h-full w-full object-cover"
@@ -184,11 +182,6 @@ const jsonLd = {
                     type="button"
                     class="thumb w-[52px] h-[70px] bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-card)] p-1 grid place-items-center hover:border-[var(--color-navy)] transition-colors aria-pressed:border-[var(--color-navy)] aria-pressed:ring-2 aria-pressed:ring-[var(--color-navy)]"
                     data-src={imageUrl(img.image_key, 'detail')}
-                    {/* Each photo carries its own answer. The main image used
-                        to keep whichever fit the *first* one needed, so
-                        clicking a differently shaped photo - a back cover, a
-                        spine - would have cropped it to the first one's
-                        proportions. */}
                     data-fit={i === 0 || cropsCleanly(img.width, img.height) ? 'cover' : 'contain'}
                     aria-pressed={i === 0 ? 'true' : 'false'}
                   >
@@ -256,7 +249,7 @@ const jsonLd = {
               <ul class="flex flex-wrap gap-2">
                 {options.map((o) => {
                   const here = o.id === book.id;
-                  const gone = o.available <= 0;
+                  const gone = !(o.available > 0);
                   return (
                     <li>
                       <a
@@ -554,7 +547,7 @@ const jsonLd = {
     const availableNow = async (id: string, fallback: number) => {
       try {
         const res = await fetch(`/api/basket?ids=${encodeURIComponent(id)}`);
-        const data = await res.json();
+        const data = await res.json() as {ok?:boolean;books?:{available:number;reservable:number}[];group:{lines:{bookId:number;qty:number;addedBy:string}[]}};
         const book = data?.books?.[0];
         return typeof book?.available === 'number' ? book.available : fallback;
       } catch {
@@ -575,7 +568,7 @@ const jsonLd = {
       available: number,
     ) => {
       const res = await fetch(`/api/group?g=${encodeURIComponent(member.code)}&k=${encodeURIComponent(member.token)}`);
-      const data = await res.json();
+      const data = await res.json() as {ok?:boolean;books?:{available:number;reservable:number}[];group:{lines:{bookId:number;qty:number;addedBy:string}[]}};
       if (!res.ok || !data.ok) return null;
 
       const lines = data.group.lines as { bookId: number; qty: number; addedBy: string }[];
@@ -688,7 +681,7 @@ const jsonLd = {
     const reservableNow = async (id: string, fallback: number) => {
       try {
         const res = await fetch(`/api/basket?ids=${encodeURIComponent(id)}`);
-        const data = await res.json();
+        const data = await res.json() as {ok?:boolean;books?:{available:number;reservable:number}[];group:{lines:{bookId:number;qty:number;addedBy:string}[]}};
         const book = data?.books?.[0];
         return typeof book?.reservable === 'number' ? book.reservable : fallback;
       } catch {

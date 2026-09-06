@@ -34,6 +34,7 @@ export const GET: APIRoute = async ({ url }) => {
       books: books.map((b) => ({
         id: b.id,
         slug: b.slug,
+        shipmentId: b.shipment_id,
         title: b.title,
         titleAr: b.title_ar,
         pricePence: b.price_pence,

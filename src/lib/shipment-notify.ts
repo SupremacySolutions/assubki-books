@@ -20,10 +20,9 @@ import { deliver, ownerAddress, shell, button, noReply, noReplyText, escapeHtml 
 import { sendMessage, esc, mdLink } from './telegram';
 
 /** How many to send per sweep. Small enough to stay well inside every limit. */
-const PER_SWEEP = 15;
+const PER_SWEEP = 5;
 
-/** How many times to try one customer before leaving them for the owner. */
-const MAX_ATTEMPTS = 4;
+/** Failed notices keep retrying with backoff; they never silently disappear. */
 
 export interface QueuedNotice {
   id: number;
@@ -35,27 +34,6 @@ export interface QueuedNotice {
   telegram_chat_id: string | null;
   pay_by: number | null;
   shipment_title: string;
-}
-
-/**
- * One row per order that had a claim filled.
- *
- * `INSERT OR IGNORE` against the unique pair is the whole de-duplication: a
- * second press of "arrived", or a retry of a request that half-succeeded,
- * cannot tell anybody twice.
- */
-export function queueArrivalNotices(
-  db: D1Database,
-  shipmentId: number,
-  orderIds: number[],
-): D1PreparedStatement[] {
-  return orderIds.map((orderId) =>
-    db
-      .prepare(
-        `INSERT OR IGNORE INTO shipment_notices (shipment_id, order_id) VALUES (?, ?)`,
-      )
-      .bind(shipmentId, orderId),
-  );
 }
 
 /** What the customer is told, in the two places they might read it. */
@@ -74,7 +52,7 @@ async function tellByEmail(notice: QueuedNotice, origin: string): Promise<boolea
   const body = `
     <p>The books you reserved from <strong>${escapeHtml(notice.shipment_title)}</strong>
        have arrived, and your copies are set aside in your name.</p>
-    <p>We will write again shortly with your total and how to pay. ${
+    <p>See your order for the latest total and payment instructions. ${
       by
         ? `Please let us know by <strong>${escapeHtml(by)}</strong> - after that the copies go back on the shelf and the reservation is cancelled.`
         : 'Please let us know within seven days.'
@@ -109,8 +87,8 @@ async function tellByTelegram(notice: QueuedNotice, origin: string): Promise<boo
       '',
       esc(
         by
-          ? `We will send your total shortly. Please let us know by ${by} - after that the copies go back on the shelf.`
-          : 'We will send your total shortly. Please let us know within seven days.',
+          ? `See your order for payment details. Please let us know by ${by} - after that the copies go back on the shelf.`
+          : 'See your order for payment details. Please let us know within seven days.',
       ),
       '',
       mdLink('See your order', link),
@@ -134,44 +112,56 @@ export async function drainArrivalNotices(
   const { results: due } = await db
     .prepare(
       `SELECT n.id, n.order_id, o.ref, o.access_token, o.customer_name, o.email,
-              o.telegram_chat_id, o.pay_by, s.title AS shipment_title
+              o.telegram_chat_id, o.pay_by, COALESCE(s.title,'your reservation') AS shipment_title
          FROM shipment_notices n
          JOIN orders o    ON o.id = n.order_id
-         JOIN shipments s ON s.id = n.shipment_id
-        WHERE n.sent_at IS NULL AND n.attempts < ?
+         LEFT JOIN shipments s ON s.id = n.shipment_id
+        WHERE n.sent_at IS NULL AND n.next_attempt_at<=unixepoch() AND n.lease_until<=unixepoch()
           /* Somebody who cancelled in the meantime does not want telling. */
-          AND o.status NOT IN ('cancelled', 'expired')
+          AND o.status IN ('requested','awaiting_payment')
+          AND NOT EXISTS (SELECT 1 FROM order_items WHERE order_id=o.id AND from_incoming=1)
         ORDER BY n.id
         LIMIT ?`,
     )
-    .bind(MAX_ATTEMPTS, limit)
+    .bind(Math.min(PER_SWEEP,limit))
     .all<QueuedNotice>();
 
   let sent = 0;
   let failed = 0;
 
   for (const notice of due) {
-    let ok = false;
-    let why = '';
-    try {
-      if (notice.telegram_chat_id) ok = await tellByTelegram(notice, origin);
-      if (!ok) ok = await tellByEmail(notice, origin);
-    } catch (err) {
-      why = String(err).slice(0, 200);
+    const lease=crypto.randomUUID();
+    const claimed=await db.prepare(`UPDATE shipment_notices SET lease_token=?,lease_until=unixepoch()+300
+      WHERE id=? AND sent_at IS NULL AND lease_until<=unixepoch() AND next_attempt_at<=unixepoch()`)
+      .bind(lease,notice.id).run();
+    if (!claimed.meta.changes) continue;
+    // A delayed or previously failed notice must still give a full week.
+    const current=await db.prepare(`UPDATE orders SET pay_by=MAX(COALESCE(pay_by,0),unixepoch()+7*86400)
+      WHERE id=? AND status IN ('requested','awaiting_payment')
+        AND NOT EXISTS (SELECT 1 FROM order_items WHERE order_id=orders.id AND from_incoming=1)
+      RETURNING pay_by`).bind(notice.order_id).first<{pay_by:number}>();
+    if (!current) {
+      await db.prepare('UPDATE shipment_notices SET lease_until=0,lease_token=NULL WHERE id=? AND lease_token=?').bind(notice.id,lease).run();
+      continue;
     }
-
+    notice.pay_by=current.pay_by;
+    let ok=false, why='';
+    try {
+      if (notice.telegram_chat_id) ok=await tellByTelegram(notice,origin);
+    } catch(err) { why=String(err).slice(0,200); }
+    if (!ok) {
+      try { ok=await tellByEmail(notice,origin); }
+      catch(err) { why=String(err).slice(0,200); }
+    }
     if (ok) {
       sent++;
-      await db
-        .prepare('UPDATE shipment_notices SET sent_at = unixepoch(), attempts = attempts + 1 WHERE id = ?')
-        .bind(notice.id)
-        .run();
+      await db.prepare(`UPDATE shipment_notices SET sent_at=unixepoch(),attempts=attempts+1,
+        last_error=NULL,lease_token=NULL,lease_until=0 WHERE id=? AND lease_token=?`).bind(notice.id,lease).run();
     } else {
       failed++;
-      await db
-        .prepare('UPDATE shipment_notices SET attempts = attempts + 1, last_error = ? WHERE id = ?')
-        .bind(why || 'nothing delivered', notice.id)
-        .run();
+      await db.prepare(`UPDATE shipment_notices SET attempts=attempts+1,last_error=?,
+        next_attempt_at=unixepoch()+MIN(86400,900*(1 << MIN(attempts,7))),lease_token=NULL,lease_until=0
+        WHERE id=? AND lease_token=?`).bind(why||'nothing delivered',notice.id,lease).run();
     }
   }
 
@@ -179,9 +169,53 @@ export async function drainArrivalNotices(
 }
 
 /** What is still waiting to go out, for the portal to show plainly. */
+/**
+ * Notices that keep failing, and what they last said.
+ *
+ * These matter more than they look. A reservation is deliberately not expired
+ * while its notice is unsent - releasing somebody's copies for not answering a
+ * message nobody sent them would be indefensible - and the retry now backs off
+ * and tries again indefinitely rather than giving up after four goes. Put
+ * together, one address that will never accept mail holds its copies for ever,
+ * silently, and the only trace is a column nothing reads.
+ *
+ * So this is what reads it. Anything that has failed a few times is worth the
+ * owner's attention, because by then it is not a blip.
+ */
+export async function stuckNotices(
+  db: D1Database,
+  shipmentId?: number,
+): Promise<{ orders: number; lastError: string | null }> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS n,
+              (SELECT last_error FROM shipment_notices
+                WHERE sent_at IS NULL AND attempts >= ?1
+                  ${shipmentId ? 'AND shipment_id = ?2' : ''}
+                ORDER BY attempts DESC, id LIMIT 1) AS last_error
+         FROM shipment_notices
+        WHERE sent_at IS NULL AND attempts >= ?1
+          ${shipmentId ? 'AND shipment_id = ?2' : ''}`,
+    )
+    .bind(...(shipmentId ? [STUCK_AFTER, shipmentId] : [STUCK_AFTER]))
+    .first<{ n: number; last_error: string | null }>();
+  return { orders: row?.n ?? 0, lastError: row?.last_error ?? null };
+}
+
+/**
+ * How many failures before it is the owner's problem rather than the network's.
+ *
+ * Three, because the backoff doubles: by the third attempt roughly an hour has
+ * passed, which is long enough that a provider having a bad minute has already
+ * cleared.
+ */
+const STUCK_AFTER = 3;
+
 export async function pendingNotices(db: D1Database, shipmentId: number): Promise<number> {
   const row = await db
-    .prepare('SELECT COUNT(*) AS n FROM shipment_notices WHERE shipment_id = ? AND sent_at IS NULL')
+    .prepare(`SELECT COUNT(*) AS n FROM shipment_notices n JOIN orders o ON o.id=n.order_id
+      WHERE n.shipment_id=? AND n.sent_at IS NULL AND o.status IN ('requested','awaiting_payment')
+        AND NOT EXISTS (SELECT 1 FROM order_items WHERE order_id=o.id AND from_incoming=1)`)
     .bind(shipmentId)
     .first<{ n: number }>();
   return row?.n ?? 0;

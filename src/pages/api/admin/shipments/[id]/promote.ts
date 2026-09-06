@@ -39,22 +39,27 @@ export const POST: APIRoute = async ({ params, request }) => {
     });
 
   const book = await env.DB.prepare(
-    'SELECT id, stock, reserved FROM books WHERE id = ? AND shipment_id = ?',
+    'SELECT id, stock, reserved, incoming FROM books WHERE id = ? AND shipment_id = ?',
   )
     .bind(bookId, shipmentId)
-    .first<{ id: number; stock: number; reserved: number }>();
+    .first<{ id: number; stock: number; reserved: number; incoming:number }>();
   if (!book) return new Response('No such book on this shipment', { status: 404 });
 
+  if (book.incoming > 0) {
+    return back('?e=' + encodeURIComponent('Receive the remaining copies before moving this title to listings.'));
+  }
   if (book.stock - book.reserved <= 0) {
     return back('?e=' + encodeURIComponent('every copy of that is spoken for, so there is nothing to list'));
   }
 
-  await env.DB.prepare(
+  const updated = await env.DB.prepare(
     `UPDATE books SET shipment_id = NULL, updated_at = unixepoch()
-      WHERE id = ? AND shipment_id = ?`,
+      WHERE id = ? AND shipment_id = ? AND incoming=0 AND stock>reserved
+        AND EXISTS (SELECT 1 FROM shipments WHERE id=books.shipment_id AND status IN ('arrived','closed'))`,
   )
     .bind(bookId, shipmentId)
     .run();
+  if (!updated.meta.changes) return back('?e=' + encodeURIComponent('This shipment changed. Reload and try again.'));
 
   /*
    * Straight to the listing, with a note saying what it still needs and a way

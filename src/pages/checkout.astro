@@ -10,7 +10,7 @@ import CheckoutFields from '../components/CheckoutFields.astro';
       Send your request
     </h1>
     <p class="mt-3 text-[16px] text-[var(--color-ink-soft)] leading-relaxed max-w-xl">
-      We will hold your books for {HOLD_HOURS} hours and reply with the total and how to pay. <strong class="text-[var(--color-ink)]">No card details are taken here.</strong>
+      In-stock books are held for {HOLD_HOURS} hours. Reserved books are kept for you until they arrive, when we contact you about payment. <strong class="text-[var(--color-ink)]">No card details are taken here.</strong>
     </p>
 
     <div id="empty" hidden class="py-16 text-center">
@@ -77,6 +77,9 @@ import CheckoutFields from '../components/CheckoutFields.astro';
   </div>
 
   <script>
+    import type { GroupView } from '../lib/group';
+    import type { Field } from '../lib/validate';
+    import {planBasketLine,basketDeliveryNote} from "../lib/basket-plan";
     import { read, clear, setQty } from '../scripts/basket.ts';
     import { readGroup, leaveGroup } from '../scripts/group.ts';
     // The same rules the server applies, so the two cannot drift apart.
@@ -146,14 +149,9 @@ import CheckoutFields from '../components/CheckoutFields.astro';
       const res = await fetch(
         `/api/group?g=${encodeURIComponent(member.code)}&k=${encodeURIComponent(member.token)}`,
       );
-      const data = await res.json();
+      const data = await res.json() as {ok:boolean;group:GroupView};
       if (!res.ok || !data.ok) return false;
-
-      const group = data.group as {
-        lines: { title: string; qty: number; pricePence: number; addedBy: string }[];
-        subtotalPence: number;
-        people: string[];
-      };
+      const group = data.group;
       if (!group.lines.length) return false;
 
       const list = document.querySelector<HTMLUListElement>('#summary')!;
@@ -168,6 +166,11 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         list.appendChild(li);
       }
 
+      const quantities: Record<string,number> = {};
+      for (const line of group.lines) quantities[line.bookId]=(quantities[line.bookId]??0)+line.qty;
+      const waitingNote = document.querySelector<HTMLElement>('#waitingNote')!;
+      waitingNote.textContent=basketDeliveryNote(group.lines.map(l=>({...l,id:l.bookId})),quantities);
+      waitingNote.hidden=!waitingNote.textContent;
       document.querySelector<HTMLElement>('#subtotal')!.textContent = gbp(group.subtotalPence);
       form.hidden = false;
       return true;
@@ -195,7 +198,7 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         discount: { thresholdPence: number; percent: number } | null;
         books: {
           id: number; title: string; pricePence: number; available: number;
-          reservable?: number; expected?: string | null; salePercent?: number;
+          reservable?: number; expected?: string | null; salePercent?: number; shipmentId?:number|null;
         }[];
       };
       const books = payload.books;
@@ -208,7 +211,8 @@ import CheckoutFields from '../components/CheckoutFields.astro';
       let subtotal = 0;
 
       for (const book of books) {
-        const qty = Math.min(basket[String(book.id)] ?? 0, Math.max(book.available, 0));
+        const {qty} = planBasketLine(book,basket[String(book.id)]??0);
+        if (qty !== basket[String(book.id)]) setQty(book.id,qty);
         if (qty <= 0) {
           setQty(book.id, 0);
           continue;
@@ -219,7 +223,7 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         li.className = 'flex justify-between gap-3';
         li.innerHTML =
           `<span class="min-w-0">${book.title}${qty > 1 ? ` <span class="text-[var(--color-ink-faint)]">× ${qty}</span>` : ''}</span>` +
-          `<span class="shrink-0 tabular-nums">${gbp(book.pricePence * qty)}</span>`;
+          `<span class="shrink-0 tabular-nums">${gbp(ckSalePence(book) * qty)}</span>`;
         list.appendChild(li);
       }
 
@@ -229,15 +233,10 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         return false;
       }
 
-      const waiting = books.filter((b) => b.available <= 0 && (b.reservable ?? 0) > 0);
       const waitingNote = document.querySelector<HTMLElement>('#waitingNote');
       if (waitingNote) {
-        const when = waiting.find((b) => b.expected)?.expected;
-        waitingNote.hidden = waiting.length === 0;
-        waitingNote.textContent =
-          `Your order goes out in one parcel once everything has arrived` +
-          (when ? `, expected ${when}.` : '.') +
-          ' Tell us in the box below if you would rather have the in-stock books now and pay postage twice.';
+        waitingNote.textContent=basketDeliveryNote(books,read());
+        waitingNote.hidden=!waitingNote.textContent;
       }
 
       document.querySelector<HTMLElement>('#subtotal')!.textContent =

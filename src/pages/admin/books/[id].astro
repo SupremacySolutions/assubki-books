@@ -22,7 +22,7 @@ const siblings = book?.set_id ? await setOptionsForOwner(book.set_id) : [];
 /* Listings that already exist and look like parts of this one. Only worth
    asking about for a listing that says it has volumes and is not yet a set. */
 const candidates =
-  book && !book.set_id && (book.volumes ?? 0) > 1 ? await partCandidates(book) : [];
+  book && !book?.set_id && (book.volumes ?? 0) > 1 ? await partCandidates(book) : [];
 
 
 if (!isNew && !book) return Astro.rewrite('/404');
@@ -540,7 +540,7 @@ const captionStale = Boolean(
         {
           book && book.images.length > 0 && (
             <ul class="grid grid-cols-3 gap-2 mb-3">
-              {book.images.map((img, i) => (
+              {book!.images.map((img, i) => (
                 <li class="relative">
                   <div class="aspect-[5/7] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
                     <img
@@ -576,7 +576,7 @@ const captionStale = Boolean(
                 * works and often does not; a photo of the book on the desk
                 * always works. Neither is a fallback in small print.
                 */}
-              {book.images.length === 0 && (
+              {(book?.images.length ?? 0) === 0 && (
                 <div id="coverStart" class="grid gap-3 sm:grid-cols-2 mb-4">
                   <button
                     type="button"
@@ -634,7 +634,7 @@ const captionStale = Boolean(
                 for="photo"
                 class:list={[
                   'block p-4 text-center border-2 border-dashed border-[var(--color-rule)] rounded-[3px] cursor-pointer hover:border-[var(--color-navy)] transition-colors',
-                  book.images.length === 0 && 'hidden',
+                  (book?.images.length ?? 0) === 0 && 'hidden',
                 ]}
               >
                 <span class="text-[14px] text-[var(--color-navy)]">Add another photo</span>
@@ -746,16 +746,6 @@ const captionStale = Boolean(
                   form="telegramForm"
                   id="postBtn"
                   class="btn btn-primary w-full !py-2"
-                  {/*
-                    * Only a draft blocks this now.
-                    *
-                    * It used to refuse when the channel already matched the
-                    * listing, which was true of the listing and said nothing
-                    * about the post - the box above can have been rewritten
-                    * since, and this button is what saves it. Sending an
-                    * unchanged post costs a call that Telegram answers "not
-                    * modified", which is already treated as success.
-                    */}
                   disabled={book.status !== 'live'}
                   data-blocked={book.status !== 'live' ? '1' : '0'}
                   data-reason={book.status !== 'live' ? 'Only live listings can be announced.' : ''}
@@ -1167,7 +1157,10 @@ const captionStale = Boolean(
       <>
         <form id="telegramForm" method="post" action={`/api/admin/books/${book.id}/telegram`} />
         <form id="restockForm" method="post" action={`/api/admin/books/${book.id}/set`} />
-        <form id="arrivedForm" method="post" action={`/api/admin/books/${book.id}/arrived`} />
+        <form id="arrivedForm" method="post" action={`/api/admin/books/${book.id}/arrived`}>
+          <input type="hidden" name="receipt_key" value={crypto.randomUUID()} />
+          <input type="hidden" name="delivery_version" value={book.delivery_version} />
+        </form>
         <form id="partsForm" method="post" action={`/api/admin/books/${book.id}/set`} />
         <form id="adoptForm" method="post" action={`/api/admin/books/${book.id}/set`}>
           <input type="hidden" name="action" value="adopt" />

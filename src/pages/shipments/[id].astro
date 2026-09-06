@@ -130,8 +130,8 @@ const last = Math.min(at * SHIPMENT_PAGE, total);
     {open && (
       <p class="mt-5 text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-[44rem]">
         Reserved copies go in your basket alongside anything else you are buying.
-        Nothing is paid now — we write to you when the shipment lands, and your
-        whole order goes out together once everything is in.
+        Each shipment becomes a separate order, so in-stock books can be sent now.
+        Nothing is paid for reserved books until all their copies arrive. Postage is quoted separately for each order.
       </p>
     )}
 
@@ -191,9 +191,9 @@ const last = Math.min(at * SHIPMENT_PAGE, total);
     const freeNow = async (id: string, fallback: number) => {
       try {
         const res = await fetch(`/api/basket?ids=${encodeURIComponent(id)}`);
-        const data = await res.json();
+        const data = await res.json() as {books?:{reservable:number}[]};
         const book = data?.books?.[0];
-        return typeof book?.reservable === 'number' ? book.reservable : fallback;
+        return typeof book?.reservable === 'number' ? book.reservable : 0;
       } catch {
         return fallback;
       }

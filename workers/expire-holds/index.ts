@@ -15,7 +15,7 @@
  * catalogue's *displayed* availability honest between orders.
  */
 
-import { releaseHold } from '../../src/lib/stock-release';
+import { expireOrders } from '../../src/lib/stock-release';
 import { pruneSearches } from '../../src/lib/searches';
 import { pruneAlerts } from '../../src/lib/stock-alerts';
 import { drainArrivalNotices } from '../../src/lib/shipment-notify';
@@ -30,31 +30,7 @@ interface Env {
 }
 
 export async function expireHolds(db: D1Database): Promise<{ orders: number; copies: number }> {
-  const now = Math.floor(Date.now() / 1000);
-
-  const { results: stale } = await db
-    .prepare(
-      `SELECT o.id, COALESCE(SUM(oi.qty), 0) AS copies
-         FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.status = 'requested' AND o.expires_at IS NOT NULL AND o.expires_at <= ?
-        GROUP BY o.id`,
-    )
-    .bind(now)
-    .all<{ id: number; copies: number }>();
-
-  if (!stale.length) return { orders: 0, copies: 0 };
-
-  const statements = [];
-  for (const { id } of stale) {
-    statements.push(
-      ...releaseHold(id, 'hold expired', db),
-      db.prepare(`UPDATE orders SET status = 'expired', updated_at = unixepoch() WHERE id = ?`).bind(id),
-    );
-  }
-
-  await db.batch(statements);
-
-  return { orders: stale.length, copies: stale.reduce((n, s) => n + s.copies, 0) };
+  return expireOrders(db);
 }
 
 /**
@@ -81,36 +57,7 @@ export async function expireHolds(db: D1Database): Promise<{ orders: number; cop
 export async function expireUnpaidReservations(
   db: D1Database,
 ): Promise<{ orders: number; copies: number }> {
-  const now = Math.floor(Date.now() / 1000);
-
-  const { results: lapsed } = await db
-    .prepare(
-      `SELECT o.id, COALESCE(SUM(oi.qty), 0) AS copies
-         FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.status IN ('requested', 'awaiting_payment')
-          AND o.pay_by IS NOT NULL AND o.pay_by <= ?
-          AND NOT EXISTS (SELECT 1 FROM order_items x
-                           WHERE x.order_id = o.id AND x.from_incoming = 1)
-        GROUP BY o.id`,
-    )
-    .bind(now)
-    .all<{ id: number; copies: number }>();
-
-  if (!lapsed.length) return { orders: 0, copies: 0 };
-
-  const statements = [];
-  for (const { id } of lapsed) {
-    statements.push(
-      ...releaseHold(id, 'reservation not paid', db),
-      db
-        .prepare(`UPDATE orders SET status = 'expired', updated_at = unixepoch() WHERE id = ?`)
-        .bind(id),
-    );
-  }
-
-  await db.batch(statements);
-
-  return { orders: lapsed.length, copies: lapsed.reduce((n, l) => n + l.copies, 0) };
+  return expireOrders(db, true);
 }
 
 /**
