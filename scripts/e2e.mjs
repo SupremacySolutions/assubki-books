@@ -2693,7 +2693,14 @@ async function integrity() {
   t.ok(/id="postage"[^>]*step="0\.01"/s.test(orderPage.replace(/\n\s*/g, ' ')),
     'while pence stay a valid amount to type');
 
-  const checkout = readFileSync('src/pages/checkout.astro', 'utf8');
+  /*
+   * The customer-details form, read where it now lives.
+   *
+   * It used to be written out inside `checkout.astro`; a reservation is the
+   * same form, so it is one component both pages render. Asserting against
+   * the component covers both flows rather than the one it started in.
+   */
+  const checkout = readFileSync('src/components/CheckoutFields.astro', 'utf8');
   for (const n of ['1', '2', '3']) {
     t.ok(checkout.includes(`data-step="${n}"`), `checkout has step ${n}`);
   }
@@ -2701,6 +2708,12 @@ async function integrity() {
     'the country box can be typed into and still submits a code');
   t.ok(checkout.includes('data-error-for="fulfilment"'),
     'a problem with post-or-collect now has somewhere to appear');
+  for (const page of ['src/pages/checkout.astro', 'src/pages/shipments/checkout.astro']) {
+    t.ok(readFileSync(page, 'utf8').includes('<CheckoutFields'),
+      `${page.split('/').pop()} renders the shared form rather than one of its own`);
+  }
+  t.ok(readFileSync('src/scripts/checkout-form.ts', 'utf8').includes('data-dot-mark'),
+    'and the wiring that drives it is shared too');
   t.ok(readFileSync('src/middleware.ts', 'utf8').includes("connect-src 'self' https://api.postcodes.io"),
     'the CSP allows the postcode lookup and nothing else outbound');
 
@@ -4608,8 +4621,9 @@ async function shipments() {
     return { status: res.status, location: res.headers.get('location') ?? '' };
   };
 
+  const shipmentTitle = `E2E Shipment ${Math.random().toString(36).slice(2, 7)}`;
   const made = await admin('/api/admin/shipments', {
-    title: `E2E Shipment ${Math.random().toString(36).slice(2, 7)}`,
+    title: shipmentTitle,
     incoming_vague: 'mid', incoming_month: '2026-12',
     note: 'Held for 7 days after arrival.',
     list: '1. كتاب الاختبار الأول — 10£ — 2\n2. كتاب الاختبار الثاني — 3 مجلدات — 20£ — 2',
@@ -4661,8 +4675,20 @@ async function shipments() {
   opened = await admin(`/api/admin/shipments/${sid}/open`);
   t.ok(opened.location.includes('opened=1'), 'and opens once the hole is filled');
 
+  /*
+   * The index lists shipments; the books live on the shipment's own page.
+   * A shipment can carry hundreds of titles, so the index names it and says
+   * how big it is, and the list is paged through one screen at a time.
+   */
   const shopFront = await html('/shipments');
-  t.ok(shopFront.includes(rows[0].title), 'an open shipment is on the reservations page');
+  t.ok(shopFront.includes(shipmentTitle), 'an open shipment is listed on the shipments page');
+  t.ok(shopFront.includes(`/shipments/${sid}`), 'and links through to its own page');
+  t.ok(!shopFront.includes(rows[0].title),
+    'without printing every book on it, which is what a big shipment would do');
+
+  const shipmentPage = await html(`/shipments/${sid}`);
+  t.ok(shipmentPage.includes(rows[0].title), 'the books are on the shipment page');
+  t.ok(shipmentPage.includes('Reserve these'), 'with a way to reserve them');
 
   // Reserving.
   const reserve = async (qty) => {
@@ -4747,8 +4773,9 @@ async function shipments() {
     'one customer queued to be told, rather than written to inside the request');
 
   // Closed to new reservations, still readable.
-  const after = await html('/shipments');
-  t.ok(after.includes(rows[0].title), 'an arrived shipment stays on the page');
+  const after = await html(`/shipments/${sid}`);
+  t.ok(after.includes(rows[0].title), 'an arrived shipment stays readable');
+  t.ok(!after.includes('Reserve these'), 'but offers no way to reserve from it');
   const late = await reserve(1);
   t.ok(!late.ref, 'but nothing more can be reserved from it');
 

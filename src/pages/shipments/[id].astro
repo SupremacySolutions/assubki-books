@@ -1,0 +1,285 @@
+---
+import Base from '../../layouts/Base.astro';
+import {
+  getShipment,
+  publicShipmentPage,
+  publicShipmentItemsByIds,
+  SHIPMENT_PAGE,
+} from '../../lib/shipments';
+import { whenText } from '../../lib/incoming';
+import { price } from '../../lib/format';
+
+const id = Number.parseInt(Astro.params.id ?? '', 10);
+const shipment = Number.isInteger(id) ? await getShipment(id) : null;
+/* Draft and closed shipments are the owner's business, not a customer's. */
+if (!shipment || !['open', 'arrived'].includes(shipment.status)) {
+  return Astro.rewrite('/404');
+}
+
+const params = Astro.url.searchParams;
+const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
+const { items, total, page: at, pages } = await publicShipmentPage(id, page);
+if (total === 0) return Astro.rewrite('/404');
+
+const open = shipment.status === 'open';
+
+/*
+ * What has been chosen so far, read out of the address.
+ *
+ * Quantities travel in the URL rather than in a session, which is what lets
+ * this page be paged through at all: page two is a fresh request, and without
+ * this the four books picked on page one would be gone by the time the
+ * customer got to the bottom. It also means going back works, and a rejected
+ * checkout can be handed back with everything still filled in.
+ */
+const wanted = new Map<number, number>();
+for (const [key, value] of params) {
+  if (!key.startsWith('q')) continue;
+  const bookId = Number.parseInt(key.slice(1), 10);
+  const qty = Math.round(Number(value) || 0);
+  if (Number.isInteger(bookId) && qty > 0) wanted.set(bookId, qty);
+}
+
+/*
+ * The ones chosen on some other page.
+ *
+ * They are carried as hidden fields so submitting from here keeps them, and
+ * they are read back from the database so the bar at the bottom can count
+ * them. Only their ids come from the URL; every price and limit comes from
+ * the shipment.
+ */
+const onThisPage = new Set(items.map((i) => i.id));
+const elsewhere = await publicShipmentItemsByIds(
+  id,
+  [...wanted.keys()].filter((bookId) => !onThisPage.has(bookId)),
+);
+
+const qtyOf = (item: { id: number; free: number }) =>
+  Math.min(item.free, wanted.get(item.id) ?? 0);
+
+const chosen = [...items, ...elsewhere]
+  .map((item) => ({ item, qty: qtyOf(item) }))
+  .filter((row) => row.qty > 0);
+const copies = chosen.reduce((n, r) => n + r.qty, 0);
+const cost = chosen.reduce((n, r) => n + r.item.price_pence * r.qty, 0);
+
+const when = shipment.status === 'arrived' && shipment.arrived_at
+  ? new Date(shipment.arrived_at * 1000).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    })
+  : whenText(shipment.incoming_vague, shipment.incoming_month, { year: true });
+
+const first = (at - 1) * SHIPMENT_PAGE + 1;
+const last = Math.min(at * SHIPMENT_PAGE, total);
+---
+
+<Base
+  title={`${shipment.title}${when ? ` — ${when}` : ''}`}
+  description={`The ${total} titles on this shipment, and how to reserve a copy before they land.`}
+>
+  <div class="wrap py-10 pb-32">
+    <a href="/shipments" class="text-[13.5px] text-[var(--color-navy)] underline underline-offset-2">
+      ← All shipments
+    </a>
+
+    <div class="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <div class="min-w-0">
+        <h1 class="text-[28px] sm:text-[32px] leading-tight">{shipment.title}</h1>
+        {when && (
+          <p class="mt-1 text-[15px] text-[var(--color-ink-soft)]">
+            {open ? 'Expected ' : 'Arrived '}{when}
+          </p>
+        )}
+      </div>
+      <span
+        class:list={[
+          'text-[13.5px] shrink-0',
+          open ? 'text-[var(--color-instock)]' : 'text-[var(--color-ink-faint)]',
+        ]}
+      >
+        {open ? 'Open for reservations' : 'Arrived — reservations closed'}
+      </span>
+    </div>
+
+    {!open && (
+      <p class="mt-3 max-w-[44rem] text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        This shipment has landed, so it can no longer be reserved from. It is left
+        here so you can see what came in — whatever was not spoken for goes into
+        {' '}<a href="/catalogue" class="underline">the catalogue</a> as we
+        photograph it.
+      </p>
+    )}
+
+    {shipment.note && (
+      <p class="mt-3 max-w-[44rem] text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed whitespace-pre-line">
+        {shipment.note}
+      </p>
+    )}
+
+    <p class="mt-5 text-[13.5px] text-[var(--color-ink-faint)] tabular-nums">
+      {total} {total === 1 ? 'title' : 'titles'}
+      {pages > 1 && ` · showing ${first}–${last}`}
+    </p>
+
+    {/*
+      * One form doing two jobs, both without scripting.
+      *
+      * Submitting it normally goes to the checkout. The pager submits the same
+      * form back to this page with a `page` value, using `formaction`, which
+      * means the quantities typed on this screen are carried over by the
+      * browser rather than by anything of ours - turn a page mid-basket and
+      * nothing is lost.
+      */}
+    <form method="get" action="/shipments/checkout" class="mt-4" data-reserve>
+      <input type="hidden" name="s" value={id} />
+      {elsewhere.map((item) => (
+        <input type="hidden" name={`q${item.id}`} value={qtyOf(item)} data-off-page data-price={item.price_pence} />
+      ))}
+
+      <ul class="grid gap-2">
+        {items.map((item) => (
+          <li class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div class="min-w-0 flex-1">
+              <p class="ar text-[16px] leading-snug">{item.title}</p>
+              <p class="mt-0.5 text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-3">
+                {item.volumes && item.volumes > 1 && <span>{item.volumes} volumes</span>}
+                <span class="price !text-[13px]">{price(item.price_pence)}</span>
+                {open && (
+                  <span class={item.free > 0 ? '' : 'text-[var(--color-outstock)]'}>
+                    {item.free > 0 ? `${item.free} free to reserve` : 'fully reserved'}
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {open && item.free > 0 && (
+              <label class="flex items-center gap-2 text-[13.5px] text-[var(--color-ink-soft)]">
+                <span class="sr-only">How many copies of {item.title}</span>
+                <input
+                  type="number"
+                  name={`q${item.id}`}
+                  min="0"
+                  max={item.free}
+                  value={qtyOf(item)}
+                  inputmode="numeric"
+                  data-qty
+                  data-price={item.price_pence}
+                  class="field !w-[4.5rem] !py-1.5 !text-[14px]"
+                />
+              </label>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {pages > 1 && (
+        <nav
+          class="mt-8 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-[var(--color-rule)] pt-6"
+          aria-label="Pagination"
+        >
+          {at > 1 ? (
+            <button
+              type="submit"
+              formaction={`/shipments/${id}`}
+              name="page"
+              value={at - 1}
+              class="btn btn-ghost w-full max-w-[8.5rem] justify-center justify-self-start"
+            >
+              ← Previous
+            </button>
+          ) : (
+            <span />
+          )}
+          <p
+            class="text-[14px] text-[var(--color-ink-faint)] tabular-nums text-center"
+            aria-label={`Page ${at} of ${pages}`}
+          >
+            {at} of {pages}
+          </p>
+          {at < pages ? (
+            <button
+              type="submit"
+              formaction={`/shipments/${id}`}
+              name="page"
+              value={at + 1}
+              class="btn btn-ghost w-full max-w-[8.5rem] justify-center justify-self-end"
+            >
+              Next →
+            </button>
+          ) : (
+            <span />
+          )}
+        </nav>
+      )}
+
+      {/*
+        * The running total, pinned to the bottom of the screen.
+        *
+        * It was a single button under a long list, which on a shipment of
+        * three hundred titles is a button nobody scrolls to and no way of
+        * telling what you had picked. Rendered from the address rather than
+        * only by script, so it is already right when a page is turned; the
+        * script below just keeps it honest while typing.
+        */}
+      {open && (
+        <div
+          data-bar
+          hidden={copies === 0}
+          class="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-rule)] bg-[var(--color-paper-raised)]/95 backdrop-blur-sm"
+        >
+          <div class="wrap py-3 flex flex-wrap items-center justify-between gap-3">
+            <p class="text-[14.5px] tabular-nums">
+              <span data-bar-copies>{copies}</span>
+              {' '}<span data-bar-word>{copies === 1 ? 'copy' : 'copies'}</span> chosen
+              <span class="text-[var(--color-ink-faint)]"> · </span>
+              <span data-bar-cost class="price">{price(cost)}</span>
+              <span class="text-[13px] text-[var(--color-ink-faint)]"> when they arrive</span>
+            </p>
+            <button type="submit" class="btn btn-primary !py-2">
+              Reserve these
+            </button>
+          </div>
+        </div>
+      )}
+    </form>
+  </div>
+
+  <script>
+    /*
+     * Keeps the bar in step with the boxes.
+     *
+     * Everything here is a nicety: the bar is rendered correct by the server
+     * on every page load, the pager carries the numbers itself, and the
+     * checkout reads the same quantities out of the address either way. With
+     * scripting off the customer simply sees the total update when they turn
+     * a page or press Reserve, rather than as they type.
+     */
+    const form = document.querySelector<HTMLFormElement>('[data-reserve]');
+    const bar = form?.querySelector<HTMLElement>('[data-bar]');
+
+    if (form && bar) {
+      const copiesEl = bar.querySelector<HTMLElement>('[data-bar-copies]')!;
+      const wordEl = bar.querySelector<HTMLElement>('[data-bar-word]')!;
+      const costEl = bar.querySelector<HTMLElement>('[data-bar-cost]')!;
+      const money = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
+
+      const retally = () => {
+        let copies = 0;
+        let pence = 0;
+        for (const field of form.querySelectorAll<HTMLInputElement>('[data-price]')) {
+          const qty = Math.max(0, Math.round(Number(field.value) || 0));
+          if (!qty) continue;
+          copies += qty;
+          pence += qty * Number(field.dataset.price ?? 0);
+        }
+        copiesEl.textContent = String(copies);
+        wordEl.textContent = copies === 1 ? 'copy' : 'copies';
+        costEl.textContent = money.format(pence / 100);
+        bar.hidden = copies === 0;
+      };
+
+      form.addEventListener('input', retally);
+      retally();
+    }
+  </script>
+</Base>

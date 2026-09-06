@@ -23,7 +23,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   const lines = parseShipment(list);
   const id = await createShipment({ title, note, vague, month });
-  const added = await importLines(id, lines);
+  const added = await importLines(id, lines, { vague, month });
 
   /*
    * The count of lines that could not be read travels in the URL so the page

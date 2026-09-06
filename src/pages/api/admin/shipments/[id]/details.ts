@@ -50,5 +50,22 @@ export const POST: APIRoute = async ({ params, request }) => {
     .run();
 
   if (!changed.meta.changes) return back('?e=' + encodeURIComponent('no such shipment'));
+
+  /*
+   * The books carry the date too, and have to move with it.
+   *
+   * Everything that tells a customer when their reservation is due reads the
+   * book, not the shipment - see the note in `importLines`. Leaving these
+   * behind would mean the shipment page saying January while the confirmation
+   * email a customer already has still said November.
+   */
+  await env.DB.prepare(
+    `UPDATE books
+        SET incoming_vague = ?, incoming_month = ?, updated_at = unixepoch()
+      WHERE shipment_id = ?`,
+  )
+    .bind(month ? vague : null, month, id)
+    .run();
+
   return back('?details=1');
 };

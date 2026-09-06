@@ -68,14 +68,48 @@ const waitingWhen = waitingOn
   ? whenText(waitingOn.incoming_vague, waitingOn.incoming_month)
   : null;
 
+/*
+ * A reservation is a different story, told in a different order.
+ *
+ * An ordinary order is confirmed and then, occasionally, waits on a lorry -
+ * so "Waiting" sits late in the list as an interruption. A reservation waits
+ * first and is confirmed afterwards: nothing can be priced, packed or paid
+ * for until the shipment lands. Told in the ordinary order it read as though
+ * the shop were working out a total for books still at sea, with the waiting
+ * listed after the step it actually precedes.
+ *
+ * Keyed on the shipment rather than on the lines, because the lines stop
+ * saying they are waiting the moment the box arrives, and the story of what
+ * happened should not rewrite itself at that point.
+ */
+const reservation = order.shipment_id !== null;
+const landed = !waitingOn;
+
 const opening: Step[] = [
   {
-    short: 'Requested',
-    title: 'Request received',
+    short: reservation ? 'Reserved' : 'Requested',
+    title: reservation ? 'Reserved' : 'Request received',
     done: true,
     at: when(order.created_at),
-    note: 'Your books were set aside for you.',
+    note: reservation
+      ? 'Your copies were put aside in your name from this shipment.'
+      : 'Your books were set aside for you.',
   },
+  ...(reservation
+    ? [
+        {
+          short: 'Arrived',
+          /* Read in both tenses: it is the step being waited on, then a
+             thing that happened. One wording cannot be both. */
+          title: landed ? 'The shipment arrived' : 'Waiting for the shipment',
+          done: landed,
+          at: null,
+          note: landed
+            ? undefined
+            : `Nothing is paid and nothing is due until it lands${waitingWhen ? `, expected ${waitingWhen}` : ''}. We write to you the moment it is in.`,
+        } as Step,
+      ]
+    : []),
   {
     short: 'Confirmed',
     title: cash
@@ -87,7 +121,9 @@ const opening: Step[] = [
     at: when(order.confirmed_at),
     note: reached.confirmed
       ? undefined
-      : 'We are checking the books and working out the total.',
+      : reservation && !landed
+        ? 'We work out your total once the shipment is in, not before.'
+        : 'We are checking the books and working out the total.',
   },
 ];
 
@@ -100,7 +136,7 @@ const opening: Step[] = [
 const steps: Step[] = isCollection
   ? [
       ...opening,
-      ...(waitingOn
+      ...(waitingOn && !reservation
         ? [
             {
               short: 'Waiting',
@@ -151,7 +187,7 @@ const steps: Step[] = isCollection
             ? 'We will pack these and be in touch to arrange handing them over.'
             : 'Once your payment reaches us we will confirm here.',
       },
-      ...(waitingOn
+      ...(waitingOn && !reservation
         ? [
             {
               short: 'Waiting',

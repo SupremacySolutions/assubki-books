@@ -82,6 +82,76 @@ export async function getShipment(id: number): Promise<Shipment | null> {
  * what is coming, less what is already spoken for - so a shipment page and a
  * book page can never disagree about whether a copy is available.
  */
+/** A page of a shipment's list. A big shipment is read a screen at a time. */
+export const SHIPMENT_PAGE = 24;
+
+/**
+ * One page of a shipment, for the customer's page.
+ *
+ * A shipment can carry hundreds of titles, and reading all of them to render
+ * twenty is both a slower page and a bigger bill against a database charged
+ * by rows read. The count is a separate statement rather than a window
+ * function so the paged query stays a plain indexed range scan.
+ */
+export async function publicShipmentPage(
+  id: number,
+  page = 1,
+  perPage = SHIPMENT_PAGE,
+): Promise<{
+  items: (ShipmentItem & { free: number })[];
+  total: number;
+  page: number;
+  pages: number;
+}> {
+  const counted = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM books WHERE shipment_id = ?',
+  )
+    .bind(id)
+    .first<{ n: number }>();
+  const total = counted?.n ?? 0;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const at = Math.min(Math.max(1, page), pages);
+
+  const { results } = await env.DB.prepare(
+    `SELECT id, slug, title, title_ar, title_ur, price_pence, volumes,
+            incoming, reserved_incoming, stock, reserved, status, shipment_sort,
+            MAX(0, incoming - reserved_incoming) AS free
+       FROM books WHERE shipment_id = ?
+      ORDER BY shipment_sort, id
+      LIMIT ? OFFSET ?`,
+  )
+    .bind(id, perPage, (at - 1) * perPage)
+    .all<ShipmentItem & { free: number }>();
+
+  return { items: results, total, page: at, pages };
+}
+
+/**
+ * Just the rows somebody actually chose.
+ *
+ * The checkout needs the price and the remaining count of the titles in the
+ * basket and nothing else, so it asks for those rather than reading a whole
+ * shipment to find four of them. Ids are filtered to integers by the caller
+ * and the shipment is named in the WHERE, so a forged id reaches nothing.
+ */
+export async function publicShipmentItemsByIds(
+  shipmentId: number,
+  ids: number[],
+): Promise<(ShipmentItem & { free: number })[]> {
+  if (!ids.length) return [];
+  const holes = ids.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(
+    `SELECT id, slug, title, title_ar, title_ur, price_pence, volumes,
+            incoming, reserved_incoming, stock, reserved, status, shipment_sort,
+            MAX(0, incoming - reserved_incoming) AS free
+       FROM books WHERE shipment_id = ? AND id IN (${holes})
+      ORDER BY shipment_sort, id`,
+  )
+    .bind(shipmentId, ...ids)
+    .all<ShipmentItem & { free: number }>();
+  return results;
+}
+
 export async function publicShipmentItems(id: number): Promise<
   (ShipmentItem & { free: number })[]
 > {
@@ -142,6 +212,17 @@ export async function createShipment(fields: {
 export async function importLines(
   shipmentId: number,
   lines: ParsedLine[],
+  /*
+   * The shipment's expected date, copied onto every book it carries.
+   *
+   * Stored twice on purpose. The shipment owns it - one field the owner edits,
+   * and `details.ts` writes both - but everything that talks to a customer
+   * about an order reads it off the book: the confirmation email, the order
+   * page and the journey strip all ask "when is the line I am waiting on
+   * due?", and a book with no answer made them say "due shortly" while the
+   * shipment page said "expected late November 2026". Same shop, two dates.
+   */
+  when: { vague: string | null; month: string | null } = { vague: null, month: null },
 ): Promise<number> {
   const usable = lines.filter((l) => l.title && l.pricePence !== null);
   if (!usable.length) return 0;
@@ -159,8 +240,9 @@ export async function importLines(
     return env.DB.prepare(
       `INSERT INTO books
          (slug, title, title_ar, title_ur, price_pence, volumes, stock, reserved,
-          status, incoming, reserved_incoming, shipment_id, shipment_sort)
-       VALUES (?,?,?,?,?,?,0,0,'draft',?,0,?,?)`,
+          status, incoming, reserved_incoming, incoming_vague, incoming_month,
+          shipment_id, shipment_sort)
+       VALUES (?,?,?,?,?,?,0,0,'draft',?,0,?,?,?,?)`,
     ).bind(
       `sh${shipmentId}-${i + 1}`,
       line.title,
@@ -169,6 +251,8 @@ export async function importLines(
       line.pricePence,
       line.volumes,
       line.stock ?? 0,
+      when.month ? when.vague : null,
+      when.month,
       shipmentId,
       line.index ?? i + 1,
     );

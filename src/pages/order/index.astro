@@ -108,12 +108,24 @@ const sendError = order
     } as Record<string, string>)[params.get('e') ?? ''] ?? null
   : null;
 
-const status = order ? statusLabel(order.status, order.fulfilment, whereToCollect, cashPayment) : null;
 const placed = order ? new Date(order.created_at * 1000) : null;
 const expires = order?.expires_at ? new Date(order.expires_at * 1000) : null;
 
 /* Roughly when the delivery this order is waiting on is due, if it is. */
 const waitingLine = order?.items.find((i) => i.from_incoming);
+
+/*
+ * A reservation reads differently from a hold, and the page already knows
+ * which this is: a line still marked `from_incoming` means nothing has
+ * arrived, and a `pay_by` means a shipment landed and started the seven days.
+ * See `statusLabel` for what each changes.
+ */
+const status = order
+  ? statusLabel(order.status, order.fulfilment, whereToCollect, cashPayment, {
+      waiting: Boolean(waitingLine),
+      replyWindow: order.pay_by !== null,
+    })
+  : null;
 const waitingWhen = waitingLine
   ? whenText(waitingLine.incoming_vague, waitingLine.incoming_month)
   : null;

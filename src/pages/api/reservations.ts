@@ -53,6 +53,13 @@ export const POST: APIRoute = async ({ request, url }) => {
   const email = clean(form.get('email'));
   const phone = clean(form.get('phone'));
   const fulfilment = clean(form.get('fulfilment')) || 'delivery';
+  /*
+   * Asked because the shared form asks it, and worth keeping: a customer who
+   * says now that they would rather pay cash on collection has told the owner
+   * something useful about an order that will not be settled for months.
+   * Optional, and only ever a preference - the owner decides at confirmation.
+   */
+  const paymentPreference = clean(form.get('paymentPreference'));
   const notes = clean(form.get('notes'));
   const parts = {
     line1: clean(form.get('line1')),
@@ -63,7 +70,9 @@ export const POST: APIRoute = async ({ request, url }) => {
     country: clean(form.get('country')),
   };
 
-  const problems = checkOrder({ name, email, phone, fulfilment, notes, address: parts });
+  const problems = checkOrder({
+    name, email, phone, fulfilment, paymentPreference, notes, address: parts,
+  });
   if (problems.length) {
     return back('e=' + encodeURIComponent(problems[0].message) + '&' + carry(form));
   }
@@ -111,6 +120,7 @@ export const POST: APIRoute = async ({ request, url }) => {
       fulfilment: fulfilment === 'collection' ? 'collection' : 'delivery',
       address: fulfilment === 'delivery' ? formatAddress(parts) : null,
       addressParts: fulfilment === 'delivery' ? parts : null,
+      paymentPreference: paymentPreference || null,
       notes,
       items,
       shipmentId,
@@ -169,7 +179,8 @@ function carry(form: FormData): string {
   const keep = new URLSearchParams();
   for (const [field, value] of form.entries()) {
     if (/^q\d+$/.test(field) || ['name', 'email', 'phone', 'fulfilment', 'notes',
-      'line1', 'line2', 'city', 'region', 'postcode', 'country'].includes(field)) {
+      'paymentPreference', 'line1', 'line2', 'city', 'region', 'postcode',
+      'country'].includes(field)) {
       keep.set(field, String(value));
     }
   }

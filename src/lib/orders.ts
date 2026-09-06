@@ -509,6 +509,15 @@ export interface OrderView {
   expires_at: number | null;
   /** The reply deadline a landed delivery starts. Null on an ordinary order. */
   pay_by: number | null;
+  /**
+   * The shipment this was reserved from, if it was one.
+   *
+   * The discriminator between a reservation and an ordinary order, and the
+   * only reliable one: `from_incoming` goes false the moment the box lands,
+   * so a page asking "was this a reservation?" after arrival gets the wrong
+   * answer from the lines.
+   */
+  shipment_id: number | null;
   telegram_chat_id: string | null;
   postage_pence: number | null;
   total_pence: number | null;
@@ -565,6 +574,7 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
   const order = await env.DB.prepare(
     `SELECT id, ref, status, customer_name, email, fulfilment, address, notes,
             subtotal_pence, postage_pence, total_pence, created_at, expires_at, pay_by,
+            shipment_id,
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
             postage_provider, postage_service, telegram, cancel_note,
             customer_cancel_note, cancel_requested_at,

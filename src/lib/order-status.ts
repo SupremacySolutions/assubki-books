@@ -68,11 +68,36 @@ export function statusLabel(
   fulfilment: string,
   collectionAddress = '',
   cashPayment = false,
+  /*
+   * What a reservation needs said differently.
+   *
+   * Two of the states below are written for a book that is on the shelf, and
+   * read as untrue for one that is not:
+   *
+   *   `waiting`  - nothing has arrived yet, so "your books are held" describes
+   *                a copy that does not exist and a total we cannot send.
+   *   `replied`  - the order carries the seven-day window a landed shipment
+   *                starts, so "we did not hear back within 48 hours" names the
+   *                wrong promise entirely. That customer had a week from the
+   *                day the box came in, and telling them otherwise makes the
+   *                shop look as though it moved the goalposts.
+   *
+   * Both default to false, so an ordinary order is worded exactly as before.
+   */
+  reservation: { waiting?: boolean; replyWindow?: boolean } = {},
 ): CustomerStatus {
   const collecting = isCollection(fulfilment);
 
   switch (status) {
     case 'requested':
+      if (reservation.waiting) {
+        return {
+          label: 'Reserved',
+          blurb:
+            'Your copies are set aside in your name. We write to you when the shipment lands, with the total and how to pay.',
+          tone: 'wait',
+        };
+      }
       return {
         label: 'Request received',
         blurb: 'Your books are held. We will reply with the total and how to pay.',
@@ -174,6 +199,14 @@ export function statusLabel(
       };
 
     case 'expired':
+      if (reservation.replyWindow) {
+        return {
+          label: 'Reservation lapsed',
+          blurb:
+            'We did not hear back in the seven days after the shipment arrived, so the copies went back on the shelf. Nothing was charged - if you still want them, ask and we will see what is left.',
+          tone: 'off',
+        };
+      }
       return {
         label: 'Hold lapsed',
         blurb:
@@ -182,7 +215,7 @@ export function statusLabel(
       };
 
     default:
-      return statusLabel('requested', fulfilment, collectionAddress, cashPayment);
+      return statusLabel('requested', fulfilment, collectionAddress, cashPayment, reservation);
   }
 }
 

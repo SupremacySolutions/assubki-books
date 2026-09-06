@@ -1,0 +1,262 @@
+---
+/**
+ * The customer-details half of a checkout.
+ *
+ * Two flows ask for exactly the same things in exactly the same way - an
+ * ordinary order and a reservation against a shipment - and the second one
+ * having its own hand-written form meant a second design of the same screen,
+ * drifting from this one every time either was touched. What differs between
+ * them is *what is being ordered*, which lives in each page's own summary and
+ * submit; what they share is this, plus the wiring in
+ * `src/scripts/checkout-form.ts`.
+ *
+ * Every id and `data-` hook in here is spoken to by that wiring, so the two
+ * files change together.
+ */
+interface Props {
+  /** The word on the button that sends it. */
+  submitLabel: string;
+  /** The reassurance under the last step. */
+  closing: string;
+  /** How the fulfilment question is asked. */
+  fulfilmentLegend?: string;
+  /** The grey example in the notes box. */
+  notesPlaceholder?: string;
+}
+
+const {
+  submitLabel,
+  closing,
+  fulfilmentLegend = 'How would you like the books?',
+  notesPlaceholder = 'A title we do not list, a preferred edition, or when you need these by.',
+} = Astro.props;
+---
+
+        {/* Three steps, each short enough to fit a phone screen. Every field is
+            in the DOM the whole time and in one form, so the submit, the stock
+            conflict handling and the group basket know nothing about steps. */}
+        <ol id="steps" class="flex items-center gap-2 text-[13px]" aria-label="Progress">
+          {[
+            { n: 1, label: 'You' },
+            { n: 2, label: 'Delivery' },
+            { n: 3, label: 'Check' },
+          ].map((s, i) => (
+            <>
+              {i > 0 && <li aria-hidden="true" class="h-px flex-1 bg-[var(--color-rule)]"></li>}
+              <li data-dot={s.n} class="flex items-center gap-1.5">
+                <span
+                  data-dot-mark
+                  class="grid place-items-center w-[22px] h-[22px] rounded-full border text-[12px] font-semibold tabular-nums"
+                >{s.n}</span>
+                <span data-dot-label class="hidden sm:inline">{s.label}</span>
+              </li>
+            </>
+          ))}
+        </ol>
+
+        {/* ---------------------------------------------------------- step 1 */}
+        <section data-step="1" class="grid gap-5">
+          <div>
+            <label for="name" class="block text-[14.5px] font-medium mb-1.5">Your name</label>
+            <input id="name" name="name" required autocomplete="name" maxlength="120" class="field"
+              aria-describedby="name-error" />
+            <p id="name-error" data-error-for="name" hidden class="field-error"></p>
+          </div>
+
+          <div>
+            <label for="email" class="block text-[14.5px] font-medium mb-1.5">Email</label>
+            <input id="email" name="email" type="email" required autocomplete="email" maxlength="254"
+              class="field" aria-describedby="email-error" />
+            <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+              Your confirmation and payment details come here.
+            </p>
+            <p id="email-error" data-error-for="email" hidden class="field-error"></p>
+          </div>
+
+          <div>
+            <label for="phone" class="block text-[14.5px] font-medium mb-1.5">Phone</label>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              inputmode="tel"
+              required
+              autocomplete="tel"
+              maxlength="40"
+              class="field"
+              aria-describedby="phone-error"
+            />
+            <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+              In case we need to reach you about the books or a collection time.
+            </p>
+            <p id="phone-error" data-error-for="phone" hidden class="field-error"></p>
+          </div>
+        </section>
+
+        {/* ---------------------------------------------------------- step 2 */}
+        <section data-step="2" hidden class="grid gap-5">
+          <fieldset>
+            <legend class="block text-[14.5px] font-medium mb-2">{fulfilmentLegend}</legend>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="fulfilment" value="delivery" checked class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">Post them to me</span>
+              </label>
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="fulfilment" value="collection" class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">I will collect</span>
+              </label>
+            </div>
+            <p id="fulfilment-error" data-error-for="fulfilment" hidden class="field-error"></p>
+          </fieldset>
+
+          {/* The parts, not a paragraph: a courier's label needs fields, and a
+              form can only say which bit is missing if it asked for it. Country
+              first, because it decides what the rest are called and whether a
+              postcode exists at all. */}
+          <div id="addressWrap" class="grid gap-4">
+            <p class="text-[14.5px] font-medium">Delivery address</p>
+
+            {/* A combobox, not a select: the 62 countries are ordered by where
+                customers actually are, which makes the native type-ahead worse
+                than useless - typing "u" for United Kingdom lands on Uganda.
+                The hidden input is what gets submitted, so the server still
+                receives a code and validates it exactly as before. */}
+            <div class="relative">
+              <label for="country" class="block text-[14px] mb-1.5">Country</label>
+              <input
+                id="country"
+                type="text"
+                role="combobox"
+                aria-expanded="false"
+                aria-controls="countryList"
+                aria-autocomplete="list"
+                autocomplete="off"
+                spellcheck="false"
+                class="field"
+                aria-describedby="country-error"
+              />
+              <input type="hidden" name="country" id="countryCode" value="GB" />
+              <ul
+                id="countryList"
+                role="listbox"
+                aria-label="Countries"
+                hidden
+                class="absolute z-20 left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-white border border-[var(--color-navy)] rounded-[3px] shadow-lg py-1"
+              ></ul>
+              <p id="country-error" data-error-for="country" hidden class="field-error"></p>
+            </div>
+
+            <div id="postcodeWrap" class="max-w-[14rem]">
+              <label for="postcode" class="block text-[14px] mb-1.5" data-label="postcode">Postcode</label>
+              <input id="postcode" name="postcode" maxlength="24" autocomplete="postal-code"
+                class="field" aria-describedby="postcode-error postcode-hint" />
+              <p id="postcode-hint" aria-live="polite" class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]"></p>
+              <p id="postcode-error" data-error-for="postcode" hidden class="field-error"></p>
+            </div>
+
+            <div>
+              <label for="line1" class="block text-[14px] mb-1.5">Street address</label>
+              <input id="line1" name="line1" maxlength="120" autocomplete="address-line1"
+                class="field" aria-describedby="line1-error" />
+              <p id="line1-error" data-error-for="line1" hidden class="field-error"></p>
+            </div>
+
+            <div>
+              <label for="line2" class="block text-[14px] mb-1.5">
+                Flat, building or company <span class="text-[var(--color-ink-faint)]">(optional)</span>
+              </label>
+              <input id="line2" name="line2" maxlength="120" autocomplete="address-line2" class="field" />
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label for="city" class="block text-[14px] mb-1.5" data-label="city">Town or city</label>
+                <input id="city" name="city" maxlength="80" autocomplete="address-level2"
+                  class="field" aria-describedby="city-error" />
+                <p id="city-error" data-error-for="city" hidden class="field-error"></p>
+              </div>
+              <div>
+                <label for="region" class="block text-[14px] mb-1.5" data-label="region">
+                  County <span class="text-[var(--color-ink-faint)]">(optional)</span>
+                </label>
+                <input id="region" name="region" maxlength="80" autocomplete="address-level1"
+                  class="field" aria-describedby="region-error" />
+                <p id="region-error" data-error-for="region" hidden class="field-error"></p>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        {/* ---------------------------------------------------------- step 3 */}
+        <section data-step="3" hidden class="grid gap-5">
+          {/* What they typed, read back. Cheaper to fix a wrong postcode here
+              than after the books have been packed. */}
+          <div class="bg-white border border-[var(--color-rule)] rounded-[3px] divide-y divide-[var(--color-rule)]">
+            <div class="p-4 flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <p class="eyebrow">Who you are</p>
+                <p id="recapWho" class="mt-1.5 text-[14.5px] leading-relaxed break-words"></p>
+              </div>
+              <button type="button" data-goto="1"
+                class="shrink-0 text-[13.5px] text-[var(--color-navy)] hover:underline underline-offset-2">Edit</button>
+            </div>
+            <div class="p-4 flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <p class="eyebrow">How you get them</p>
+                <p id="recapHow" class="mt-1.5 text-[14.5px] leading-relaxed break-words"></p>
+              </div>
+              <button type="button" data-goto="2"
+                class="shrink-0 text-[13.5px] text-[var(--color-navy)] hover:underline underline-offset-2">Edit</button>
+            </div>
+          </div>
+
+          {/* Optional on purpose: neither is preselected, so leaving it alone is
+              a valid answer. It is a request the shop sees, not a decision - the
+              owner sets what actually happens when they confirm. */}
+          <fieldset>
+            <legend class="block text-[14.5px] font-medium mb-1.5">
+              How would you like to pay?
+              <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
+            </legend>
+            <p class="text-[13px] text-[var(--color-ink-faint)] mb-2 leading-relaxed">
+              Tell us what suits you and we will confirm when we reply. Nothing is paid on this
+              website either way.
+            </p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="paymentPreference" value="transfer" class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">Bank transfer</span>
+              </label>
+              <label class="flex items-center gap-2.5 p-3 bg-white border border-[var(--color-rule)] rounded-[3px] cursor-pointer has-checked:border-[var(--color-navy)]">
+                <input type="radio" name="paymentPreference" value="cash" class="accent-[var(--color-navy)]" />
+                <span class="text-[15px]">Cash in person</span>
+              </label>
+            </div>
+            <p id="paymentPreference-error" data-error-for="paymentPreference" hidden class="field-error"></p>
+          </fieldset>
+          <div>
+            <label for="notes" class="block text-[14.5px] font-medium mb-1.5">
+              Anything else? <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
+            </label>
+            <textarea id="notes" name="notes" rows="3" maxlength="2000" class="field"
+              placeholder={notesPlaceholder}></textarea>
+          </div>
+
+          <div id="error" hidden role="alert"
+            class="p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+          </div>
+
+          <p class="text-[13px] text-[var(--color-ink-faint)] max-w-md leading-relaxed">
+            {closing}
+          </p>
+        </section>
+
+        {/* One set of buttons for all three steps, so the customer's eye does
+            not have to find a new place to click on each one. */}
+        <div class="flex items-center gap-3">
+          <button type="button" id="back" hidden class="btn btn-ghost">Back</button>
+          <button type="button" id="next" class="btn btn-primary !py-3 !px-7">Continue</button>
+          <button type="submit" id="submit" hidden class="btn btn-primary !py-3 !px-7">{submitLabel}</button>
+        </div>
