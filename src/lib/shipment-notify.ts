@@ -209,7 +209,7 @@ export async function stuckNotices(
  * passed, which is long enough that a provider having a bad minute has already
  * cleared.
  */
-const STUCK_AFTER = 3;
+export const STUCK_AFTER = 3;
 
 export async function pendingNotices(db: D1Database, shipmentId: number): Promise<number> {
   const row = await db

@@ -10,91 +10,267 @@ const months = monthOptions();
   sub="The list your supplier sends, read into rows you can check"
   back={{ href: '/admin/shipments', label: 'Shipments' }}
 >
-  <form method="post" action="/api/admin/shipments" class="grid gap-5 max-w-[52rem]">
-    <div>
-      <label for="title" class="block text-[14.5px] font-medium mb-1.5">
-        What to call it
-      </label>
-      <input
-        id="title"
-        name="title"
-        required
-        maxlength="160"
-        placeholder="India Shipment August 2026"
-        class="field"
-      />
-    </div>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <div>
-        <label for="incoming_vague" class="block text-[14.5px] font-medium mb-1.5">
-          Expected
-        </label>
-        <select id="incoming_vague" name="incoming_vague" class="field">
-          {VAGUE.map((v) => <option value={v.value} selected={v.value === 'mid'}>{v.label}</option>)}
-        </select>
-      </div>
-      <div>
-        <label for="incoming_month" class="block text-[14.5px] font-medium mb-1.5">
-          Month
-        </label>
-        <select id="incoming_month" name="incoming_month" class="field">
-          <option value="">Not sure yet</option>
-          {months.map((m) => <option value={m.value}>{m.label}</option>)}
-        </select>
-      </div>
-    </div>
-
-    <div>
-      <label for="note" class="block text-[14.5px] font-medium mb-1.5">
-        What customers should know <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
-      </label>
-      <textarea
-        id="note"
-        name="note"
-        rows="3"
-        maxlength="1000"
-        class="field"
-        placeholder="Reservations are held for 7 days after the shipment arrives, after which the copies go back on the shelf. To extend or cancel, message us on Telegram or by email."
-      ></textarea>
-    </div>
-
-    <div>
-      <label for="list" class="block text-[14.5px] font-medium mb-1.5">The list</label>
-      {/*
-        * A worked line rather than a description of one.
-        *
-        * The parser reads the fields by what they look like, not where they
-        * sit, so most of this is forgiving - but the number of copies is a bare
-        * number and the only thing that tells it from any other number on the
-        * line is that it comes after the price. Showing that is cheaper than
-        * explaining it.
-        */}
-      <p class="mb-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-        One book a line. The count of copies goes last, after the price:
+  <form
+    method="post"
+    action="/api/admin/shipments"
+    id="pasteForm"
+    class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden shadow-[var(--shadow-panel)]"
+  >
+    <div class="px-5 sm:px-6 pt-5 pb-4">
+      <h2 class="font-[family-name:var(--font-display)] text-[23px] font-semibold">Paste a shipment</h2>
+      <p class="mt-1.5 max-w-[70ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+        The supplier's own list, read into rows. Nothing is shown to customers until you open it.
       </p>
-      <pre class="mb-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule-soft)] rounded-[3px] text-[13px] overflow-x-auto"><code>9. كشف الباري شرح صحيح البخاري — 25 مجلدًا — 120£ — 3
+    </div>
+
+    <div class="grid lg:grid-cols-2 border-t border-[var(--color-rule-soft)]">
+      <div class="p-5 sm:p-6 lg:border-r border-[var(--color-rule-soft)] grid gap-4 content-start">
+        <div>
+          <label for="title" class="block text-[13.5px] font-medium mb-1.5">What to call it</label>
+          <input
+            id="title"
+            name="title"
+            required
+            maxlength="160"
+            placeholder="India Shipment August 2026"
+            class="field"
+          />
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-[1fr_1.3fr]">
+          <div>
+            <label for="incoming_vague" class="block text-[13.5px] font-medium mb-1.5">Expected</label>
+            <select id="incoming_vague" name="incoming_vague" class="field">
+              {VAGUE.map((v) => <option value={v.value} selected={v.value === 'mid'}>{v.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label for="incoming_month" class="block text-[13.5px] font-medium mb-1.5">Month</label>
+            <select id="incoming_month" name="incoming_month" class="field">
+              <option value="">Not sure yet</option>
+              {months.map((m) => <option value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* What the two selects above actually say, in the customer's words.
+            The whole point of a vague date is that it is read as a promise, so
+            the promise is shown while it is being chosen. */}
+        <p id="whenPreview" class="px-3 py-2.5 rounded-[var(--radius-field)] bg-[var(--color-paper)] text-[13px] text-[var(--color-ink-soft)]">
+          Customers will read a part of a month, never a date.
+        </p>
+
+        <div>
+          <label for="note" class="block text-[13.5px] font-medium mb-1.5">
+            What customers should know
+            <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <textarea
+            id="note"
+            name="note"
+            rows="3"
+            maxlength="1000"
+            class="field !text-[14px]"
+            placeholder="Reservations are held for 7 days after the shipment arrives, after which the copies go back on the shelf. To extend or cancel, message us on Telegram or by email."
+          ></textarea>
+        </div>
+
+        <div>
+          <label for="list" class="block text-[13.5px] font-medium mb-1.5">
+            The list
+            <span class="font-normal text-[var(--color-ink-faint)]">
+              — one book a line, copies last, after the price
+            </span>
+          </label>
+          {/*
+            * A worked line rather than a description of one.
+            *
+            * The parser reads the fields by what they look like, not where they
+            * sit, so most of this is forgiving - but the number of copies is a
+            * bare number and the only thing that tells it from any other number
+            * on the line is that it comes after the price. Showing that is
+            * cheaper than explaining it.
+            */}
+          <pre class="mb-2 p-3 bg-[var(--color-paper)] border border-[var(--color-rule-soft)] rounded-[3px] text-[13px] overflow-x-auto"><code>9. كشف الباري شرح صحيح البخاري — 25 مجلدًا — 120£ — 3
 33. تذكرة الخليل — 5£ — 4</code></pre>
-      <p class="mb-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-        Volumes and the leading number can be left out. Arabic numerals, plain
-        hyphens and long dashes all read the same. Anything it cannot make sense
-        of is shown back to you rather than dropped.
-      </p>
-      <textarea
-        id="list"
-        name="list"
-        rows="16"
-        required
-        class="field !text-[13.5px] leading-relaxed"
-        dir="auto"
-      ></textarea>
-    </div>
+          <textarea
+            id="list"
+            name="list"
+            rows="14"
+            required
+            class="field !text-[13.5px] leading-relaxed"
+            dir="auto"
+          ></textarea>
+        </div>
+      </div>
 
-    <div>
-      <button type="submit" class="btn btn-primary !py-2">Read the list</button>
-      <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
-        Nothing is shown to customers yet. You check the rows over first.
-      </p>
+      {/*
+        * The read, beside the paste rather than after it.
+        *
+        * The page used to post blind: you pasted, submitted, and learned what
+        * had been made of the list on the next screen - including a count of
+        * lines it could not read. A list written with the count before the
+        * price was caught only once the shipment existed, by which time the
+        * supplier's message had usually gone. Reading it here means the same
+        * mistake is visible while the message is still on screen.
+        *
+        * It is the same `parseShipment` the server runs, imported rather than
+        * reimplemented, so a preview cannot disagree with what gets stored.
+        */}
+      <div class="p-5 sm:p-6 bg-[var(--color-paper-raised)]">
+        <div class="flex items-baseline gap-2.5 flex-wrap">
+          <p class="eyebrow">Read so far</p>
+          <span id="parseCount" class="text-[13px] text-[var(--color-ink-soft)]">
+            Nothing pasted yet
+          </span>
+        </div>
+
+        <div
+          id="parseList"
+          class="mt-3 border border-[var(--color-rule-soft)] rounded-[10px] overflow-hidden bg-white max-h-[26rem] overflow-y-auto"
+        >
+          <p class="px-3 py-6 text-center text-[13px] text-[var(--color-ink-faint)]">
+            Paste the list and it is read here, line by line.
+          </p>
+        </div>
+
+        <p class="mt-3 text-[12.5px] leading-relaxed text-[var(--color-ink-faint)]">
+          Volumes, the leading number and the language are read from the line. Arabic-Indic digits,
+          plain hyphens and long dashes all read the same. A line it cannot make sense of is kept
+          with its raw text — never dropped — and waits for you in the shipment.
+        </p>
+
+        <div class="mt-4 pt-4 border-t border-[var(--color-rule-soft)] flex flex-wrap items-center gap-3">
+          <button type="submit" id="createDraft" class="btn btn-primary !py-2.5 !text-[14.5px]">
+            Create the draft
+          </button>
+          <span class="text-[12.5px] text-[var(--color-ink-faint)]">
+            You check and fix the rows next. Customers see nothing yet.
+          </span>
+        </div>
+      </div>
     </div>
   </form>
 </Admin>
+
+<script>
+  /*
+   * The preview is an enhancement, not a gate.
+   *
+   * With scripting off the right-hand column keeps its explanation and the
+   * form posts exactly as it did - the server parses the same text with the
+   * same function and the owner checks the rows on the next screen.
+   */
+  import { parseShipment, readable } from '../../../lib/shipment-parse';
+  import { VAGUE, whenText } from '../../../lib/incoming';
+
+  const list = document.getElementById('list') as HTMLTextAreaElement | null;
+  const out = document.getElementById('parseList');
+  const count = document.getElementById('parseCount');
+  const submit = document.getElementById('createDraft');
+  const vague = document.getElementById('incoming_vague') as HTMLSelectElement | null;
+  const month = document.getElementById('incoming_month') as HTMLSelectElement | null;
+  const whenOut = document.getElementById('whenPreview');
+
+  function paintWhen() {
+    if (!whenOut) return;
+    const said = whenText(vague?.value ?? null, month?.value ?? null, { year: true });
+    whenOut.textContent = said
+      ? `Customers will read “Expected ${said}”. A part of a month, never a date.`
+      : 'No month chosen, so customers are told a shipment is coming without a date.';
+  }
+  vague?.addEventListener('change', paintWhen);
+  month?.addEventListener('change', paintWhen);
+  paintWhen();
+
+  /** One row of the read, built as elements so nothing is ever interpolated. */
+  function row(n: number, title: string, meta: string, ok: boolean): HTMLElement {
+    const el = document.createElement('div');
+    el.className =
+      'flex items-center gap-3 px-3 py-2.5 border-b border-[var(--color-rule-faint)] last:border-b-0' +
+      (ok ? '' : ' bg-[#fdf9f7]');
+
+    const num = document.createElement('span');
+    num.className = 'w-6 shrink-0 text-[12px] text-[var(--color-ink-faint)] tabular-nums';
+    num.textContent = String(n);
+
+    const body = document.createElement('div');
+    body.className = 'flex-1 min-w-0';
+    const name = document.createElement('p');
+    name.className = 'ar text-[15.5px] leading-[1.5]';
+    name.dir = 'auto';
+    name.textContent = title;
+    const sub = document.createElement('p');
+    sub.className =
+      'mt-0.5 text-[12px] ' +
+      (ok ? 'text-[var(--color-ink-faint)]' : 'text-[var(--color-outstock)]');
+    sub.textContent = meta;
+    body.appendChild(name);
+    body.appendChild(sub);
+
+    const tag = document.createElement('span');
+    tag.className =
+      'shrink-0 text-[12px] font-medium px-2.5 py-1 rounded-[6px] ' +
+      (ok
+        ? 'bg-[var(--color-instock)]/10 text-[var(--color-instock)]'
+        : 'bg-[var(--color-outstock)]/10 text-[var(--color-outstock)]');
+    tag.textContent = ok ? 'read' : 'needs a hand';
+
+    el.appendChild(num);
+    el.appendChild(body);
+    el.appendChild(tag);
+    return el;
+  }
+
+  const money = (pence: number) => `£${(pence / 100).toFixed(2)}`;
+
+  function paint() {
+    if (!list || !out || !count) return;
+    const text = list.value;
+    if (!text.trim()) {
+      out.textContent = '';
+      const empty = document.createElement('p');
+      empty.className = 'px-3 py-6 text-center text-[13px] text-[var(--color-ink-faint)]';
+      empty.textContent = 'Paste the list and it is read here, line by line.';
+      out.appendChild(empty);
+      count.textContent = 'Nothing pasted yet';
+      if (submit) submit.textContent = 'Create the draft';
+      return;
+    }
+
+    const lines = parseShipment(text);
+    const good = lines.filter(readable).length;
+    const bad = lines.length - good;
+
+    out.textContent = '';
+    for (const [i, line] of lines.entries()) {
+      const ok = readable(line);
+      const meta = ok
+        ? [
+            line.volumes && line.volumes > 1 ? `${line.volumes} volumes` : null,
+            line.pricePence !== null ? money(line.pricePence) : null,
+            line.stock !== null ? `${line.stock} ${line.stock === 1 ? 'copy' : 'copies'}` : null,
+            line.script === 'arabic' ? 'Arabic' : line.script === 'urdu' ? 'Urdu' : 'English',
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : line.problems.join(' · ') || 'could not be read';
+      out.appendChild(row(line.index ?? i + 1, line.title || line.raw, meta, ok));
+    }
+
+    count.textContent =
+      `${lines.length} ${lines.length === 1 ? 'line' : 'lines'} · ${good} complete` +
+      (bad > 0 ? ` · ${bad} ${bad === 1 ? 'needs' : 'need'} a hand` : '');
+    if (submit)
+      submit.textContent = `Create the draft — ${lines.length} ${lines.length === 1 ? 'title' : 'titles'}`;
+  }
+
+  /* Debounced: a three-hundred-line paste is re-read on every keystroke
+     otherwise, and the parse is cheap but not free. */
+  let timer = 0;
+  list?.addEventListener('input', () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(paint, 150);
+  });
+  paint();
+</script>

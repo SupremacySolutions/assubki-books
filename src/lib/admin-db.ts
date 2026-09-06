@@ -4,6 +4,7 @@
  */
 
 import { env } from 'cloudflare:workers';
+import { clipToBytes, LIKE_BYTES } from './like';
 import type { BookLanguage } from './db';
 
 export interface AdminOrderRow {
@@ -300,38 +301,6 @@ export interface BookListResult {
  * The stem is whatever comes before the first colon, falling back to the first
  * few words. Anything already in a set is excluded, and so is this listing.
  */
-/**
- * The longest LIKE pattern D1 will accept, in **bytes**.
- *
- * SQLite refuses a pattern over `SQLITE_MAX_LIKE_PATTERN_LENGTH` with
- * "LIKE or GLOB pattern too complex", and on D1 that ceiling is 50 bytes -
- * counted in UTF-8, not in characters, and counting the wildcards.
- *
- * That distinction is the whole bug. A 40-character stem is 40 bytes of
- * English and about 80 of Arabic, because Arabic sits in the two-byte range.
- * So every listing whose title ran past roughly twenty-four Arabic letters
- * threw a 500 on the portal's own page for it, while every English one was
- * fine - and a shipment import is nothing but long Arabic titles.
- */
-const LIKE_BYTES = 40;
-
-/** Cut to at most `bytes` UTF-8 bytes, never through the middle of a letter. */
-function clipToBytes(value: string, bytes: number): string {
-  const encoder = new TextEncoder();
-  if (encoder.encode(value).length <= bytes) return value;
-  let out = '';
-  let used = 0;
-  /* Iterating the string yields whole code points, so a surrogate pair is
-     never split - which would leave a lone half and a broken pattern. */
-  for (const ch of value) {
-    const size = encoder.encode(ch).length;
-    if (used + size > bytes) break;
-    out += ch;
-    used += size;
-  }
-  return out;
-}
-
 export async function partCandidates(book: {
   id: number;
   title: string;

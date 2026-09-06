@@ -1,6 +1,12 @@
 ---
 import Base from '../../layouts/Base.astro';
-import { getShipment, publicShipmentPage, SHIPMENT_PAGE } from '../../lib/shipments';
+import {
+  asPublicFilter,
+  getShipment,
+  publicShipmentPage,
+  SHIPMENT_PAGE,
+  type PublicFilter,
+} from '../../lib/shipments';
 import { whenText } from '../../lib/incoming';
 import { price } from '../../lib/format';
 
@@ -10,157 +16,271 @@ const shipment = Number.isInteger(id) ? await getShipment(id) : null;
 if (!shipment || !['open', 'arrived'].includes(shipment.status)) {
   return Astro.rewrite('/404');
 }
-
-const params = Astro.url.searchParams;
-const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
-const { items, total, page: at, pages } = await publicShipmentPage(id, page);
-if (total === 0) return Astro.rewrite('/404');
+if (shipment.items === 0) return Astro.rewrite('/404');
 
 const open = shipment.status === 'open';
+const params = Astro.url.searchParams;
+const q = (params.get('q') ?? '').slice(0, 80);
+/*
+ * What the list opens on.
+ *
+ * While the shipment is open, the useful default is the books somebody can
+ * actually have - a page of titles that are all spoken for is a page of
+ * disappointments. Once it has landed nothing is free by definition, so the
+ * same default would show an empty list; then everything is the only sane
+ * opening.
+ */
+const filter: PublicFilter = asPublicFilter(params.get('show'), open ? 'available' : 'all');
+const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
+const { items, total, page: at, pages, counts } = await publicShipmentPage(
+  id,
+  page,
+  SHIPMENT_PAGE,
+  { q, filter },
+);
 
-const when = shipment.status === 'arrived' && shipment.arrived_at
-  ? new Date(shipment.arrived_at * 1000).toLocaleDateString('en-GB', {
-      day: 'numeric', month: 'long', year: 'numeric',
-    })
-  : whenText(shipment.incoming_vague, shipment.incoming_month, { year: true });
+const when =
+  shipment.status === 'arrived' && shipment.arrived_at
+    ? new Date(shipment.arrived_at * 1000).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
+    : whenText(shipment.incoming_vague, shipment.incoming_month, { year: true });
 
+const freeCopies = Math.max(0, shipment.copies - shipment.claimed);
 const first = (at - 1) * SHIPMENT_PAGE + 1;
 const last = Math.min(at * SHIPMENT_PAGE, total);
+
+const href = (over: Record<string, string | number | null>) => {
+  const next = new URLSearchParams();
+  if (q) next.set('q', q);
+  if (filter !== (open ? 'available' : 'all')) next.set('show', filter);
+  if (at > 1) next.set('page', String(at));
+  for (const [key, value] of Object.entries(over)) {
+    if (value === null) next.delete(key);
+    else next.set(key, String(value));
+  }
+  const query = next.toString();
+  return `/shipments/${id}${query ? `?${query}` : ''}`;
+};
+
+const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
+  ? [
+      { key: 'available', label: 'Available only', count: counts.available },
+      { key: 'all', label: 'Everything', count: counts.all },
+      { key: 'sets', label: 'Multi-volume sets', count: counts.sets },
+    ]
+  : [
+      { key: 'all', label: 'Everything', count: counts.all },
+      { key: 'sets', label: 'Multi-volume sets', count: counts.sets },
+    ];
 ---
 
 <Base
   title={`${shipment.title}${when ? ` — ${when}` : ''}`}
-  description={`The ${total} titles on this shipment, and how to reserve a copy before they land.`}
+  description={`The ${shipment.items} titles on this shipment, and how to reserve a copy before they land.`}
 >
   <div class="wrap py-10 pb-32">
     <a href="/shipments" class="text-[13.5px] text-[var(--color-navy)] underline underline-offset-2">
       ← All shipments
     </a>
 
-    <div class="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-      <div class="min-w-0">
-        <h1 class="text-[28px] sm:text-[32px] leading-tight">{shipment.title}</h1>
-        {when && (
-          <p class="mt-1 text-[15px] text-[var(--color-ink-soft)]">
-            {open ? 'Expected ' : 'Arrived '}{when}
-          </p>
-        )}
-      </div>
-      <span
-        class:list={[
-          'text-[13.5px] shrink-0',
-          open ? 'text-[var(--color-instock)]' : 'text-[var(--color-ink-faint)]',
-        ]}
-      >
-        {open ? 'Open for reservations' : 'Arrived — reservations closed'}
-      </span>
+    {/*
+      * The promise, at the top and in brass.
+      *
+      * It used to sit in small print under three hundred rows, where the one
+      * person who most needs it - somebody deciding whether to reserve - has
+      * already decided. And it said the wrong thing: "reserving puts a copy
+      * aside in your name" is not what the basket does. The copies are claimed
+      * by `createOrder`, at checkout, which is the only moment anybody else is
+      * stopped from taking them.
+      */}
+    <div class="mt-3 p-5 sm:p-6 bg-[#fdfaf1] border border-[#e6d9b8] rounded-[var(--radius-panel)]">
+      <h1 class="text-[26px] sm:text-[30px] leading-tight">{shipment.title}</h1>
+      <p class="mt-2 text-[15px] sm:text-[16px] font-medium text-[var(--color-brass)]">
+        {open ? (when ? `Expected ${when}` : 'Expected date to be confirmed') : `Arrived ${when}`}
+        {' · '}{shipment.items} {shipment.items === 1 ? 'title' : 'titles'}
+        {open && ` · ${freeCopies} ${freeCopies === 1 ? 'copy' : 'copies'} still free to reserve`}
+      </p>
+
+      {open ? (
+        <p class="mt-2.5 max-w-[64ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+          Reserving adds the copy to your basket — take as many of a title as are free. The copies
+          are set aside in your name when you send the request at checkout, not before, and nothing
+          is paid now or charged on this site at any point. When the shipment lands we write to
+          you, and you have seven days to reply.
+        </p>
+      ) : (
+        <p class="mt-2.5 max-w-[64ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+          This shipment has landed, so it can no longer be reserved from. It is left here so you
+          can see what came in — whatever was not spoken for goes into
+          {' '}<a href="/catalogue" class="underline">the catalogue</a> as we photograph it.
+        </p>
+      )}
+
+      {shipment.note && (
+        <p class="mt-2.5 max-w-[64ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)] whitespace-pre-line">
+          {shipment.note}
+        </p>
+      )}
     </div>
 
-    {!open && (
-      <p class="mt-3 max-w-[44rem] text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-        This shipment has landed, so it can no longer be reserved from. It is left
-        here so you can see what came in — whatever was not spoken for goes into
-        {' '}<a href="/catalogue" class="underline">the catalogue</a> as we
-        photograph it.
+    {/* Find one book among three hundred. */}
+    <div class="mt-4 flex flex-wrap items-center gap-2.5">
+      <form method="get" action={`/shipments/${id}`} class="flex items-center gap-2 flex-1 min-w-[16rem]">
+        {filter !== (open ? 'available' : 'all') && <input type="hidden" name="show" value={filter} />}
+        <input
+          type="search"
+          name="q"
+          value={q}
+          dir="auto"
+          placeholder="Search this shipment"
+          class="field !py-2.5 !text-[14px] flex-1"
+          aria-label="Search this shipment"
+        />
+        <button type="submit" class="btn btn-ghost !py-2.5 !text-[13.5px]">Search</button>
+      </form>
+      <div class="flex flex-wrap gap-1.5">
+        {CHIPS.map((chip) => (
+          <a
+            href={href({ show: chip.key, page: null })}
+            class:list={[
+              'text-[13px] font-medium px-3.5 py-2 rounded-[var(--radius-pill)] border transition-colors',
+              chip.key === filter
+                ? 'border-[var(--color-brass)] bg-[var(--color-brass)] text-white'
+                : 'border-[var(--color-rule)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-brass)] hover:text-[var(--color-brass)]',
+            ]}
+          >
+            {chip.label} ({chip.count})
+          </a>
+        ))}
+      </div>
+    </div>
+
+    {total === 0 ? (
+      <p class="mt-6 text-[15px] text-[var(--color-ink-soft)] leading-relaxed max-w-[44rem]">
+        {q
+          ? 'Nothing on this shipment matches that. Try part of the title, or clear the search.'
+          : 'Every title on this shipment is spoken for.'}
+        {(q || filter !== 'all') && (
+          <>
+            {' '}<a href={href({ q: null, show: 'all', page: null })} class="underline">Show everything</a>.
+          </>
+        )}
       </p>
-    )}
-
-    {shipment.note && (
-      <p class="mt-3 max-w-[44rem] text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed whitespace-pre-line">
-        {shipment.note}
-      </p>
-    )}
-
-    <p class="mt-5 text-[13.5px] text-[var(--color-ink-faint)] tabular-nums">
-      {total} {total === 1 ? 'title' : 'titles'}
-      {pages > 1 && ` · showing ${first}–${last}`}
-    </p>
-
-    {/*
-      * The list, with the same button the rest of the shop uses.
-      *
-      * These went into a form of their own with a number box on every row and
-      * a single Reserve at the foot of the page - a second way of buying,
-      * looking nothing like the first, and on a shipment of three hundred
-      * titles the only button that did anything was three hundred rows down.
-      *
-      * A book still at sea is a book. It goes in the same basket, through the
-      * same checkout, and the shop works out which lines are claims when the
-      * order is made - `createOrder` has always marked a line the shelf cannot
-      * cover as one, and gives any order holding a claim no 48-hour clock, so
-      * the half that is here is not released out from under the half that is
-      * still coming.
-      */}
-    <ul class="mt-4 grid gap-2">
-      {items.map((item) => (
-        <li class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div class="min-w-0 flex-1">
-            <p class="ar text-[16px] leading-snug">{item.title}</p>
-            <p class="mt-0.5 text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-3">
-              {item.volumes && item.volumes > 1 && <span>{item.volumes} volumes</span>}
-              <span class="price !text-[13px]">{price(item.price_pence)}</span>
-              {open && (
-                <span class={item.free > 0 ? '' : 'text-[var(--color-outstock)]'}>
-                  {item.free > 0 ? `${item.free} free to reserve` : 'fully reserved'}
+    ) : (
+      <ul class="mt-4 grid gap-2">
+        {items.map((item) => (
+          <li
+            class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-4 flex flex-wrap items-center gap-x-4 gap-y-3"
+            data-row
+            data-book-id={item.id}
+            data-free={item.free}
+          >
+            {/* The title carries the row. Price and volumes were a faint meta
+                line under it, which is the wrong way round for a list where
+                the Arabic title is the only thing anybody reads. */}
+            <div class="min-w-0 flex-1">
+              <p dir="auto" class="ar text-[18px] sm:text-[19px] leading-[1.55]">{item.title}</p>
+              <div class="mt-1.5 flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
+                <span class="font-[family-name:var(--font-display)] text-[16px] font-semibold">
+                  {price(item.price_pence)}
                 </span>
-              )}
-            </p>
-          </div>
+                {item.volumes && item.volumes > 1 && (
+                  <span class="text-[13px] text-[var(--color-ink-faint)]">{item.volumes} volumes</span>
+                )}
+                {open && (
+                  <span
+                    class:list={[
+                      'text-[13px]',
+                      item.free > 0 ? 'text-[var(--color-brass)]' : 'text-[var(--color-ink-faint)]',
+                    ]}
+                  >
+                    {item.free === 0
+                      ? 'fully reserved'
+                      : item.free === item.incoming
+                        ? `${item.free} free to reserve`
+                        : `${item.free} of ${item.incoming} still free`}
+                  </span>
+                )}
+              </div>
+            </div>
 
-          {/* Brass, not navy. Reserving is a different act from buying
-              something on the shelf, and the button should not pretend
-              otherwise - the same one the book page uses. */}
-          {open && item.free > 0 && (
-            <button
-              type="button"
-              data-reserve
-              data-book-id={item.id}
-              data-max={item.free}
-              class="shrink-0 rounded-[var(--radius-pill)] bg-[var(--color-brass)] px-5 py-2.5 text-[14.5px] font-medium text-white hover:brightness-110 transition-[filter] disabled:opacity-60"
-            >
-              Reserve a copy
-            </button>
-          )}
-        </li>
-      ))}
-    </ul>
+            {open && item.free > 0 && (
+              <div class="shrink-0 text-right">
+                {/* Brass, not navy. Reserving is a different act from buying
+                    something on the shelf, and the button should not pretend
+                    otherwise. */}
+                <button
+                  type="button"
+                  data-reserve
+                  class="rounded-[var(--radius-field)] border border-[var(--color-brass)] bg-white px-[18px] py-2.5 text-[14.5px] font-medium text-[var(--color-brass)] hover:bg-[var(--color-brass)] hover:text-white transition-colors"
+                >
+                  Reserve a copy
+                </button>
+                {/* Shown once the row is in the basket. Rendered here rather
+                    than built in script so the markup is one thing, and so a
+                    row with scripting off simply never reaches it. */}
+                <div data-stepper hidden>
+                  <div class="inline-flex items-center rounded-[var(--radius-field)] border border-[var(--color-brass)] bg-[#fdfaf1] overflow-hidden">
+                    <button
+                      type="button"
+                      data-less
+                      class="w-[38px] h-10 text-[18px] text-[var(--color-brass)] hover:bg-[#f6f0e0] transition-colors"
+                      aria-label="One fewer copy"
+                    >−</button>
+                    <span
+                      data-mine
+                      class="min-w-[56px] text-center text-[14.5px] font-medium tabular-nums"
+                    ></span>
+                    <button
+                      type="button"
+                      data-more
+                      class="w-[38px] h-10 text-[18px] text-[var(--color-brass)] hover:bg-[#f6f0e0] transition-colors disabled:text-[#d4c9ab] disabled:cursor-default disabled:hover:bg-transparent"
+                      aria-label="One more copy"
+                    >+</button>
+                  </div>
+                  <p data-mine-note class="mt-1.5 text-[12px] text-[var(--color-brass)]"></p>
+                </div>
+              </div>
+            )}
+
+            {open && item.free === 0 && (
+              <span class="shrink-0 text-[13.5px] font-medium px-4 py-2.5 rounded-[var(--radius-pill)] bg-[var(--color-paper)] text-[var(--color-ink-faint)]">
+                Fully reserved
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    )}
 
     <p data-note role="status" hidden class="mt-3 text-[13.5px] text-[var(--color-outstock)]"></p>
 
-    {open && (
-      <p class="mt-5 text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-[44rem]">
-        Reserved copies go in your basket alongside anything else you are buying.
-        Each shipment becomes a separate order, so in-stock books can be sent now.
-        Nothing is paid for reserved books until all their copies arrive. Postage is quoted separately for each order.
+    {total > 0 && (
+      <p class="mt-4 text-[13px] text-[var(--color-ink-faint)] tabular-nums">
+        {pages > 1 ? `Showing ${first}–${last} of ${total}` : `${total} ${total === 1 ? 'title' : 'titles'}`}
       </p>
     )}
 
     {pages > 1 && (
       <nav
-        class="mt-8 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-[var(--color-rule)] pt-6"
+        class="mt-6 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-[var(--color-rule)] pt-6"
         aria-label="Pagination"
       >
         {at > 1 ? (
-          <a
-            href={`/shipments/${id}${at - 1 > 1 ? `?page=${at - 1}` : ''}`}
-            class="btn btn-ghost w-full max-w-[8.5rem] justify-center justify-self-start"
-          >
+          <a href={href({ page: at - 1 })} class="btn btn-ghost w-full max-w-[8.5rem] justify-center justify-self-start">
             ← Previous
           </a>
         ) : (
           <span />
         )}
-        <p
-          class="text-[14px] text-[var(--color-ink-faint)] tabular-nums text-center"
-          aria-label={`Page ${at} of ${pages}`}
-        >
+        <p class="text-[14px] text-[var(--color-ink-faint)] tabular-nums text-center" aria-label={`Page ${at} of ${pages}`}>
           {at} of {pages}
         </p>
         {at < pages ? (
-          <a
-            href={`/shipments/${id}?page=${at + 1}`}
-            class="btn btn-ghost w-full max-w-[8.5rem] justify-center justify-self-end"
-          >
+          <a href={href({ page: at + 1 })} class="btn btn-ghost w-full max-w-[8.5rem] justify-center justify-self-end">
             Next →
           </a>
         ) : (
@@ -168,7 +288,42 @@ const last = Math.min(at * SHIPMENT_PAGE, total);
         )}
       </nav>
     )}
+
+    {open && (
+      <p class="mt-6 text-[13px] text-[var(--color-ink-faint)] leading-relaxed max-w-[44rem]">
+        Books from a shipment become their own order, separate from anything on the shelf, so what
+        is in stock can be sent to you now. Postage is quoted once per order.
+      </p>
+    )}
   </div>
+
+  {/*
+    * The bar that says the button worked.
+    *
+    * The control reverts to "Reserve a copy" after a moment, and without this
+    * there was nothing left on the page to show that anything had happened.
+    */}
+  {open && (
+    <div
+      data-basket-bar
+      hidden
+      class="fixed inset-x-0 bottom-0 z-30 bg-[var(--color-brass)] text-white px-4 sm:px-6 py-3.5 flex flex-wrap items-center gap-x-4 gap-y-2 shadow-[0_-2px_14px_rgba(16,24,40,.18)]"
+    >
+      <div class="flex-1 min-w-0 max-w-[46ch]">
+        <p data-basket-line class="text-[15px] font-medium"></p>
+        <p class="mt-0.5 text-[12.5px] opacity-85">
+          Send the request at checkout to have them set aside. Books from this shipment become
+          their own order, so anything in stock can be sent to you now.
+        </p>
+      </div>
+      <a
+        href="/basket"
+        class="ml-auto shrink-0 text-[14.5px] font-medium px-5 py-2.5 rounded-[var(--radius-pill)] bg-white text-[var(--color-brass)]"
+      >
+        Go to basket
+      </a>
+    </div>
+  )}
 
   <script>
     /*
@@ -191,7 +346,7 @@ const last = Math.min(at * SHIPMENT_PAGE, total);
     const freeNow = async (id: string, fallback: number) => {
       try {
         const res = await fetch(`/api/basket?ids=${encodeURIComponent(id)}`);
-        const data = await res.json() as {books?:{reservable:number}[]};
+        const data = (await res.json()) as { books?: { reservable: number }[] };
         const book = data?.books?.[0];
         return typeof book?.reservable === 'number' ? book.reservable : 0;
       } catch {
@@ -199,33 +354,97 @@ const last = Math.min(at * SHIPMENT_PAGE, total);
       }
     };
 
-    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-reserve]')) {
-      button.addEventListener('click', async () => {
-        const id = button.dataset.bookId;
-        if (!id) return;
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-row]')];
+    const bar = document.querySelector<HTMLElement>('[data-basket-bar]');
+    const barLine = document.querySelector<HTMLElement>('[data-basket-line]');
 
+    const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+    /** What this shipment's rows look like against the basket as it stands. */
+    function paint() {
+      const basket = window.asbBasket.read();
+      let copies = 0;
+      let titles = 0;
+
+      for (const row of rows) {
+        const id = row.dataset.bookId ?? '';
+        const free = Number(row.dataset.free ?? '0');
+        const mine = Number(basket[id] ?? 0);
+        if (mine > 0) {
+          copies += mine;
+          titles += 1;
+        }
+
+        const reserve = row.querySelector<HTMLElement>('[data-reserve]');
+        const stepper = row.querySelector<HTMLElement>('[data-stepper]');
+        if (!reserve || !stepper) continue;
+
+        reserve.hidden = mine > 0;
+        stepper.hidden = mine === 0;
+        if (mine === 0) continue;
+
+        const count = stepper.querySelector<HTMLElement>('[data-mine]');
+        const more = stepper.querySelector<HTMLButtonElement>('[data-more]');
+        const rowNote = stepper.querySelector<HTMLElement>('[data-mine-note]');
+        if (count) count.textContent = plural(mine, 'copy', 'copies');
+        const atCeiling = mine >= free;
+        if (more) more.disabled = atCeiling;
+        if (rowNote)
+          rowNote.textContent = atCeiling ? 'in your basket · all that is free' : 'in your basket';
+      }
+
+      if (bar && barLine) {
+        bar.hidden = copies === 0;
+        barLine.textContent = `${plural(copies, 'copy', 'copies')} from this shipment in your basket across ${plural(titles, 'title', 'titles')}`;
+      }
+      window.asbBasket.setBadge(window.asbBasket.count());
+    }
+
+    for (const row of rows) {
+      const id = row.dataset.bookId;
+      if (!id) continue;
+      const fallback = Number(row.dataset.free ?? '1');
+
+      const grow = async (button: HTMLButtonElement) => {
         button.disabled = true;
-        const free = await freeNow(id, Number(button.dataset.max ?? '1'));
-
+        const free = await freeNow(id, fallback);
+        /* The row was rendered against a number that may have moved, so the
+           ceiling it enforces is the one just read, not the one printed. */
+        row.dataset.free = String(free);
         if (free <= 0) {
           say('Every copy of that one is already reserved.');
           button.disabled = false;
+          paint();
           return;
         }
-
         const result = window.asbBasket.addChecked(id, 1, free);
         if (result.added === 0) {
           say(`All ${free} free ${free === 1 ? 'copy is' : 'copies are'} already in your basket.`);
         } else {
           say('');
-          button.textContent = 'Reserved ✓';
         }
+        button.disabled = false;
+        paint();
+      };
 
-        setTimeout(() => {
-          button.textContent = 'Reserve a copy';
-          button.disabled = false;
-        }, result.added > 0 ? 1800 : 0);
+      row.querySelector<HTMLButtonElement>('[data-reserve]')?.addEventListener('click', (e) => {
+        void grow(e.currentTarget as HTMLButtonElement);
+      });
+      row.querySelector<HTMLButtonElement>('[data-more]')?.addEventListener('click', (e) => {
+        void grow(e.currentTarget as HTMLButtonElement);
+      });
+      row.querySelector<HTMLButtonElement>('[data-less]')?.addEventListener('click', () => {
+        const mine = Number(window.asbBasket.read()[id] ?? 0);
+        if (mine <= 1) window.asbBasket.remove(id);
+        else window.asbBasket.setQty(id, mine - 1);
+        say('');
+        paint();
       });
     }
+
+    /* Another tab, or the basket page in a second window, changes the same
+       store this page is drawn from. */
+    document.addEventListener('basket:change', paint);
+    paint();
   </script>
 </Base>

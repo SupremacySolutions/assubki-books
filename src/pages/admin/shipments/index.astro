@@ -2,50 +2,148 @@
 import Admin from '../../../layouts/Admin.astro';
 import { listShipments } from '../../../lib/shipments';
 import { whenText } from '../../../lib/incoming';
-import { price } from '../../../lib/format';
 
 const shipments = await listShipments();
 
-const LABEL: Record<string, { text: string; tone: string }> = {
-  draft: { text: 'Being written', tone: 'text-[var(--color-ink-faint)]' },
-  open: { text: 'Open for reservations', tone: 'text-[var(--color-instock)]' },
-  arrived: { text: 'Arrived', tone: 'text-[var(--color-navy)]' },
-  closed: { text: 'Put away', tone: 'text-[var(--color-ink-faint)]' },
+const LABEL: Record<string, { text: string; chip: string; edge: string }> = {
+  draft: {
+    text: 'Being written',
+    chip: 'bg-[var(--color-paper)] text-[var(--color-ink-faint)]',
+    edge: 'border-l-[var(--color-rule)]',
+  },
+  open: {
+    text: 'Open for reservations',
+    chip: 'bg-[var(--color-instock)]/10 text-[var(--color-instock)]',
+    edge: 'border-l-[var(--color-instock)]',
+  },
+  arrived: {
+    text: 'Arrived',
+    chip: 'bg-[var(--color-navy)]/10 text-[var(--color-navy)]',
+    edge: 'border-l-[var(--color-navy)]',
+  },
+  closed: {
+    text: 'Hidden from customers',
+    chip: 'bg-[var(--color-paper)] text-[var(--color-ink-faint)]',
+    edge: 'border-l-transparent',
+  },
 };
+
+/*
+ * What each shipment is waiting for, said on the card.
+ *
+ * The list used to print the same four counts for every row whatever state it
+ * was in, so the one that needed the owner today looked exactly like the one
+ * that was finished in June. Each card now leads with its own answer, and a
+ * draft with holes in it says so in the colour that means "you".
+ *
+ * A stuck notice belongs here rather than only inside the shipment: it is a
+ * customer holding copies the shop cannot reach, and nobody opens a shipment
+ * page for weeks at a time.
+ */
+const cards = shipments.map((s) => {
+  const when = whenText(s.incoming_vague, s.incoming_month);
+  const arrivedOn = s.arrived_at
+    ? new Date(s.arrived_at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
+    : null;
+
+  const facts: string[] = [`${s.items} ${s.items === 1 ? 'title' : 'titles'}`];
+  let call: { text: string; urgent: boolean } | null = null;
+  let edge = LABEL[s.status]?.edge ?? '';
+
+  if (s.status === 'draft') {
+    if (s.holes > 0) {
+      facts.push(
+        `${s.holes} still ${s.holes === 1 ? 'needs' : 'need'} a price or a count`,
+        'cannot open until they are filled in',
+      );
+      call = { text: 'Needs you →', urgent: true };
+      edge = 'border-l-[var(--color-outstock)]';
+    } else if (s.items > 0) {
+      facts.push('ready to open for reservations');
+      call = { text: 'Open →', urgent: false };
+    } else {
+      facts.push('nothing on it yet');
+    }
+  } else if (s.status === 'open') {
+    facts.push(`${s.copies} ${s.copies === 1 ? 'copy' : 'copies'}`);
+    if (s.claimed > 0)
+      facts.push(
+        `${s.claimed} reserved by ${s.orders_waiting} ${s.orders_waiting === 1 ? 'order' : 'orders'}`,
+      );
+    if (when) facts.push(`expected ${when}`);
+    call = { text: 'Open →', urgent: false };
+  } else if (s.status === 'arrived') {
+    if (s.stuck > 0) {
+      facts.push(
+        `${s.stuck} ${s.stuck === 1 ? 'customer' : 'customers'} not yet reachable, their copies stay reserved`,
+      );
+      edge = 'border-l-[var(--color-outstock)]';
+      call = { text: 'Needs you →', urgent: true };
+    }
+    if (s.copies > 0)
+      facts.push(`${s.copies} ${s.copies === 1 ? 'copy' : 'copies'} still to come`);
+    if (s.spare > 0) facts.push(`${s.spare} spare ${s.spare === 1 ? 'copy' : 'copies'} not listed`);
+    if (!call) call = { text: 'Open →', urgent: false };
+  } else {
+    facts.push('everything kept in Listings and the reservations queue');
+  }
+
+  return {
+    ...s,
+    when,
+    arrivedOn,
+    facts,
+    call,
+    edge,
+    claimedPct: s.copies > 0 ? Math.round((s.claimed / s.copies) * 100) : 0,
+  };
+});
 ---
 
 <Admin title="Shipments" sub="A box of books, from the supplier's list to the shelf">
-  <a href="/admin/shipments/new" class="btn btn-primary !py-2">Paste a new shipment</a>
+  <a href="/admin/shipments/new" class="btn btn-primary !py-2.5">Paste a new shipment</a>
 
-  {shipments.length === 0 ? (
+  {cards.length === 0 ? (
     <p class="mt-6 text-[15px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
-      Nothing here yet. Paste the list your supplier sends and it will be read into
-      rows you can check over before anybody sees them.
+      Nothing here yet. Paste the list your supplier sends and it will be read into rows you can
+      check over before anybody sees them.
     </p>
   ) : (
     <ul class="mt-6 grid gap-2.5">
-      {shipments.map((s) => (
+      {cards.map((s) => (
         <li>
           <a
             href={`/admin/shipments/${s.id}`}
-            class="block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors"
+            class:list={[
+              'block bg-white border border-[var(--color-rule-soft)] border-l-[3px] rounded-[10px] px-4 py-3.5 hover:border-[var(--color-navy)] transition-colors',
+              s.edge,
+              s.status === 'closed' ? 'opacity-70' : '',
+            ]}
           >
-            <div class="flex items-baseline justify-between gap-4">
-              <span class="text-[15.5px] font-medium">{s.title}</span>
-              <span class:list={['text-[13px] shrink-0', LABEL[s.status]?.tone]}>
-                {LABEL[s.status]?.text ?? s.status}
+            <div class="flex flex-wrap items-baseline gap-2.5">
+              <span class="text-[16px] font-medium">{s.title}</span>
+              <span class:list={['text-[12px] font-medium px-2.5 py-1 rounded-[var(--radius-pill)]', LABEL[s.status]?.chip]}>
+                {s.status === 'arrived' && s.arrivedOn
+                  ? `Arrived ${s.arrivedOn}`
+                  : (LABEL[s.status]?.text ?? s.status)}
               </span>
+              {s.call && (
+                <span
+                  class:list={[
+                    'ml-auto text-[13.5px] font-medium',
+                    s.call.urgent ? 'text-[var(--color-outstock)]' : 'text-[var(--color-navy)]',
+                  ]}
+                >
+                  {s.call.text}
+                </span>
+              )}
             </div>
-            <p class="mt-1 text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-3">
-              <span>{s.items} {s.items === 1 ? 'title' : 'titles'}</span>
-              <span>{s.copies} {s.copies === 1 ? 'copy' : 'copies'}</span>
-              {s.claimed > 0 && (
-                <span class="text-[var(--color-navy)]">{s.claimed} reserved</span>
-              )}
-              {whenText(s.incoming_vague, s.incoming_month) && (
-                <span>expected {whenText(s.incoming_vague, s.incoming_month)}</span>
-              )}
-            </p>
+            <p class="mt-1.5 text-[13.5px] text-[var(--color-ink-soft)]">{s.facts.join(' · ')}</p>
+            {s.status === 'open' && s.copies > 0 && (
+              <span class="mt-2.5 block h-1.5 rounded-[var(--radius-pill)] bg-[var(--color-rule-faint)] overflow-hidden">
+                <span class="block h-full bg-[var(--color-brass)]" style={`width:${s.claimedPct}%`}></span>
+              </span>
+            )}
           </a>
         </li>
       ))}

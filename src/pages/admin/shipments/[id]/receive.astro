@@ -1,0 +1,285 @@
+---
+import Admin from '../../../../layouts/Admin.astro';
+import { getShipment, receiveRows } from '../../../../lib/shipments';
+import { whenText } from '../../../../lib/incoming';
+
+const id = Number.parseInt(Astro.params.id ?? '', 10);
+const shipment = Number.isInteger(id) ? await getShipment(id) : null;
+if (!shipment) return Astro.rewrite('/404');
+
+/*
+ * Receiving is its own page, not a second list on the shipment.
+ *
+ * The shipment page used to carry the whole receive form above the whole item
+ * list: on three hundred titles that is the same three hundred titles twice,
+ * and forty screens of scrolling to reach a save button. One button in the
+ * header comes here instead.
+ */
+if (!['open', 'arrived'].includes(shipment.status) || shipment.copies === 0) {
+  return Astro.redirect(
+    `/admin/shipments/${id}?e=${encodeURIComponent('There is nothing still expected on this shipment')}`,
+  );
+}
+
+const { claimed, rest } = await receiveRows(id);
+const receiptKey = crypto.randomUUID();
+const when = whenText(shipment.incoming_vague, shipment.incoming_month, { year: true });
+
+/* Every title posts a count, including the ones behind the disclosure - the
+   route requires one per title, and a row nobody touched arriving in full is
+   the sane default for a box that mostly turned up. */
+const all = [...claimed, ...rest];
+const expectedCopies = all.reduce((n, i) => n + i.incoming, 0);
+const claimedCopies = claimed.reduce((n, i) => n + i.reserved_incoming, 0);
+
+const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1fr)_6rem_10rem_11rem] gap-x-4 items-center';
+---
+
+<Admin
+  title="What arrived?"
+  sub={`${shipment.title}${when ? ` · expected ${when}` : ''}`}
+  back={{ href: `/admin/shipments/${id}`, label: shipment.title }}
+>
+  <form
+    method="post"
+    action={`/api/admin/shipments/${id}/arrived`}
+    id="receiveForm"
+    class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden shadow-[var(--shadow-panel)]"
+  >
+    <input type="hidden" name="receipt_key" value={receiptKey} />
+    <input type="hidden" name="delivery_version" value={shipment.delivery_version} />
+
+    <div class="px-5 sm:px-7 py-5 bg-[var(--color-paper-raised)] border-b border-[var(--color-rule-soft)]">
+      <div class="flex flex-wrap items-baseline gap-3">
+        <h2 class="font-[family-name:var(--font-display)] text-[23px] font-semibold">What arrived?</h2>
+        <span class="text-[13.5px] text-[var(--color-ink-faint)]">
+          {all.length} {all.length === 1 ? 'title' : 'titles'} · {expectedCopies}
+          {expectedCopies === 1 ? ' copy' : ' copies'} expected
+        </span>
+      </div>
+      <p class="mt-2 max-w-[74ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+        Enter the copies actually in the box. Zero for a title that did not come. A short delivery
+        fills the oldest reservations first and the rest keep their place — nothing is cancelled
+        because a box was light.
+      </p>
+      <div class="mt-3.5 flex flex-wrap items-center gap-2.5" data-bulk hidden>
+        <button type="button" data-all-arrived class="btn btn-ghost !py-2 !text-[13.5px] !text-[var(--color-navy)]">
+          Everything arrived as expected
+        </button>
+        <button type="button" data-none-arrived class="btn btn-ghost !py-2 !text-[13.5px]">
+          Clear all to zero
+        </button>
+        <span class="text-[12.5px] text-[var(--color-ink-faint)]">then correct the exceptions</span>
+      </div>
+    </div>
+
+    <div
+      class:list={[
+        COLS,
+        'px-5 sm:px-7 py-2.5 bg-[var(--color-paper)] border-b border-[var(--color-rule-soft)] text-[11px] font-semibold tracking-[0.1em] uppercase text-[var(--color-ink-faint)]',
+      ]}
+    >
+      <span>Title</span>
+      <span>Expected</span>
+      <span>Arrived</span>
+      <span class="hidden lg:block">What happens</span>
+    </div>
+
+    {claimed.map((i) => (
+      <div class:list={[COLS, 'px-5 sm:px-7 py-3 border-b border-[var(--color-rule-faint)]']} data-row data-expected={i.incoming} data-claims={i.reserved_incoming}>
+        <div class="min-w-0 pr-3">
+          <p dir="auto" class="ar text-[16.5px] font-medium leading-[1.5]">{i.title}</p>
+          <p class="mt-0.5 text-[12px] text-[var(--color-brass)]">
+            {i.reserved_incoming} {i.reserved_incoming === 1 ? 'copy is' : 'copies are'} reserved
+          </p>
+        </div>
+        <span class="text-[14px] text-[var(--color-ink-soft)] tabular-nums">{i.incoming}</span>
+        <div class="flex items-center gap-2.5">
+          <input
+            type="number"
+            name={`received_${i.id}`}
+            min="0"
+            max="999"
+            step="1"
+            required
+            value={i.incoming}
+            data-count
+            class="field !w-[5.5rem] !py-2 !text-[15px] tabular-nums"
+            aria-label={`Copies received of ${i.title}`}
+          />
+          <span data-short class="text-[12px] font-medium px-2 py-1 rounded-[6px] bg-[var(--color-outstock)]/10 text-[var(--color-outstock)]" hidden></span>
+        </div>
+        <span data-effect class="hidden lg:block text-[12.5px] leading-[1.5] text-[var(--color-ink-faint)]"></span>
+      </div>
+    ))}
+
+    {rest.length > 0 && (
+      <details class="border-b border-[var(--color-rule-faint)]">
+        <summary class="px-5 sm:px-7 py-3 bg-[var(--color-paper-raised)] text-[13px] text-[var(--color-ink-soft)] cursor-pointer select-none">
+          {claimed.length > 0
+            ? `Showing the ${claimed.length} ${claimed.length === 1 ? 'title' : 'titles'} with reservations against ${claimed.length === 1 ? 'it' : 'them'} first. Show the other ${rest.length}`
+            : `Nobody has reserved from this shipment. Show all ${rest.length} titles`}
+          <span class="text-[var(--color-ink-faint)]">
+            {' '}— anything you do not touch is recorded as arriving in full.
+          </span>
+        </summary>
+        {rest.map((i) => (
+          <div class:list={[COLS, 'px-5 sm:px-7 py-3 border-t border-[var(--color-rule-faint)]']} data-row data-expected={i.incoming} data-claims="0">
+            <div class="min-w-0 pr-3">
+              <p dir="auto" class="ar text-[16.5px] font-medium leading-[1.5]">{i.title}</p>
+              <p class="mt-0.5 text-[12px] text-[var(--color-ink-faint)]">nothing reserved</p>
+            </div>
+            <span class="text-[14px] text-[var(--color-ink-soft)] tabular-nums">{i.incoming}</span>
+            <div class="flex items-center gap-2.5">
+              <input
+                type="number"
+                name={`received_${i.id}`}
+                min="0"
+                max="999"
+                step="1"
+                required
+                value={i.incoming}
+                data-count
+                class="field !w-[5.5rem] !py-2 !text-[15px] tabular-nums"
+                aria-label={`Copies received of ${i.title}`}
+              />
+              <span data-short class="text-[12px] font-medium px-2 py-1 rounded-[6px] bg-[var(--color-outstock)]/10 text-[var(--color-outstock)]" hidden></span>
+            </div>
+            <span data-effect class="hidden lg:block text-[12.5px] leading-[1.5] text-[var(--color-ink-faint)]"></span>
+          </div>
+        ))}
+      </details>
+    )}
+
+    <div class="flex flex-wrap items-center gap-5 px-5 sm:px-7 py-5 bg-[var(--color-instock)]/6 border-t border-[var(--color-instock)]/25">
+      <div class="flex-1 min-w-[20rem]">
+        <p id="receiveHead" class="font-[family-name:var(--font-display)] text-[16px] font-semibold">
+          {claimedCopies > 0
+            ? `${claimedCopies} reserved ${claimedCopies === 1 ? 'copy' : 'copies'} to fill`
+            : 'Nothing on this shipment is reserved'}
+        </p>
+        <p id="receiveBody" class="mt-1.5 max-w-[70ch] text-[13.5px] leading-relaxed text-[var(--color-ink-soft)]">
+          Everything is set to arrive in full. Change the counts that did not, then record the
+          delivery.
+        </p>
+      </div>
+      <button type="submit" class="btn btn-primary !py-3 !px-6 !text-[15px]">
+        Record this delivery
+      </button>
+    </div>
+  </form>
+
+  <p class="mt-4 text-[13px] text-[var(--color-ink-faint)] leading-relaxed max-w-[76ch]">
+    Recording a delivery cannot happen twice by accident — this form carries a key that is spent
+    the first time it is used, so a second submit is ignored rather than adding the stock again.
+  </p>
+</Admin>
+
+{/*
+  * The live arithmetic, as an enhancement over a form that already works.
+  *
+  * With scripting off every field is filled with what was expected, so
+  * submitting the page unchanged records the box as arriving in full - the
+  * common case - and the counts can still be typed over. What the script adds
+  * is being told what a number means before committing to it.
+  */}
+<script is:inline nonce={Astro.locals.cspNonce}>
+  (() => {
+    const form = document.getElementById('receiveForm');
+    if (!form) return;
+    const rows = [...form.querySelectorAll('[data-row]')];
+    const head = document.getElementById('receiveHead');
+    const body = document.getElementById('receiveBody');
+    const bulk = form.querySelector('[data-bulk]');
+    if (bulk) bulk.hidden = false;
+
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+    function paint() {
+      let filled = 0;
+      let waiting = 0;
+      let shelf = 0;
+      let missing = 0;
+      let short = 0;
+
+      for (const row of rows) {
+        const expected = Number(row.dataset.expected) || 0;
+        const claims = Number(row.dataset.claims) || 0;
+        const field = row.querySelector('[data-count]');
+        const badge = row.querySelector('[data-short]');
+        const effect = row.querySelector('[data-effect]');
+        const got = Math.max(0, Math.min(999, Number(field.value) || 0));
+
+        const toClaims = Math.min(got, claims);
+        const spare = Math.max(0, got - claims);
+        const stillWaiting = Math.max(0, claims - got);
+        filled += toClaims;
+        waiting += stillWaiting;
+        shelf += spare;
+        if (got === 0 && expected > 0) missing += 1;
+        else if (got < expected) short += 1;
+
+        if (badge) {
+          if (got === 0 && expected > 0) {
+            badge.textContent = 'none came';
+            badge.hidden = false;
+          } else if (got < expected) {
+            badge.textContent = `${expected - got} short`;
+            badge.hidden = false;
+          } else {
+            badge.hidden = true;
+          }
+        }
+
+        if (effect) {
+          const parts = [];
+          if (toClaims > 0) parts.push(`${plural(toClaims, 'claim', 'claims')} filled`);
+          if (stillWaiting > 0)
+            parts.push(
+              `${plural(stillWaiting, 'claim waits', 'claims wait')} for the next box`,
+            );
+          if (spare > 0) parts.push(`${plural(spare, 'copy', 'copies')} spare`);
+          effect.textContent = parts.length ? parts.join(', ') : 'nothing to record for this title';
+          effect.style.color = stillWaiting > 0 ? 'var(--color-brass)' : '';
+        }
+      }
+
+      if (!head || !body) return;
+      head.textContent = filled > 0
+        ? `${plural(filled, 'reserved copy', 'reserved copies')} filled`
+        : 'No reservations filled by this delivery';
+
+      const lines = [];
+      if (waiting > 0)
+        lines.push(
+          `${plural(waiting, 'claim keeps', 'claims keep')} its place for the next box — nothing is cancelled`,
+        );
+      if (shelf > 0) lines.push(`${plural(shelf, 'copy goes', 'copies go')} on the shelf`);
+      if (missing > 0) lines.push(`${plural(missing, 'title', 'titles')} did not come at all`);
+      else if (short > 0) lines.push(`${plural(short, 'title', 'titles')} came up short`);
+      if (filled > 0)
+        lines.push(
+          'customers whose books are all here get seven days to reply before their copies go back on the shelf',
+        );
+      body.textContent = lines.length
+        ? `${lines.join('; ')}.`
+        : 'Nothing would change. Enter at least one received copy.';
+    }
+
+    form.addEventListener('input', (event) => {
+      if (event.target instanceof HTMLElement && event.target.matches('[data-count]')) paint();
+    });
+
+    const setAll = (value) => {
+      for (const row of rows) {
+        const field = row.querySelector('[data-count]');
+        field.value = value === 'expected' ? row.dataset.expected : '0';
+      }
+      paint();
+    };
+    form.querySelector('[data-all-arrived]')?.addEventListener('click', () => setAll('expected'));
+    form.querySelector('[data-none-arrived]')?.addEventListener('click', () => setAll('zero'));
+
+    paint();
+  })();
+</script>

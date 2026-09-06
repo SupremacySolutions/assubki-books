@@ -19,6 +19,7 @@ import { statusLabel, isSettled, moneyReceived, trackingUrl, cashMoment, portalL
 import { collectionAddress } from '../../lib/settings';
 import { cancelRight, REASON_MAX } from '../../lib/cancellation';
 import { whenText } from '../../lib/incoming';
+import { getShipment } from '../../lib/shipments';
 import Thread from '../../components/Thread.astro';
 import { THREAD } from '../../lib/order-status';
 import { markRead, thread, threadOpen } from '../../lib/messages';
@@ -167,6 +168,28 @@ const replyDue = Boolean(
 );
 
 /*
+ * The three shapes a reservation takes, named once.
+ *
+ * These facts were four paragraphs stacked under the status, each true and
+ * none of them grouped, so a customer reading about a short delivery had to
+ * assemble the answer from three of them. Each state is one panel now.
+ *
+ * They cannot overlap: `pay_by` is only set once nothing on the order is still
+ * `from_incoming`, so an order waiting on a book can never also be counting
+ * its seven days.
+ */
+const arrivedLines = order?.items.filter((i) => !i.from_incoming) ?? [];
+const waitingLines = order?.items.filter((i) => i.from_incoming) ?? [];
+const shortDelivery = !dropped && waitingLines.length > 0 && arrivedLines.length > 0;
+const stillWaiting = !dropped && waitingLines.length > 0 && arrivedLines.length === 0;
+/* Which of the two answers was just sent, so the panel can say it landed
+   rather than looking exactly as it did before the button was pressed. */
+const replied = params.get('replied');
+const shipmentName = order?.shipment_id
+  ? (await getShipment(order.shipment_id))?.title ?? null
+  : null;
+
+/*
  * Cancelling: which of the three this customer is entitled to, and whether
  * they have asked for the confirmation panel. Both server-side, because the
  * whole flow is form posts and this page must work without JavaScript.
@@ -256,11 +279,38 @@ if (offerTelegram && telegramLink) {
             Held until {expires!.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}.
           </p>
         )}
-        {!stillHeld && waitingWhen && !dropped && (
-          <p class="mt-3 text-[14px] text-[var(--color-brass)]">
-            Reserved for you until the delivery arrives, expected {waitingWhen}.
-          </p>
+        {/*
+          * Waiting on the box.
+          *
+          * Brass, because that is the colour this shop uses for waiting on
+          * somebody, and one panel rather than a line under the status: the
+          * expected month, the promise and the way back to the shipment are
+          * one thought, not three.
+          */}
+        {stillWaiting && (
+          <div class="mt-4 p-4 border border-[#e6d9b8] bg-[#fdfaf1] rounded-[var(--radius-panel)]">
+            <div class="flex items-center gap-2.5">
+              <span class="w-2 h-2 rounded-full bg-[var(--color-brass)] shrink-0"></span>
+              <p class="text-[15px] font-medium">
+                {waitingLines.length} {waitingLines.length === 1 ? 'book' : 'books'}
+                {shipmentName ? ` from ${shipmentName}` : ' still to arrive'}
+              </p>
+            </div>
+            <p class="mt-2 text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+              {waitingWhen && `Expected ${waitingWhen}. `}A reservation does not run out while you
+              wait — it stands until the box arrives, however long that takes. Nothing is paid now.
+            </p>
+            {order!.shipment_id && (
+              <a
+                href={`/shipments/${order!.shipment_id}`}
+                class="inline-block mt-2.5 text-[13.5px] text-[var(--color-navy)] underline underline-offset-2"
+              >
+                See the whole shipment →
+              </a>
+            )}
+          </div>
         )}
+
         {/*
           * The other half of the same checkout.
           *
@@ -268,13 +318,14 @@ if (offerTelegram && telegramLink) {
           * looking at half their basket asks is where the rest of it went.
           */}
         {siblings.length > 0 && (
-          <div class="mt-4 p-4 bg-white border border-[var(--color-rule)] rounded-[3px]">
+          <div class="mt-3 p-4 bg-white border border-[var(--color-rule)] rounded-[var(--radius-panel)]">
             <p class="text-[14.5px] leading-relaxed">
-              {siblings.length === 1 ? 'The rest of' : 'The rest of'} what you asked for is on
+              The rest of what you asked for is on
               {siblings.length === 1 ? ' a separate order' : ' separate orders'}, because
               {order!.shipment_id
                 ? ' books we already have can be sent without waiting for the shipment.'
                 : ' books still on their way cannot be sent with the ones we have.'}
+              {' '}Postage is quoted separately for each.
             </p>
             <ul class="mt-2 grid gap-1">
               {siblings.map((other) => (
@@ -294,13 +345,107 @@ if (offerTelegram && telegramLink) {
           </div>
         )}
 
+        {/*
+          * A short delivery, told line by line.
+          *
+          * The one thing somebody in this state actually wants to know is
+          * which of their books are here, and no amount of prose answers that
+          * as well as a list with a dot against each one. The reassurance
+          * follows: a light box is not a cancellation.
+          */}
+        {shortDelivery && (
+          <div class="mt-4 p-4 bg-white border border-[var(--color-rule)] rounded-[var(--radius-panel)]">
+            <p class="eyebrow">Short delivery</p>
+            <p class="mt-1.5 text-[16px] font-medium">
+              {arrivedLines.length} of your {order!.items.length} arrived
+            </p>
+            <ul class="mt-3 grid gap-2">
+              {order!.items.map((item) => (
+                <li
+                  class:list={[
+                    'flex items-center gap-2.5 px-3.5 py-2.5 border rounded-[9px]',
+                    item.from_incoming
+                      ? 'border-[#e6d9b8] bg-[#fdfaf1]'
+                      : 'border-[var(--color-instock)]/25 bg-[var(--color-instock)]/6',
+                  ]}
+                >
+                  <span
+                    class:list={[
+                      'w-2 h-2 rounded-full shrink-0',
+                      item.from_incoming ? 'bg-[var(--color-brass)]' : 'bg-[var(--color-instock)]',
+                    ]}
+                  ></span>
+                  <span dir="auto" class="ar flex-1 min-w-0 text-[15.5px]">{item.title_snapshot}</span>
+                  <span
+                    class:list={[
+                      'text-[13px] shrink-0',
+                      item.from_incoming ? 'text-[var(--color-brass)]' : 'text-[var(--color-instock)]',
+                    ]}
+                  >
+                    {item.from_incoming ? 'still coming' : 'here'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p class="mt-3.5 text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+              The box was short. Your {waitingLines.length === 1 ? 'copy keeps its' : 'copies keep their'}
+              {' '}place at the front of the queue for the next one — nothing has been cancelled and
+              you are not asked to pay for anything yet. The seven days start when everything on
+              this order is here.
+            </p>
+            <p class="mt-2.5 text-[13px] leading-relaxed text-[var(--color-ink-faint)]">
+              If you would rather take the {arrivedLines.length === 1 ? 'one' : arrivedLines.length}
+              {' '}that arrived now, tell us below and we will split it — you would pay postage
+              twice, so it is worth saying which you prefer.
+            </p>
+          </div>
+        )}
+
+        {/*
+          * Arrived, and the clock is running.
+          *
+          * Green, and with the two answers as buttons. Almost everybody says
+          * one of exactly two things at this point, and asking them to compose
+          * a sentence to say it is the reason some people say nothing at all —
+          * which costs them their books. Neither button changes the deadline
+          * by itself; both write in the thread, and the shop answers.
+          */}
         {replyDue && (
-          <p class="mt-3 text-[14px] text-[var(--color-brass)]">
-            Your books have arrived and are set aside for you. Please let us know by
-            {' '}{replyBy!.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-            {' '}— after that the copies go back on the shelf. If you need longer, or
-            would rather not go ahead, tell us below.
-          </p>
+          <div class="mt-4 p-4 border border-[var(--color-instock)]/25 bg-[var(--color-instock)]/6 rounded-[var(--radius-panel)]">
+            <p class="eyebrow">Arrived · seven days to reply</p>
+            <p class="mt-1.5 text-[15.5px] font-medium">
+              Set aside for you until
+              {' '}{replyBy!.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+            <p class="mt-2 text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+              Let us know you still want them and we will send the total and how to pay. After that
+              date the copies go back on the shelf. Need longer, or changed your mind? Tell us — we
+              would rather know.
+            </p>
+            {replied && (
+              <p class="mt-3 p-3 bg-white border border-[var(--color-instock)]/30 rounded-[8px] text-[13.5px] leading-relaxed text-[var(--color-instock)]">
+                {replied === 'longer'
+                  ? 'Asked. We will reply — your copies stay set aside while we do.'
+                  : 'Told. We will send the total and how to pay shortly.'}
+              </p>
+            )}
+            <div class="mt-3.5 flex flex-wrap gap-2.5">
+              <form method="post" action="/api/orders/reservation">
+                <input type="hidden" name="ref" value={order!.ref} />
+                <input type="hidden" name="t" value={token} />
+                <input type="hidden" name="action" value="confirm" />
+                <button type="submit" class="btn btn-primary !py-2.5 !text-[14px] !bg-[var(--color-instock)] !border-[var(--color-instock)]">
+                  Yes, please send them
+                </button>
+              </form>
+              <form method="post" action="/api/orders/reservation">
+                <input type="hidden" name="ref" value={order!.ref} />
+                <input type="hidden" name="t" value={token} />
+                <input type="hidden" name="action" value="longer" />
+                <button type="submit" class="btn btn-ghost !py-2.5 !text-[14px]">I need longer</button>
+              </form>
+            </div>
+          </div>
         )}
 
         {/* Once the books are on their way, the tracking number is the only

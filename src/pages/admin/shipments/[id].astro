@@ -1,7 +1,12 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
 import { env } from 'cloudflare:workers';
-import { getShipment, shipmentItems } from '../../../lib/shipments';
+import {
+  ADMIN_SHIPMENT_PAGE,
+  adminShipmentPage,
+  asFilter,
+  getShipment,
+} from '../../../lib/shipments';
 import { pendingNotices, stuckNotices } from '../../../lib/shipment-notify';
 import { VAGUE, monthOptions, whenText } from '../../../lib/incoming';
 
@@ -9,104 +14,186 @@ const id = Number.parseInt(Astro.params.id ?? '', 10);
 const shipment = Number.isInteger(id) ? await getShipment(id) : null;
 if (!shipment) return Astro.rewrite('/404');
 
-const items = await shipmentItems(id);
 const params = Astro.url.searchParams;
 const added = Number(params.get('added') ?? 0);
 const unread = Number(params.get('unread') ?? 0);
 const saved = params.get('saved');
 const opened = params.get('opened');
 const error = params.get('e');
+const listed = params.get('listed');
+const addedOne = params.get('added_one');
+const promoted = Number(params.get('promoted') ?? 0);
+const askedToPromote = Number(params.get('asked') ?? 0);
+const arrivedCount = Number(params.get('arrived') ?? -1);
+/* The receipt just posted, read back off the redirect so the page can answer
+   "what came?" without the owner scrolling three hundred rows for it. */
+const receipt = {
+  full: Number(params.get('full') ?? 0),
+  short: Number(params.get('short') ?? 0),
+  missing: Number(params.get('missing') ?? 0),
+  waiting: Number(params.get('waiting') ?? 0),
+  spare: Number(params.get('spare') ?? 0),
+};
 
 const isDraft = shipment.status === 'draft';
 const editable = isDraft || shipment.status === 'open';
-const receiptKey = crypto.randomUUID();
-const arrivedCount = Number(params.get('arrived') ?? -1);
-// What is still waiting to go out, so the owner can see the queue draining
-// rather than wondering whether anything happened.
-const waitingToSend = shipment.status === 'arrived'
-  ? await pendingNotices(env.DB, id)
-  : 0;
+/*
+ * A shipment is not finished with when the first box lands.
+ *
+ * A short delivery leaves copies still coming while the shipment itself reads
+ * 'arrived', and those copies turn up in a later box. So the receive page is
+ * offered whenever anything is still expected, not only while the status says
+ * 'open' - otherwise the second box has nowhere to be recorded.
+ */
+const stillExpected = shipment.copies > 0;
+const canReceive = ['open', 'arrived'].includes(shipment.status) && stillExpected;
+
+/* Rows read as broken for want of a price only while copies are still coming;
+   after the box lands a nought in `incoming` is the shipment working. */
+const expectingMore = editable || stillExpected;
+
+const q = (params.get('q') ?? '').slice(0, 80);
+const filter = asFilter(params.get('filter'));
+const page = Math.max(1, Number(params.get('page') ?? 1) || 1);
+const view = await adminShipmentPage(id, { q, filter, page, expectingMore });
+const holes = view.counts.fixing;
 
 /*
- * The ones that are not merely queued but failing.
+ * Which rows are open for editing.
  *
- * A reservation is not expired while its notice is unsent, and the retry keeps
- * going indefinitely, so a customer who cannot be reached holds their copies
- * for ever. That is the right default - it is the shop's fault, not theirs -
- * but it has to be visible or the stock is simply gone.
+ * `edit=all` opens the page - at most twenty-five rows, which is what an owner
+ * pricing a list actually wants - and `edit=<id>` opens one, for the single
+ * row that needs a correction. Everything else reads as a table. It is a query
+ * parameter rather than a script because the whole portal works without one,
+ * and because a link is something the browser can go back from.
  */
-const stuck = shipment.status === 'arrived'
-  ? await stuckNotices(env.DB, id)
-  : { orders: 0, lastError: null };
+const editParam = params.get('edit');
+const editAll = editParam === 'all' && editable;
+const editOne = editable && editParam && editParam !== 'all' ? Number(editParam) : null;
+const editing = editable && (editAll || editOne !== null);
+const isEditing = (rowId: number) => editAll || editOne === rowId;
+
+const showAdd = params.get('add') === '1' && editable;
+const showDetails = params.get('details') === '1';
+
+const waitingToSend = shipment.status === 'arrived' ? await pendingNotices(env.DB, id) : 0;
+const stuck =
+  shipment.status === 'arrived'
+    ? await stuckNotices(env.DB, id)
+    : { orders: 0, lastError: null };
+
 const money = (pence: number) => (pence / 100).toFixed(2);
 
-/*
- * A row nobody can reserve yet, spelled out.
- *
- * `openShipment` refuses a list with holes in it, and refusing without saying
- * which row is a puzzle. Marking them here means the button's refusal is
- * already explained by the time it happens.
- */
-const listed = params.get('listed');
-/*
- * What is left after the reservations were filled.
- *
- * Only these can become listings: a title whose every copy is spoken for has
- * nothing to sell, and offering to list it would be offering to sell a book
- * that is already somebody else's.
- */
-const spare = (i: typeof items[number]) => i.incoming > 0 ? 0 : i.stock - i.reserved;
+/* Links back to this page keep whatever the owner was looking at. */
+const href = (over: Record<string, string | number | null>) => {
+  const next = new URLSearchParams();
+  if (q) next.set('q', q);
+  if (filter !== 'all') next.set('filter', filter);
+  if (view.page > 1) next.set('page', String(view.page));
+  for (const [key, value] of Object.entries(over)) {
+    if (value === null) next.delete(key);
+    else next.set(key, String(value));
+  }
+  const query = next.toString();
+  return `/admin/shipments/${id}${query ? `?${query}` : ''}`;
+};
 
-/*
- * The rows are wrapped in the save form only while the shipment is a draft.
- *
- * After it has landed each row grows a form of its own for listing the spare
- * copies, and a form inside a form is invalid HTML - the browser drops the
- * inner one silently, so the button would render and do nothing.
- */
-const Rows = editable ? 'form' : 'div';
-
-/*
- * The months on offer.
- *
- * `monthOptions` runs from today forward, which is right for a shipment being
- * planned and wrong for one already saved: a delivery expected last month
- * would find its own value missing from the list and silently show the wrong
- * one. So whatever is stored is put back at the front if the window has moved
- * past it.
- */
 const months = monthOptions();
 if (shipment.incoming_month && !months.some((m) => m.value === shipment.incoming_month)) {
   const [y, m] = shipment.incoming_month.split('-').map(Number);
   months.unshift({
     value: shipment.incoming_month,
     label: new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {
-      month: 'long', year: 'numeric', timeZone: 'UTC',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
     }),
   });
 }
-const details = params.get('details');
 
-const incomplete = (i: typeof items[number]) =>
-  !i.title || i.price_pence <= 0 || i.incoming <= 0;
-const holes = items.filter(incomplete).length;
+const when = whenText(shipment.incoming_vague, shipment.incoming_month, { year: true });
+const openedOn = shipment.opened_at
+  ? new Date(shipment.opened_at * 1000).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+    })
+  : null;
+
+const STATUS: Record<string, { label: string; class: string }> = {
+  draft: { label: 'Draft', class: 'bg-[var(--color-rule-faint)] text-[var(--color-ink-soft)]' },
+  open: { label: 'Open for reservations', class: 'bg-[var(--color-instock)]/10 text-[var(--color-instock)]' },
+  arrived: { label: 'Arrived', class: 'bg-[var(--color-navy)]/10 text-[var(--color-navy)]' },
+  closed: { label: 'Hidden from customers', class: 'bg-[var(--color-rule-faint)] text-[var(--color-ink-faint)]' },
+};
+const status = STATUS[shipment.status] ?? STATUS.draft;
+
+const claimedPct = shipment.copies > 0 ? Math.round((shipment.claimed / shipment.copies) * 100) : 0;
+
+const CHIPS: { key: typeof filter; label: string; count: number }[] = [
+  { key: 'all', label: 'All', count: view.counts.all },
+  { key: 'fixing', label: 'Needs fixing', count: view.counts.fixing },
+  { key: 'claimed', label: 'Has reservations', count: view.counts.claimed },
+  { key: 'unclaimed', label: 'Nothing reserved', count: view.counts.unclaimed },
+];
+
+/*
+ * Each row's state, worked out here rather than in the markup.
+ *
+ * Partly because it reads better, and partly because Astro's template parser
+ * takes a `<=` inside an expression for the start of a tag - the arithmetic
+ * has to live in the frontmatter to be written plainly at all.
+ */
+const rows = view.items.map((i) => {
+  const problems = [
+    !i.title.trim() ? 'no title' : null,
+    i.price_pence <= 0 ? 'no price on the line' : null,
+    expectingMore && i.incoming <= 0 ? 'no number of copies' : null,
+  ].filter(Boolean) as string[];
+  const promised = i.incoming + i.reserved_incoming;
+  return {
+    ...i,
+    problems,
+    broken: problems.length > 0,
+    promised,
+    claimPct: promised > 0 ? Math.round((i.reserved_incoming / promised) * 100) : 0,
+    noCount: expectingMore && i.incoming <= 0,
+    noPrice: i.price_pence <= 0,
+  };
+});
+
+const spareOnPage = view.items.filter((i) => i.spare > 0);
+const canPromote = ['arrived', 'closed'].includes(shipment.status) && spareOnPage.length > 0;
+
+/* The grid is written once and used by the header row and every row under it,
+   so a column cannot drift out of line with its own heading. */
+const COLS =
+  'grid grid-cols-[2.5rem_minmax(0,1fr)_5rem] md:grid-cols-[2.5rem_minmax(0,1fr)_4.5rem_5.5rem_5rem_8.5rem_6.5rem] gap-x-3 items-center';
 ---
 
 <Admin
   title={shipment.title}
-  sub={whenText(shipment.incoming_vague, shipment.incoming_month)
-    ? `Expected ${whenText(shipment.incoming_vague, shipment.incoming_month)}`
-    : undefined}
+  sub={when ? `Expected ${when}` : undefined}
   back={{ href: '/admin/shipments', label: 'Shipments' }}
 >
   {added > 0 && (
-    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+    <p class="mb-4 text-[14px] text-[var(--color-instock)] leading-relaxed max-w-[46rem]">
       Read {added} {added === 1 ? 'title' : 'titles'} from the list.
-      {unread > 0 && ` ${unread} ${unread === 1 ? 'line' : 'lines'} could not be read and ${unread === 1 ? 'was' : 'were'} left out — add ${unread === 1 ? 'it' : 'them'} by hand below.`}
+      {unread > 0 && (
+        <Fragment>
+          {' '}{unread} {unread === 1 ? 'line was' : 'lines were'} not fully understood and
+          {unread === 1 ? ' is' : ' are'} sitting in the list with the text as pasted —
+          {' '}<a href={href({ filter: 'fixing', page: null })} class="underline">finish {unread === 1 ? 'it' : 'them'} off</a>.
+        </Fragment>
+      )}
     </p>
   )}
   {saved && <p class="mb-4 text-[14px] text-[var(--color-instock)]">Saved.</p>}
-  {details && (
+  {addedOne && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+      Added “{addedOne}” to the end of the list.
+    </p>
+  )}
+  {params.get('details') === 'saved' && (
     <p class="mb-4 text-[14px] text-[var(--color-instock)]">
       Details saved. Customers see the new heading straight away.
     </p>
@@ -123,26 +210,82 @@ const holes = items.filter(incomplete).length;
       Listings — it will not appear in the catalogue looking its best until you do.
     </p>
   )}
-  {arrivedCount >= 0 && (
-    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
-      Marked as arrived. The copies are on the shelf and
-      {arrivedCount === 0
-        ? ' nobody had reserved any.'
-        : ` ${arrivedCount} ${arrivedCount === 1 ? 'customer is' : 'customers are'} being told — they have seven days to reply.`}
+  {promoted > 0 && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)] leading-relaxed max-w-[46rem]">
+      {promoted} {promoted === 1 ? 'title is' : 'titles are'} now ordinary listings, waiting in
+      {' '}<a href="/admin/books?status=draft" class="underline">Listings</a> as drafts. Each still
+      needs an English title, a cover and a description before it can go in the catalogue.
+      {askedToPromote > promoted &&
+        ` ${askedToPromote - promoted} could not be moved — their copies are all spoken for, or more are still coming.`}
     </p>
   )}
+  {arrivedCount >= 0 && (
+    <section class="mb-5 p-5 sm:p-6 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+      <p class="eyebrow">After recording</p>
+      <h2 class="mt-2 font-[family-name:var(--font-display)] text-[22px] font-semibold leading-tight">
+        Delivery recorded.
+        {arrivedCount === 0
+          ? ' Nobody had reserved any of it.'
+          : ` ${arrivedCount} ${arrivedCount === 1 ? 'customer is' : 'customers are'} being told.`}
+      </h2>
+      {arrivedCount > 0 && (
+        <p class="mt-2 max-w-[76ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+          They go out a few at a time so a large shipment does not spend the day's email — expect
+          the queue to drain within the hour. Each of them has seven days to reply before their
+          copies go back on the shelf.
+        </p>
+      )}
+      <dl class="mt-5 grid grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-rule-soft)] border border-[var(--color-rule-soft)] rounded-[10px] overflow-hidden">
+        <div class="p-3.5 bg-white">
+          <dd class="font-[family-name:var(--font-display)] text-[20px] font-semibold tabular-nums">{receipt.full}</dd>
+          <dt class="mt-0.5 text-[12.5px] text-[var(--color-ink-faint)]">
+            {receipt.full === 1 ? 'title received in full' : 'titles received in full'}
+          </dt>
+        </div>
+        <div class="p-3.5 bg-white">
+          <dd class="font-[family-name:var(--font-display)] text-[20px] font-semibold tabular-nums text-[var(--color-brass)]">{receipt.short}</dd>
+          <dt class="mt-0.5 text-[12.5px] text-[var(--color-ink-faint)]">
+            short — {receipt.waiting} {receipt.waiting === 1 ? 'claim' : 'claims'} still waiting
+          </dt>
+        </div>
+        <div class="p-3.5 bg-white">
+          <dd class="font-[family-name:var(--font-display)] text-[20px] font-semibold tabular-nums text-[var(--color-outstock)]">{receipt.missing}</dd>
+          <dt class="mt-0.5 text-[12.5px] text-[var(--color-ink-faint)]">did not come at all</dt>
+        </div>
+        <div class="p-3.5 bg-white">
+          <dd class="font-[family-name:var(--font-display)] text-[20px] font-semibold tabular-nums text-[var(--color-instock)]">{receipt.spare}</dd>
+          <dt class="mt-0.5 text-[12.5px] text-[var(--color-ink-faint)]">
+            {receipt.spare === 1 ? 'spare copy to list' : 'spare copies to list'}
+          </dt>
+        </div>
+      </dl>
+      <div class="mt-4 flex flex-wrap gap-2.5">
+        {receipt.spare > 0 && (
+          <a href={href({ filter: 'unclaimed', page: null, edit: null, arrived: null })} class="btn btn-primary !py-2.5 !text-[14px]">
+            List the spare copies
+          </a>
+        )}
+        <a href="/admin/orders?kind=reservations" class="btn btn-ghost !py-2.5 !text-[14px]">
+          Reservations queue{shipment.orders_waiting > 0 && ` (${shipment.orders_waiting})`}
+        </a>
+        {receipt.waiting > 0 && (
+          <a href={href({ filter: 'claimed', page: null, edit: null, arrived: null })} class="btn btn-ghost !py-2.5 !text-[14px]">
+            The {receipt.waiting} {receipt.waiting === 1 ? 'claim' : 'claims'} still waiting
+          </a>
+        )}
+      </div>
+    </section>
+  )}
+
   {stuck.orders > 0 && (
-    <div class="mb-4 p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14px] leading-relaxed max-w-[46rem]">
+    <div class="mb-4 p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[var(--radius-panel)] text-[14px] leading-relaxed max-w-[46rem]">
       <p class="text-[var(--color-outstock)]">
         {stuck.orders} {stuck.orders === 1 ? 'customer has' : 'customers have'} not been
-        reachable. {stuck.orders === 1 ? 'Their copies stay' : 'Their copies stay'} reserved
-        and {stuck.orders === 1 ? 'their reservation will not' : 'their reservations will not'}
-        {' '}lapse — nobody loses books over a message the shop failed to send.
+        reachable. Their copies stay reserved and their {stuck.orders === 1 ? 'reservation' : 'reservations'}
+        {' '}will not lapse — nobody loses books over a message the shop failed to send.
       </p>
       {stuck.lastError && (
-        <p class="mt-1.5 text-[13px] text-[var(--color-ink-soft)]">
-          Last error: {stuck.lastError}
-        </p>
+        <p class="mt-1.5 text-[13px] text-[var(--color-ink-soft)]">Last error: {stuck.lastError}</p>
       )}
       <p class="mt-1.5 text-[13px] text-[var(--color-ink-soft)]">
         It keeps retrying. If it never gets through, reach them yourself from
@@ -154,304 +297,559 @@ const holes = items.filter(incomplete).length;
 
   {waitingToSend > 0 && (
     <p class="mb-4 text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
-      {waitingToSend} {waitingToSend === 1 ? 'customer has' : 'customers have'} still
-      to be told. They go out a few at a time, so a large shipment does not spend
-      the day's email in one go — check back in a quarter of an hour.
+      {waitingToSend} {waitingToSend === 1 ? 'customer has' : 'customers have'} still to be told.
+      They go out a few at a time, so a large shipment does not spend the day's email in one go —
+      check back in a quarter of an hour.
     </p>
   )}
 
-  {/*
-    * The shipment's own details, editable for as long as it exists.
-    *
-    * The expected month is the field customers read as a promise and the one
-    * most likely to move, so it cannot be a thing chosen once on the paste
-    * screen and then frozen. Its own form, posting to its own route: it
-    * changes the shipment, while the form below changes the books on it.
-    */}
-  <details class="mb-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
-    <summary class="px-4 py-3 text-[14px] cursor-pointer select-none">
-      Name, expected date and note
-      <span class="ml-2 text-[13px] text-[var(--color-ink-faint)]">
-        — what customers read at the top of this shipment
-      </span>
-    </summary>
-    <form
-      method="post"
-      action={`/api/admin/shipments/${id}/details`}
-      class="px-4 pb-4 grid gap-3 sm:grid-cols-[1fr_7rem_11rem] sm:items-end"
-    >
-      <div>
-        <label for="s_title" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-          Name
-        </label>
-        <input
-          id="s_title"
-          name="title"
-          value={shipment.title}
-          required
-          maxlength="160"
-          class="field !text-[14px]"
-        />
-      </div>
-      <div>
-        <label for="s_vague" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-          Expected
-        </label>
-        <select id="s_vague" name="incoming_vague" class="field !text-[14px]">
-          {VAGUE.map((v) => (
-            <option value={v.value} selected={shipment.incoming_vague === v.value}>
-              {v.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label for="s_month" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-          Month and year
-        </label>
-        <select id="s_month" name="incoming_month" class="field !text-[14px]">
-          <option value="">Not saying yet</option>
-          {months.map((m) => (
-            <option value={m.value} selected={shipment.incoming_month === m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div class="sm:col-span-3">
-        <label for="s_note" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-          Note shown under the heading
-        </label>
-        <textarea
-          id="s_note"
-          name="note"
-          rows="3"
-          maxlength="1000"
-          class="field !text-[14px]"
-        >{shipment.note}</textarea>
-      </div>
-      <div class="sm:col-span-3">
-        <button type="submit" class="btn btn-primary !py-1.5 !text-[13.5px]">
-          Save details
-        </button>
-      </div>
-    </form>
-  </details>
+  <div class="bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden shadow-[var(--shadow-panel)]">
+    {/* Header: what this shipment is, and the one thing to do with it now. */}
+    <div class="bg-[var(--color-card)] border-b border-[var(--color-rule-soft)] px-5 py-4 sm:px-7 sm:py-5">
+      <div class="flex flex-wrap items-start gap-x-6 gap-y-3">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <h2 class="font-[family-name:var(--font-display)] text-[24px] sm:text-[27px] font-semibold leading-tight">
+              {shipment.title}
+            </h2>
+            <span class:list={['text-[12.5px] font-medium px-2.5 py-1 rounded-[var(--radius-pill)]', status.class]}>
+              {status.label}
+            </span>
+            <a href={href({ details: showDetails ? null : '1', edit: null, add: null })} class="text-[13px] text-[var(--color-navy)] underline underline-offset-2">
+              {showDetails ? 'Close' : 'Edit name, date, note'}
+            </a>
+          </div>
+          <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)]">
+            {when ? `Expected ${when}` : 'No expected date yet'}
+            {openedOn && ` · opened ${openedOn}`}
+            {' · '}
+            <a href={`/shipments/${id}`} class="text-[var(--color-navy)] underline underline-offset-2">
+              customer page
+            </a>
+          </p>
+        </div>
 
-  <div class="mb-5 flex flex-wrap items-center gap-3">
-    <span class="text-[13px] text-[var(--color-ink-faint)]">
-      {items.length} {items.length === 1 ? 'title' : 'titles'} ·
-      {' '}{shipment.copies} {shipment.copies === 1 ? 'copy' : 'copies'}
-      {shipment.claimed > 0 && ` · ${shipment.claimed} reserved`}
-    </span>
+        <div class="sm:ml-auto flex flex-wrap items-center gap-2.5">
+          {shipment.status === 'arrived' && (
+            <form
+              method="post"
+              action={`/api/admin/shipments/${id}/open`}
+              data-confirm="Hide this shipment from customers? Nothing is deleted - the books stay in Listings and the orders in the reservations queue."
+            >
+              <input type="hidden" name="action" value="close" />
+              <button type="submit" class="btn btn-ghost !py-2 !text-[14px]">Hide from customers</button>
+            </form>
+          )}
+          {isDraft && (
+            <form method="post" action={`/api/admin/shipments/${id}/open`}>
+              <button
+                type="submit"
+                class="btn btn-primary !py-2.5 !text-[14.5px]"
+                disabled={holes > 0 || view.counts.all === 0}
+              >
+                Open for reservations
+              </button>
+            </form>
+          )}
+          {canReceive && (
+            <a href={`/admin/shipments/${id}/receive`} class="btn btn-primary !py-2.5 !text-[14.5px]">
+              Record a delivery
+            </a>
+          )}
+        </div>
+      </div>
 
-    {shipment.status === 'open' && (
-      <span class="text-[13px] text-[var(--color-ink-faint)]">
-        Expected counts describe what is still coming. Record the actual copies received below when a delivery lands.
-      </span>
-    )}
-    {isDraft && (
-      <form method="post" action={`/api/admin/shipments/${id}/open`}>
-        <button
-          type="submit"
-          class="btn btn-primary !py-1.5 !text-[13.5px]"
-          disabled={holes > 0 || items.length === 0}
+      {/* One line of arithmetic instead of a paragraph of counts. */}
+      <div class="mt-5 flex flex-wrap items-center gap-x-6 gap-y-4">
+        <div class="flex-1 min-w-[18rem]">
+          <div class="flex h-2.5 rounded-[var(--radius-pill)] overflow-hidden bg-[var(--color-rule-faint)]">
+            <div class="bg-[var(--color-brass)]" style={`width:${claimedPct}%`}></div>
+            <div class="bg-[var(--color-wash)]" style={`width:${100 - claimedPct}%`}></div>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-[var(--color-ink-soft)]">
+            <span>
+              <span class="inline-block w-2 h-2 rounded-[2px] bg-[var(--color-brass)] mr-1.5"></span>
+              {shipment.claimed} {shipment.claimed === 1 ? 'copy' : 'copies'} reserved
+            </span>
+            <span>
+              <span class="inline-block w-2 h-2 rounded-[2px] bg-[var(--color-wash)] mr-1.5"></span>
+              {Math.max(0, shipment.copies - shipment.claimed)} free to reserve
+            </span>
+            {holes > 0 && (
+              <span class="text-[var(--color-outstock)]">
+                {holes} {holes === 1 ? 'row' : 'rows'} still {holes === 1 ? 'needs' : 'need'} a price or a count
+              </span>
+            )}
+          </div>
+        </div>
+        <dl class="flex gap-6 sm:pl-6 sm:border-l border-[var(--color-rule-faint)]">
+          <div>
+            <dd class="font-[family-name:var(--font-display)] text-[21px] font-semibold tabular-nums">{shipment.items}</dd>
+            <dt class="text-[12px] text-[var(--color-ink-faint)]">titles</dt>
+          </div>
+          <div>
+            <dd class="font-[family-name:var(--font-display)] text-[21px] font-semibold tabular-nums">{shipment.copies}</dd>
+            <dt class="text-[12px] text-[var(--color-ink-faint)]">copies coming</dt>
+          </div>
+          <div>
+            <dd class="font-[family-name:var(--font-display)] text-[21px] font-semibold tabular-nums text-[var(--color-brass)]">
+              {shipment.orders_waiting}
+            </dd>
+            <dt class="text-[12px] text-[var(--color-ink-faint)]">
+              {shipment.orders_waiting === 1 ? 'order waiting' : 'orders waiting'}
+            </dt>
+          </div>
+        </dl>
+      </div>
+
+      {showDetails && (
+        <form
+          method="post"
+          action={`/api/admin/shipments/${id}/details`}
+          class="mt-5 pt-5 border-t border-[var(--color-rule-faint)] grid gap-3 sm:grid-cols-[1fr_8rem_12rem] sm:items-end"
         >
-          Open for reservations
-        </button>
+          <div>
+            <label for="s_title" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Name</label>
+            <input id="s_title" name="title" value={shipment.title} required maxlength="160" class="field !text-[14px]" />
+          </div>
+          <div>
+            <label for="s_vague" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Expected</label>
+            <select id="s_vague" name="incoming_vague" class="field !text-[14px]">
+              {VAGUE.map((v) => (
+                <option value={v.value} selected={shipment.incoming_vague === v.value}>{v.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label for="s_month" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Month and year</label>
+            <select id="s_month" name="incoming_month" class="field !text-[14px]">
+              <option value="">Not saying yet</option>
+              {months.map((m) => (
+                <option value={m.value} selected={shipment.incoming_month === m.value}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+          <div class="sm:col-span-3">
+            <label for="s_note" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+              Note shown under the heading
+            </label>
+            <textarea id="s_note" name="note" rows="3" maxlength="1000" class="field !text-[14px]">{shipment.note}</textarea>
+          </div>
+          <div class="sm:col-span-3 flex items-center gap-3">
+            <button type="submit" class="btn btn-primary !py-2 !text-[14px]">Save details</button>
+            <a href={href({ details: null })} class="text-[13.5px] text-[var(--color-ink-faint)] underline underline-offset-2">Cancel</a>
+          </div>
+        </form>
+      )}
+    </div>
+
+    {/* Toolbar: find one title among three hundred. */}
+    <div class="flex flex-wrap items-center gap-3 px-5 sm:px-7 py-3.5 bg-[var(--color-paper-raised)] border-b border-[var(--color-rule-soft)]">
+      <form method="get" action={`/admin/shipments/${id}`} class="flex items-center gap-2">
+        {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
+        <input
+          type="search"
+          name="q"
+          value={q}
+          dir="auto"
+          placeholder={`Search these ${shipment.items} ${shipment.items === 1 ? 'title' : 'titles'}`}
+          class="field !py-2 !text-[14px] w-[15rem]"
+          aria-label="Search this shipment"
+        />
+        <button type="submit" class="btn btn-ghost !py-2 !text-[13.5px]">Search</button>
+        {q && (
+          <a href={href({ q: null, page: null })} class="text-[13px] text-[var(--color-ink-faint)] underline underline-offset-2">
+            Clear
+          </a>
+        )}
       </form>
-    )}
-    {/*
-      * Finishing with a shipment.
-      *
-      * "Put away" said nothing about what it did. It takes the shipment off
-      * the customers' page: an arrived one stays there so people can see what
-      * came in, which is right for a week and clutter after a month, and this
-      * is how it stops. Nothing is deleted: the books stay in Listings and the
-      * orders in the reservations queue. There is no route back from 'closed',
-      * so the button asks first and says what it does.
-      */}
-    {shipment.status === 'arrived' && (
+
+      <div class="flex flex-wrap gap-1.5">
+        {CHIPS.map((chip) => (
+          <a
+            href={href({ filter: chip.key === 'all' ? null : chip.key, page: null, edit: null })}
+            class:list={[
+              'text-[13px] font-medium px-3 py-1.5 rounded-[var(--radius-pill)] border transition-colors',
+              chip.key === filter
+                ? 'border-[var(--color-navy)] bg-[var(--color-navy)] text-white'
+                : chip.key === 'fixing' && chip.count > 0
+                  ? 'border-[var(--color-outstock)]/40 bg-white text-[var(--color-outstock)] hover:border-[var(--color-outstock)]'
+                  : 'border-[var(--color-rule)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)]',
+            ]}
+          >
+            {chip.label} ({chip.count})
+          </a>
+        ))}
+      </div>
+
+      <div class="ml-auto flex items-center gap-3">
+        <span class="text-[13px] text-[var(--color-ink-faint)]">
+          {view.total === shipment.items
+            ? `${view.total} ${view.total === 1 ? 'title' : 'titles'}`
+            : `${view.total} of ${shipment.items} shown`}
+        </span>
+        {editable && (
+          <a
+            href={href({ add: showAdd ? null : '1', edit: null, details: null })}
+            class="text-[13.5px] font-medium px-3.5 py-2 rounded-[var(--radius-field)] border border-dashed border-[var(--color-rule)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] transition-colors"
+          >
+            {showAdd ? 'Close' : '+ Add a title by hand'}
+          </a>
+        )}
+      </div>
+    </div>
+
+    {showAdd && (
       <form
         method="post"
-        action={`/api/admin/shipments/${id}/open`}
-        data-confirm="Hide this shipment from customers? Nothing is deleted - the books stay in Listings and the orders in the reservations queue."
+        action={`/api/admin/shipments/${id}/add`}
+        class="px-5 sm:px-7 py-4 bg-white border-b border-[var(--color-rule-soft)] grid gap-3 sm:grid-cols-[minmax(0,1fr)_6rem_6rem_6rem_7rem] sm:items-end"
       >
-        <input type="hidden" name="action" value="close" />
-        <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">
-          Hide from customers
-        </button>
+        <div class="sm:col-span-5 -mb-1">
+          <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
+            For a line the parser could not read, or a title the supplier left off the list. It
+            goes on the end and can be edited like any other row.
+          </p>
+        </div>
+        <div>
+          <label for="add_title" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Title</label>
+          <input id="add_title" name="title" required maxlength="200" dir="auto" class="field ar !text-[14px]" />
+        </div>
+        <div>
+          <label for="add_price" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Price £</label>
+          <input id="add_price" name="price" type="number" step="0.01" min="0.01" required class="field !text-[14px]" />
+        </div>
+        <div>
+          <label for="add_volumes" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Volumes</label>
+          <input id="add_volumes" name="volumes" type="number" min="0" max="200" class="field !text-[14px]" />
+        </div>
+        <div>
+          <label for="add_incoming" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Copies</label>
+          <input id="add_incoming" name="incoming" type="number" min="1" max="999" required value="1" class="field !text-[14px]" />
+        </div>
+        <div>
+          <label for="add_script" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Language</label>
+          <select id="add_script" name="script" class="field !text-[14px]">
+            <option value="arabic">Arabic</option>
+            <option value="urdu">Urdu</option>
+            <option value="english">English</option>
+          </select>
+        </div>
+        <div class="sm:col-span-5">
+          <button type="submit" class="btn btn-primary !py-2 !text-[14px]">Add this title</button>
+        </div>
       </form>
     )}
+
+    {holes > 0 && filter !== 'fixing' && (
+      <div class="flex flex-wrap items-center gap-3.5 px-5 sm:px-7 py-3 bg-[var(--color-outstock)]/8 border-b border-[var(--color-outstock)]/25">
+        <p class="flex-1 min-w-[16rem] text-[13.5px] leading-relaxed text-[var(--color-outstock)]">
+          {holes} {holes === 1 ? 'row is' : 'rows are'} missing a price or a number of copies.
+          {isDraft
+            ? ' The shipment cannot open until they are filled in — a customer cannot reserve a book with no price.'
+            : ' The shipment stays open, but a customer cannot reserve a book with no price.'}
+        </p>
+        <a
+          href={href({ filter: 'fixing', page: null, edit: null })}
+          class="text-[13.5px] font-medium px-3.5 py-2 rounded-[var(--radius-pill)] bg-[var(--color-outstock)] text-white"
+        >
+          Show {holes === 1 ? 'that row' : `those ${holes} rows`}
+        </a>
+      </div>
+    )}
+
+    {/* The list. One row per title, and a form only where one is needed. */}
+    <div class="bg-white">
+      {view.total === 0 ? (
+        <p class="px-5 sm:px-7 py-8 text-[15px] text-[var(--color-ink-soft)]">
+          {shipment.items === 0
+            ? 'Nothing on this shipment yet.'
+            : 'No title here matches that. Clear the search, or try part of the title.'}
+        </p>
+      ) : (
+        <form
+          method="post"
+          action={
+            editing
+              ? `/api/admin/shipments/${id}/save`
+              : `/api/admin/shipments/${id}/promote`
+          }
+          data-confirm={
+            canPromote && !editing
+              ? 'Move the selected titles out of this shipment and into Listings as drafts?'
+              : undefined
+          }
+        >
+          <div
+            class:list={[
+              COLS,
+              'px-5 sm:px-7 py-2.5 bg-[var(--color-paper)] border-b border-[var(--color-rule-soft)] text-[11px] font-semibold tracking-[0.1em] uppercase text-[var(--color-ink-faint)]',
+            ]}
+          >
+            <span>{canPromote && !editing ? '' : '#'}</span>
+            <span>Title</span>
+            <span class="hidden md:block">Volumes</span>
+            <span class="hidden md:block">Price</span>
+            <span class="hidden md:block">Copies</span>
+            <span class="hidden md:block">Reserved</span>
+            <span class="text-right md:text-left"></span>
+          </div>
+
+          {rows.map((i) => {
+            const broken = i.broken;
+            const claimPct = i.claimPct;
+            return (
+              <div
+                class:list={[
+                  COLS,
+                  'px-5 sm:px-7 py-2.5 border-b border-[var(--color-rule-faint)]',
+                  broken ? 'bg-[#fdf9f7]' : '',
+                ]}
+              >
+                {canPromote && !editing ? (
+                  <span>
+                    {i.spare > 0 && (
+                      <input
+                        type="checkbox"
+                        name="book"
+                        value={i.id}
+                        class="w-4 h-4 accent-[var(--color-navy)]"
+                        aria-label={`List the spare copies of ${i.title}`}
+                      />
+                    )}
+                  </span>
+                ) : (
+                  <span class="text-[13px] text-[var(--color-ink-faint)] tabular-nums">
+                    {i.shipment_sort ?? ''}
+                  </span>
+                )}
+
+                <div class="min-w-0 pr-3 py-1">
+                  {isEditing(i.id) ? (
+                    <Fragment>
+                      <input type="hidden" name="row" value={i.id} />
+                      <input
+                        name={`title_${i.id}`}
+                        value={i.title}
+                        maxlength="200"
+                        dir="auto"
+                        class="field ar !text-[15px] !py-1.5"
+                        aria-label="Title"
+                      />
+                    </Fragment>
+                  ) : (
+                    <Fragment>
+                      <p dir="auto" class="ar text-[17px] font-medium leading-[1.5]">{i.title}</p>
+                      <p class="text-[12px] text-[var(--color-ink-faint)] mt-0.5">
+                        {broken
+                          ? i.problems.join(' · ')
+                          : i.spare > 0
+                            ? `${i.spare} spare ${i.spare === 1 ? 'copy' : 'copies'} to list`
+                            : i.slug}
+                      </p>
+                    </Fragment>
+                  )}
+                </div>
+
+                {isEditing(i.id) ? (
+                  <Fragment>
+                    <input
+                      name={`volumes_${i.id}`}
+                      type="number"
+                      min="0"
+                      max="200"
+                      value={i.volumes ?? ''}
+                      class="field !text-[14px] !py-1.5 !px-2"
+                      aria-label="Volumes"
+                    />
+                    <input
+                      name={`price_${i.id}`}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={money(i.price_pence)}
+                      class="field !text-[14px] !py-1.5 !px-2"
+                      aria-label="Price in pounds"
+                    />
+                    <input
+                      name={`incoming_${i.id}`}
+                      type="number"
+                      min={i.reserved_incoming}
+                      max="999"
+                      value={i.incoming}
+                      class="field !text-[14px] !py-1.5 !px-2"
+                      aria-label="Copies coming"
+                    />
+                    <select
+                      name={`script_${i.id}`}
+                      class="field !text-[13.5px] !py-1.5 !px-2"
+                      aria-label="Language"
+                    >
+                      <option value="english" selected={!i.title_ar && !i.title_ur}>English</option>
+                      <option value="arabic" selected={Boolean(i.title_ar)}>Arabic</option>
+                      <option value="urdu" selected={Boolean(i.title_ur)}>Urdu</option>
+                    </select>
+                    <span class="text-[12px] text-[var(--color-ink-faint)] text-right md:text-left">
+                      {i.reserved_incoming > 0 && `${i.reserved_incoming} reserved`}
+                    </span>
+                  </Fragment>
+                ) : (
+                  <Fragment>
+                    <span class="hidden md:block text-[14px] text-[var(--color-ink-soft)] tabular-nums">
+                      {i.volumes && i.volumes > 1 ? i.volumes : '—'}
+                    </span>
+                    <span
+                      class:list={[
+                        'hidden md:block text-[14px] font-medium tabular-nums',
+                        i.noPrice ? 'text-[var(--color-outstock)]' : '',
+                      ]}
+                    >
+                      {i.price_pence > 0 ? `£${money(i.price_pence)}` : 'none'}
+                    </span>
+                    <span
+                      class:list={[
+                        'hidden md:block text-[14px] tabular-nums',
+                        i.noCount ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-soft)]',
+                      ]}
+                    >
+                      {i.incoming > 0 ? i.incoming : expectingMore ? 'none' : '—'}
+                    </span>
+                    <span class="hidden md:block">
+                      {i.reserved_incoming > 0 ? (
+                        <span class="flex items-center gap-2">
+                          <span class="w-12 h-1.5 rounded-[var(--radius-pill)] bg-[var(--color-rule-faint)] overflow-hidden block">
+                            <span class="block h-full bg-[var(--color-brass)]" style={`width:${claimPct}%`}></span>
+                          </span>
+                          <span class="text-[12.5px] text-[var(--color-brass)]">
+                            {i.reserved_incoming} of {i.promised}
+                          </span>
+                        </span>
+                      ) : (
+                        <span class="text-[12.5px] text-[var(--color-ink-faint)]">none yet</span>
+                      )}
+                    </span>
+                    <span class="flex justify-end md:justify-start">
+                      {editable ? (
+                        <a
+                          href={`${href({ edit: i.id })}#row-${i.id}`}
+                          class:list={[
+                            'text-[13px] font-medium px-3 py-1.5 rounded-[7px] border transition-colors',
+                            broken
+                              ? 'border-transparent bg-[var(--color-outstock)] text-white'
+                              : 'border-[var(--color-rule)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)]',
+                          ]}
+                        >
+                          {broken ? 'Fix row' : 'Edit'}
+                        </a>
+                      ) : i.spare > 0 ? (
+                        <span class="text-[12.5px] text-[var(--color-ink-faint)]">
+                          {i.spare} spare
+                        </span>
+                      ) : (
+                        <span class="text-[12.5px] text-[var(--color-ink-faint)]">
+                          {i.incoming > 0 ? 'still coming' : 'all spoken for'}
+                        </span>
+                      )}
+                    </span>
+                  </Fragment>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Paging, and the two bars that only appear when there is something
+              to do with the rows above. */}
+          <div class="flex flex-wrap items-center gap-3 px-5 sm:px-7 py-3.5 bg-[var(--color-paper-raised)]">
+            <span class="text-[13px] text-[var(--color-ink-faint)]">
+              {view.total === 0
+                ? 'Nothing to show'
+                : `Showing ${(view.page - 1) * ADMIN_SHIPMENT_PAGE + 1}–${Math.min(view.page * ADMIN_SHIPMENT_PAGE, view.total)} of ${view.total}`}
+            </span>
+            {view.pages > 1 && (
+              <div class="ml-auto flex gap-2">
+                {view.page > 1 ? (
+                  <a href={href({ page: view.page - 1, edit: null })} class="btn btn-ghost !py-1.5 !text-[13.5px]">
+                    ← Previous
+                  </a>
+                ) : (
+                  <span class="btn btn-ghost !py-1.5 !text-[13.5px] opacity-40 pointer-events-none">← Previous</span>
+                )}
+                {view.page < view.pages ? (
+                  <a href={href({ page: view.page + 1, edit: null })} class="btn btn-ghost !py-1.5 !text-[13.5px]">
+                    Next {ADMIN_SHIPMENT_PAGE} →
+                  </a>
+                ) : (
+                  <span class="btn btn-ghost !py-1.5 !text-[13.5px] opacity-40 pointer-events-none">Next →</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {editing && (
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 sm:px-7 py-4 bg-[var(--color-navy-deep)] text-white">
+              <p class="font-medium text-[14px]">
+                {editAll
+                  ? `Editing ${view.items.length} ${view.items.length === 1 ? 'row' : 'rows'} on this page`
+                  : 'Editing one row'}
+              </p>
+              <p class="text-[13px] opacity-70 max-w-[34rem]">
+                Clearing a title removes the row. A title with reservations against it cannot be removed.
+              </p>
+              <div class="ml-auto flex gap-2.5">
+                <a
+                  href={href({ edit: null })}
+                  class="text-[14px] px-4 py-2.5 rounded-[var(--radius-pill)] border border-white/35 text-white"
+                >
+                  Discard
+                </a>
+                <button
+                  type="submit"
+                  class="text-[14px] font-medium px-5 py-2.5 rounded-[var(--radius-pill)] bg-white text-[var(--color-navy-deep)]"
+                >
+                  Save changes
+                </button>
+              </div>
+            </div>
+          )}
+
+          {canPromote && !editing && (
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 sm:px-7 py-4 bg-[var(--color-navy-deep)] text-white">
+              <p class="font-medium text-[14px]">
+                {spareOnPage.length} {spareOnPage.length === 1 ? 'title has' : 'titles have'} spare copies
+              </p>
+              <p class="text-[13px] opacity-70 max-w-[36rem]">
+                Tick the ones to sell on. Each becomes a draft listing needing an English title, a
+                cover and a description — nothing appears in the catalogue until you publish it.
+              </p>
+              <button
+                type="submit"
+                class="ml-auto text-[14px] font-medium px-5 py-2.5 rounded-[var(--radius-pill)] bg-white text-[var(--color-navy-deep)]"
+              >
+                List the spare copies
+              </button>
+            </div>
+          )}
+        </form>
+      )}
+    </div>
+
+    {editable && view.total > 0 && !editing && (
+      <div class="flex flex-wrap items-center gap-3 px-5 sm:px-7 py-3.5 bg-[var(--color-paper-raised)] border-t border-[var(--color-rule-soft)]">
+        <a href={href({ edit: 'all' })} class="btn btn-ghost !py-2 !text-[13.5px]">
+          Edit every row on this page
+        </a>
+        <span class="text-[13px] text-[var(--color-ink-faint)]">
+          Or use the button on a row to change one of them.
+        </span>
+      </div>
+    )}
+
     {shipment.status === 'closed' && (
-      <span class="text-[13px] text-[var(--color-ink-faint)]">
-        Hidden from customers. Everything on it is kept — the books are in
-        Listings and the orders in the reservations queue.
-      </span>
+      <p class="px-5 sm:px-7 py-3.5 text-[13px] text-[var(--color-ink-faint)] bg-[var(--color-paper-raised)] border-t border-[var(--color-rule-soft)]">
+        Hidden from customers. Everything on it is kept — the books are in Listings and the orders
+        in the reservations queue.
+      </p>
     )}
   </div>
 
-  {holes > 0 && isDraft && (
-    <p class="mb-4 text-[13.5px] text-[var(--color-outstock)] leading-relaxed max-w-[46rem]">
-      {holes} {holes === 1 ? 'row still needs' : 'rows still need'} a title, a price
-      or a number of copies. They are marked below, and the shipment cannot open
-      until they are filled in — a customer cannot reserve a book with no price.
-    </p>
-  )}
-
-  {!isDraft && items.some(i=>i.incoming>0) && (
-    <section class="my-6 p-5 bg-white border border-[var(--color-rule)] rounded-[var(--radius-panel)]">
-      <h2 class="text-[20px]">Record a delivery</h2>
-      <p class="mt-2 text-[14px] text-[var(--color-ink-soft)]">Enter the copies actually received. Use zero for missing titles. Short deliveries keep the remaining reservations waiting; customers are contacted once all their copies are here.</p>
-      <form method="post" action={`/api/admin/shipments/${id}/arrived`} class="mt-4 grid gap-3" data-confirm="Record these received quantities? Available copies will be set aside for reservations.">
-        <input type="hidden" name="receipt_key" value={receiptKey} />
-        <input type="hidden" name="delivery_version" value={shipment.delivery_version} />
-        {items.map(i=>(
-          <label class="flex items-center justify-between gap-4 text-[14px]">
-            <span dir="auto">{i.title}<span class="block text-[12px] text-[var(--color-ink-faint)]">{i.incoming} still expected · {i.reserved_incoming} reserved</span></span>
-            <input class="field !w-24" type="number" name={`received_${i.id}`} min="0" max="999" step="1" required value={i.incoming} aria-label={`Copies received: ${i.title}`} />
-          </label>
-        ))}
-        <button class="btn btn-primary justify-self-start mt-2" type="submit">Record received copies</button>
-      </form>
-    </section>
-  )}
-
-  {items.length === 0 ? (
-    <p class="text-[15px] text-[var(--color-ink-soft)]">Nothing on this shipment.</p>
-  ) : (
-    <Rows
-      {...(editable
-        ? { method: 'post', action: `/api/admin/shipments/${id}/save` }
-        : {})}
-      class="grid gap-2"
-    >
-      {items.map((i) => (
-        <div
-          class:list={[
-            'bg-white border rounded-[var(--radius-panel)] p-3 grid gap-2 sm:grid-cols-[1fr_5rem_5rem_5rem_7rem] sm:items-end',
-            incomplete(i) ? 'border-[var(--color-outstock)]' : 'border-[var(--color-rule-soft)]',
-          ]}
-        >
-          <input type="hidden" name="row" value={i.id} />
-          <div>
-            <label for={`title_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-              Title
-            </label>
-            <input
-              id={`title_${i.id}`}
-              name={`title_${i.id}`}
-              value={i.title}
-              readonly={!editable}
-              maxlength="200"
-              dir="auto"
-              class="field ar !text-[14px]"
-            />
-          </div>
-          <div>
-            <label for={`price_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-              Price £
-            </label>
-            <input
-              id={`price_${i.id}`}
-              name={`price_${i.id}`}
-              type="number"
-              step="0.01"
-              min="0"
-              readonly={!editable}
-              value={money(i.price_pence)}
-              class="field !text-[14px]"
-            />
-          </div>
-          <div>
-            <label for={`volumes_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-              Volumes
-            </label>
-            <input
-              id={`volumes_${i.id}`}
-              name={`volumes_${i.id}`}
-              type="number"
-              min="0"
-              max="200"
-              readonly={!editable}
-              value={i.volumes ?? ''}
-              class="field !text-[14px]"
-            />
-          </div>
-          <div>
-            <label for={`incoming_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-              Copies
-            </label>
-            <input
-              id={`incoming_${i.id}`}
-              name={`incoming_${i.id}`}
-              type="number"
-              min={i.reserved_incoming}
-              max="999"
-              readonly={!editable}
-              value={i.incoming}
-              class="field !text-[14px]"
-            />
-          </div>
-          <div>
-            <label for={`script_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-              Language
-            </label>
-            <select id={`script_${i.id}`} name={`script_${i.id}`} disabled={!editable} class="field !text-[14px]">
-              <option value="english" selected={!i.title_ar && !i.title_ur}>English</option>
-              <option value="arabic" selected={Boolean(i.title_ar)}>Arabic</option>
-              <option value="urdu" selected={Boolean(i.title_ur)}>Urdu</option>
-            </select>
-          </div>
-          {i.reserved_incoming > 0 && (
-            <p class="sm:col-span-5 text-[12.5px] text-[var(--color-navy)]">
-              {i.reserved_incoming} reserved — the number of copies cannot go below that.
-            </p>
-          )}
-
-          {/*
-            * Turning what is left into a listing.
-            *
-            * Needs an English title, because the shipment carried the book's own
-            * name - right for a list read in Arabic, wrong for a shop front and
-            * for the address the page will live at. Its own form rather than
-            * part of the row above, since it posts somewhere else and does
-            * something that cannot be undone by editing a field back.
-            */}
-          {['arrived','closed'].includes(shipment.status) && spare(i) > 0 && (
-            <form
-              method="post"
-              action={`/api/admin/shipments/${id}/promote`}
-              class="sm:col-span-5 mt-1 pt-3 border-t border-[var(--color-rule-soft)] flex flex-wrap items-center gap-3"
-            >
-              <input type="hidden" name="book" value={i.id} />
-              <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">
-                List the {spare(i)} spare {spare(i) === 1 ? 'copy' : 'copies'}
-              </button>
-              <span class="text-[12.5px] text-[var(--color-ink-faint)]">
-                Opens the listing, where you give it an English title, a cover and
-                a description before publishing it.
-              </span>
-            </form>
-          )}
-          {['arrived','closed'].includes(shipment.status) && !(spare(i) > 0) && (
-            <p class="sm:col-span-5 text-[12.5px] text-[var(--color-ink-faint)]">
-              {i.incoming > 0
-                ? 'Receive the remaining copies before moving this title to listings.'
-                : 'There are no unreserved copies to list.'}
-            </p>
-          )}
-        </div>
-      ))}
-
-      {editable && (
-        <div class="mt-2 flex items-center gap-3">
-          <button type="submit" class="btn btn-primary !py-2">Save these</button>
-          <span class="text-[12.5px] text-[var(--color-ink-faint)]">
-            Draft rows can be removed by clearing their title. Once opened, reserved titles are kept.
-          </span>
-        </div>
-      )}
-    </Rows>
-  )}
 </Admin>

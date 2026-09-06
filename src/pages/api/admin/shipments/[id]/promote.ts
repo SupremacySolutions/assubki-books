@@ -22,13 +22,26 @@ export const prerender = false;
  * arrival logic touching the row again. It stays `draft`, so nothing is
  * publicly reachable in the meantime - and the slug it was imported with is
  * replaced when a real title is saved, in `books/save.ts`.
+ *
+ * It takes a selection rather than a single book, because a box of three
+ * hundred titles leaves spare copies on dozens of them and a button per row
+ * meant a page of dozens of buttons. One book still lands on its listing page,
+ * which is the point of the whole route; several cannot, so they are detached
+ * together and the owner is told once where they went.
  */
 export const POST: APIRoute = async ({ params, request }) => {
   const shipmentId = Number.parseInt(params.id ?? '', 10);
   const form = await request.formData();
-  const bookId = Number.parseInt(String(form.get('book') ?? ''), 10);
+  const ids = [
+    ...new Set(
+      form
+        .getAll('book')
+        .map((v) => Number.parseInt(String(v), 10))
+        .filter((n) => Number.isSafeInteger(n) && n > 0),
+    ),
+  ].slice(0, 200);
 
-  if (!Number.isInteger(shipmentId) || !Number.isInteger(bookId)) {
+  if (!Number.isInteger(shipmentId) || !ids.length) {
     return new Response('Bad request', { status: 400 });
   }
 
@@ -38,35 +51,52 @@ export const POST: APIRoute = async ({ params, request }) => {
       headers: { Location: `/admin/shipments/${shipmentId}${query}` },
     });
 
-  const book = await env.DB.prepare(
-    'SELECT id, stock, reserved, incoming FROM books WHERE id = ? AND shipment_id = ?',
-  )
-    .bind(bookId, shipmentId)
-    .first<{ id: number; stock: number; reserved: number; incoming:number }>();
-  if (!book) return new Response('No such book on this shipment', { status: 404 });
-
-  if (book.incoming > 0) {
-    return back('?e=' + encodeURIComponent('Receive the remaining copies before moving this title to listings.'));
-  }
-  if (book.stock - book.reserved <= 0) {
-    return back('?e=' + encodeURIComponent('every copy of that is spoken for, so there is nothing to list'));
+  /*
+   * One book keeps its own refusals, because there is a person looking at one
+   * row and a specific reason it cannot move. A selection cannot say six
+   * different things at once, so it reports what moved and what did not.
+   */
+  if (ids.length === 1) {
+    const book = await env.DB.prepare(
+      'SELECT id, stock, reserved, incoming FROM books WHERE id = ? AND shipment_id = ?',
+    )
+      .bind(ids[0], shipmentId)
+      .first<{ id: number; stock: number; reserved: number; incoming: number }>();
+    if (!book) return new Response('No such book on this shipment', { status: 404 });
+    if (book.incoming > 0)
+      return back(
+        '?e=' +
+          encodeURIComponent('Receive the remaining copies before moving this title to listings.'),
+      );
+    if (book.stock - book.reserved <= 0)
+      return back(
+        '?e=' + encodeURIComponent('every copy of that is spoken for, so there is nothing to list'),
+      );
   }
 
   const updated = await env.DB.prepare(
     `UPDATE books SET shipment_id = NULL, updated_at = unixepoch()
-      WHERE id = ? AND shipment_id = ? AND incoming=0 AND stock>reserved
-        AND EXISTS (SELECT 1 FROM shipments WHERE id=books.shipment_id AND status IN ('arrived','closed'))`,
+      WHERE id IN (SELECT value FROM json_each(?1))
+        AND shipment_id = ?2 AND incoming = 0 AND stock > reserved
+        AND EXISTS (SELECT 1 FROM shipments
+                     WHERE id = books.shipment_id AND status IN ('arrived','closed'))`,
   )
-    .bind(bookId, shipmentId)
+    .bind(JSON.stringify(ids), shipmentId)
     .run();
-  if (!updated.meta.changes) return back('?e=' + encodeURIComponent('This shipment changed. Reload and try again.'));
+
+  const moved = updated.meta.changes ?? 0;
+  if (!moved)
+    return back('?e=' + encodeURIComponent('This shipment changed. Reload and try again.'));
 
   /*
    * Straight to the listing, with a note saying what it still needs and a way
    * back to the shipment - the owner is usually working down a list of them.
    */
-  return new Response(null, {
-    status: 302,
-    headers: { Location: `/admin/books/${bookId}?from_shipment=${shipmentId}` },
-  });
+  if (ids.length === 1) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: `/admin/books/${ids[0]}?from_shipment=${shipmentId}` },
+    });
+  }
+  return back(`?promoted=${moved}&asked=${ids.length}`);
 };
