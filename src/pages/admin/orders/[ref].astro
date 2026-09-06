@@ -172,6 +172,14 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
   sub={order.ref}
   back={{ href: '/admin/orders', label: 'All orders' }}
 >
+  {/*
+    * The status the poll compares against.
+    *
+    * A status move rewrites too much of this page to patch in - the totals,
+    * the payment panel, what the next action is - so the script reloads
+    * instead, and this is what it notices the move against.
+    */}
+  <div data-order-status={order.status} data-order-ref={order.ref}></div>
   {
     saved === 'tracking' && (
       <p class="mb-5 p-3.5 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
@@ -219,7 +227,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
   {siblings.length > 0 && (
     <div class="mb-5 p-3.5 bg-[var(--color-brass)]/10 border border-[var(--color-brass)]/30 rounded-[3px] text-[14px] leading-relaxed max-w-[46rem]">
       <p>
-        Part of one basket that became {siblings.length + 1} orders — the books on
+        Part of one basket that became {siblings.length + 1} orders - the books on
         the shelf are separated from the ones still coming, so each can be sent
         when it is ready.
       </p>
@@ -233,7 +241,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
               {other.ref}
             </a>
             <span class="text-[var(--color-ink-faint)]">
-              {' '}— {other.shipment_id ? 'the reserved half' : 'the shelf half'}
+              {' '}- {other.shipment_id ? 'the reserved half' : 'the shelf half'}
               {other.status === 'cancelled' || other.status === 'expired'
                 ? `, ${other.status}`
                 : ''}
@@ -512,6 +520,8 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
         action={`/api/admin/orders/${order.ref}/message`}
         open={threadOpen(order.status)}
         proofUrl={(id: number) => `/api/admin/orders/${order.ref}/proof?id=${id}`}
+        proofBase={`/api/admin/orders/${order.ref}/proof`}
+        pollUrl={threadOpen(order.status) ? `/api/admin/orders/${order.ref}/thread` : null}
         imagesUsed={imagesHeld}
         channelNote={replyChannelNote(order.telegram_chat_id, order.email)}
         error={threadError}
@@ -557,7 +567,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
 
       {extended && (
         <p class="p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[var(--radius-field)] text-[14.5px] text-[var(--color-instock)]">
-          Another week. Let them know in the messages below — nothing was sent.
+          Another week. Let them know in the messages below - nothing was sent.
         </p>
       )}
 
@@ -565,8 +575,8 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
         <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] border-l-[3px] border-l-[var(--color-brass)] p-5">
           <h2 class="text-[16px]">
             {daysLeft > 0
-              ? `Reserved books — ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} to reply`
-              : 'Reserved books — the week is up'}
+              ? `Reserved books - ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} to reply`
+              : 'Reserved books - the week is up'}
           </h2>
           <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)] leading-relaxed max-w-[38rem]">
             Their books arrived and are held under this order until
@@ -584,7 +594,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
           </form>
           <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
             Counted from today, so this works even if the date has already passed.
-            Nothing is sent — tell them yourself in the messages below.
+            Nothing is sent - tell them yourself in the messages below.
           </p>
         </section>
       )}
@@ -1073,5 +1083,17 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
         }
       });
     }
+  </script>
+  {/*
+    * The order, kept up to date without a reload.
+    *
+    * The same file the customer's page uses, driving the portal's routes
+    * instead of theirs. It was the customer who had the live thread and the
+    * shop that had to reload, which is exactly the wrong way round: the shop
+    * is the side being waited on. Telegram and email still carry the ping;
+    * this is for when the owner is already looking at the conversation.
+    */}
+  <script>
+    import '../../../scripts/thread.ts';
   </script>
 </Admin>

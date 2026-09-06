@@ -79,7 +79,7 @@ const months = monthOptions();
           <label for="list" class="block text-[13.5px] font-medium mb-1.5">
             The list
             <span class="font-normal text-[var(--color-ink-faint)]">
-              — one book a line, copies last, after the price
+              - one book a line, copies last, after the price
             </span>
           </label>
           {/*
@@ -137,7 +137,7 @@ const months = monthOptions();
         <p class="mt-3 text-[12.5px] leading-relaxed text-[var(--color-ink-faint)]">
           Volumes, the leading number and the language are read from the line. Arabic-Indic digits,
           plain hyphens and long dashes all read the same. A line it cannot make sense of is kept
-          with its raw text — never dropped — and waits for you in the shipment.
+          with its raw text - never dropped - and waits for you in the shipment.
         </p>
 
         <div class="mt-4 pt-4 border-t border-[var(--color-rule-soft)] flex flex-wrap items-center gap-3">
@@ -262,7 +262,7 @@ const months = monthOptions();
       `${lines.length} ${lines.length === 1 ? 'line' : 'lines'} · ${good} complete` +
       (bad > 0 ? ` · ${bad} ${bad === 1 ? 'needs' : 'need'} a hand` : '');
     if (submit)
-      submit.textContent = `Create the draft — ${lines.length} ${lines.length === 1 ? 'title' : 'titles'}`;
+      submit.textContent = `Create the draft - ${lines.length} ${lines.length === 1 ? 'title' : 'titles'}`;
   }
 
   /* Debounced: a three-hundred-line paste is re-read on every keystroke

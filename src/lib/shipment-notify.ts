@@ -211,6 +211,45 @@ export async function stuckNotices(
  */
 export const STUCK_AFTER = 3;
 
+/**
+ * The whole state of one shipment's notice queue, in a single read.
+ *
+ * The page already showed these two numbers; what it could not do was let them
+ * move. Both counts and the last error come back together because the panel
+ * that reads them shows them together, and because a poll that costs two reads
+ * a minute is twice a poll that costs one.
+ */
+export async function noticeQueue(
+  db: D1Database,
+  shipmentId: number,
+): Promise<{ pending: number; stuck: number; lastError: string | null }> {
+  const row = await db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN live THEN 1 ELSE 0 END), 0) AS pending,
+         COALESCE(SUM(CASE WHEN live AND attempts >= ?2 THEN 1 ELSE 0 END), 0) AS stuck,
+         (SELECT last_error FROM shipment_notices
+           WHERE shipment_id = ?1 AND sent_at IS NULL AND attempts >= ?2
+           ORDER BY attempts DESC, id LIMIT 1) AS last_error
+       FROM (
+         SELECT n.attempts,
+                (o.status IN ('requested','awaiting_payment')
+                  AND NOT EXISTS (SELECT 1 FROM order_items
+                                   WHERE order_id = o.id AND from_incoming = 1)) AS live
+           FROM shipment_notices n
+           JOIN orders o ON o.id = n.order_id
+          WHERE n.shipment_id = ?1 AND n.sent_at IS NULL
+       )`,
+    )
+    .bind(shipmentId, STUCK_AFTER)
+    .first<{ pending: number; stuck: number; last_error: string | null }>();
+  return {
+    pending: row?.pending ?? 0,
+    stuck: row?.stuck ?? 0,
+    lastError: row?.last_error ?? null,
+  };
+}
+
 export async function pendingNotices(db: D1Database, shipmentId: number): Promise<number> {
   const row = await db
     .prepare(`SELECT COUNT(*) AS n FROM shipment_notices n JOIN orders o ON o.id=n.order_id

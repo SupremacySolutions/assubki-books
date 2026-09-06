@@ -31,6 +31,20 @@ if (root) {
   const form = section?.querySelector<HTMLFormElement>('[data-thread-form]') ?? null;
 
   /*
+   * Which side's routes to use, read from the markup rather than assumed.
+   *
+   * This file used to hard-code the customer's endpoints, which is why the
+   * portal - the side actually expected to answer - had no live thread at all
+   * and reloaded to see a reply the customer had already seen. Both pages
+   * render the same component, so the component carries the addresses and this
+   * drives either.
+   *
+   * No poll address means no polling, which is what a finished order wants.
+   */
+  const pollUrl = section?.dataset.pollUrl ?? null;
+  const proofBase = section?.dataset.proofUrl ?? null;
+
+  /*
    * Two speeds.
    *
    * Five seconds is what a conversation needs and twenty is what a status bar
@@ -45,7 +59,7 @@ if (root) {
   const UNTIL = Date.now() + 3600000;
 
   const live = ['requested', 'awaiting_payment', 'paid', 'dispatched'];
-  const watching = live.includes(status);
+  const watching = Boolean(pollUrl) && live.includes(status);
 
   let attending = false;
   let every = SLOW;
@@ -67,17 +81,14 @@ if (root) {
     return id;
   };
 
-  const params = () => {
-    const query = new URLSearchParams(location.search);
-    query.set('since', String(newest()));
-    return query.toString();
-  };
+  /** The poll address with its cursor, whichever side's route it is. */
+  const asked = () => `${pollUrl}${pollUrl!.includes('?') ? '&' : '?'}since=${newest()}`;
 
   const check = async () => {
     if (checking || document.visibilityState !== 'visible') return;
     checking = true;
     try {
-      const res = await fetch(`/api/orders/status?${params()}`);
+      const res = await fetch(asked());
       const data = await res.json() as {status?:string;messages?:Incoming[]};
 
       // A status move rewrites the whole page - the journey bar, the payment
@@ -197,10 +208,8 @@ if (root) {
       box.appendChild(p);
     }
 
-    if (message.image_key) {
-      const query = new URLSearchParams(location.search);
-      query.set('id', String(message.id));
-      const href = `/api/orders/proof?${query.toString()}`;
+    if (message.image_key && proofBase) {
+      const href = `${proofBase}${proofBase.includes('?') ? '&' : '?'}id=${message.id}`;
       const link = document.createElement('a');
       link.href = href;
       link.target = '_blank';

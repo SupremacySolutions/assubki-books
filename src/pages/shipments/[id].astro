@@ -78,7 +78,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
 ---
 
 <Base
-  title={`${shipment.title}${when ? ` — ${when}` : ''}`}
+  title={`${shipment.title}${when ? ` - ${when}` : ''}`}
   description={`The ${shipment.items} titles on this shipment, and how to reserve a copy before they land.`}
 >
   <div class="wrap py-10 pb-32">
@@ -106,7 +106,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
 
       {open ? (
         <p class="mt-2.5 max-w-[64ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
-          Reserving adds the copy to your basket — take as many of a title as are free. The copies
+          Reserving adds the copy to your basket - take as many of a title as are free. The copies
           are set aside in your name when you send the request at checkout, not before, and nothing
           is paid now or charged on this site at any point. When the shipment lands we write to
           you, and you have seven days to reply.
@@ -114,7 +114,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
       ) : (
         <p class="mt-2.5 max-w-[64ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
           This shipment has landed, so it can no longer be reserved from. It is left here so you
-          can see what came in — whatever was not spoken for goes into
+          can see what came in - whatever was not spoken for goes into
           {' '}<a href="/catalogue" class="underline">the catalogue</a> as we photograph it.
         </p>
       )}
@@ -197,11 +197,17 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
                       item.free > 0 ? 'text-[var(--color-brass)]' : 'text-[var(--color-ink-faint)]',
                     ]}
                   >
+                    {/*
+                      * One number, not two.
+                      *
+                      * It used to say "2 of 3 still free" once anybody had
+                      * reserved one, which asks the reader to subtract in
+                      * order to answer the only question they have. How many
+                      * they can have is the whole of it.
+                      */}
                     {item.free === 0
                       ? 'fully reserved'
-                      : item.free === item.incoming
-                        ? `${item.free} free to reserve`
-                        : `${item.free} of ${item.incoming} still free`}
+                      : `${item.free} left to reserve`}
                   </span>
                 )}
               </div>
@@ -260,7 +266,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
 
     {total > 0 && (
       <p class="mt-4 text-[13px] text-[var(--color-ink-faint)] tabular-nums">
-        {pages > 1 ? `Showing ${first}–${last} of ${total}` : `${total} ${total === 1 ? 'title' : 'titles'}`}
+        {pages > 1 ? `Showing ${first}-${last} of ${total}` : `${total} ${total === 1 ? 'title' : 'titles'}`}
       </p>
     )}
 

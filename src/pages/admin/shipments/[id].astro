@@ -181,7 +181,7 @@ const COLS =
       {unread > 0 && (
         <Fragment>
           {' '}{unread} {unread === 1 ? 'line was' : 'lines were'} not fully understood and
-          {unread === 1 ? ' is' : ' are'} sitting in the list with the text as pasted —
+          {unread === 1 ? ' is' : ' are'} sitting in the list with the text as pasted -
           {' '}<a href={href({ filter: 'fixing', page: null })} class="underline">finish {unread === 1 ? 'it' : 'them'} off</a>.
         </Fragment>
       )}
@@ -207,7 +207,7 @@ const COLS =
   {listed && (
     <p class="mb-4 text-[14px] text-[var(--color-instock)]">
       “{listed}” is now an ordinary listing. Add photos and a description to it in
-      Listings — it will not appear in the catalogue looking its best until you do.
+      Listings - it will not appear in the catalogue looking its best until you do.
     </p>
   )}
   {promoted > 0 && (
@@ -216,7 +216,7 @@ const COLS =
       {' '}<a href="/admin/books?status=draft" class="underline">Listings</a> as drafts. Each still
       needs an English title, a cover and a description before it can go in the catalogue.
       {askedToPromote > promoted &&
-        ` ${askedToPromote - promoted} could not be moved — their copies are all spoken for, or more are still coming.`}
+        ` ${askedToPromote - promoted} could not be moved - their copies are all spoken for, or more are still coming.`}
     </p>
   )}
   {arrivedCount >= 0 && (
@@ -230,7 +230,7 @@ const COLS =
       </h2>
       {arrivedCount > 0 && (
         <p class="mt-2 max-w-[76ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
-          They go out a few at a time so a large shipment does not spend the day's email — expect
+          They go out a few at a time so a large shipment does not spend the day's email - expect
           the queue to drain within the hour. Each of them has seven days to reply before their
           copies go back on the shelf.
         </p>
@@ -245,7 +245,7 @@ const COLS =
         <div class="p-3.5 bg-white">
           <dd class="font-[family-name:var(--font-display)] text-[20px] font-semibold tabular-nums text-[var(--color-brass)]">{receipt.short}</dd>
           <dt class="mt-0.5 text-[12.5px] text-[var(--color-ink-faint)]">
-            short — {receipt.waiting} {receipt.waiting === 1 ? 'claim' : 'claims'} still waiting
+            short - {receipt.waiting} {receipt.waiting === 1 ? 'claim' : 'claims'} still waiting
           </dt>
         </div>
         <div class="p-3.5 bg-white">
@@ -282,7 +282,7 @@ const COLS =
       <p class="text-[var(--color-outstock)]">
         {stuck.orders} {stuck.orders === 1 ? 'customer has' : 'customers have'} not been
         reachable. Their copies stay reserved and their {stuck.orders === 1 ? 'reservation' : 'reservations'}
-        {' '}will not lapse — nobody loses books over a message the shop failed to send.
+        {' '}will not lapse - nobody loses books over a message the shop failed to send.
       </p>
       {stuck.lastError && (
         <p class="mt-1.5 text-[13px] text-[var(--color-ink-soft)]">Last error: {stuck.lastError}</p>
@@ -290,16 +290,30 @@ const COLS =
       <p class="mt-1.5 text-[13px] text-[var(--color-ink-soft)]">
         It keeps retrying. If it never gets through, reach them yourself from
         {' '}<a href="/admin/orders?kind=reservations" class="underline">the reservations queue</a>
-        {' '}— or cancel the order there to put the copies back on the shelf.
+        {' '}- or cancel the order there to put the copies back on the shelf.
       </p>
     </div>
   )}
 
+  {/*
+    * The queue draining, rather than an instruction to reload.
+    *
+    * This used to end "check back in a quarter of an hour", which is the shop
+    * asking a person to do a machine's job. The sweep runs every fifteen
+    * minutes and sends a few at a time, so the count is polled slowly and the
+    * line takes itself away when the last one has gone.
+    */}
   {waitingToSend > 0 && (
-    <p class="mb-4 text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
-      {waitingToSend} {waitingToSend === 1 ? 'customer has' : 'customers have'} still to be told.
-      They go out a few at a time, so a large shipment does not spend the day's email in one go —
-      check back in a quarter of an hour.
+    <p
+      data-notice-queue
+      data-shipment={id}
+      class="mb-4 text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]"
+    >
+      <span data-notice-count>
+        {waitingToSend} {waitingToSend === 1 ? 'customer has' : 'customers have'} still to be told.
+      </span>
+      {' '}They go out a few at a time, so a large shipment does not spend the day's email in one
+      go.
     </p>
   )}
 
@@ -546,7 +560,7 @@ const COLS =
         <p class="flex-1 min-w-[16rem] text-[13.5px] leading-relaxed text-[var(--color-outstock)]">
           {holes} {holes === 1 ? 'row is' : 'rows are'} missing a price or a number of copies.
           {isDraft
-            ? ' The shipment cannot open until they are filled in — a customer cannot reserve a book with no price.'
+            ? ' The shipment cannot open until they are filled in - a customer cannot reserve a book with no price.'
             : ' The shipment stays open, but a customer cannot reserve a book with no price.'}
         </p>
         <a
@@ -696,7 +710,7 @@ const COLS =
                 ) : (
                   <Fragment>
                     <span class="hidden md:block text-[14px] text-[var(--color-ink-soft)] tabular-nums">
-                      {i.volumes && i.volumes > 1 ? i.volumes : '—'}
+                      {i.volumes && i.volumes > 1 ? i.volumes : '-'}
                     </span>
                     <span
                       class:list={[
@@ -712,7 +726,7 @@ const COLS =
                         i.noCount ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-soft)]',
                       ]}
                     >
-                      {i.incoming > 0 ? i.incoming : expectingMore ? 'none' : '—'}
+                      {i.incoming > 0 ? i.incoming : expectingMore ? 'none' : '-'}
                     </span>
                     <span class="hidden md:block">
                       {i.reserved_incoming > 0 ? (
@@ -763,7 +777,7 @@ const COLS =
             <span class="text-[13px] text-[var(--color-ink-faint)]">
               {view.total === 0
                 ? 'Nothing to show'
-                : `Showing ${(view.page - 1) * ADMIN_SHIPMENT_PAGE + 1}–${Math.min(view.page * ADMIN_SHIPMENT_PAGE, view.total)} of ${view.total}`}
+                : `Showing ${(view.page - 1) * ADMIN_SHIPMENT_PAGE + 1}-${Math.min(view.page * ADMIN_SHIPMENT_PAGE, view.total)} of ${view.total}`}
             </span>
             {view.pages > 1 && (
               <div class="ml-auto flex gap-2">
@@ -819,7 +833,7 @@ const COLS =
               </p>
               <p class="text-[13px] opacity-70 max-w-[36rem]">
                 Tick the ones to sell on. Each becomes a draft listing needing an English title, a
-                cover and a description — nothing appears in the catalogue until you publish it.
+                cover and a description - nothing appears in the catalogue until you publish it.
               </p>
               <button
                 type="submit"
@@ -846,10 +860,62 @@ const COLS =
 
     {shipment.status === 'closed' && (
       <p class="px-5 sm:px-7 py-3.5 text-[13px] text-[var(--color-ink-faint)] bg-[var(--color-paper-raised)] border-t border-[var(--color-rule-soft)]">
-        Hidden from customers. Everything on it is kept — the books are in Listings and the orders
+        Hidden from customers. Everything on it is kept - the books are in Listings and the orders
         in the reservations queue.
       </p>
     )}
   </div>
 
+  {/*
+    * Watching the queue drain.
+    *
+    * Slowly, because the sweep it is watching runs every fifteen minutes: once
+    * a minute while the tab is being looked at, nothing while it is not, and
+    * it gives up after half an hour rather than polling an abandoned tab all
+    * afternoon. When the queue empties the page reloads, because everything
+    * else on it - what is still reserved, what can be listed - moved too.
+    */}
+  <script>
+    const line = document.querySelector<HTMLElement>('[data-notice-queue]');
+    const count = document.querySelector<HTMLElement>('[data-notice-count]');
+
+    if (line && count) {
+      const shipment = line.dataset.shipment;
+      const UNTIL = Date.now() + 1800000;
+      let asking = false;
+
+      const check = async () => {
+        if (asking || document.visibilityState !== 'visible') return;
+        asking = true;
+        try {
+          const res = await fetch(`/api/admin/shipments/${shipment}/notices`);
+          const data = (await res.json()) as { pending: number };
+          if (typeof data.pending !== 'number') return;
+          if (data.pending === 0) {
+            /* Everybody has been told, and the rest of the page moved with
+               them - their clocks are running now. */
+            location.reload();
+            return;
+          }
+          count.textContent =
+            data.pending === 1
+              ? '1 customer has still to be told.'
+              : `${data.pending} customers have still to be told.`;
+        } catch {
+          /* offline or blocked: leave the line exactly as it is */
+        } finally {
+          asking = false;
+        }
+      };
+
+      const timer = window.setInterval(() => {
+        if (Date.now() > UNTIL) window.clearInterval(timer);
+        else void check();
+      }, 60000);
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void check();
+      });
+    }
+  </script>
 </Admin>

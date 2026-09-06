@@ -187,7 +187,7 @@ const captionStale = Boolean(
     fromShipment && (
       <p class="mb-5 p-3 bg-[var(--color-brass)]/10 border border-[var(--color-brass)]/30 rounded-[3px] text-[14.5px] leading-relaxed">
         Off the shipment and yours to finish. It kept its price, volumes and the
-        copies nobody reserved — it still needs an <strong>English title</strong>,
+        copies nobody reserved - it still needs an <strong>English title</strong>,
         a cover and a description, and it is a draft until you set it live below.
         {' '}<a href={`/admin/shipments/${fromShipment}`} class="underline">
           Back to the shipment
@@ -354,7 +354,7 @@ const captionStale = Boolean(
       {justSaved && (
         <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-5 py-4 flex flex-wrap items-center gap-4">
           <p class="flex-1 min-w-[16rem] text-[14px] text-[var(--color-ink-soft)]">
-            The four things you just filled in —
+            The four things you just filled in -
             <span class="text-[var(--color-ink)]"> identity, description, price and stock, subjects</span>
           </p>
           <a href={`/admin/books/${book!.id}#s-identity`} class="btn btn-ghost !py-2 !text-[13.5px]">
@@ -493,7 +493,7 @@ const captionStale = Boolean(
                 class="mt-2 flex items-start gap-2 px-3 py-2.5 bg-[var(--color-outstock)]/6 border border-[var(--color-outstock)]/25 rounded-[9px] text-[13px] leading-relaxed text-[var(--color-outstock)]"
               >
                 <span aria-hidden="true">!</span>
-                <span>That is not a real ISBN — the check digit does not add up. Correct it, or
+                <span>That is not a real ISBN - the check digit does not add up. Correct it, or
                 clear the field: a wrong number matches this listing to a different book.</span>
               </p>
             )}
@@ -712,7 +712,7 @@ const captionStale = Boolean(
         >
           {chosenCount > 0
             ? `${chosenCount} chosen`
-            : 'None chosen — a listing with no subject cannot be browsed to'}
+            : 'None chosen - a listing with no subject cannot be browsed to'}
         </p>
 
         {/* An enhancement: with scripting off the box is not there and the
@@ -763,7 +763,7 @@ const captionStale = Boolean(
         </p>
         <p class="mt-3 text-[12.5px] leading-relaxed text-[var(--color-ink-faint)] max-w-[70ch]">
           Indented subjects sit inside the one named above them, exactly as the catalogue nests
-          them. The number is how many listings are already there — useful for spotting the shelf
+          them. The number is how many listings are already there - useful for spotting the shelf
           you meant.
         </p>
       </section>
@@ -2296,14 +2296,14 @@ const captionStale = Boolean(
               valueOf('isbn') ? `ISBN ${valueOf('isbn')}` : 'no ISBN',
               vols > 1 ? `${vols} volumes` : 'single volume',
             ].filter(Boolean).join(' · ');
-            set('book', identity ? `${identity} — ${under}` : 'no title yet', !identity);
+            set('book', identity ? `${identity} - ${under}` : 'no title yet', !identity);
 
             const picked = [...form.querySelectorAll('input[name="categories"]:checked')]
               .map((box) => box.closest('label')?.textContent?.trim())
               .filter(Boolean);
             set(
               'subjects',
-              picked.length ? picked.join(', ') : 'none — it will not appear on any shelf',
+              picked.length ? picked.join(', ') : 'none - it will not appear on any shelf',
               picked.length === 0,
             );
 

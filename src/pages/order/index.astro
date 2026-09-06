@@ -298,7 +298,7 @@ if (offerTelegram && telegramLink) {
             </div>
             <p class="mt-2 text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
               {waitingWhen && `Expected ${waitingWhen}. `}A reservation does not run out while you
-              wait — it stands until the box arrives, however long that takes. Nothing is paid now.
+              wait - it stands until the box arrives, however long that takes. Nothing is paid now.
             </p>
             {order!.shipment_id && (
               <a
@@ -337,7 +337,7 @@ if (offerTelegram && telegramLink) {
                     {other.ref}
                   </a>
                   <span class="text-[var(--color-ink-faint)]">
-                    {' '}— {other.shipment_id ? 'reserved from a shipment' : 'in stock now'}
+                    {' '}- {other.shipment_id ? 'reserved from a shipment' : 'in stock now'}
                   </span>
                 </li>
               ))}
@@ -389,13 +389,13 @@ if (offerTelegram && telegramLink) {
             </ul>
             <p class="mt-3.5 text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
               The box was short. Your {waitingLines.length === 1 ? 'copy keeps its' : 'copies keep their'}
-              {' '}place at the front of the queue for the next one — nothing has been cancelled and
+              {' '}place at the front of the queue for the next one - nothing has been cancelled and
               you are not asked to pay for anything yet. The seven days start when everything on
               this order is here.
             </p>
             <p class="mt-2.5 text-[13px] leading-relaxed text-[var(--color-ink-faint)]">
               If you would rather take the {arrivedLines.length === 1 ? 'one' : arrivedLines.length}
-              {' '}that arrived now, tell us below and we will split it — you would pay postage
+              {' '}that arrived now, tell us below and we will split it - you would pay postage
               twice, so it is worth saying which you prefer.
             </p>
           </div>
@@ -406,7 +406,7 @@ if (offerTelegram && telegramLink) {
           *
           * Green, and with the two answers as buttons. Almost everybody says
           * one of exactly two things at this point, and asking them to compose
-          * a sentence to say it is the reason some people say nothing at all —
+          * a sentence to say it is the reason some people say nothing at all -
           * which costs them their books. Neither button changes the deadline
           * by itself; both write in the thread, and the shop answers.
           */}
@@ -419,13 +419,13 @@ if (offerTelegram && telegramLink) {
             </p>
             <p class="mt-2 text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
               Let us know you still want them and we will send the total and how to pay. After that
-              date the copies go back on the shelf. Need longer, or changed your mind? Tell us — we
+              date the copies go back on the shelf. Need longer, or changed your mind? Tell us - we
               would rather know.
             </p>
             {replied && (
               <p class="mt-3 p-3 bg-white border border-[var(--color-instock)]/30 rounded-[8px] text-[13.5px] leading-relaxed text-[var(--color-instock)]">
                 {replied === 'longer'
-                  ? 'Asked. We will reply — your copies stay set aside while we do.'
+                  ? 'Asked. We will reply - your copies stay set aside while we do.'
                   : 'Told. We will send the total and how to pay shortly.'}
               </p>
             )}
@@ -511,7 +511,7 @@ if (offerTelegram && telegramLink) {
         {offerTelegram && telegramLink && (
           <Dialog id="connect-telegram" title="Connecting to Telegram…">
             <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
-              If Telegram opened on this device, great — press Start in the chat and your order will
+              If Telegram opened on this device, great - press Start in the chat and your order will
               link.
             </p>
             <p class="mt-2 text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
@@ -761,6 +761,8 @@ if (offerTelegram && telegramLink) {
             imagesUsed={imagesUsed}
             proofUrl={(id: number) =>
               `/api/orders/proof?ref=${encodeURIComponent(order.ref)}&t=${encodeURIComponent(token)}&id=${id}`}
+            proofBase={`/api/orders/proof?ref=${encodeURIComponent(order.ref)}&t=${encodeURIComponent(token)}`}
+            pollUrl={`/api/orders/status?ref=${encodeURIComponent(order.ref)}&t=${encodeURIComponent(token)}`}
             error={sendError}
           />
         </div>

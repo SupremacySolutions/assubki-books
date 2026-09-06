@@ -29,6 +29,22 @@ interface Props {
   imagesUsed?: number;
   /** Builds the src for a photo in the thread. Both sides read their own route. */
   proofUrl?: (id: number) => string;
+  /**
+   * Where the live poll asks, without its `since` cursor.
+   *
+   * Given per side rather than assumed, so `src/scripts/thread.ts` drives the
+   * customer's page and the portal without knowing which it is on. Omitted, the
+   * thread simply does not poll - which is what a finished order wants.
+   */
+  pollUrl?: string | null;
+  /**
+   * Where a photo in the thread is read from, without its `id`.
+   *
+   * The same address `proofUrl` builds, given separately because the script
+   * needs it as a string it can append to for a message that arrives after the
+   * page was drawn.
+   */
+  proofBase?: string | null;
   /** Shown above the box: which way a reply will actually travel. */
   channelNote?: string | null;
   /** A refusal from the last post, already turned into a sentence. */
@@ -44,6 +60,8 @@ const {
   canAttach = false,
   imagesUsed = 0,
   proofUrl,
+  pollUrl = null,
+  proofBase = null,
   channelNote = null,
   error = null,
 } = Astro.props as Props;
@@ -69,7 +87,14 @@ const when = (at: number) => {
 const ours = (m: Message) => m.sender === side;
 ---
 
-<section id="thread" class="scroll-mt-24" data-thread data-side={side}>
+<section
+  id="thread"
+  class="scroll-mt-24"
+  data-thread
+  data-side={side}
+  data-poll-url={pollUrl ?? undefined}
+  data-proof-url={proofBase ?? undefined}
+>
   <h2 class="eyebrow mb-3">{THREAD.heading}</h2>
 
   <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden">

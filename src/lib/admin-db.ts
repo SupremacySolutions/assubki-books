@@ -9,6 +9,13 @@ import type { BookLanguage } from './db';
 
 export interface AdminOrderRow {
   unread_for_owner: number;
+  /*
+   * The thread's high-water mark, so the portal's poll can decide whether
+   * anything moved without reading the messages themselves. Selected already
+   * by `o.*`; declared here because the poll is the first caller to want them.
+   */
+  last_message_id: number | null;
+  last_message_at: number | null;
   id: number;
   ref: string;
   /**

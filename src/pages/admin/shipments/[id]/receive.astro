@@ -59,7 +59,7 @@ const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1f
       </div>
       <p class="mt-2 max-w-[74ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
         Enter the copies actually in the box. Zero for a title that did not come. A short delivery
-        fills the oldest reservations first and the rest keep their place — nothing is cancelled
+        fills the oldest reservations first and the rest keep their place - nothing is cancelled
         because a box was light.
       </p>
       <div class="mt-3.5 flex flex-wrap items-center gap-2.5" data-bulk hidden>
@@ -120,7 +120,7 @@ const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1f
             ? `Showing the ${claimed.length} ${claimed.length === 1 ? 'title' : 'titles'} with reservations against ${claimed.length === 1 ? 'it' : 'them'} first. Show the other ${rest.length}`
             : `Nobody has reserved from this shipment. Show all ${rest.length} titles`}
           <span class="text-[var(--color-ink-faint)]">
-            {' '}— anything you do not touch is recorded as arriving in full.
+            {' '}- anything you do not touch is recorded as arriving in full.
           </span>
         </summary>
         {rest.map((i) => (
@@ -170,7 +170,7 @@ const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1f
   </form>
 
   <p class="mt-4 text-[13px] text-[var(--color-ink-faint)] leading-relaxed max-w-[76ch]">
-    Recording a delivery cannot happen twice by accident — this form carries a key that is spent
+    Recording a delivery cannot happen twice by accident - this form carries a key that is spent
     the first time it is used, so a second submit is ignored rather than adding the stock again.
   </p>
 </Admin>
@@ -252,7 +252,7 @@ const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1f
       const lines = [];
       if (waiting > 0)
         lines.push(
-          `${plural(waiting, 'claim keeps', 'claims keep')} its place for the next box — nothing is cancelled`,
+          `${plural(waiting, 'claim keeps', 'claims keep')} its place for the next box - nothing is cancelled`,
         );
       if (shelf > 0) lines.push(`${plural(shelf, 'copy goes', 'copies go')} on the shelf`);
       if (missing > 0) lines.push(`${plural(missing, 'title', 'titles')} did not come at all`);

@@ -305,7 +305,7 @@ const carrier =
               >
                 {step.short}
                 <span class="sr-only">
-                  {' — '}{step.title}{step.done ? ', done' : isCurrent ? ', in progress' : ', still to come'}
+                  {' - '}{step.title}{step.done ? ', done' : isCurrent ? ', in progress' : ', still to come'}
                 </span>
               </p>
               {step.at && (
@@ -341,7 +341,7 @@ const carrier =
       {currentIndex < 0 && (
         <div class="mt-5 pt-4 border-t border-[var(--color-rule-faint)]">
           <p class="text-[15.5px] font-medium text-[var(--color-instock)]">
-            {steps[steps.length - 1].title} — this order is complete.
+            {steps[steps.length - 1].title} - this order is complete.
           </p>
           {notes.map((note) => (
             <p class="mt-1 text-[14px] text-[var(--color-ink-soft)]">{note}</p>
