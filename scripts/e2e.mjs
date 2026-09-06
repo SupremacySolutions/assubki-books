@@ -4773,6 +4773,14 @@ async function shipments() {
   const shopPage = await html(
     `/order?ref=${shopParcel.ref}&t=${(await one(`SELECT access_token AS t FROM orders WHERE id=${shopParcel.id}`)).t}`);
   t.ok(shopPage.includes(shipParcel.ref), 'the shop order points at the reservation');
+  t.ok(!/href="\/book\/sh\d+-\d+"/.test(
+    await html(`/order?ref=${shipParcel.ref}&t=${(await one(`SELECT access_token AS t FROM orders WHERE id=${shipParcel.id}`)).t}`)),
+    'and a reserved line links to its shipment, not to a product page it has not got');
+
+  /* The owner has to know they are one basket, or postage gets charged twice. */
+  const ownerPage = await html(`/admin/orders/${shopParcel.ref}`);
+  t.ok(ownerPage.includes(shipParcel.ref) && /Part of one basket/.test(ownerPage),
+    'and the owner is told the two orders came from one checkout');
 
   /* Only the reservation goes in the reservations queue now. */
   const mixedOrder = shipParcel;

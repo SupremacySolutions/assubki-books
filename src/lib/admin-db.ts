@@ -10,6 +10,14 @@ export interface AdminOrderRow {
   unread_for_owner: number;
   id: number;
   ref: string;
+  /**
+   * Ties this order to the others one checkout produced.
+   *
+   * The owner needs it for one reason above all: postage. A basket holding
+   * shelf books and reserved books becomes two orders, and quoting each of
+   * them a delivery charge bills one customer twice for one basket.
+   */
+  split_group: string | null;
   access_token: string;
   customer_name: string;
   email: string;

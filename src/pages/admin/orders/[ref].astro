@@ -2,6 +2,7 @@
 import Admin from '../../../layouts/Admin.astro';
 import { getOrderByRef, getOrderItems, lastPostagePence } from '../../../lib/admin-db';
 import { price } from '../../../lib/format';
+import { siblingOrders } from '../../../lib/orders';
 import {
   paymentOptions,
   collectionPlaces,
@@ -22,6 +23,18 @@ import { markRead, thread, threadOpen } from '../../../lib/messages';
 const { ref } = Astro.params;
 const order = ref ? await getOrderByRef(ref) : null;
 if (!order) return Astro.rewrite('/404');
+
+/*
+ * The other orders this customer's one checkout produced.
+ *
+ * Shown here mainly because of postage: a basket holding shelf books and
+ * reserved books becomes two orders, and quoting a delivery charge on each
+ * bills one person twice for one basket. The owner cannot avoid that without
+ * being told the orders are related, and nothing on this page said so.
+ */
+const siblings = order.split_group
+  ? await siblingOrders(order.split_group, order.id)
+  : [];
 
 /* The conversation, and the fact the owner has now seen it. Opening the order
    is the read event on this side too. */
@@ -195,6 +208,47 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
       </p>
     )
   }
+
+  {/*
+    * One checkout, more than one order.
+    *
+    * Placed above everything else because it changes what the owner does
+    * next: postage is quoted per order, so charging it here and again on the
+    * sibling bills one customer twice for one basket.
+    */}
+  {siblings.length > 0 && (
+    <div class="mb-5 p-3.5 bg-[var(--color-brass)]/10 border border-[var(--color-brass)]/30 rounded-[3px] text-[14px] leading-relaxed max-w-[46rem]">
+      <p>
+        Part of one basket that became {siblings.length + 1} orders — the books on
+        the shelf are separated from the ones still coming, so each can be sent
+        when it is ready.
+      </p>
+      <ul class="mt-1.5 grid gap-1">
+        {siblings.map((other) => (
+          <li>
+            <a
+              href={`/admin/orders/${other.ref}`}
+              class="text-[var(--color-navy)] underline underline-offset-2"
+            >
+              {other.ref}
+            </a>
+            <span class="text-[var(--color-ink-faint)]">
+              {' '}— {other.shipment_id ? 'the reserved half' : 'the shelf half'}
+              {other.status === 'cancelled' || other.status === 'expired'
+                ? `, ${other.status}`
+                : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!isCollection && (
+        <p class="mt-1.5 text-[13px] text-[var(--color-ink-soft)]">
+          Postage is quoted per order. Charge it once across the two unless you
+          really are sending two parcels.
+        </p>
+      )}
+    </div>
+  )}
 
   <div class="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
     <div class="space-y-6">
