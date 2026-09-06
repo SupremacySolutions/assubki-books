@@ -31,16 +31,34 @@ export function monthOptions(from = new Date()): { value: string; label: string 
  * The year is dropped for months close at hand, because "mid-October 2026" in
  * September 2026 is a date stamp rather than a sentence.
  */
-export function whenText(vague: string | null, month: string | null, now = new Date()): string | null {
+export function whenText(
+  vague: string | null,
+  month: string | null,
+  opts: {
+    /** For testing, and for pages rendered against a fixed clock. */
+    now?: Date;
+    /**
+     * Print the year even when it is this one.
+     *
+     * Inside a sentence about a book somebody is already reading - "expected
+     * mid-October" - the year is noise, because the reader knows which year
+     * they are in. Standing alone beside a shipment's name it is not: that
+     * line is the whole answer to "when", it gets read next to shipments from
+     * other years, and a bare month there is a date with a piece missing.
+     */
+    year?: boolean;
+  } = {},
+): string | null {
   if (!month) return null;
   const [y, m] = month.split('-').map(Number);
   if (!y || !m) return null;
 
+  const now = opts.now ?? new Date();
   const name = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {
     month: 'long',
     timeZone: 'UTC',
   });
-  const withYear = y === now.getUTCFullYear() ? name : `${name} ${y}`;
+  const withYear = !opts.year && y === now.getUTCFullYear() ? name : `${name} ${y}`;
 
   switch (vague) {
     case 'early':

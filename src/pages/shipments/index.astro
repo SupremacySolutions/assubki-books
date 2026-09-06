@@ -5,9 +5,42 @@ import { whenText } from '../../lib/incoming';
 import { price } from '../../lib/format';
 
 const shipments = await publicShipments();
-const withItems = await Promise.all(
-  shipments.map(async (s) => ({ shipment: s, items: await publicShipmentItems(s.id) })),
-);
+/**
+ * The date under the heading.
+ *
+ * Before it lands that is a forecast, deliberately vague - "late November
+ * 2026" - because a shop that names a day and misses it has broken a promise.
+ * Once it has landed we know the answer exactly, so it stops being a forecast
+ * and becomes the day, and going on repeating "expected mid-September" about
+ * a box already on the shelf would read as though it were still coming.
+ *
+ * Either way the year is kept: see `whenText`.
+ */
+const when = (s: {
+  status: string;
+  arrived_at: number | null;
+  incoming_vague: string | null;
+  incoming_month: string | null;
+}) =>
+  s.status === 'arrived' && s.arrived_at
+    ? new Date(s.arrived_at * 1000).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      })
+    : whenText(s.incoming_vague, s.incoming_month, { year: true });
+/*
+ * A shipment with nothing left on it is dropped rather than shown empty.
+ *
+ * Listing a title moves it off the shipment and into the catalogue, so an
+ * arrived shipment shrinks as the owner works through it and eventually holds
+ * nothing at all. A heading over an empty list reads like a page that failed
+ * to load; by that point everything it carried is in the catalogue anyway,
+ * which is where the note already sends people.
+ */
+const withItems = (
+  await Promise.all(
+    shipments.map(async (s) => ({ shipment: s, items: await publicShipmentItems(s.id) })),
+  )
+).filter(({ items }) => items.length > 0);
 ---
 
 <Base
@@ -31,23 +64,46 @@ const withItems = await Promise.all(
 
     {withItems.map(({ shipment, items }) => (
       <section class="mt-10">
-        <div class="flex flex-wrap items-baseline justify-between gap-3">
-          <h2 class="text-[21px]">{shipment.title}</h2>
+        {/*
+          * The month and year sit with the name, not off in the status.
+          *
+          * "India Shipment" alone says nothing a customer can plan around, and
+          * a shop that lists two shipments has to be read as two dates. The
+          * year is kept even when it is this one - see `whenText` - because
+          * standing on its own under a heading it is the whole answer.
+          */}
+        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <div class="min-w-0">
+            <h2 class="text-[21px] leading-snug">{shipment.title}</h2>
+            {when(shipment) && (
+              <p class="mt-0.5 text-[14px] text-[var(--color-ink-soft)]">
+                {shipment.status === 'open' ? 'Expected ' : 'Arrived '}{when(shipment)}
+              </p>
+            )}
+          </div>
           <span
             class:list={[
-              'text-[13.5px]',
+              'text-[13.5px] shrink-0',
               shipment.status === 'open'
                 ? 'text-[var(--color-instock)]'
                 : 'text-[var(--color-ink-faint)]',
             ]}
           >
             {shipment.status === 'open'
-              ? whenText(shipment.incoming_vague, shipment.incoming_month)
-                ? `Expected ${whenText(shipment.incoming_vague, shipment.incoming_month)}`
-                : 'Open for reservations'
+              ? 'Open for reservations'
               : 'Arrived — reservations closed'}
           </span>
         </div>
+
+        {shipment.status === 'arrived' && (
+          <p class="mt-2 max-w-[44rem] text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+            This shipment has landed, so it can no longer be reserved from. It is
+            left here so you can see what came in — whatever was not spoken for
+            goes into
+            {' '}<a href="/catalogue" class="underline">the catalogue</a> as we
+            photograph it.
+          </p>
+        )}
 
         {shipment.note && (
           <p class="mt-2 max-w-[44rem] text-[14px] text-[var(--color-ink-soft)] leading-relaxed whitespace-pre-line">

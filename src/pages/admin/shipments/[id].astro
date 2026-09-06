@@ -3,7 +3,7 @@ import Admin from '../../../layouts/Admin.astro';
 import { env } from 'cloudflare:workers';
 import { getShipment, shipmentItems } from '../../../lib/shipments';
 import { pendingNotices } from '../../../lib/shipment-notify';
-import { whenText } from '../../../lib/incoming';
+import { VAGUE, monthOptions, whenText } from '../../../lib/incoming';
 
 const id = Number.parseInt(Astro.params.id ?? '', 10);
 const shipment = Number.isInteger(id) ? await getShipment(id) : null;
@@ -52,6 +52,27 @@ const spare = (i: typeof items[number]) => i.stock - i.reserved_incoming - i.res
  */
 const Rows = isDraft ? 'form' : 'div';
 
+/*
+ * The months on offer.
+ *
+ * `monthOptions` runs from today forward, which is right for a shipment being
+ * planned and wrong for one already saved: a delivery expected last month
+ * would find its own value missing from the list and silently show the wrong
+ * one. So whatever is stored is put back at the front if the window has moved
+ * past it.
+ */
+const months = monthOptions();
+if (shipment.incoming_month && !months.some((m) => m.value === shipment.incoming_month)) {
+  const [y, m] = shipment.incoming_month.split('-').map(Number);
+  months.unshift({
+    value: shipment.incoming_month,
+    label: new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {
+      month: 'long', year: 'numeric', timeZone: 'UTC',
+    }),
+  });
+}
+const details = params.get('details');
+
 const incomplete = (i: typeof items[number]) =>
   !i.title || i.price_pence <= 0 || i.incoming <= 0;
 const holes = items.filter(incomplete).length;
@@ -71,6 +92,11 @@ const holes = items.filter(incomplete).length;
     </p>
   )}
   {saved && <p class="mb-4 text-[14px] text-[var(--color-instock)]">Saved.</p>}
+  {details && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+      Details saved. Customers see the new heading straight away.
+    </p>
+  )}
   {opened && (
     <p class="mb-4 text-[14px] text-[var(--color-instock)]">
       Open. Customers can reserve from these now.
@@ -98,6 +124,84 @@ const holes = items.filter(incomplete).length;
       the day's email in one go — check back in a quarter of an hour.
     </p>
   )}
+
+  {/*
+    * The shipment's own details, editable for as long as it exists.
+    *
+    * The expected month is the field customers read as a promise and the one
+    * most likely to move, so it cannot be a thing chosen once on the paste
+    * screen and then frozen. Its own form, posting to its own route: it
+    * changes the shipment, while the form below changes the books on it.
+    */}
+  <details class="mb-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+    <summary class="px-4 py-3 text-[14px] cursor-pointer select-none">
+      Name, expected date and note
+      <span class="ml-2 text-[13px] text-[var(--color-ink-faint)]">
+        — what customers read at the top of this shipment
+      </span>
+    </summary>
+    <form
+      method="post"
+      action={`/api/admin/shipments/${id}/details`}
+      class="px-4 pb-4 grid gap-3 sm:grid-cols-[1fr_7rem_11rem] sm:items-end"
+    >
+      <div>
+        <label for="s_title" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+          Name
+        </label>
+        <input
+          id="s_title"
+          name="title"
+          value={shipment.title}
+          required
+          maxlength="160"
+          class="field !text-[14px]"
+        />
+      </div>
+      <div>
+        <label for="s_vague" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+          Expected
+        </label>
+        <select id="s_vague" name="incoming_vague" class="field !text-[14px]">
+          {VAGUE.map((v) => (
+            <option value={v.value} selected={shipment.incoming_vague === v.value}>
+              {v.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label for="s_month" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+          Month and year
+        </label>
+        <select id="s_month" name="incoming_month" class="field !text-[14px]">
+          <option value="">Not saying yet</option>
+          {months.map((m) => (
+            <option value={m.value} selected={shipment.incoming_month === m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div class="sm:col-span-3">
+        <label for="s_note" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
+          Note shown under the heading
+        </label>
+        <textarea
+          id="s_note"
+          name="note"
+          rows="3"
+          maxlength="1000"
+          class="field !text-[14px]"
+        >{shipment.note}</textarea>
+      </div>
+      <div class="sm:col-span-3">
+        <button type="submit" class="btn btn-primary !py-1.5 !text-[13.5px]">
+          Save details
+        </button>
+      </div>
+    </form>
+  </details>
 
   <div class="mb-5 flex flex-wrap items-center gap-3">
     <span class="text-[13px] text-[var(--color-ink-faint)]">
