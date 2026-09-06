@@ -1044,6 +1044,7 @@ const captionStale = Boolean(
 
           <section
             id="s-parts"
+            data-parts-panel
             class:list={[
               'p-5 scroll-mt-24 rounded-[var(--radius-panel)]',
               partsEmpty
@@ -1059,13 +1060,13 @@ const captionStale = Boolean(
               * first and last volume of a one-volume book is a form that
               * cannot be filled in. Saying what it needs is shorter than
               * hiding the section and leaving a gap where it will appear.
+              *
+              * It is a wait, not a wall. Type a volume count above one in
+              * Identity and the builder opens underneath without a save -
+              * `partsForm` posts its own volume count anyway, so nothing here
+              * needed the saved value except the decision to show it.
               */}
-            {partsEmpty ? (
-              <p class="text-[13.5px] leading-relaxed text-[var(--color-ink-faint)] max-w-[70ch]">
-                Empty for a single book: it needs more than one volume in the set. Fill in
-                “Volumes in the set” above, save, and this becomes the part builder.
-              </p>
-            ) : siblings.length > 0 ? (
+            {siblings.length > 0 ? (
               <>
                 <div class="flex items-center gap-2.5 mb-3">
                   <span class="rounded-[var(--radius-pill)] bg-[var(--color-navy)]/10 px-3 py-1 text-[12.5px] font-medium text-[var(--color-navy)]">
@@ -1145,6 +1146,15 @@ const captionStale = Boolean(
               </>
             ) : (
               <>
+                <p
+                  data-parts-wait
+                  hidden={!partsEmpty}
+                  class="text-[13.5px] leading-relaxed text-[var(--color-ink-faint)] max-w-[70ch]"
+                >
+                  Empty for a single book: it needs more than one volume in the set. Put the number
+                  of volumes in “Volumes in the set” above and this becomes the part builder.
+                </p>
+                <div data-parts-builder hidden={partsEmpty}>
                 {/*
                   * The example sits above the grid and uses the same four
                   * columns, so each value is under the header it belongs to.
@@ -1321,6 +1331,7 @@ const captionStale = Boolean(
                     class="btn btn-primary !py-2 !text-[13.5px]">
                     Build the parts
                   </button>
+                </div>
                 </div>
               </>
             )}
@@ -2006,6 +2017,57 @@ const captionStale = Boolean(
     is the whole seam between them - the uploader asks for a file to send and
     gets one back, or null if the owner cancelled.
   */}
+  {/*
+    * Sold in parts, without a save in the middle.
+    *
+    * The section waits on a volume count above one, and that count is typed in
+    * Identity at the top of the same page. Reading it from the saved book
+    * meant typing it, saving, scrolling back down, and only then finding the
+    * builder - one round trip to learn something already on screen.
+    *
+    * `partsForm` posts its own volume count, so the saved value was never what
+    * the builder needed; it was only what decided whether to draw it. So this
+    * watches the field instead, and carries the number down so it is not typed
+    * twice. With scripting off the panel keeps its original wording and the
+    * save still gets there.
+    */}
+  <script is:inline nonce={Astro.locals.cspNonce}>
+    (() => {
+      const panel = document.querySelector('[data-parts-panel]');
+      const wait = document.querySelector('[data-parts-wait]');
+      const builder = document.querySelector('[data-parts-builder]');
+      const volumes = document.querySelector('#volumes');
+      if (!panel || !wait || !builder || !volumes) return;
+
+      wait.textContent =
+        'Waiting on a volume count. Put the number of volumes in \u201CVolumes in the set\u201D above and the builder opens here.';
+
+      /* The builder's own volume field, which the owner should not have to
+         fill in twice with the same number. */
+      const echo = builder.querySelector('input[name="volumes"]');
+
+      function paint() {
+        const n = Number(volumes.value);
+        const splittable = Number.isFinite(n) && n > 1;
+        wait.hidden = splittable;
+        builder.hidden = !splittable;
+
+        panel.classList.toggle('bg-[#faf9f6]', !splittable);
+        panel.classList.toggle('border-dashed', !splittable);
+        panel.classList.toggle('border-[var(--color-rule)]', !splittable);
+        panel.classList.toggle('bg-white', splittable);
+        panel.classList.toggle('border-[var(--color-rule-soft)]', splittable);
+
+        /* Only while it is untouched - overwriting a number the owner typed
+           into the builder itself would be worse than asking for it twice. */
+        if (splittable && echo && !echo.value) echo.value = String(Math.round(n));
+      }
+
+      volumes.addEventListener('input', paint);
+      paint();
+    })();
+  </script>
+
   {/*
     * Catch a mistyped ISBN before the save does.
     *
