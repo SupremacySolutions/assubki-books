@@ -914,16 +914,31 @@ export async function booksByIds(ids: number[]): Promise<BookRow[]> {
   const placeholders = ids.map(() => '?').join(',');
   const { results } = await db()
     /*
-     * Live books only, and deliberately not shipment books.
+     * Live books, plus anything on a shipment that is open for reservations.
      *
-     * This is what the shop basket and a group basket read. A reservation
-     * never goes through either - it has its own page, its own quantities and
-     * its own checkout - so admitting a shipment book here buys nothing and
-     * costs the one rule the whole design rests on: that an order is either a
-     * basket of books off the shelf or a claim on one shipment, never a
-     * half-and-half that is posted in two pieces and filed under neither.
+     * This is what the shop basket and a group basket read, and a reservation
+     * now goes through both: a customer adds a book they can have today and a
+     * book still at sea the same way, and the shop works out which is which.
+     *
+     * A mixed basket is safe because the order machinery already handles it,
+     * and did long before shipments existed - a line the shelf cannot cover
+     * has always become a claim. `createOrder` gives any order carrying a
+     * claim no 48-hour clock, so the shelf half is not released out from under
+     * the half still coming, and the confirmation already has wording for an
+     * order that goes out in one parcel once everything is in.
+     *
+     * The condition is written out rather than loosened. A draft with no
+     * shipment stays unbuyable, and so does one whose shipment has arrived or
+     * been put away - which is also what shuts reservations off at arrival,
+     * with no separate flag to keep in step.
      */
-    .prepare(`${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND b.status = 'live'`)
+    .prepare(
+      `${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND (
+         b.status = 'live'
+         OR EXISTS (SELECT 1 FROM shipments s
+                     WHERE s.id = b.shipment_id AND s.status = 'open')
+       )`,
+    )
     .bind(...ids)
     .all<BookRow>();
   return applySetAvailability(results);

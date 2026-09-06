@@ -84,12 +84,27 @@ export function statusLabel(
    *
    * Both default to false, so an ordinary order is worded exactly as before.
    */
-  reservation: { waiting?: boolean; replyWindow?: boolean } = {},
+  reservation: { waiting?: boolean; mixed?: boolean; replyWindow?: boolean } = {},
 ): CustomerStatus {
   const collecting = isCollection(fulfilment);
 
   switch (status) {
     case 'requested':
+      /*
+       * A basket may hold both kinds, and the two read differently. Saying
+       * "we write when the shipment lands" over an order that is half on the
+       * shelf leaves the customer wondering what happened to the half we
+       * already have; the confirmation email has drawn this distinction since
+       * before shipments existed, and the page should agree with it.
+       */
+      if (reservation.mixed) {
+        return {
+          label: 'Part reserved',
+          blurb:
+            'Some of your books are here and set aside for you; the rest are reserved from a shipment still on its way. The whole order goes out together once everything is in, and we write to you with the total when the shipment lands.',
+          tone: 'wait',
+        };
+      }
       if (reservation.waiting) {
         return {
           label: 'Reserved',

@@ -123,6 +123,7 @@ const waitingLine = order?.items.find((i) => i.from_incoming);
 const status = order
   ? statusLabel(order.status, order.fulfilment, whereToCollect, cashPayment, {
       waiting: Boolean(waitingLine),
+      mixed: Boolean(waitingLine) && order.items.some((i) => !i.from_incoming),
       replyWindow: order.pay_by !== null,
     })
   : null;

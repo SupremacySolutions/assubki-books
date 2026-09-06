@@ -165,29 +165,24 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
       WHERE b.id IN (${placeholders}) AND (
               b.status = 'live'
               /*
-               * Or it is a book on the one shipment this order is a
-               * reservation against.
+               * Or it is on a shipment that is open for reservations.
                *
-               * Tied to the caller's intent rather than written as a general
-               * loosening, which is the difference between admitting a book
-               * and admitting a kind of order. Without the bound shipment id
-               * below, an ordinary basket could carry a shipment book to
-               * the ordinary checkout and come back as a single order that is
-               * half posted-today and half promised-for-February - filed as
-               * neither, in nobody's queue, with a deadline nothing started.
+               * A basket may hold both, and an order carrying either is
+               * handled by the same machinery: a line the shelf cannot cover
+               * becomes a claim, and an order with any claim in it gets no
+               * 48-hour clock, so the half that is here is not released out
+               * from under the half still coming.
                *
-               * It also means marking a shipment arrived shuts new
-               * reservations here rather than in the page that offers them,
-               * with no second flag to keep in step.
+               * What this must never admit is a shipment book whose shipment
+               * has arrived or been put away, and it does not - which is also
+               * what shuts new reservations off at arrival, with no second
+               * flag to keep in step.
                */
               OR EXISTS (SELECT 1 FROM shipments s
-                          WHERE s.id = b.shipment_id AND s.id = ?
-                            AND s.status = 'open')
+                          WHERE s.id = b.shipment_id AND s.status = 'open')
             )`,
   )
-    // The shipment is the last placeholder, so a null here admits nothing
-    // beyond live books - which is exactly what an ordinary basket should get.
-    .bind(...ids, input.shipmentId ?? null)
+    .bind(...ids)
     .all<{
       id: number; title: string; price_pence: number; shipment_id: number | null;
       available: number; reservable: number;
@@ -294,6 +289,8 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
    * customer cannot complete it inside 48 hours because the books are not here
    * - sweeping it would release a copy somebody was promised.
    */
+  const shipmentWaitedOn =
+    books.find((b) => b.shipment_id !== null)?.shipment_id ?? null;
   const waitsForStock = items.some((i) => i.fromIncoming);
   const expiresAt = waitsForStock ? null : Math.floor(Date.now() / 1000) + HOLD_HOURS * 3600;
 
@@ -334,7 +331,18 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
         subtotalPence,
         discountPence,
         expiresAt,
-        input.shipmentId ?? null,
+        /*
+         * Which shipment this order is waiting on, if any.
+         *
+         * Taken from the books rather than from the caller now that an
+         * ordinary basket can carry them: it is what files the order in the
+         * owner's reservations queue instead of among the ones he can pack
+         * this afternoon, and an order holding a shipment line cannot be
+         * packed whatever else is in it. A basket spanning two shipments
+         * records the first - the queue groups by it, and every line is
+         * visible on the order either way.
+         */
+        input.shipmentId ?? shipmentWaitedOn,
         priorLink?.telegram_chat_id ?? null,
         priorLink ? Math.floor(Date.now() / 1000) : null,
         input.addressParts?.line1 ?? null,

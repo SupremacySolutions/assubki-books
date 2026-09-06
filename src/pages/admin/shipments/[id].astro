@@ -228,17 +228,39 @@ const holes = items.filter(incomplete).length;
       </form>
     )}
     {shipment.status === 'open' && (
-      <form method="post" action={`/api/admin/shipments/${id}/arrived`} data-confirm="arrived">
+      <form method="post" action={`/api/admin/shipments/${id}/arrived`} data-confirm="Mark this shipment as arrived? The copies go on the shelf, everyone who reserved is told, and their seven days start.">
         <button type="submit" class="btn btn-primary !py-1.5 !text-[13.5px]">
           The shipment has arrived
         </button>
       </form>
     )}
+    {/*
+      * Finishing with a shipment.
+      *
+      * "Put away" said nothing about what it did. It takes the shipment off
+      * the customers' page: an arrived one stays there so people can see what
+      * came in, which is right for a week and clutter after a month, and this
+      * is how it stops. Nothing is deleted: the books stay in Listings and the
+      * orders in the reservations queue. There is no route back from 'closed',
+      * so the button asks first and says what it does.
+      */}
     {shipment.status === 'arrived' && (
-      <form method="post" action={`/api/admin/shipments/${id}/open`}>
+      <form
+        method="post"
+        action={`/api/admin/shipments/${id}/open`}
+        data-confirm="Hide this shipment from customers? Nothing is deleted - the books stay in Listings and the orders in the reservations queue."
+      >
         <input type="hidden" name="action" value="close" />
-        <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">Put away</button>
+        <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">
+          Hide from customers
+        </button>
       </form>
+    )}
+    {shipment.status === 'closed' && (
+      <span class="text-[13px] text-[var(--color-ink-faint)]">
+        Hidden from customers. Everything on it is kept — the books are in
+        Listings and the orders in the reservations queue.
+      </span>
     )}
   </div>
 
@@ -350,25 +372,16 @@ const holes = items.filter(incomplete).length;
             <form
               method="post"
               action={`/api/admin/shipments/${id}/promote`}
-              class="sm:col-span-5 mt-1 pt-3 border-t border-[var(--color-rule-soft)] flex flex-wrap items-end gap-2"
+              class="sm:col-span-5 mt-1 pt-3 border-t border-[var(--color-rule-soft)] flex flex-wrap items-center gap-3"
             >
               <input type="hidden" name="book" value={i.id} />
-              <div class="min-w-[16rem] flex-1">
-                <label for={`en_${i.id}`} class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
-                  English title — {spare(i)} {spare(i) === 1 ? 'copy' : 'copies'} left to sell
-                </label>
-                <input
-                  id={`en_${i.id}`}
-                  name="title"
-                  required
-                  maxlength="200"
-                  placeholder="How it should read in the catalogue"
-                  class="field !text-[14px]"
-                />
-              </div>
               <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px]">
-                List the spare copies
+                List the {spare(i)} spare {spare(i) === 1 ? 'copy' : 'copies'}
               </button>
+              <span class="text-[12.5px] text-[var(--color-ink-faint)]">
+                Opens the listing, where you give it an English title, a cover and
+                a description before publishing it.
+              </span>
             </form>
           )}
           {shipment.status === 'arrived' && spare(i) <= 0 && (

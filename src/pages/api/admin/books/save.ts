@@ -119,17 +119,41 @@ export const POST: APIRoute = async ({ request }) => {
   let bookId = id;
 
   if (bookId) {
+    /*
+     * The one case where a slug changes.
+     *
+     * A slug is fixed at insert on purpose: Telegram has posted `/book/<slug>`
+     * links, and a changed address breaks them. The exception is a row that
+     * came off a shipment import, whose address is still the `sh12-4` the
+     * importer assigned by arithmetic. Such a row has never been publicly
+     * reachable - a shipment row has no product page and is not in the sitemap
+     * - so nothing anywhere points at the old one.
+     *
+     * It happens here rather than at promotion because here is where the
+     * English title is actually typed. Checked against the shape rather than
+     * assumed, so an ordinary listing is never re-addressed.
+     */
+    const IMPORTED_SLUG = /^sh\d+-\d+$/;
+    const current = await env.DB.prepare('SELECT slug FROM books WHERE id = ?')
+      .bind(bookId)
+      .first<{ slug: string }>();
+    const newSlug = current && IMPORTED_SLUG.test(current.slug)
+      ? await uniqueSlug(slugify(title), bookId)
+      : null;
+
     // Stock goes through setStock so the change is written to the ledger, and
     // so it cannot be dropped below what open orders have already promised.
     await env.DB.prepare(
       `UPDATE books SET title = ?, title_ar = ?, title_ur = ?, author = ?, publisher = ?,
                         volumes = ?, description_html = ?, price_pence = ?, status = ?, isbn = ?,
+                        ${newSlug ? 'slug = ?,' : ''}
                         ${captionOffered ? 'telegram_caption = ?,' : ''}
                         updated_at = unixepoch()
         WHERE id = ?`,
     )
       .bind(title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
-            status, isbn, ...(captionOffered ? [telegramCaption] : []), bookId)
+            status, isbn, ...(newSlug ? [newSlug] : []),
+            ...(captionOffered ? [telegramCaption] : []), bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
     /* Anybody waiting is told once availability has settled - see stock-alerts. */

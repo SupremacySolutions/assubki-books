@@ -63,6 +63,15 @@ const SECTIONS = [
   { id: 's-delete', label: 'Delete', badge: null, locked: isNew, warn: false },
 ].filter((sec) => !(isNew && sec.id === 's-delete'));
 const posted = Astro.url.searchParams.get('posted');
+/*
+ * Arrived here straight from a shipment's spare copies.
+ *
+ * The book has the price, the volumes and the copies already - what it is
+ * missing is everything that makes it a listing rather than a line on a
+ * packing list. Saying so here is the point of sending the owner to this page
+ * instead of publishing the row where it stood.
+ */
+const fromShipment = Astro.url.searchParams.get('from_shipment');
 const error = Astro.url.searchParams.get('e');
 
 // What the channel post will look like, rendered from the same function that
@@ -128,6 +137,18 @@ const captionStale = Boolean(
     error === 'upload' && (
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
         That photo could not be saved. Check it is a JPEG, PNG or WebP under 8 MB.
+      </p>
+    )
+  }
+  {
+    fromShipment && (
+      <p class="mb-5 p-3 bg-[var(--color-brass)]/10 border border-[var(--color-brass)]/30 rounded-[3px] text-[14.5px] leading-relaxed">
+        Off the shipment and yours to finish. It kept its price, volumes and the
+        copies nobody reserved — it still needs an <strong>English title</strong>,
+        a cover and a description, and it is a draft until you set it live below.
+        {' '}<a href={`/admin/shipments/${fromShipment}`} class="underline">
+          Back to the shipment
+        </a>.
       </p>
     )
   }

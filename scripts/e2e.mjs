@@ -2708,10 +2708,8 @@ async function integrity() {
     'the country box can be typed into and still submits a code');
   t.ok(checkout.includes('data-error-for="fulfilment"'),
     'a problem with post-or-collect now has somewhere to appear');
-  for (const page of ['src/pages/checkout.astro', 'src/pages/shipments/checkout.astro']) {
-    t.ok(readFileSync(page, 'utf8').includes('<CheckoutFields'),
-      `${page.split('/').pop()} renders the shared form rather than one of its own`);
-  }
+  t.ok(readFileSync('src/pages/checkout.astro', 'utf8').includes('<CheckoutFields'),
+    'the checkout renders the shared form rather than one of its own');
   t.ok(readFileSync('src/scripts/checkout-form.ts', 'utf8').includes('data-dot-mark'),
     'and the wiring that drives it is shared too');
   t.ok(readFileSync('src/middleware.ts', 'utf8').includes("connect-src 'self' https://api.postcodes.io"),
@@ -4688,24 +4686,24 @@ async function shipments() {
 
   const shipmentPage = await html(`/shipments/${sid}`);
   t.ok(shipmentPage.includes(rows[0].title), 'the books are on the shipment page');
-  t.ok(shipmentPage.includes('Reserve these'), 'with a way to reserve them');
+  t.ok(shipmentPage.includes('Reserve a copy') && shipmentPage.includes('data-reserve'),
+    'with the same brass reserve button the book page uses, adding to the ordinary basket');
 
-  // Reserving.
-  const reserve = async (qty) => {
-    const body = new URLSearchParams({
-      s: String(sid), name: 'E2E Reserver', email: CUSTOMER_EMAIL,
-      phone: '07700 900123', fulfilment: 'collection', notes: '',
+  /*
+   * Reserving, through the ordinary basket.
+   *
+   * There is no separate reservation checkout any more: a book still at sea
+   * goes in the same basket and through the same `/api/orders` as one off the
+   * shelf, and the shop decides which lines are claims when the order is made.
+   */
+  const reserve = async (qty, extraItems = []) => {
+    const { body } = await json('/api/orders', {
+      name: 'E2E Reserver', email: CUSTOMER_EMAIL, phone: '07700 900123',
+      fulfilment: 'collection',
+      items: [{ bookId: rows[0].id, qty }, ...extraItems],
     });
-    body.append(`q${rows[0].id}`, String(qty));
-    const res = await fetch(`${SITE}/api/reservations`, {
-      method: 'POST', redirect: 'manual',
-      headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    const loc = decodeURIComponent(res.headers.get('location') ?? '');
-    const ref = loc.match(/ref=([A-Z0-9-]+)/)?.[1];
-    if (ref) created.orders.push(ref);
-    return { loc, ref };
+    if (body.ref) created.orders.push(body.ref);
+    return { loc: body.error ?? '', ref: body.ref, body };
   };
 
   const first = await reserve(2);
@@ -4725,36 +4723,49 @@ async function shipments() {
   t.ok(!tooMany.ref, 'and nobody can reserve more copies than are coming');
 
   /*
-   * A shipment book cannot reach the ordinary checkout.
+   * One basket, holding both kinds.
    *
-   * The whole design rests on an order being one thing or the other: a basket
-   * of books off the shelf, posted today, or a claim on one shipment, promised
-   * for months away. A single order carrying both would be posted in two
-   * pieces, filed in neither queue, and carry a deadline about a box that only
-   * half of it came from.
-   *
-   * The books are admitted by naming the shipment the order is a reservation
-   * against, not by loosening what counts as buyable - so the ordinary
-   * checkout, which names none, cannot see them however the basket was built.
+   * A book still at sea goes in beside one off the shelf and through the same
+   * checkout. What makes that safe is not a rule about baskets but the one
+   * `createOrder` has always had: a line the shelf cannot cover becomes a
+   * claim, and an order carrying any claim gets no 48-hour hold - so the half
+   * that is here is not released out from under the half still coming. It is
+   * filed by what is in it, which is the reservations queue.
    */
   const shelfBook = await makeBook({ stock: '3' });
-  const smuggled = await json('/api/orders', {
+  /* The first title is spoken for by now, so this uses the second. */
+  const mixedSent = await json('/api/orders', {
     name: 'E2E Mixer', email: CUSTOMER_EMAIL, phone: '07700 900123',
-    fulfilment: 'collection', notes: '',
-    items: [{ bookId: shelfBook.id, qty: 1 }, { bookId: rows[0].id, qty: 1 }],
+    fulfilment: 'collection',
+    items: [{ bookId: shelfBook.id, qty: 1 }, { bookId: rows[1].id, qty: 1 }],
   });
-  t.ok(!smuggled.body?.ref,
-    'a shipment book put in the ordinary basket is refused at checkout');
-  if (smuggled.body?.ref) created.orders.push(smuggled.body.ref);
+  const mixed = { ref: mixedSent.body?.ref };
+  if (mixed.ref) created.orders.push(mixed.ref);
+  t.ok(mixed.ref, 'a shelf book and a shipment book check out as one order');
+  const mixedOrder = await one(`SELECT id, shipment_id AS sid, expires_at AS e
+    FROM orders WHERE ref='${mixed.ref}'`);
+  t.ok(mixedOrder.sid === sid,
+    'filed under the shipment, because it cannot be packed until that lands');
+  t.ok(mixedOrder.e === null,
+    'and given no 48-hour hold, or the shelf half would lapse while the rest is at sea');
+  const mixedLines = await db(
+    `SELECT book_id AS b, from_incoming AS fi FROM order_items WHERE order_id=${mixedOrder.id}`);
+  t.ok(mixedLines.find((l) => l.b === shelfBook.id)?.fi === 0,
+    'the shelf line is a copy in hand');
+  t.ok(mixedLines.find((l) => l.b === rows[1].id)?.fi === 1,
+    'and the shipment line is a claim');
 
   const basketSees = await get(`/api/basket?ids=${rows[0].id}`);
   const basketBody = await basketSees.json();
-  t.ok((basketBody.books ?? basketBody).length === 0,
-    'and the basket cannot even read one, so it never gets that far');
+  t.ok((basketBody.books ?? basketBody).length === 1,
+    'and the basket can read a shipment book, so the page can offer it');
 
   // Arrival.
+  /* Two orders hold claims on this shipment by now: the reservation above and
+     the mixed basket just after it. Both are told. */
   const arrived = await admin(`/api/admin/shipments/${sid}/arrived`);
-  t.ok(arrived.location.includes('arrived=1'), 'the shipment can be marked as arrived');
+  t.ok(arrived.location.includes('arrived=2'),
+    'the shipment can be marked as arrived, telling everyone who claimed from it');
   const again = await admin(`/api/admin/shipments/${sid}/arrived`);
   t.ok(decodeURIComponent(again.location).includes('not open'),
     'and a second press does nothing, rather than doubling the shelf');
@@ -4769,13 +4780,13 @@ async function shipments() {
   const clock = await one(`SELECT pay_by AS p FROM orders WHERE id=${order.id}`);
   const days = clock.p ? (clock.p - Math.floor(Date.now() / 1000)) / 86400 : 0;
   t.ok(days > 6.9 && days < 7.1, `and seven days to reply (${days.toFixed(1)})`);
-  t.ok((await one(`SELECT COUNT(*) AS n FROM shipment_notices WHERE shipment_id=${sid} AND sent_at IS NULL`)).n === 1,
-    'one customer queued to be told, rather than written to inside the request');
+  t.ok((await one(`SELECT COUNT(*) AS n FROM shipment_notices WHERE shipment_id=${sid} AND sent_at IS NULL`)).n === 2,
+    'both customers queued to be told, rather than written to inside the request');
 
   // Closed to new reservations, still readable.
   const after = await html(`/shipments/${sid}`);
   t.ok(after.includes(rows[0].title), 'an arrived shipment stays readable');
-  t.ok(!after.includes('Reserve these'), 'but offers no way to reserve from it');
+  t.ok(!after.includes('data-reserve'), 'but offers no way to reserve from it');
   const late = await reserve(1);
   t.ok(!late.ref, 'but nothing more can be reserved from it');
 
@@ -4832,24 +4843,46 @@ async function shipments() {
    */
   const spareBook = rows[1].id;
   const shipPage = await html(`/admin/shipments/${sid}`);
-  t.ok(shipPage.includes('List the spare copies'),
+  t.ok(shipPage.includes('spare cop'),
     'an arrived shipment offers to list the copies nobody reserved');
   t.ok(!/<form[^>]*>(?:(?!<\/form>)[\s\S])*<form/.test(shipPage),
     'and does it without nesting a form inside a form, which a browser drops');
 
-  const noTitle = await postForm(`/api/admin/shipments/${sid}/promote`, [['book', spareBook], ['title', '']]);
-  t.ok(decodeURIComponent(noTitle.location).includes('English title'),
-    'listing without an English title is refused');
-
+  /*
+   * Listing the spares hands the owner the listing screen.
+   *
+   * It used to ask for the English title here and publish on the spot, which
+   * left the job split: the title typed on the shipment, and the photos and
+   * description - without which the listing is not fit to show anybody - only
+   * reachable by finding the row in Listings afterwards. So this does the one
+   * thing that must happen here and sends him to finish it.
+   */
   const oldSlug = (await one(`SELECT slug FROM books WHERE id=${spareBook}`)).slug;
-  const promoted = await postForm(`/api/admin/shipments/${sid}/promote`,
-    [['book', spareBook], ['title', 'A Spare Copy E2E']]);
-  t.ok(promoted.location.includes('listed='), 'with a title it becomes a listing');
+  const promoted = await postForm(`/api/admin/shipments/${sid}/promote`, [['book', spareBook]]);
+  t.ok(promoted.location === `/admin/books/${spareBook}?from_shipment=${sid}`,
+    'it opens the listing rather than publishing a half-filled one');
+  const detached = await one(
+    `SELECT slug, status, shipment_id AS sid FROM books WHERE id=${spareBook}`);
+  t.ok(detached.sid === null && detached.status === 'draft',
+    'off the shipment, and still a draft until the owner has finished it');
+  t.ok(/^sh\d+-\d+$/.test(detached.slug),
+    'keeping the importer address for now, because no English title exists yet');
+  t.ok((await html(`/admin/books/${spareBook}?from_shipment=${sid}`)).includes('English title'),
+    'and the listing says what it still needs');
+
+  /*
+   * The address changes when the English title does, which is the one place a
+   * slug is ever rewritten - and only from the shape the importer assigns.
+   */
+  await postForm('/api/admin/books/save', [
+    ['id', spareBook], ['title', 'A Spare Copy E2E'], ['price', '10.00'],
+    ['stock', '2'], ['status', 'live'],
+  ]);
   const nowLive = await one(
     `SELECT slug, title, status, shipment_id AS sid FROM books WHERE id=${spareBook}`);
   t.ok(nowLive.status === 'live' && nowLive.sid === null && nowLive.title === 'A Spare Copy E2E',
     'live, off the shipment, and under its English name');
-  t.ok(/^sh\d+-\d+$/.test(oldSlug) && nowLive.slug === 'a-spare-copy-e2e',
+  t.ok(nowLive.slug === 'a-spare-copy-e2e',
     `re-slugged from the importer's own shape (${oldSlug} -> ${nowLive.slug})`);
   t.ok((await get(`/book/${nowLive.slug}`, { redirect: 'follow' })).status === 200,
     'and has a product page of its own at last');
