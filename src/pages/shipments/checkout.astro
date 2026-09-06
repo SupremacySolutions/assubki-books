@@ -8,7 +8,7 @@ import { collectionAddress } from '../../lib/settings';
 const params = Astro.url.searchParams;
 const shipmentId = Number.parseInt(params.get('s') ?? '', 10);
 const shipment = Number.isInteger(shipmentId) ? await getShipment(shipmentId) : null;
-if (!shipment || shipment.status !== 'open') return Astro.redirect('/reservations');
+if (!shipment || shipment.status !== 'open') return Astro.redirect('/shipments');
 
 const items = await publicShipmentItems(shipmentId);
 
@@ -27,7 +27,7 @@ const chosen = items
   }))
   .filter((row) => row.qty > 0);
 
-if (!chosen.length) return Astro.redirect(`/reservations#s${shipmentId}`);
+if (!chosen.length) return Astro.redirect(`/shipments#s${shipmentId}`);
 
 const total = chosen.reduce((sum, r) => sum + r.item.price_pence * r.qty, 0);
 const error = params.get('e');
@@ -38,7 +38,7 @@ const where = await collectionAddress();
 
 <Base title="Reserve these books" noindex>
   <div class="wrap py-10 max-w-[46rem]">
-    <a href="/reservations" class="text-[13.5px] text-[var(--color-navy)] underline">
+    <a href="/shipments" class="text-[13.5px] text-[var(--color-navy)] underline">
       ← Back to the shipment
     </a>
 

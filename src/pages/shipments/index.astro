@@ -11,11 +11,11 @@ const withItems = await Promise.all(
 ---
 
 <Base
-  title="Upcoming shipment reservations"
+  title="Upcoming shipments"
   description="Books arriving in our next shipment, and how to reserve a copy before they land."
 >
   <div class="wrap py-10">
-    <h1 class="text-[30px] sm:text-[34px] leading-tight">Upcoming shipment reservations</h1>
+    <h1 class="text-[30px] sm:text-[34px] leading-tight">Upcoming shipments</h1>
     <p class="mt-3 max-w-[44rem] text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
       These books are on their way to us. Reserving one puts a copy aside in your
       name — nothing is paid now, and nothing is charged on this website at any
@@ -68,7 +68,7 @@ const withItems = await Promise.all(
           * needs no memory of it - which also means it works with scripting
           * off, and a customer can go back and change their mind.
           */}
-        <form method="get" action="/reservations/checkout" class="mt-4">
+        <form method="get" action="/shipments/checkout" class="mt-4">
           <input type="hidden" name="s" value={shipment.id} />
 
           <ul class="grid gap-2">

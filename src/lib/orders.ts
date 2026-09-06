@@ -564,7 +564,7 @@ export interface OrderView {
 export async function getOrder(ref: string, token: string): Promise<OrderView | null> {
   const order = await env.DB.prepare(
     `SELECT id, ref, status, customer_name, email, fulfilment, address, notes,
-            subtotal_pence, postage_pence, total_pence, created_at, expires_at,
+            subtotal_pence, postage_pence, total_pence, created_at, expires_at, pay_by,
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
             postage_provider, postage_service, telegram, cancel_note,
             customer_cancel_note, cancel_requested_at,

@@ -35,6 +35,25 @@
     }
   ],
 
+  // This Worker writes to customers now, not only to the database: it drains
+  // the queue of "your reserved books have arrived" notices. That needs the
+  // same addresses the site sends from.
+  //
+  // The two secrets behind it are NOT shared with the main Worker - a Worker's
+  // secret store is its own - and have to be put here as well:
+  //
+  //   npx wrangler secret put RESEND_API_KEY    -c workers/expire-holds/wrangler.jsonc
+  //   npx wrangler secret put TELEGRAM_BOT_TOKEN -c workers/expire-holds/wrangler.jsonc
+  //
+  // Without them every notice fails both routes, silently, four times, and the
+  // customers who reserved are never told their books landed.
+  "vars": {
+    "ORDER_FROM": "As-Subki Orders <orders@assubkibooks.co.uk>",
+    "OWNER_EMAIL": "subkibooks@gmail.com",
+    "TELEGRAM_BOT_USERNAME": "AsSubkiBooksBot",
+    "TELEGRAM_CHANNEL_ID": "-1003850128293"
+  },
+
   // Every 15 minutes. A book whose hold has lapsed should return to the shelf
   // quickly - an hour of showing "out of stock" when it is free is a lost sale.
   "triggers": {

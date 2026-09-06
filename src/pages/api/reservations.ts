@@ -32,7 +32,7 @@ export const POST: APIRoute = async ({ request, url }) => {
   const back = (query: string) =>
     new Response(null, {
       status: 302,
-      headers: { Location: `/reservations/checkout?s=${shipmentId}&${query}` },
+      headers: { Location: `/shipments/checkout?s=${shipmentId}&${query}` },
     });
 
   /*

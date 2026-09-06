@@ -4282,12 +4282,17 @@ async function languages() {
    * The owner asks the same question of a wider set. His list is every
    * listing, drafts and archived included - which is the point of a portal -
    * so it is counted against that rather than against the live shop.
+   *
+   * Shipment rows are the one exclusion, because `listListings` excludes them
+   * too: sixty draft rows from one paste would drown the page. Counted without
+   * that filter this agreed only for as long as no shipment existed, and went
+   * red the first time one did.
    */
   const portalTotals = await one(
     `SELECT SUM(language='english') AS english,
             SUM(language='arabic') AS arabic,
             SUM(language='urdu') AS urdu
-       FROM books`,
+       FROM books WHERE shipment_id IS NULL`,
   );
   for (const code of ['arabic', 'urdu', 'english']) {
     const portal = await html(`/admin/books?filter=${code}`);
@@ -4656,7 +4661,7 @@ async function shipments() {
   opened = await admin(`/api/admin/shipments/${sid}/open`);
   t.ok(opened.location.includes('opened=1'), 'and opens once the hole is filled');
 
-  const shopFront = await html('/reservations');
+  const shopFront = await html('/shipments');
   t.ok(shopFront.includes(rows[0].title), 'an open shipment is on the reservations page');
 
   // Reserving.
@@ -4742,7 +4747,7 @@ async function shipments() {
     'one customer queued to be told, rather than written to inside the request');
 
   // Closed to new reservations, still readable.
-  const after = await html('/reservations');
+  const after = await html('/shipments');
   t.ok(after.includes(rows[0].title), 'an arrived shipment stays on the page');
   const late = await reserve(1);
   t.ok(!late.ref, 'but nothing more can be reserved from it');
