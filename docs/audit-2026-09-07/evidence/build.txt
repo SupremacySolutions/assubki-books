@@ -1,0 +1,51 @@
+
+> assubki-books@0.1.0 build
+> astro build
+
+(node:57790) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+01:21:52 [@astrojs/cloudflare] Enabling image processing with Cloudflare Images for production with the "IMAGES" Images binding.
+01:21:52 [@astrojs/cloudflare] Enabling sessions with Cloudflare KV with the "SESSION" KV binding.
+01:21:52 [vite] Re-optimizing dependencies because vite config has changed
+01:21:52 [vite] Re-optimizing dependencies because vite config has changed
+01:21:53 [types] Generated 1.20s
+01:21:53 [build] output: "server"
+01:21:53 [build] mode: "server"
+01:21:53 [build] directory: /private/tmp/assubki-full-audit/dist/
+01:21:53 [build] adapter: @astrojs/cloudflare
+01:21:53 [build] Collecting build info...
+01:21:53 [build] ✓ Completed in 1.33s.
+01:21:53 [build] Building server entrypoints...
+Using secrets defined in .dev.vars
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mFailed to write to log file Error: EPERM: operation not permitted, open '/Users/mikailbhana/Library/Preferences/.wrangler/logs/wrangler-2026-09-07_00-21-51_474.log'[0m
+
+      at async open (node:internal/fs/promises:638:25)
+      at async writeFile (node:internal/fs/promises:1208:14)
+      at async /Users/mikailbhana/Sites/supremacy-solutions/assubki-books/node_modules/wrangler/wrangler-dist/cli.js:61531:7
+      at async Mutex.runWith (/Users/mikailbhana/Sites/supremacy-solutions/assubki-books/node_modules/miniflare/dist/src/index.js:85793:48)
+      at async appendToDebugLogFile (/Users/mikailbhana/Sites/supremacy-solutions/assubki-books/node_modules/wrangler/wrangler-dist/cli.js:61528:3) {
+    errno: -1,
+    code: 'EPERM',
+    syscall: 'open',
+    path: '/Users/mikailbhana/Library/Preferences/.wrangler/logs/wrangler-2026-09-07_00-21-51_474.log'
+  }
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mWould have written: [0m
+
+  --- 2026-09-07T00:21:53.834Z debug
+  🪵  Writing logs to "/Users/mikailbhana/Library/Preferences/.wrangler/logs/wrangler-2026-09-07_00-21-51_474.log"
+  ---
+  
+
+
+01:21:54 [vite] ✓ built in 505ms
+Using secrets defined in .dev.vars
+01:21:54 [vite] ✓ built in 946ms
+01:21:55 [vite] ✓ built in 174ms
+01:21:55 [build] Rearranging server assets...
+01:21:55 [build] ✓ Completed in 1.78s.
+01:21:55 [@astrojs/cloudflare] Injected immutable Cache-Control for /_astro/* into _headers.
+01:21:55 [build] Server built in 3.12s
+01:21:55 [build] Complete!
+🪵  Logs were written to "/Users/mikailbhana/Library/Preferences/.wrangler/logs/wrangler-2026-09-07_00-21-51_474.log"

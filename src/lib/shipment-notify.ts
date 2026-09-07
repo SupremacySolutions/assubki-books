@@ -58,7 +58,7 @@ async function tellByEmail(notice: QueuedNotice, origin: string): Promise<boolea
         : 'Please let us know within seven days.'
     }</p>
     <p>If you need longer, or would rather not go ahead, just reply and tell us.</p>
-    ${button('See your order', link)}
+    ${button(link, 'See your order')}
     ${noReply(link)}`;
   return deliver({
     to: notice.email,

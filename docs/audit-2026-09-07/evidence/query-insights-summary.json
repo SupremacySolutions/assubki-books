@@ -1,0 +1,112 @@
+[
+  {
+    "label": "Catalogue projection A",
+    "avgRowsRead": 1325,
+    "totalRowsRead": 208026,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 1.2916031847133758,
+    "totalDurationMs": 202.7817,
+    "numberOfTimesRun": 157,
+    "queryEfficiency": 0.009056603773584906
+  },
+  {
+    "label": "Category/book/language facet mapping",
+    "avgRowsRead": 1351,
+    "totalRowsRead": 190491,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 1.6146276595744682,
+    "totalDurationMs": 227.66250000000002,
+    "numberOfTimesRun": 141,
+    "queryEfficiency": 0.3316062176165803
+  },
+  {
+    "label": "Catalogue projection B",
+    "avgRowsRead": 463,
+    "totalRowsRead": 173658,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 1.1799330666666665,
+    "totalDurationMs": 442.47489999999993,
+    "numberOfTimesRun": 375,
+    "queryEfficiency": 0.01079913606911447
+  },
+  {
+    "label": "Catalogue projection C",
+    "avgRowsRead": 1942,
+    "totalRowsRead": 120404,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 2.4276290322580647,
+    "totalDurationMs": 150.513,
+    "numberOfTimesRun": 62,
+    "queryEfficiency": 0.030895983522142123
+  },
+  {
+    "label": "Catalogue counts A",
+    "avgRowsRead": 951,
+    "totalRowsRead": 98002,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 0.5924533980582524,
+    "totalDurationMs": 61.02269999999999,
+    "numberOfTimesRun": 103,
+    "queryEfficiency": 0.0010515247108307045
+  },
+  {
+    "label": "Catalogue projection D",
+    "avgRowsRead": 230,
+    "totalRowsRead": 83720,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 0.7148112637362638,
+    "totalDurationMs": 260.1913,
+    "numberOfTimesRun": 364,
+    "queryEfficiency": 0
+  },
+  {
+    "label": "Catalogue projection E",
+    "avgRowsRead": 1261,
+    "totalRowsRead": 82018,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 1.1849800000000001,
+    "totalDurationMs": 77.0237,
+    "numberOfTimesRun": 65,
+    "queryEfficiency": 0.010309278350515464
+  },
+  {
+    "label": "Catalogue counts B",
+    "avgRowsRead": 994,
+    "totalRowsRead": 43774,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 0.7143318181818181,
+    "totalDurationMs": 31.4306,
+    "numberOfTimesRun": 44,
+    "queryEfficiency": 0.001006036217303823
+  },
+  {
+    "label": "Catalogue projection F",
+    "avgRowsRead": 1609,
+    "totalRowsRead": 40245,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 1.7275279999999997,
+    "totalDurationMs": 43.188199999999995,
+    "numberOfTimesRun": 25,
+    "queryEfficiency": 0.01305158483530143
+  },
+  {
+    "label": "Category list",
+    "avgRowsRead": 52,
+    "totalRowsRead": 29016,
+    "avgRowsWritten": 0,
+    "totalRowsWritten": 0,
+    "avgDurationMs": 0.3143863799283154,
+    "totalDurationMs": 175.4276,
+    "numberOfTimesRun": 558,
+    "queryEfficiency": 0.5
+  }
+]

@@ -1,0 +1,15 @@
+SELECT name,applied_at FROM d1_migrations ORDER BY id;
+SELECT (SELECT COUNT(*) FROM books) AS books,(SELECT COUNT(*) FROM orders) AS orders,(SELECT COUNT(*) FROM order_items) AS order_items,(SELECT COUNT(*) FROM messages) AS messages,(SELECT COUNT(*) FROM shipments) AS shipments,(SELECT COUNT(*) FROM shipment_notices) AS notices;
+SELECT status,COUNT(*) AS n FROM orders GROUP BY status;
+SELECT COUNT(*) AS stock_mismatches FROM books b WHERE b.reserved != COALESCE((SELECT SUM(oi.qty) FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.book_id=b.id AND oi.from_incoming=0 AND o.status IN ('requested','awaiting_payment')),0);
+SELECT COUNT(*) AS incoming_mismatches FROM books b WHERE b.reserved_incoming != COALESCE((SELECT SUM(oi.qty) FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.book_id=b.id AND oi.from_incoming=1 AND o.status NOT IN ('cancelled','expired')),0);
+SELECT COUNT(*) AS oversubscribed_volumes FROM book_set_stock v WHERE have < COALESCE((SELECT SUM(reserved) FROM books b WHERE b.set_id=v.set_id AND v.volume BETWEEN b.set_from AND b.set_to),0);
+SELECT COUNT(*) AS wrong_subtotals FROM orders o WHERE subtotal_pence != (SELECT COALESCE(SUM(qty*price_pence_snapshot),0) FROM order_items WHERE order_id=o.id)-discount_pence;
+SELECT COUNT(*) AS total_mismatches FROM orders WHERE total_pence IS NOT NULL AND total_pence != subtotal_pence+COALESCE(postage_pence,0);
+SELECT COUNT(*) AS outstanding_paid_claims FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.from_incoming=1 AND o.status IN ('paid','dispatched','completed');
+SELECT COUNT(*) AS premature_deadlines FROM orders o WHERE pay_by IS NOT NULL AND EXISTS(SELECT 1 FROM order_items WHERE order_id=o.id AND from_incoming=1);
+SELECT COUNT(*) AS pending_notices, COALESCE(MAX(attempts),0) AS max_attempts FROM shipment_notices WHERE sent_at IS NULL;
+PRAGMA foreign_key_check;
+SELECT key,CASE WHEN value='' THEN 'empty' ELSE 'configured' END AS state FROM settings WHERE key IN ('session_epoch','owner_telegram_chat_id','last_email_error','last_notify_error');
+EXPLAIN QUERY PLAN SELECT id FROM orders WHERE status='requested' AND expires_at<=unixepoch();
+EXPLAIN QUERY PLAN SELECT id,sender,body FROM messages WHERE order_id=1 AND id>0 ORDER BY id;

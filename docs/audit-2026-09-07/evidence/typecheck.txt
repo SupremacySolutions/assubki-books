@@ -1,0 +1,12 @@
+
+> assubki-books@0.1.0 typecheck
+> astro check --minimumSeverity error
+
+(node:52251) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+01:18:42 [@astrojs/cloudflare] Enabling image processing with Cloudflare Images for production with the "IMAGES" Images binding.
+01:18:42 [@astrojs/cloudflare] Enabling sessions with Cloudflare KV with the "SESSION" KV binding.
+01:18:43 [types] Generated 102ms
+01:18:43 [check] Getting diagnostics for Astro files in /Users/mikailbhana/Sites/supremacy-solutions/assubki-books...
+Result (167 files): 
+- 0 errors

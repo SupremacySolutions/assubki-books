@@ -155,13 +155,39 @@ export async function sweepProofs(
   return ids.length;
 }
 
+/**
+ * One pass of the sweep, insulated from the others.
+ *
+ * These stages are independent jobs that happen to share a timer, and they ran
+ * as one unbroken sequence: the first to throw took every later one with it,
+ * silently, until the next quarter hour - and then threw again. That is the
+ * worst possible failure for the two that matter most. A customer whose books
+ * have landed is told by `drainArrivalNotices`, and a reservation that nobody
+ * answered is released by `expireUnpaidReservations`; both sit behind other
+ * work that has nothing to do with either.
+ *
+ * So a stage that fails is logged loudly and the rest still run. It does not
+ * paper over the failure - the error is named, and the stage will be attempted
+ * again on the next tick, which is what a retry looks like here.
+ */
+async function stage<T>(name: string, run: () => Promise<T>): Promise<T | null> {
+  try {
+    return await run();
+  } catch (err) {
+    console.error(`sweep stage "${name}" failed, continuing with the rest:`, err);
+    return null;
+  }
+}
+
 export default {
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    const { orders, copies } = await expireHolds(env.DB);
-    if (orders) console.log(`expired ${orders} hold(s), released ${copies} cop(ies)`);
+    const held = await stage('expire holds', () => expireHolds(env.DB));
+    if (held?.orders) console.log(`expired ${held.orders} hold(s), released ${held.copies} cop(ies)`);
 
-    const unpaid = await expireUnpaidReservations(env.DB);
-    if (unpaid.orders) {
+    const unpaid = await stage('expire unpaid reservations', () =>
+      expireUnpaidReservations(env.DB),
+    );
+    if (unpaid?.orders) {
       console.log(`released ${unpaid.copies} cop(ies) from ${unpaid.orders} unanswered reservation(s)`);
     }
 
@@ -173,15 +199,15 @@ export default {
      * one handler may make and most of a day's mail allowance. Spread over
      * quarter-hours it stays inside both, and a failure becomes a retry.
      */
-    const told = await drainArrivalNotices(env.DB, SITE.url);
-    if (told.sent || told.failed) {
+    const told = await stage('arrival notices', () => drainArrivalNotices(env.DB, SITE.url));
+    if (told && (told.sent || told.failed)) {
       console.log(`told ${told.sent} customer(s) their shipment arrived, ${told.failed} to retry`);
     }
 
-    const groups = await expireGroupBaskets(env.DB);
+    const groups = await stage('group baskets', () => expireGroupBaskets(env.DB));
     if (groups) console.log(`cleared ${groups} abandoned group basket(s)`);
 
-    const proofs = await sweepProofs(env.DB, env.UPLOADS);
+    const proofs = await stage('payment screenshots', () => sweepProofs(env.DB, env.UPLOADS));
     if (proofs) console.log(`removed ${proofs} payment screenshot(s) from closed orders`);
 
     /*
@@ -190,15 +216,15 @@ export default {
      * things that identify them; ninety days is long enough to see a pattern
      * worth ordering against and short enough not to be a record.
      */
-    const searches = await pruneSearches(env.DB);
+    const searches = await stage('prune searches', () => pruneSearches(env.DB));
     if (searches) console.log(`pruned ${searches} search(es) older than 90 days`);
 
     // Nobody replies to a Telegram notification from two months ago, and an
     // unbounded lookup table is a liability rather than a feature.
-    const notices = await env.DB
-      .prepare('DELETE FROM owner_notices WHERE at < unixepoch() - 60 * 86400')
-      .run();
-    if (notices.meta.changes) console.log(`pruned ${notices.meta.changes} old owner notice(s)`);
+    const notices = await stage('prune owner notices', () =>
+      env.DB.prepare('DELETE FROM owner_notices WHERE at < unixepoch() - 60 * 86400').run(),
+    );
+    if (notices?.meta.changes) console.log(`pruned ${notices.meta.changes} old owner notice(s)`);
 
     /*
      * "Tell me when it is back" for a book that never came back.
@@ -208,7 +234,7 @@ export default {
      * not outlive its purpose, which was true of every case except the one
      * that never resolves.
      */
-    const stale = await pruneAlerts(env.DB);
+    const stale = await stage('prune back-in-stock requests', () => pruneAlerts(env.DB));
     if (stale) console.log(`forgot ${stale} unanswered back-in-stock request(s)`);
   },
 

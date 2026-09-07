@@ -94,7 +94,21 @@ const db = {
   },
 };
 globalThis.reservationTestEnv = { DB: db, EMAIL_DRY_RUN: '1', TELEGRAM_DRY_RUN: '1' };
-globalThis.fetch = async () => {
+/*
+ * Outbound network stays off, but what would have been sent is kept.
+ *
+ * The arrival email is the one message this whole feature exists to send, and
+ * a dry run only records its subject - which is how its primary button came to
+ * carry the label in the href and the URL as its text for a whole release.
+ * Capturing the body a real send would have posted is the only way to assert
+ * on the rendered anchor.
+ */
+globalThis.sentEmails = [];
+globalThis.fetch = async (url, init) => {
+  if (String(url).includes('api.resend.com')) {
+    globalThis.sentEmails.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ id: 'test' }), { status: 200 });
+  }
   throw new Error('Outbound network is disabled in tests');
 };
 await build({
@@ -339,6 +353,44 @@ try {
     assert.ok(queries < 20);
     assert.equal(row('SELECT COUNT(*) n FROM orders WHERE pay_by IS NOT NULL').n, 100);
     assert.equal(row('SELECT COUNT(*) n FROM shipment_notices').n, 100);
+  });
+  await test('the arrival email points its button at the order, not at its own label', async () => {
+    const s = shipment(),
+      b = book(s, 1);
+    const [o] = await order([b]);
+    await receive(s, [[b, 1]]);
+
+    /* A real send, captured rather than performed, so the assertion is on the
+       HTML a customer would actually receive. */
+    globalThis.sentEmails.length = 0;
+    /* Credentials only for the length of this test. A neighbouring test forces
+       a delivery failure by relying on their absence, so they must not be set
+       for the suite as a whole. */
+    globalThis.reservationTestEnv.EMAIL_DRY_RUN = '0';
+    globalThis.reservationTestEnv.RESEND_API_KEY = 'test-key-not-a-real-credential';
+    globalThis.reservationTestEnv.ORDER_FROM = 'shop@example.invalid';
+    try {
+      assert.equal((await app.drainArrivalNotices(db, 'https://example.invalid')).sent, 1);
+    } finally {
+      globalThis.reservationTestEnv.EMAIL_DRY_RUN = '1';
+      delete globalThis.reservationTestEnv.RESEND_API_KEY;
+      delete globalThis.reservationTestEnv.ORDER_FROM;
+    }
+
+    assert.equal(globalThis.sentEmails.length, 1);
+    const { html } = globalThis.sentEmails[0];
+    /* `&` is escaped inside the attribute, as it must be, so compare against
+       the escaped form rather than the raw URL. */
+    const link = `https://example.invalid/order?ref=${o.ref}&amp;t=${o.token}`;
+
+    /* `button(href, label)` is easy to call the other way round, and nothing
+       else in the email fails visibly when it happens - the button still
+       renders, in the right colour, with the URL as its words. */
+    assert.ok(
+      html.includes(`href="${link}"`),
+      `the button should link to the order; got ${(/href="[^"]*"/.exec(html) ?? ['none'])[0]}`,
+    );
+    assert.ok(!/href="See your order"/.test(html), 'the label must not be used as the href');
   });
   await test('failed notices retry and do not expire a customer who was never told', async () => {
     const s = shipment(),

@@ -1,0 +1,36 @@
+
+> assubki-books@0.1.0 test:reservations
+> node scripts/test-reservations.mjs
+
+PASS shelf + two shipments commit separately with the basket discount preserved
+PASS failure in a later parcel rolls back every order and every hold
+PASS receipt failure rolls back shipment status, stock, claims and notices
+PASS partial receipts hold the first copy, preserve snapshots and wait for completion
+[email] dry run → test@example.invalid: Order ASB-YZ5X confirmed - £10.00 to pay
+[email] dry run → test@example.invalid: Ready to collect - ASB-YZ5X
+[email] dry run → test@example.invalid: Order complete - ASB-YZ5X
+PASS payment is refused until arrival and consumes stock once after arrival
+PASS legacy paid claims are consumed when received
+[email] dry run → test@example.invalid: Your reserved books have arrived - ASB-CKZE
+[email] dry run → test@example.invalid: Your reserved books have arrived - ASB-9WWS
+[email] dry run → test@example.invalid: Order ASB-CKZE confirmed - £10.00 to pay
+[email] dry run → test@example.invalid: Ready to collect - ASB-CKZE
+PASS expiry cannot override concurrent payment or release another customer hold
+PASS customer cancellation rolls back on release failure and cannot double-release
+PASS stale draft edits cannot delete active reservation titles
+PASS 100 reservations receive deadlines and notices with bounded SQL
+[email] skipped (no RESEND_API_KEY/ORDER_FROM) → test@example.invalid: Your reserved books have arrived - ASB-NZWB
+[email] dry run → test@example.invalid: Your reserved books have arrived - ASB-NZWB
+PASS failed notices retry and do not expire a customer who was never told
+PASS a legacy order spanning two shipments waits for both deliveries
+[email] dry run → test@example.invalid: Order ASB-8C8B confirmed - £10.00 to pay
+[email] dry run → test@example.invalid: Ready to collect - ASB-8C8B
+PASS receiving a set adds its physical volumes before holding the claim
+[email] dry run → test@example.invalid: Your reserved books have arrived - ASB-63CX
+PASS an extension made during expiry selection preserves the order and stock
+[email] dry run → test@example.invalid: Your reserved books have arrived - ASB-MYTA
+PASS two notice drainers cannot claim and send the same notice
+PASS a 250-title shipment imports, saves and receives with bounded SQL
+PASS group baskets expose incoming stock and the shipment destination
+PASS basket and checkout retain incoming copies and explain separate orders
+18 reservation regression tests passed

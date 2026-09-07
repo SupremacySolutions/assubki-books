@@ -1,0 +1,22 @@
+[
+  {
+    "name": "malformed admin cookie",
+    "status": 500,
+    "location": null
+  },
+  {
+    "name": "login external backslash redirect",
+    "status": 302,
+    "location": "/\\evil.invalid"
+  },
+  {
+    "name": "public proof prefix",
+    "status": 404,
+    "location": null
+  },
+  {
+    "name": "path traversal",
+    "status": 404,
+    "location": null
+  }
+]

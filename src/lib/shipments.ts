@@ -392,14 +392,52 @@ export async function openShipment(id: number): Promise<{ ok: boolean; why?: str
     .first<{ n: number }>();
   if ((empty?.n ?? 0) === 0) return { ok: false, why: 'there is nothing on this shipment yet' };
 
-  // Conditional, so two clicks cannot reopen an arrived shipment.
+  /*
+   * The same two conditions again, inside the write.
+   *
+   * The counts above exist to give the owner a specific reason; they cannot be
+   * what admits the shipment, because a draft edited between the check and the
+   * write would still open. A price cleared in another tab a moment before
+   * this ran was enough to put a book with no price in front of customers. So
+   * the UPDATE carries the guards itself and the checks above only explain it.
+   *
+   * Conditional on `draft` as well, so two clicks cannot reopen an arrived
+   * shipment.
+   */
   const done = await env.DB.prepare(
     `UPDATE shipments SET status = 'open', opened_at = unixepoch(), updated_at = unixepoch()
-      WHERE id = ? AND status = 'draft'`,
+      WHERE id = ?1 AND status = 'draft'
+        AND EXISTS (SELECT 1 FROM books WHERE shipment_id = ?1)
+        AND NOT EXISTS (
+          SELECT 1 FROM books
+           WHERE shipment_id = ?1
+             AND (title IS NULL OR title = '' OR price_pence <= 0 OR incoming <= 0))`,
   )
     .bind(id)
     .run();
-  return done.meta.changes ? { ok: true } : { ok: false, why: 'this shipment is not a draft' };
+  if (done.meta.changes) return { ok: true };
+
+  /* It refused. Say which of the two it was rather than guessing, since by
+     here the reason is usually that something moved under the owner's feet. */
+  const now = await env.DB.prepare(
+    `SELECT (SELECT status FROM shipments WHERE id = ?1) AS status,
+            (SELECT COUNT(*) FROM books
+              WHERE shipment_id = ?1
+                AND (title IS NULL OR title = '' OR price_pence <= 0 OR incoming <= 0)) AS bad`,
+  )
+    .bind(id)
+    .first<{ status: string | null; bad: number }>();
+  if ((now?.bad ?? 0) > 0) {
+    const n = now!.bad;
+    return {
+      ok: false,
+      why: `${n} of these ${n === 1 ? 'was' : 'were'} changed while you were looking and still ${n === 1 ? 'needs' : 'need'} a title, a price or a number of copies`,
+    };
+  }
+  return {
+    ok: false,
+    why: now?.status === 'open' ? 'this shipment is already open' : 'this shipment is not a draft',
+  };
 }
 
 /** Put away. Reservations are already shut; this only tidies the list. */

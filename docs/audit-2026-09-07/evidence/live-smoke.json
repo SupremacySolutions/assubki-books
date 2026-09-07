@@ -1,0 +1,98 @@
+[
+  {
+    "path": "/",
+    "status": 200,
+    "location": null,
+    "title": "As-Subkī Books - An affordable Islamic bookshop with a vast catalogue",
+    "headers": {
+      "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-218bc5ceeabc4e85964cff6607537f0f'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff"
+    }
+  },
+  {
+    "path": "/catalogue",
+    "status": 200,
+    "location": null,
+    "title": "All titles - As-Subkī Books",
+    "headers": {
+      "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-3163f615c8f84f3287c0bbe543346d88'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff"
+    }
+  },
+  {
+    "path": "/shipments",
+    "status": 404,
+    "location": null,
+    "title": "Page not found - As-Subkī Books",
+    "headers": {
+      "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-f489fc15e5304ee4bdbab45484c8b616'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff"
+    }
+  },
+  {
+    "path": "/contact",
+    "status": 200,
+    "location": null,
+    "title": "Contact - As-Subkī Books",
+    "headers": {
+      "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-edac0c6f0d8e4cd8a7b0071c145bee61'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff"
+    }
+  },
+  {
+    "path": "/delivery",
+    "status": 200,
+    "location": null,
+    "title": "Delivery and collection - As-Subkī Books",
+    "headers": {
+      "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-8b54204399e447dc81a7d7b35469996f'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff"
+    }
+  },
+  {
+    "path": "/about",
+    "status": 200,
+    "location": null,
+    "title": "How ordering works - As-Subkī Books",
+    "headers": {
+      "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-bf0548e830244f2fa04ae8d6e21cfdb3'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff"
+    }
+  },
+  {
+    "path": "/order",
+    "status": 200,
+    "location": null,
+    "title": "Look up your order - As-Subkī Books",
+    "headers": {
+      "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-a425d6248c2f4592b6fc3cf4aadda23f'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff"
+    }
+  },
+  {
+    "path": "/admin/login",
+    "status": 200,
+    "location": null,
+    "title": "Portal sign in",
+    "headers": {
+      "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-bcb33ce28b974b87b788b60f66c49741'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "x-content-type-options": "nosniff"
+    }
+  }
+]

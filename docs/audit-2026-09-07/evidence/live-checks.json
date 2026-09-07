@@ -1,0 +1,472 @@
+[
+  {
+    "query": "SELECT name,applied_at FROM d1_migrations ORDER BY id",
+    "result": [
+      {
+        "results": [],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.1322
+          },
+          "duration": 0.1322,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 1,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT (SELECT COUNT(*) FROM books) AS books,(SELECT COUNT(*) FROM orders) AS orders,(SELECT COUNT(*) FROM order_items) AS order_items,(SELECT COUNT(*) FROM messages) AS messages,(SELECT COUNT(*) FROM shipments) AS shipments,(SELECT COUNT(*) FROM shipment_notices) AS notices",
+    "result": [
+      {
+        "results": [
+          {
+            "books": 229,
+            "orders": 3,
+            "order_items": 6,
+            "messages": 1,
+            "shipments": 0,
+            "notices": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.2741
+          },
+          "duration": 0.2741,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 239,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT status,COUNT(*) AS n FROM orders GROUP BY status",
+    "result": [
+      {
+        "results": [
+          {
+            "status": "awaiting_payment",
+            "n": 1
+          },
+          {
+            "status": "cancelled",
+            "n": 1
+          },
+          {
+            "status": "completed",
+            "n": 1
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.207
+          },
+          "duration": 0.207,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 3,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT COUNT(*) AS stock_mismatches FROM books b WHERE b.reserved != COALESCE((SELECT SUM(oi.qty) FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.book_id=b.id AND oi.from_incoming=0 AND o.status IN ('requested','awaiting_payment')),0)",
+    "result": [
+      {
+        "results": [
+          {
+            "stock_mismatches": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.4213
+          },
+          "duration": 0.4213,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 245,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT COUNT(*) AS incoming_mismatches FROM books b WHERE b.reserved_incoming != COALESCE((SELECT SUM(oi.qty) FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.book_id=b.id AND oi.from_incoming=1 AND o.status NOT IN ('cancelled','expired')),0)",
+    "result": [
+      {
+        "results": [
+          {
+            "incoming_mismatches": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.3438
+          },
+          "duration": 0.3438,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 239,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT COUNT(*) AS oversubscribed_volumes FROM book_set_stock v WHERE have < COALESCE((SELECT SUM(reserved) FROM books b WHERE b.set_id=v.set_id AND v.volume BETWEEN b.set_from AND b.set_to),0)",
+    "result": [
+      {
+        "results": [
+          {
+            "oversubscribed_volumes": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.5422
+          },
+          "duration": 0.5422,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 16,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT COUNT(*) AS wrong_subtotals FROM orders o WHERE subtotal_pence != (SELECT COALESCE(SUM(qty*price_pence_snapshot),0) FROM order_items WHERE order_id=o.id)-discount_pence",
+    "result": [
+      {
+        "results": [
+          {
+            "wrong_subtotals": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.2663
+          },
+          "duration": 0.2663,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 11,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT COUNT(*) AS total_mismatches FROM orders WHERE total_pence IS NOT NULL AND total_pence != subtotal_pence+COALESCE(postage_pence,0)",
+    "result": [
+      {
+        "results": [
+          {
+            "total_mismatches": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.1645
+          },
+          "duration": 0.1645,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 3,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT COUNT(*) AS outstanding_paid_claims FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.from_incoming=1 AND o.status IN ('paid','dispatched','completed')",
+    "result": [
+      {
+        "results": [
+          {
+            "outstanding_paid_claims": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.2647
+          },
+          "duration": 0.2647,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 8,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT COUNT(*) AS premature_deadlines FROM orders o WHERE pay_by IS NOT NULL AND EXISTS(SELECT 1 FROM order_items WHERE order_id=o.id AND from_incoming=1)",
+    "result": [
+      {
+        "results": [
+          {
+            "premature_deadlines": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.2066
+          },
+          "duration": 0.2066,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 1,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT COUNT(*) AS pending_notices, COALESCE(MAX(attempts),0) AS max_attempts FROM shipment_notices WHERE sent_at IS NULL",
+    "result": [
+      {
+        "results": [
+          {
+            "pending_notices": 0,
+            "max_attempts": 0
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.1773
+          },
+          "duration": 0.1773,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 0,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "PRAGMA foreign_key_check",
+    "result": [
+      {
+        "results": [],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.5039
+          },
+          "duration": 0.5039,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 3141,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "SELECT key,CASE WHEN value='' THEN 'empty' ELSE 'configured' END AS state FROM settings WHERE key IN ('session_epoch','owner_telegram_chat_id','last_email_error','last_notify_error')",
+    "result": [
+      {
+        "results": [
+          {
+            "key": "owner_telegram_chat_id",
+            "state": "configured"
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.3697
+          },
+          "duration": 0.3697,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 5,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "EXPLAIN QUERY PLAN SELECT id FROM orders WHERE status='requested' AND expires_at<=unixepoch()",
+    "result": [
+      {
+        "results": [
+          {
+            "id": 2,
+            "parent": 0,
+            "notused": 46,
+            "detail": "SEARCH orders USING COVERING INDEX idx_orders_expiry (status=? AND expires_at<?)"
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.1831
+          },
+          "duration": 0.1831,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 0,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  },
+  {
+    "query": "EXPLAIN QUERY PLAN SELECT id,sender,body FROM messages WHERE order_id=1 AND id>0 ORDER BY id",
+    "result": [
+      {
+        "results": [
+          {
+            "id": 4,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH messages USING INDEX idx_messages_order (order_id=?)"
+          },
+          {
+            "id": 17,
+            "parent": 0,
+            "notused": 0,
+            "detail": "USE TEMP B-TREE FOR ORDER BY"
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "WEUR",
+          "served_by_colo": "LHR",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.1682
+          },
+          "duration": 0.1682,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 843776,
+          "rows_read": 0,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ]
+  }
+]

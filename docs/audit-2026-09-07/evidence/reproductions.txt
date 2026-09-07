@@ -1,0 +1,108 @@
+PASS F01 arrival email primary link has reversed arguments
+[email] resend rejected → test@example.invalid: 429 simulated rejection
+PASS F02 failed back-in-stock notices are deleted and reported as sent
+[email] dry run → test@example.invalid: Order ASB-6Y2Q confirmed - £10.00 to pay
+[email] dry run → test@example.invalid: Ready to collect - ASB-6Y2Q
+PASS F03 restocked set appears available but checkout rejects it
+PASS F04 reducing a set pool below existing holds is accepted
+PASS F05 failed set creation leaves an orphan header
+PASS F06 unread message arriving between fetch and acknowledgement is cleared
+PASS F07 group expiry exceeds D1 bind limit above 100 abandoned baskets
+PASS F08 proof sweep deletes 101 objects then fails to clear their rows
+PASS F09 shared group member can overwrite another named member line
+PASS F10 group member name reaches browser HTML interpolation unchanged
+idle customer poll SQL statements: 2
+PASS F11 an idle customer poll reads order items unnecessarily
+[telegram] sendMessage skipped - no bot token
+PASS F12 missing webhook secret accepts a forged update
+PASS F13 shipment date edits partially commit on a book update failure
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+[email] dry run → orders@assubkibooks.co.uk: Message on ASB-9SMH - Regression
+PASS F14 concurrent customer messages bypass the hourly cap
+PASS F15 a concurrent draft edit can open a shipment with no price
+PASS S01 300-title import, open and complete receipt
+[
+  {
+    "name": "F01 arrival email primary link has reversed arguments",
+    "result": "reproduced"
+  },
+  {
+    "name": "F02 failed back-in-stock notices are deleted and reported as sent",
+    "result": "reproduced"
+  },
+  {
+    "name": "F03 restocked set appears available but checkout rejects it",
+    "result": "reproduced"
+  },
+  {
+    "name": "F04 reducing a set pool below existing holds is accepted",
+    "result": "reproduced"
+  },
+  {
+    "name": "F05 failed set creation leaves an orphan header",
+    "result": "reproduced"
+  },
+  {
+    "name": "F06 unread message arriving between fetch and acknowledgement is cleared",
+    "result": "reproduced"
+  },
+  {
+    "name": "F07 group expiry exceeds D1 bind limit above 100 abandoned baskets",
+    "result": "reproduced"
+  },
+  {
+    "name": "F08 proof sweep deletes 101 objects then fails to clear their rows",
+    "result": "reproduced"
+  },
+  {
+    "name": "F09 shared group member can overwrite another named member line",
+    "result": "reproduced"
+  },
+  {
+    "name": "F10 group member name reaches browser HTML interpolation unchanged",
+    "result": "reproduced"
+  },
+  {
+    "name": "F11 an idle customer poll reads order items unnecessarily",
+    "result": "reproduced"
+  },
+  {
+    "name": "F12 missing webhook secret accepts a forged update",
+    "result": "reproduced"
+  },
+  {
+    "name": "F13 shipment date edits partially commit on a book update failure",
+    "result": "reproduced"
+  },
+  {
+    "name": "F14 concurrent customer messages bypass the hourly cap",
+    "result": "reproduced"
+  },
+  {
+    "name": "F15 a concurrent draft edit can open a shipment with no price",
+    "result": "reproduced"
+  }
+]

@@ -1,0 +1,923 @@
+
+> assubki-books@0.1.0 test:e2e
+> node --experimental-strip-types --no-warnings scripts/e2e.mjs
+
+
+Running against http://localhost:4347
+
+1. Public catalogue
+  [32mPASS[0m home page states the real number of titles
+  [32mPASS[0m catalogue reports a count
+  [32mPASS[0m pagination serves page two
+  [32mPASS[0m pagination reads "2 of 10" and still announces the long form
+  [32mPASS[0m and its two buttons are given the same width
+  [32mPASS[0m the hero shelf covers link to their books
+  [32mPASS[0m every cover on the shelf is given the same box
+  [32mPASS[0m every cover on the shelf is clickable, both copies (0 were not)
+  [32mPASS[0m and the duplicate half stays out of the keyboard and screen reader path
+  [32mPASS[0m the contact page offers a way through, not just a link
+  [32mPASS[0m including a QR code to scan from a phone
+  [32mPASS[0m and an email address for anyone who has none
+  [32mPASS[0m the footer offers the same without the QR
+  [32mPASS[0m and the strip is scrollable rather than clipped
+  [32mPASS[0m in-stock filter responds
+  [32mPASS[0m sort by title
+  [32mPASS[0m sort by price-asc
+  [32mPASS[0m sort by price-desc
+  [32mPASS[0m sort by newest
+  [32mPASS[0m a parent shelf includes its children
+  [32mPASS[0m search in Latin
+  [32mPASS[0m search in Arabic
+  [32mPASS[0m search ignores diacritics
+  [32mPASS[0m nonsense gives an empty state
+  [32mPASS[0m book page carries an OG image
+  [32mPASS[0m book page carries structured data
+  [32mPASS[0m book page shows related titles
+  [32mPASS[0m unknown book 404s
+  [32mPASS[0m unknown shelf 404s
+  [32mPASS[0m sitemap responds
+  [32mPASS[0m robots keeps crawlers out of the portal
+  [32mPASS[0m robots keeps crawlers off order pages
+  [32mPASS[0m the email mark is served
+  [32mPASS[0m and is served as a PNG
+  [32mPASS[0m the search box suggests titles as you type
+  [32mPASS[0m and each one carries what the row needs to draw itself
+  [32mPASS[0m capped at a shortlist rather than a page
+  [32mPASS[0m in Arabic as well as English
+  [32mPASS[0m one letter suggests nothing
+  [32mPASS[0m and neither does whitespace
+  [32mPASS[0m a search box full of operators is answered, not broken (" OR 1=1 --)
+  [32mPASS[0m a search box full of operators is answered, not broken (nahw OR *)
+  [32mPASS[0m a search box full of operators is answered, not broken ((((")
+  [32mPASS[0m three spellings of one miss are logged as one thing
+  [32mPASS[0m counted once per search, not once per spelling
+  [32mPASS[0m normalised to lower case with punctuation dropped
+  [32mPASS[0m a single letter is not recorded
+  [32mPASS[0m and neither is a search that found something
+  [32mPASS[0m the dashboard shows them to the owner
+  [32mPASS[0m and either lists misses or says plainly that there were none
+  [32mPASS[0m the home page search box asks for suggestions
+  [32mPASS[0m and so do both header boxes on every other page
+  [32mPASS[0m and is still a plain GET, so it works with JavaScript off
+
+2. Legacy WordPress URLs
+  [32mPASS[0m an Arabic legacy link reaches its book
+  [32mPASS[0m a legacy category link reaches its shelf
+  [32mPASS[0m /shop reaches the catalogue
+  [32mPASS[0m /cart reaches the basket
+  [32mPASS[0m /checkout is NOT swallowed by a legacy redirect
+
+3. Basket and order validation
+  [32mPASS[0m basket resolves real ids and ignores nonsense
+  [32mPASS[0m refuses a missing name
+  [32mPASS[0m and says which field is wrong for a missing name
+  [32mPASS[0m refuses an invalid email
+  [32mPASS[0m and says which field is wrong for an invalid email
+  [32mPASS[0m refuses no phone number
+  [32mPASS[0m and says which field is wrong for no phone number
+  [32mPASS[0m refuses a phone number that is not one
+  [32mPASS[0m and says which field is wrong for a phone number that is not one
+  [32mPASS[0m refuses too few digits to be a phone
+  [32mPASS[0m and says which field is wrong for too few digits to be a phone
+  [32mPASS[0m refuses a fulfilment that is neither
+  [32mPASS[0m and says which field is wrong for a fulfilment that is neither
+  [32mPASS[0m refuses delivery without an address
+  [32mPASS[0m and says which field is wrong for delivery without an address
+  [32mPASS[0m refuses delivery without a country
+  [32mPASS[0m and says which field is wrong for delivery without a country
+  [32mPASS[0m refuses delivery without a town
+  [32mPASS[0m and says which field is wrong for delivery without a town
+  [32mPASS[0m refuses a UK address with no postcode
+  [32mPASS[0m and says which field is wrong for a UK address with no postcode
+  [32mPASS[0m refuses a postcode that is not one
+  [32mPASS[0m and says which field is wrong for a postcode that is not one
+  [32mPASS[0m accepts an address from a country with no postcodes
+  [32mPASS[0m and names the country on the block that goes on the parcel
+  [32mPASS[0m refuses an empty basket
+  [32mPASS[0m refuses more copies than exist
+  [32mPASS[0m and names the title that is short
+
+4. Stock and holds
+  [32mPASS[0m ordering does not decrement stock
+  [32mPASS[0m ordering reserves a copy
+  [32mPASS[0m no second customer can take the last copy
+  [32mPASS[0m a lapsed hold releases its copy
+  [32mPASS[0m and the order is marked expired
+  [32mPASS[0m the ledger nets back to zero
+
+5. Delivery and collection
+  [32mPASS[0m delivery: customer page says Delivery to
+  [32mPASS[0m delivery: shows the address
+  [32mPASS[0m delivery: mentions postage
+  [32mPASS[0m delivery: portal heading says Send to
+  [32mPASS[0m delivery: portal offers a postage field
+  [32mPASS[0m delivery: confirmed (email)
+  [32mPASS[0m delivery: total includes postage (£16.45)
+  [32mPASS[0m collection: customer page says collecting
+  [32mPASS[0m collection: no postage note
+  [32mPASS[0m collection: never says Delivery to
+  [32mPASS[0m collection: portal heading says Collecting
+  [32mPASS[0m collection: portal heading never says Send to
+  [32mPASS[0m collection: postage ignored even when sent
+
+6. Order page and lookup
+  [32mPASS[0m the emailed link resolves
+  [32mPASS[0m the old URL still works, via a redirect
+  [32mPASS[0m with no query it shows the form
+  [32mPASS[0m reference and email find the order
+  [32mPASS[0m a wrong email fails identically to a wrong reference
+  [32mPASS[0m a stale token offers the form, not a 404
+  [32mPASS[0m and a guessed token never leaks the customer
+  [32mPASS[0m the journey shows the first step
+  [32mPASS[0m and marks where the order currently sits
+  [32mPASS[0m a tracking number reaches the customer
+  [32mPASS[0m a collection never shows tracking
+  [32mPASS[0m a collection ends with "Ready to collect"
+
+7. Admin authentication
+  [32mPASS[0m /admin is closed to strangers
+  [32mPASS[0m /admin/orders is closed to strangers
+  [32mPASS[0m /admin/books is closed to strangers
+  [32mPASS[0m /admin/shelves is closed to strangers
+  [32mPASS[0m /admin/settings is closed to strangers
+  [32mPASS[0m portal APIs are closed too
+  [32mPASS[0m an unsigned Access token is rejected
+  [32mPASS[0m a forged session cookie is rejected
+  [32mPASS[0m sign-in cannot be bounced off-site
+  [32mPASS[0m a wrong password is refused
+
+8. Portal: listings
+  [32mPASS[0m author is saved
+  [32mPASS[0m publisher is saved
+  [32mPASS[0m the description keeps its paragraphs
+  [32mPASS[0m it appears in the shop
+  [32mPASS[0m stock cannot drop below what is reserved
+  [32mPASS[0m delete is refused while a copy is held
+  [32mPASS[0m delete succeeds once nothing is held
+  [32mPASS[0m and it leaves the shop
+  [32mPASS[0m the past order still names what was bought
+  [32mPASS[0m a filter count matches the database
+  [32mPASS[0m sorting by poorest cover puts the thinnest one on the first page, and says how thin
+  [32mPASS[0m and it leads rather than trails the listings behind it
+  [32mPASS[0m a cover with enough detail carries no badge
+  [32mPASS[0m a cover search answers with a list
+  [32mPASS[0m candidates carry a provider id and never an off-site URL
+  [32mPASS[0m and returns readable, bounded provider blocks of visual edition choices
+  [32mPASS[0m and reports each source separately so an outage is not called no results
+  [32mPASS[0m and the image itself is served from this origin
+  [32mPASS[0m the Google Books cover host is served through the same safe-origin path
+  [32mPASS[0m the proxy takes a cover id, never a URL to fetch
+  [32mPASS[0m the second provider is also restricted to a safe id and a known host
+  [32mPASS[0m a listing with no photo is offered the search
+  [32mPASS[0m and uploading sits beside it as an equal, not as a fallback in small print
+  [32mPASS[0m provider results stay separated and Google results carry attribution and a source link
+  [32mPASS[0m deleting an order removes the screenshots it was holding
+  [32mPASS[0m and so does clearing them in bulk
+  [32mPASS[0m refusing a photo in the review panel does not upload it anyway
+
+9. Portal: shelves
+  [32mPASS[0m renaming a shelf re-paths its children
+  [32mPASS[0m and renaming back restores the original paths
+  [32mPASS[0m a shelf cannot be moved inside its own child
+  [32mPASS[0m a new child nests under its parent
+  [32mPASS[0m deleting a parent lifts its child rather than orphaning it
+
+10. Portal: orders
+  [32mPASS[0m an order cannot skip straight to dispatched
+  [32mPASS[0m paying converts the hold into a sale
+  [32mPASS[0m and clears the expiry so the cron cannot double-release
+  [32mPASS[0m clearing keeps a paid order
+  [32mPASS[0m and removes a cancelled one
+  [32mPASS[0m deleting a paid order does not restore sold stock
+  [32mPASS[0m but deleting a held order does release its copies
+
+11. Notifications, for real
+  [32mPASS[0m a listing reaches the channel
+  [32mPASS[0m and its message id is recorded (999999)
+  [32mPASS[0m announcing again edits that post rather than adding another
+  [32mPASS[0m the webhook refuses a wrong secret
+  [32mPASS[0m a wrong token prefix cannot bind a chat
+  [32mPASS[0m the right payload binds the chat
+  [32mPASS[0m the payment DM was accepted by Telegram
+  [32mPASS[0m and the same details went by email
+  [2m····[0m check audit@example.invalid and the Telegram chat - a provider accepting is not a human receiving
+  [32mPASS[0m their chat carries to the next order
+  [32mPASS[0m so the order page stops asking
+
+13. Lifecycle and collection wording
+  [32mPASS[0m collection: payment can be recorded
+  [32mPASS[0m collection: customer is told the books are ready
+  [32mPASS[0m collection: a paid order stops asking to be paid
+  [32mPASS[0m collection: and says what was paid instead
+  [32mPASS[0m collection: can be marked collected
+  [32mPASS[0m collection: final state reads Collected
+  [32mPASS[0m collection: no posting language at requested
+  [32mPASS[0m collection: no posting language at awaiting_payment
+  [32mPASS[0m collection: no posting language at paid
+  [32mPASS[0m collection: no posting language at completed
+  [32mPASS[0m cash: a collection order can be marked as paying in cash
+  [32mPASS[0m cash: the portal shows the tick after saving it
+  [32mPASS[0m cash: the customer is asked to arrange a time, not to pay
+  [32mPASS[0m cash: and the timeline agrees, rather than waiting on a payment
+  [32mPASS[0m cash: nothing claims to be paid before they have been
+  [32mPASS[0m cash: and told they can pay on collection
+  [32mPASS[0m cash: the ready step says the money comes at the door
+  [32mPASS[0m cash: books ready is not the same as money received
+  [32mPASS[0m cash: once collected, the money is real and the page says so
+  [32mPASS[0m cash: the portal calls it To arrange, not Awaiting payment
+  [32mPASS[0m cash: and offers setting the books aside rather than recording a payment
+  [32mPASS[0m cash: a posted order can be marked as paying in cash
+  [32mPASS[0m cash: a posted order talks about handing over, not collecting
+  [32mPASS[0m cash: and never tells them to come and collect
+  [32mPASS[0m cash: the owner is not offered a button recording money that has not arrived
+  [32mPASS[0m cash: an unknown reference is still refused
+  [32mPASS[0m the stated payment preference is kept
+  [32mPASS[0m and pre-ticks the cash box for the owner
+  [32mPASS[0m the owner is told what they asked for
+  [32mPASS[0m asking to pay by transfer leaves the cash box alone
+  [32mPASS[0m saying nothing about payment is allowed
+  [32mPASS[0m but an invented preference is refused
+  [32mPASS[0m collection: a dispatch posted by hand is refused
+  [32mPASS[0m collection: and no tracking number is stored
+  [32mPASS[0m delivery: payment and posting in one action
+  [32mPASS[0m delivery: both timestamps are stamped together
+  [32mPASS[0m delivery: the carrier is recorded
+  [32mPASS[0m delivery: posting a paid order closes it in one action
+  [32mPASS[0m and there is no second button left asking to confirm it
+  [32mPASS[0m delivery: the combined action still converts the hold into a sale
+  [32mPASS[0m cash on delivery stays open when it is posted (was dispatched)
+  [32mPASS[0m and still offers the step where the money actually arrives
+  [32mPASS[0m delivery: the tracking number reaches the customer
+  [32mPASS[0m delivery: and links to the right carrier, not Royal Mail
+  [32mPASS[0m delivery: DHL is trackable, not just a name
+  [32mPASS[0m delivery: tracking sits above the progress steps
+  [32mPASS[0m a tracking number can be corrected afterwards
+  [32mPASS[0m and the order is not dispatched a second time
+  [32mPASS[0m a cancelled order stops showing tracking
+  [32mPASS[0m in the timeline as well as at the top
+  [32mPASS[0m a carrier that is not on the list is not stored
+  [32mPASS[0m leaving the carrier unset records no carrier, not Royal Mail
+  [32mPASS[0m delivery: a paid order stops asking to be paid
+  [32mPASS[0m delivery: a posted order is already closed, so it cannot be closed again
+  [32mPASS[0m delivery: final state reads Delivered
+
+14. Telegram opt-in and the bot
+  [32mPASS[0m an unanswered order is invited to connect Telegram
+  [32mPASS[0m before connecting, the invitation is shown
+  [32mPASS[0m the Telegram link opens away from the order page
+  [32mPASS[0m and a dialog is ready for when nothing opens, closed until they try
+  [32mPASS[0m with a QR code inside it
+  [32mPASS[0m and the page can ask whether it has been connected
+  [32mPASS[0m after connecting, the invitation is gone
+  [32mPASS[0m and it says the chat is connected
+  [32mPASS[0m and the page would know to refresh
+  [32mPASS[0m a guessed token learns nothing from that check
+  [32mPASS[0m confirming twice sends once (1 sent, 1 refused)
+  [32mPASS[0m the per-order payment message is kept on the order
+  [32mPASS[0m a stranger cannot pipe photos through the bot to the owner
+  [32mPASS[0m a screenshot from a linked chat is passed to the owner
+  [32mPASS[0m a finished order takes no further screenshots
+
+16. Group orders
+  [32mPASS[0m a group basket can be started
+  [32mPASS[0m with one key to add and a different one to send
+  [32mPASS[0m and not without a name to put beside the books
+  [32mPASS[0m nor without somewhere to send the organiser their own link
+  [32mPASS[0m both people see both lines
+  [32mPASS[0m and each line says whose it is
+  [32mPASS[0m the subtotal covers everyone
+  [32mPASS[0m the same title wanted by two people stays two lines
+  [32mPASS[0m and removing one person's line leaves the other alone
+  [32mPASS[0m a guessed token opens nothing
+  [32mPASS[0m the key decides the role, not the browser holding it
+  [32mPASS[0m and only the organiser is handed the link to pass round
+  [32mPASS[0m somebody holding only the share link cannot send the order
+  [32mPASS[0m the organiser sends it as one order
+  [32mPASS[0m holding everything the group asked for
+  [32mPASS[0m with a breakdown of whose books are whose
+  [32mPASS[0m nobody can add to a group order already sent
+  [32mPASS[0m and it cannot be sent twice
+
+15. Settings, drafts and contact
+  [32mPASS[0m a posted order opens with the first account
+  [32mPASS[0m and offers the accounts by the names the owner gave them
+  [32mPASS[0m an account with nothing written in it is not offered
+  [32mPASS[0m a posted order is not asked where they collect
+  [32mPASS[0m a collection opens with both where they collect and how they pay
+  [32mPASS[0m and offers both pickers
+  [32mPASS[0m including the second address
+  [32mPASS[0m a cash order offers only the cash wording (offered cash, of 3 payment buttons)
+  [32mPASS[0m and no longer has to ask the owner to check the two agree
+  [32mPASS[0m and opens on the cash wording rather than bank details
+  [32mPASS[0m while still saying where they collect
+  [32mPASS[0m and unticking it puts the accounts back and the cash wording away (offered account_1,account_2)
+  [32mPASS[0m the postage box offers what the last posted order used
+  [32mPASS[0m the footer follows the handle in settings
+  [32mPASS[0m the contact page links it and shows it as text
+  [32mPASS[0m and the order page points at a person, not the channel
+  [32mPASS[0m with an address beside it for anyone without Telegram
+  [32mPASS[0m settings keeps how they pay apart from where they collect
+  [32mPASS[0m and each one can be named
+  [32mPASS[0m and no longer asks for a postage default the owner types over anyway
+  [32mPASS[0m connections says whether the second cover source is actually configured
+
+17. Messages on an order
+  [32mPASS[0m a plain form post reaches the thread
+  [32mPASS[0m a wrong token reaches no thread
+  [32mPASS[0m and cannot read one either
+  [32mPASS[0m exactly one message was written
+  [32mPASS[0m recorded as the customer, on the web
+  [32mPASS[0m the unread counter matches the message count
+  [32mPASS[0m and the customer is not told about their own message
+  [32mPASS[0m the orders list carries an unread badge
+  [32mPASS[0m the owner reads it beside the books
+  [32mPASS[0m and opening the order marks it read
+  [32mPASS[0m the owner can reply
+  [32mPASS[0m and the customer is told
+  [32mPASS[0m the status endpoint reports the unread count
+  [32mPASS[0m and hands over the message itself
+  [32mPASS[0m the customer sees the reply on their page
+  [32mPASS[0m there are at least two messages to tell apart
+  [32mPASS[0m and they now share a second, as a burst would
+  [32mPASS[0m a message written in the same second as the one on screen still arrives
+  [32mPASS[0m and the one already on screen is not sent twice
+  [32mPASS[0m a page that is up to date is sent nothing
+  [32mPASS[0m a message over 2000 characters is refused
+  [32mPASS[0m an empty message is refused
+  [32mPASS[0m the hourly cap refuses the twenty-first
+  [32mPASS[0m the order page shows both the thread and the cancel controls
+  [32mPASS[0m and the thread comes before them, not after
+  [32mPASS[0m the customer is told where proof of payment goes
+  [32mPASS[0m and is not shown the shop's retention policy
+  [32mPASS[0m the file input is hidden behind the paperclip
+  [32mPASS[0m which still has an accessible name for a screen reader
+  [32mPASS[0m and no visible browse button remains
+  [32mPASS[0m a photo can be attached
+  [32mPASS[0m and is stored under proofs/
+  [32mPASS[0m the public image route will not serve a payment screenshot
+  [32mPASS[0m the token-gated route will
+  [32mPASS[0m and tells every cache not to keep it
+  [32mPASS[0m a wrong token reaches no image
+  [32mPASS[0m the owner reads it through the portal instead
+  [32mPASS[0m anything that is not a photo is refused
+  [32mPASS[0m the sixth photo on an order is refused
+  [32mPASS[0m and Telegram refuses it too, on the same count
+  [32mPASS[0m so an order never holds more than five photos, whichever door they came through
+  [32mPASS[0m the owner is told how long the shop holds them
+  [32mPASS[0m the sweep claims every photo on an order closed over six months ago
+  [32mPASS[0m and removing the photos keeps every message row
+  [32mPASS[0m the rows still remember a photo was there
+  [32mPASS[0m and the page says so rather than showing a gap
+  [32mPASS[0m a closed order takes no new messages
+  [32mPASS[0m a closed thread with no messages does not invite one
+  [32mPASS[0m and says why
+  [32mPASS[0m the order page: no form is nested inside another
+  [32mPASS[0m the order page: no inline event handlers
+  [32mPASS[0m the portal order page: no form is nested inside another
+  [32mPASS[0m the portal order page: no inline event handlers
+  [32mPASS[0m the webhook handles a customer message without throwing
+  [32mPASS[0m a Telegram message lands in the order thread
+  [32mPASS[0m recorded as the customer, via Telegram
+  [32mPASS[0m and the owner can see which door it came through
+  [32mPASS[0m an unbound chat still writes nothing at all
+  [32mPASS[0m the owner branch does not throw
+  [32mPASS[0m the owner's own chat writes nothing to any thread
+  [32mPASS[0m and a closed order takes no Telegram message either
+  [32mPASS[0m the notification to the owner is remembered
+  [32mPASS[0m the owner can answer from Telegram by replying to it
+  [32mPASS[0m and the customer is told
+  [32mPASS[0m but a reply to nothing in particular is never guessed into an order
+  [32mPASS[0m customer email no longer replies to the owner inbox
+  [32mPASS[0m and carries the line saying where to answer instead
+
+18. The front page
+  [32mPASS[0m the three shelves the shop is for each get a row
+  [32mPASS[0m and they run syllabus, then hadith, then fiqh
+  [32mPASS[0m the shelves index stays above them, where it has always been
+  [32mPASS[0m there is no "recently added" row any more
+  [32mPASS[0m nor the two rows that repeated it
+  [32mPASS[0m the shelf strip renders covers
+  [32mPASS[0m every shelf cover asks for the shared 5:7 hero variant
+  [32mPASS[0m and the shelf is a different one on the next load
+  [32mPASS[0m a book with nothing on the way is not in the arriving list
+  [32mPASS[0m a delivery on its way puts the row on the page
+  [32mPASS[0m and it sits above the shelves
+  [32mPASS[0m the card says how many are free to reserve
+  [32mPASS[0m and does not call an arriving book out of stock
+  [32mPASS[0m the arriving filter counts what it lists
+  [32mPASS[0m a delivery with every copy claimed says so rather than offering it
+  [32mPASS[0m and it leaves the list once the delivery has landed
+  [32mPASS[0m the row is on the page exactly when something is on its way
+
+20. Being findable
+  [32mPASS[0m a book is typed as a Product, not only a Book
+  [32mPASS[0m and carries an sku
+  [32mPASS[0m the offer names its currency
+  [32mPASS[0m and its availability matches the shelf
+  [32mPASS[0m the price in the markup is the price on the page
+  [32mPASS[0m the home page carries site-level markup
+  [32mPASS[0m naming who the shop is
+  [32mPASS[0m and that it has a search box
+  [32mPASS[0m it only calls itself a shop with an address once it has one
+  [32mPASS[0m the feed lists every live book and nothing else
+  [32mPASS[0m each exactly once
+  [32mPASS[0m an unknown ISBN is left out rather than sent empty
+  [32mPASS[0m and never claims a published book has no identifier
+  [32mPASS[0m the feed price is the page price
+  [32mPASS[0m every sitemap entry says when it last changed
+  [32mPASS[0m and none of them pretends priority is read
+  [32mPASS[0m a real ISBN passes, hyphenated or not
+  [32mPASS[0m a mistyped check digit does not
+  [32mPASS[0m nor does something that is not an ISBN at all
+  [32mPASS[0m the editor refuses an ISBN that cannot be real
+  [32mPASS[0m and stores nothing rather than something wrong
+
+18. Order history and reordering
+  [32mPASS[0m a reference and its email open the order
+  [32mPASS[0m and list everything else that customer has ordered
+  [32mPASS[0m with a way to order it all again
+  [32mPASS[0m the wrong email finds nothing, and hints at nothing
+  [32mPASS[0m a forwarded link still opens its own order
+  [32mPASS[0m but never exposes the rest of that customer's history
+  [32mPASS[0m a title that no longer exists resolves to nothing rather than an error
+
+19. Tell me when it is back
+  [32mPASS[0m an out-of-stock book offers to tell you
+  [32mPASS[0m and its form is not nested inside another
+  [32mPASS[0m an address can be left
+  [32mPASS[0m asking twice is asking once
+  [32mPASS[0m and a bad address is refused
+  [32mPASS[0m leaving exactly one person waiting
+  [32mPASS[0m and restocking tells them, then forgets the address
+  [32mPASS[0m restocking with nobody waiting is harmless
+
+20. Sales and split-set checkout
+  [32mPASS[0m a sale of only draft books cannot be published
+  [32mPASS[0m but one live member is enough
+  [32mPASS[0m a sale can be ended
+  [32mPASS[0m and cannot be resurrected
+  [32mPASS[0m so its history is not rewritten
+  [32mPASS[0m and the editor calls it finished rather than a draft
+  [32mPASS[0m an order can be placed while a sale runs
+  [32mPASS[0m the line records which sale reduced it, and from what
+  [32mPASS[0m and what was charged
+  [32mPASS[0m the sale reports what it actually gave away
+  [32mPASS[0m and repricing the book does not rewrite a finished sale
+  [32mPASS[0m one part of a set can be bought
+  [32mPASS[0m and the complete set is then refused, because the pool cannot build one
+  [32mPASS[0m so no second copy was ever reserved
+
+21. Rate limits and group atomicity
+  [32mPASS[0m orders are allowed up to the hourly limit
+  [32mPASS[0m and refused past it
+  [32mPASS[0m a concurrent burst never exceeds the limit
+  [32mPASS[0m and every other one is refused
+  [32mPASS[0m with exactly one record per order that was let through
+  [32mPASS[0m a group basket can be started
+  [32mPASS[0m exactly one of two simultaneous submissions wins
+  [32mPASS[0m so exactly one order exists
+  [32mPASS[0m and the stock is reserved once, not twice
+  [32mPASS[0m maintenance keeps the order-status routes open and order creation shut
+
+22. Three languages
+  [32mPASS[0m an Arabic title files the book as Arabic
+  [32mPASS[0m an Urdu title files it as Urdu
+  [32mPASS[0m and neither leaves it English
+  [32mPASS[0m a book carrying both is Arabic - the older field wins, rather than the answer depending on row order
+  [32mPASS[0m whitespace in a title field is not a title
+  [32mPASS[0m swapping the title moves the book without a second field to change
+  [32mPASS[0m the three languages account for every live book (186+81+1=268)
+  [32mPASS[0m the catalogue shows exactly the Arabic books
+  [32mPASS[0m and exactly the Urdu ones
+  [32mPASS[0m and exactly the English ones
+  [32mPASS[0m with no language asked for, all of them
+  [32mPASS[0m a language the shop does not sell is ignored, not answered with nothing
+  [32mPASS[0m and nothing that is not one of the three reaches the query
+  [32mPASS[0m the refine form carries the language, so ticking a box does not drop it
+  [32mPASS[0m and the chosen language is marked as current
+  [32mPASS[0m filtering by language is an index search, not a scan (SEARCH books USING INDEX idx_books_language (status=? AND language=?))
+  [32mPASS[0m a book is findable by its Urdu title
+  [32mPASS[0m and by its Arabic one, as before
+  [32mPASS[0m the portal's arabic filter agrees with the database (82)
+  [32mPASS[0m the portal's urdu filter agrees with the database (1)
+  [32mPASS[0m the portal's english filter agrees with the database (186)
+  [32mPASS[0m the sidebar and the shelf agree in one language (hadith: 53 vs 53)
+  [32mPASS[0m and a shelf never holds fewer books unfiltered than it does in one language
+  [32mPASS[0m with the unfiltered sidebar agreeing with the unfiltered shelf too
+  [32mPASS[0m a shelf with no Arabic books is not offered while Arabic is chosen (syllabus/maktab)
+  [32mPASS[0m and comes back as soon as it is not
+  [32mPASS[0m every shelf link carries the language, so choosing a shelf does not lose it
+  [32mPASS[0m the shelf counts are still one query, not one per language
+  [32mPASS[0m and the language rides along on it rather than being asked for separately
+  [32mPASS[0m the listing form has an Urdu title, filled in
+
+23. The channel post
+  [32mPASS[0m the portal offers the post itself, not a note beside it
+  [32mPASS[0m and sends what it offered, so the server can tell an untouched box from a written one
+  [32mPASS[0m the box starts as the post the shop would have written
+  [32mPASS[0m a box that came back as it went out leaves the post the shop's to write
+  [32mPASS[0m and one he actually changed is kept as he wrote it
+  [32mPASS[0m the post he wrote is for the channel, not for the website
+  [32mPASS[0m the box ends with words to link, not with a bare address
+  [32mPASS[0m and no longer shows the owner a raw URL to work around
+  [32mPASS[0m the phrase sits where UTF-16 says it does, whatever script comes before it
+  [32mPASS[0m and comes back in the box he wrote it in
+  [32mPASS[0m with a way to hand it back
+  [32mPASS[0m clearing it gives the post back to the shop
+  [32mPASS[0m the channel button posts without the listing being saved first
+  [32mPASS[0m and keeps what was typed, without a separate save
+  [32mPASS[0m saving the listing leaves the post alone rather than clearing it
+  [32mPASS[0m a post written before the price moved is flagged, not left to go quietly wrong
+  [32mPASS[0m three photos on the listing
+  [32mPASS[0m the listing posts to the channel
+  [32mPASS[0m and records the message that carries the caption
+  [32mPASS[0m every photo is its own message, and all of them are remembered (3)
+  [32mPASS[0m with the captioned one first, because that is what an edit has to target
+  [32mPASS[0m a listing with one photo still posts
+  [32mPASS[0m and is remembered as the single message it is
+  [32mPASS[0m deleting the listing clears every message the album occupies
+
+24. Shipments and reservations
+  [32mPASS[0m a pasted list becomes a shipment and its books
+  [32mPASS[0m with the price, volumes and count read off the line
+  [32mPASS[0m and a slug assigned by arithmetic, not by querying once per row
+  [32mPASS[0m stored as drafts, with the script title in its own column so the language is right
+  [32mPASS[0m a shipment book is not in the catalogue
+  [32mPASS[0m a shipment book is not in search
+  [32mPASS[0m a shipment book is not in the sitemap
+  [32mPASS[0m a shipment book is not in the product feed
+  [32mPASS[0m a shipment book is not in the listings page
+  [32mPASS[0m and has no product page of its own
+  [32mPASS[0m a shipment with a priceless row will not open
+  [32mPASS[0m and stays a draft
+  [32mPASS[0m and opens once the hole is filled
+  [32mPASS[0m an open shipment is listed on the shipments page
+  [32mPASS[0m and links through to its own page
+  [32mPASS[0m without printing every book on it, which is what a big shipment would do
+  [32mPASS[0m the books are on the shipment page
+  [32mPASS[0m with the same brass reserve button the book page uses, adding to the ordinary basket
+  [32mPASS[0m a customer can reserve from an open shipment
+  [32mPASS[0m the order remembers which shipment it came from
+  [32mPASS[0m and has neither a hold to lapse nor a deadline to answer by, yet
+  [32mPASS[0m every line is a claim, never a copy off the shelf
+  [32mPASS[0m counted against the delivery, with shelf stock untouched
+  [32mPASS[0m and nobody can reserve more copies than are coming
+  [32mPASS[0m a shelf book and a shipment book check out as two orders
+  [32mPASS[0m one for the shelf and one for the shipment
+  [32mPASS[0m the shelf one keeps its 48-hour hold, so unclaimed stock comes back
+  [32mPASS[0m and the reservation has none, because the thing it is for does not exist yet
+  [32mPASS[0m both carry the same token, so each page can point at the other
+  [32mPASS[0m and the customer lands on the one that actually moves this week
+  [32mPASS[0m the shelf order holds only the copy in hand
+  [32mPASS[0m and the reservation holds only the claim
+  [32mPASS[0m the shop order points at the reservation
+  [32mPASS[0m and a reserved line links to its shipment, not to a product page it has not got
+  [32mPASS[0m and the owner is told the two orders came from one checkout
+  [32mPASS[0m and the basket can read a shipment book, so the page can offer it
+  [32mPASS[0m the shipment can be marked as arrived, telling everyone who claimed from it
+  [32mPASS[0m and a second press does nothing, rather than doubling the shelf
+  [32mPASS[0m the copies are real, and the claim against them is now an ordinary hold
+  [32mPASS[0m with nothing still waiting on a delivery
+  [32mPASS[0m and seven days to reply (7.0)
+  [32mPASS[0m both customers queued to be told, rather than written to inside the request
+  [32mPASS[0m the shipment page says a customer could not be told
+  [32mPASS[0m and what the provider actually said
+  [32mPASS[0m and the dashboard says it too, since nobody opens a shipment page for weeks
+  [32mPASS[0m while the sweep still refuses to expire somebody nobody managed to tell
+  [32mPASS[0m an arrived shipment stays readable
+  [32mPASS[0m but offers no way to reserve from it
+  [32mPASS[0m but nothing more can be reserved from it
+  [32mPASS[0m a reply deadline only starts once every reserved line has arrived
+  [32mPASS[0m an unanswered reservation is what the sweep selects once its week is up
+  [32mPASS[0m a reservation on the clock says so in the portal, with a way to extend it
+  [32mPASS[0m and the week can be given
+  [32mPASS[0m counted from today, so a deadline that already passed gets a full week (7.0)
+  [32mPASS[0m the portal can open كتاب الاختبار الأول (200)
+  [32mPASS[0m the portal can open كتاب الاختبار الثاني (200)
+  [32mPASS[0m and a long Arabic search does not fall over either
+  [32mPASS[0m an arrived shipment offers to list the copies nobody reserved
+  [32mPASS[0m and does it without nesting a form inside a form, which a browser drops
+  [32mPASS[0m it opens the listing rather than publishing a half-filled one
+  [32mPASS[0m off the shipment, and still a draft until the owner has finished it
+  [32mPASS[0m keeping the importer address for now, because no English title exists yet
+  [32mPASS[0m and the listing says what it still needs
+  [32mPASS[0m live, off the shipment, and under its English name
+  [32mPASS[0m re-slugged from the importer's own shape (sh2-2 -> a-spare-copy-e2e)
+  [32mPASS[0m and has a product page of its own at last
+  [32mPASS[0m a reservation is not in the shop order queue
+  [32mPASS[0m it is in the reservations queue
+
+12. Data integrity
+  [32mPASS[0m no book has negative availability
+  [32mPASS[0m no duplicate slugs
+  [32mPASS[0m a photo can be uploaded
+  [32mPASS[0m a bad cut-out can be reported
+  [32mPASS[0m and comes back with a timestamped id naming where it was kept
+  [32mPASS[0m and a stranger cannot post one
+  [32mPASS[0m and its size is recorded, so the page can reserve space
+  [32mPASS[0m a cover serves without a preset
+  [32mPASS[0m and with one
+  [32mPASS[0m an unknown preset falls through to the original
+  [32mPASS[0m each preset has its own etag
+  [32mPASS[0m and an unknown one keeps the original etag
+  [32mPASS[0m a preset with no stored variant still returns an image
+  [32mPASS[0m every cover on the home page asks for the size it is shown at
+  [32mPASS[0m and carries the frame version, so a reframed cover is not held stale
+  [32mPASS[0m no is:inline script carries TypeScript
+  [32mPASS[0m the shelf drifts 14px a second
+  [32mPASS[0m and wraps by exactly one copy of the covers
+  [32mPASS[0m an unmeasured track still moves rather than sticking
+  [32mPASS[0m a second of frames moves the shelf about 14px (moved 14)
+  [32mPASS[0m hovering the shelf holds it
+  [32mPASS[0m and the cursor leaving releases it at once, with no timer left running
+  [32mPASS[0m a click does not start the drift under a cursor still on it
+  [32mPASS[0m a finger scrolling keeps the shelf still while it moves
+  [32mPASS[0m and it drifts again once they have finished
+  [32mPASS[0m a cover being read holds the shelf
+  [32mPASS[0m and a blocked resume asks again rather than giving up
+  [32mPASS[0m so it drifts again once nothing is focused
+  [32mPASS[0m a scroll the drift did not cause is kept, not undone (landed at 900)
+  [32mPASS[0m and the drift knows its own write from somebody else's
+  [32mPASS[0m the book is found in a photo of a table (worst corner off by 0.7px)
+  [32mPASS[0m and an empty surface is reported as not found rather than guessed at
+  [32mPASS[0m the book is still the book with a shadow cast off one corner touching it (off by 0.7px)
+  [32mPASS[0m the book is still the book with the sleeve it was resting on touching it (off by 0.7px)
+  [32mPASS[0m the book is still the book with grain in the surface below touching it (off by 0.7px)
+  [32mPASS[0m the book is still the book with the next book along touching it (off by 0.7px)
+  [32mPASS[0m the corners hold for photographed from an angle (off by 1.5px)
+  [32mPASS[0m the corners hold for a cream cover on a light surface (off by 1.4px)
+  [32mPASS[0m the corners hold for a dark cover on a dark surface (off by 1.4px)
+  [32mPASS[0m the corners hold for lying askew on the table (off by 0.6px)
+  [32mPASS[0m a cover running off the frame is found, and stops at the edge of it
+  [32mPASS[0m a sliver is refused rather than offered as a cover
+  [32mPASS[0m and so is something round
+  [32mPASS[0m corners come back clockwise from the top left, whatever angle the book was at
+  [32mPASS[0m the warp maps a corner exactly onto its corner
+  [32mPASS[0m and four points on top of each other are refused rather than returning infinities
+  [32mPASS[0m and the straightened cover carries none of the surface it was lying on
+  [32mPASS[0m a portrait photo is fitted into the model square by its long edge
+  [32mPASS[0m and a landscape one by its own
+  [32mPASS[0m the tensor is one plane per channel
+  [32mPASS[0m with the channels kept apart rather than interleaved
+  [32mPASS[0m a mask with nothing in it is refused rather than stretched into one
+  [32mPASS[0m and a confident one is used as it is
+  [32mPASS[0m a book filling only a tenth of a loose crop is still erased around
+  [32mPASS[0m tightening the mask drops the fringe that carried the trailing colour (2684 -> 452)
+  [32mPASS[0m and leaves the middle of the book completely alone
+  [32mPASS[0m the book itself comes through the erase untouched
+  [32mPASS[0m and everything the mask does not claim is white
+  [32mPASS[0m a cover already the shape of the box fills it untouched
+  [32mPASS[0m the ordinary 617x800 scan fills the box
+  [32mPASS[0m and so does a 3:4 one
+  [32mPASS[0m and a 4:5 scan loses its narrow white side margins, as on the Al-Hidayah set
+  [32mPASS[0m a taller cover is never trimmed top and bottom
+  [32mPASS[0m while one only just wider than the box gives up a sliver of side and fills
+  [32mPASS[0m nor is one whose side trim would reach the artwork
+  [32mPASS[0m a landscape or square cover keeps all of itself
+  [32mPASS[0m and a cover of unknown shape is never cropped on a guess
+  [32mPASS[0m cover lookup ignores transliteration accents and punctuation
+  [32mPASS[0m cover lookup tries exact, folded and simplified title searches
+  [32mPASS[0m accent variants rank above a merely partial word match
+  [32mPASS[0m Google Books receives one relevance-ordered title and author query
+  [32mPASS[0m Google results keep their native order and discard missing images and unsafe ids
+  [32mPASS[0m the best Open Library work expands to edition covers before the separate Google block
+  [32mPASS[0m successful providers are reported independently
+  [32mPASS[0m one provider outage does not hide results from the other
+  [32mPASS[0m a missing Google key is reported without breaking the keyless source
+  [32mPASS[0m an ISBN is looked up the same whether or not it was typed with hyphens
+  [32mPASS[0m an ISBN that fails its check digit is not looked up at all
+  [32mPASS[0m and neither is a missing ISBN, or one with no Google key to ask with
+  [32mPASS[0m Google is asked with its own isbn: qualifier rather than a loose search
+  [32mPASS[0m the cover for the exact edition is offered first, and says so
+  [32mPASS[0m and the title search still contributes the rest
+  [32mPASS[0m with nothing offered twice when both routes find the same artwork
+  [32mPASS[0m an ISBN with no cover behind it leaves the title search untouched
+  [32mPASS[0m an exact ISBN hit is shown rather than reported as an outage
+  [32mPASS[0m no Google key at all is reported as not configured
+  [32mPASS[0m a key Google answers for is reported as connected
+  [32mPASS[0m and one Google refuses is reported as refused, not as connected
+  [32mPASS[0m the cover proxy refuses Google's placeholder card rather than serving it as artwork
+  [32mPASS[0m and answers 404, which is what the picker already knows how to drop
+  [32mPASS[0m PNG width and height really do sit at byte 16 and byte 20
+  [32mPASS[0m a complete line gives up its title, volumes, price and count
+  [32mPASS[0m and is offered without complaint
+  [32mPASS[0m Arabic-Indic digits are read as numbers
+  [32mPASS[0m and so are the extended set an Urdu keyboard produces
+  [32mPASS[0m a plain hyphen separates as readily as an em dash
+  [32mPASS[0m while a hyphen inside a word is left alone
+  [32mPASS[0m an edition label is lifted out of the title
+  [32mPASS[0m but a word that only looks like one stays in the title
+  [32mPASS[0m Urdu is told from Arabic, which is what files the title in the right column
+  [32mPASS[0m a line with no count is flagged rather than assumed to be one copy
+  [32mPASS[0m and an unreadable line keeps its text for the owner to finish
+  [32mPASS[0m blank lines are skipped and nothing else is dropped
+  [32mPASS[0m a narrow cover with plain sides is widened to the box, not trimmed at the ends
+  [32mPASS[0m and what comes out is exactly the shape of the box
+  [32mPASS[0m a patterned edge is cropped instead, because an extension would show its join
+  [32mPASS[0m and so is a cover whose edges were never measured
+  [32mPASS[0m a cover far too narrow is not widened by half its own width
+  [32mPASS[0m a small shortfall shares its trim when it cannot be widened
+  [32mPASS[0m and a large one comes off the foot, where no title is
+  [32mPASS[0m a cover wider than the box gives up the same from each side
+  [32mPASS[0m and nothing measurable falls back to a plain centre crop
+  [32mPASS[0m the batch script and the portal both take the rule from the one module
+  [32mPASS[0m and the script keeps no second copy of its constants
+  [32mPASS[0m uploaded variants are stored only under a preset name the table knows
+  [32mPASS[0m and deleting a photo takes its sized versions with it
+  [32mPASS[0m the portal frames and cuts the photo before it is sent
+  [32mPASS[0m a cover cropped to the edge of its photo keeps its colour there (0 pale edge pixels)
+  [32mPASS[0m right down to the last corner
+  [32mPASS[0m while a corner dragged well off the photo still reads as paper, not as cover
+  [32mPASS[0m a cover whose own edge is near-white is still widened, not cropped for it
+  [32mPASS[0m and the measurement that could not tell them apart is gone, not left unread
+  [32mPASS[0m catalogue primary covers always use the common full-bleed frame
+  [32mPASS[0m the landing shelf can use every processed primary cover
+  [32mPASS[0m a volume count is read from a title
+  [32mPASS[0m and from a description
+  [32mPASS[0m including one written as a word
+  [32mPASS[0m a single volume is not a set
+  [32mPASS[0m and nothing is guessed from a bare mention
+  [32mPASS[0m the shelf counts are not rolled up with an unindexable self-join
+  [32mPASS[0m and the cache can be cleared when the owner changes something
+  [32mPASS[0m books/save.ts clears the shelf counts
+  [32mPASS[0m [id]/delete.ts clears the shelf counts
+  [32mPASS[0m shelves/create.ts clears the shelf counts
+  [32mPASS[0m shelves/delete.ts clears the shelf counts
+  [32mPASS[0m shelves/move.ts clears the shelf counts
+  [32mPASS[0m shelves/update.ts clears the shelf counts
+  [32mPASS[0m a parent shelf still counts what sits beneath it
+  [32mPASS[0m a set starts with every option at the shelf count
+  [32mPASS[0m holding a half holds the whole set with it (a=2 full=2 b=3)
+  [32mPASS[0m and selling it leaves the other half alone (a=2 full=2 b=3)
+  [32mPASS[0m a spare half outlives the set it came from (full=1 a=1 b=2)
+  [32mPASS[0m a set option has an ordinary book page
+  [32mPASS[0m and offers the other ways of buying it
+  [32mPASS[0m a set can be built from a listing (/admin/books/347?saved=1)
+  [32mPASS[0m it makes one listing per way of buying it (3)
+  [32mPASS[0m the original becomes the whole set and each part carries its own price
+  [32mPASS[0m and every volume starts at the number of complete sets held
+  [32mPASS[0m a part reaching past the last volume is refused
+  [32mPASS[0m and a half-filled row is refused rather than quietly dropped
+  [32mPASS[0m five wrong passwords are simply refused
+  [32mPASS[0m and the sixth is locked out
+  [32mPASS[0m a lockout does not reach a different address
+  [32mPASS[0m a correct password still gets in
+  [32mPASS[0m and clears the run of failures behind it
+  [32mPASS[0m every response carries a content policy
+  [32mPASS[0m every response carries no MIME sniffing
+  [32mPASS[0m every response carries a referrer policy
+  [32mPASS[0m every response carries a permissions policy
+  [32mPASS[0m and cannot be framed, which is what stops clickjacking
+  [32mPASS[0m nor can an injected form post a session somewhere else
+  [32mPASS[0m the order page records what has happened
+  [32mPASS[0m each stage that happened is listed
+  [32mPASS[0m including the wording that was actually sent, which is the point of it
+  [32mPASS[0m and the tracking number and carrier entered at the time
+  [32mPASS[0m the shop closes to customers (home 503, catalogue 503)
+  [32mPASS[0m the way back into the portal stays open
+  [32mPASS[0m and so does a customer order page - somebody waiting on paid-for books is not shut out
+  [32mPASS[0m and clearing the message opens it again
+  [32mPASS[0m /privacy is published
+  [32mPASS[0m /returns is published
+  [32mPASS[0m /delivery is published
+  [32mPASS[0m /terms is published
+  [32mPASS[0m and every page links to them from the footer
+  [32mPASS[0m the dashboard shows "To confirm"
+  [32mPASS[0m the dashboard shows "Awaiting payment"
+  [32mPASS[0m the dashboard shows "To post"
+  [32mPASS[0m the dashboard shows "Taken per day"
+  [32mPASS[0m the dashboard shows "How it goes out"
+  [32mPASS[0m the dashboard shows "Selling best"
+  [32mPASS[0m the dashboard shows "Taken per shelf"
+  [32mPASS[0m the dashboard shows "Running low"
+  [32mPASS[0m the dashboard shows "Repeat customers"
+  [32mPASS[0m the dashboard shows "Average order"
+  [32mPASS[0m and covers 90 days as well as 30
+  [32mPASS[0m the second dashboard is gone and its address redirects to /admin
+  [32mPASS[0m and the portal nav lists Dashboard once
+  [32mPASS[0m its "to confirm" count matches counting the orders directly (16)
+  [32mPASS[0m the card Add button is wired for every page, not one
+  [32mPASS[0m and the book page no longer keeps its own copy
+  [32mPASS[0m the home grid offers Add on its cards
+  [32mPASS[0m InPost is offered as a carrier
+  [32mPASS[0m Royal Mail builds a tracking link
+  [32mPASS[0m Evri builds a tracking link
+  [32mPASS[0m DPD builds a tracking link
+  [32mPASS[0m DHL builds a tracking link
+  [32mPASS[0m Parcelforce builds a tracking link
+  [32mPASS[0m Yodel builds a tracking link
+  [32mPASS[0m InPost builds a tracking link
+  [32mPASS[0m and "Other" deliberately has none, so the number shows unlinked
+  [32mPASS[0m postage moves a pound at a time, by button
+  [32mPASS[0m while pence stay a valid amount to type
+  [32mPASS[0m checkout has step 1
+  [32mPASS[0m checkout has step 2
+  [32mPASS[0m checkout has step 3
+  [32mPASS[0m the country box can be typed into and still submits a code
+  [32mPASS[0m a problem with post-or-collect now has somewhere to appear
+  [32mPASS[0m the checkout renders the shared form rather than one of its own
+  [32mPASS[0m and the wiring that drives it is shared too
+  [32mPASS[0m the CSP allows the postcode lookup and nothing else outbound
+  [32mPASS[0m a failed postcode lookup is silent rather than blocking
+  [32mPASS[0m a status change notifies without throwing
+  [32mPASS[0m a customer can cancel before payment details go out
+  [32mPASS[0m and the copies go straight back on the shelf
+  [32mPASS[0m their reason is kept as their own, not the owner's
+  [32mPASS[0m and the ledger nets back to zero
+  [32mPASS[0m recorded as the customer cancelling, not the owner
+  [32mPASS[0m after payment details, cancelling only asks
+  [32mPASS[0m and the ask is recorded
+  [32mPASS[0m the copies stay held while the owner decides
+  [32mPASS[0m the customer is told their order is still live
+  [32mPASS[0m declining leaves the order untouched and clears the request
+  [32mPASS[0m a wrong token cancels nothing
+  [32mPASS[0m the book page says what is coming and when
+  [32mPASS[0m and how many are left to claim
+  [32mPASS[0m a claim counts against the delivery, never against shelf stock
+  [32mPASS[0m and the line is marked as a claim
+  [32mPASS[0m an order waiting on a delivery is given no expiry to lapse at
+  [32mPASS[0m and no deadline to answer by until the books are here
+  [32mPASS[0m payment is refused while a reservation is still incoming
+  [32mPASS[0m paying for books that have not arrived takes nothing off the shelf (stock 5->5, reserved 0->0)
+  [32mPASS[0m and writes no ledger row for a movement that did not happen
+  [32mPASS[0m and is not told its books are held for 48 hours
+  [32mPASS[0m but is told the reservation stands until the books arrive
+  [32mPASS[0m and what it is waiting for, with nothing to pay yet
+  [32mPASS[0m the confirmation has its own wording for a reservation
+  [32mPASS[0m and a third for an order that is part shelf, part delivery
+  [32mPASS[0m a fully reserved delivery refuses another claim
+  [32mPASS[0m an arrival puts copies on the shelf and turns a claim into a hold
+  [32mPASS[0m and what did not arrive stays claimed rather than being cancelled
+  [32mPASS[0m the later claim keeps its place in the queue
+  [32mPASS[0m the customer sees waiting as its own step, not a stalled Posted
+  [32mPASS[0m cancelling a reservation returns the claim to the delivery
+  [32mPASS[0m no form is nested inside the listing form
+  [32mPASS[0m restockForm exists outside it
+  [32mPASS[0m partsForm exists outside it
+  [32mPASS[0m every field of the parts builder names that form (0 did not)
+  [32mPASS[0m the editor has a identity section
+  [32mPASS[0m the editor has a description section
+  [32mPASS[0m the editor has a commerce section
+  [32mPASS[0m the editor has a subjects section
+  [32mPASS[0m step 1 is a panel of the one form
+  [32mPASS[0m step 2 is a panel of the one form
+  [32mPASS[0m step 3 is a panel of the one form
+  [32mPASS[0m step 4 is a panel of the one form
+  [32mPASS[0m which never navigates
+  [32mPASS[0m one Save covers the whole form
+  [32mPASS[0m and the steps add no second form to submit
+  [32mPASS[0m the rail says what waits for a saved listing
+  [32mPASS[0m and names Photos
+  [32mPASS[0m and names Telegram
+  [32mPASS[0m and names Sold in parts
+  [32mPASS[0m and names Delete
+  [32mPASS[0m and says why, once rather than thrice
+  [32mPASS[0m so no locked placeholder panel is rendered at all
+  [32mPASS[0m photos are never locked on an existing listing
+  [32mPASS[0m and an existing listing keeps its jump nav of same-page anchors
+  [32mPASS[0m sold in parts on a single book names what it needs
+  [32mPASS[0m the parts grid labels "Name of the part"
+  [32mPASS[0m the parts grid labels "First volume"
+  [32mPASS[0m the parts grid labels "Last volume"
+  [32mPASS[0m and all four rows are the same shape
+  [32mPASS[0m and a notification failure is recorded rather than swallowed
+  [32mPASS[0m the figures come from one batch rather than a query per tile
+  [32mPASS[0m and are cached, like the shelf counts
+  [32mPASS[0m the book page adds against live stock and has somewhere to say so
+  [32mPASS[0m checkout no longer reads "availability unknown" as "none left"
+  [32mPASS[0m no order items orphaned from their order
+  [32mPASS[0m the ledger agrees with reserved on every fixture
+
+Tidying up
+  fixtures left: 0   stock still held: 0
+
+──────────────────────────────────────────────────────────
+  1. Public catalogue                 53 passed   [32mok[0m
+  2. Legacy WordPress URLs             5 passed   [32mok[0m
+  3. Basket and order validation      28 passed   [32mok[0m
+  4. Stock and holds                   6 passed   [32mok[0m
+  5. Delivery and collection          13 passed   [32mok[0m
+  6. Order page and lookup            12 passed   [32mok[0m
+  7. Admin authentication             10 passed   [32mok[0m
+  8. Portal: listings                 27 passed   [32mok[0m
+  9. Portal: shelves                   5 passed   [32mok[0m
+  10. Portal: orders                   7 passed   [32mok[0m
+  11. Notifications, for real         10 passed   [32mok[0m
+  13. Lifecycle and collection wording  55 passed   [32mok[0m
+  14. Telegram opt-in and the bot     15 passed   [32mok[0m
+  16. Group orders                    18 passed   [32mok[0m
+  15. Settings, drafts and contact    21 passed   [32mok[0m
+  17. Messages on an order            67 passed   [32mok[0m
+  18. The front page                  17 passed   [32mok[0m
+  20. Being findable                  21 passed   [32mok[0m
+  18. Order history and reordering     7 passed   [32mok[0m
+  19. Tell me when it is back          8 passed   [32mok[0m
+  20. Sales and split-set checkout    14 passed   [32mok[0m
+  21. Rate limits and group atomicity  10 passed   [32mok[0m
+  22. Three languages                 30 passed   [32mok[0m
+  23. The channel post                24 passed   [32mok[0m
+  24. Shipments and reservations      68 passed   [32mok[0m
+  12. Data integrity                 279 passed   [32mok[0m
+──────────────────────────────────────────────────────────
+  830 passed, 0 failed  (local)
+

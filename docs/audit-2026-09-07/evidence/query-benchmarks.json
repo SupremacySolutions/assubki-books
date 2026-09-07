@@ -1,0 +1,77 @@
+[
+  {
+    "name": "message cursor before",
+    "query": "SELECT id,sender,body FROM messages WHERE order_id=? AND id>? ORDER BY id",
+    "rows": 10,
+    "approx_vm_steps": 50100,
+    "milliseconds": 1.464,
+    "plan": [
+      [
+        4,
+        0,
+        0,
+        "SEARCH messages USING INDEX idx_messages_order (order_id=?)"
+      ],
+      [
+        19,
+        0,
+        0,
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    ]
+  },
+  {
+    "name": "message cursor after",
+    "query": "SELECT id,sender,body FROM messages WHERE order_id=? AND id>? ORDER BY id",
+    "rows": 10,
+    "approx_vm_steps": 100,
+    "milliseconds": 0.067,
+    "plan": [
+      [
+        4,
+        0,
+        0,
+        "SEARCH messages USING INDEX audit_messages_cursor (order_id=? AND id>?)"
+      ]
+    ]
+  },
+  {
+    "name": "global throttle cleanup before",
+    "query": "SELECT COUNT(*) FROM public_actions WHERE at<100",
+    "rows": 1,
+    "approx_vm_steps": 30100,
+    "milliseconds": 0.745,
+    "plan": [
+      [
+        3,
+        0,
+        0,
+        "SCAN public_actions"
+      ]
+    ]
+  },
+  {
+    "name": "global throttle cleanup after",
+    "query": "SELECT COUNT(*) FROM public_actions WHERE at<100",
+    "rows": 1,
+    "approx_vm_steps": 300,
+    "milliseconds": 0.015,
+    "plan": [
+      [
+        3,
+        0,
+        0,
+        "SEARCH public_actions USING COVERING INDEX audit_public_actions_at (at<?)"
+      ]
+    ]
+  },
+  {
+    "name": "stock update FTS write amplification",
+    "sqlite_changes_before": 9,
+    "sqlite_changes_after": 1
+  },
+  {
+    "name": "narrowed FTS trigger still indexes title changes",
+    "passed": true
+  }
+]

@@ -1,0 +1,2286 @@
+[
+  {
+    "source": "src/pages/api/admin/books/[id]/arrived.ts",
+    "route": "/api/admin/books/[id]/arrived",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fbooks%2F9999999%2Farrived"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/books/[id]/delete.ts",
+    "route": "/api/admin/books/[id]/delete",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fbooks%2F9999999%2Fdelete"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/books"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/books"
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/books/[id]/set.ts",
+    "route": "/api/admin/books/[id]/set",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fbooks%2F9999999%2Fset"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/books/[id]/telegram.ts",
+    "route": "/api/admin/books/[id]/telegram",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fbooks%2F9999999%2Ftelegram"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/books/9999999?posted=0"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/books/9999999?posted=0"
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/books/save.ts",
+    "route": "/api/admin/books/save",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fbooks%2Fsave"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/books/stock.ts",
+    "route": "/api/admin/books/stock",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fbooks%2Fstock"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/covers/image.ts",
+    "route": "/api/admin/covers/image",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fcovers%2Fimage"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/covers/search.ts",
+    "route": "/api/admin/covers/search",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fcovers%2Fsearch"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/isbn/search.ts",
+    "route": "/api/admin/isbn/search",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fisbn%2Fsearch"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/login.ts",
+    "route": "/api/admin/login",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?e=1&next=%2Fadmin"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?e=1&next=%2Fadmin"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/cancel-request.ts",
+    "route": "/api/admin/orders/[ref]/cancel-request",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fcancel-request"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/cash-payment.ts",
+    "route": "/api/admin/orders/[ref]/cash-payment",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fcash-payment"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/confirm.ts",
+    "route": "/api/admin/orders/[ref]/confirm",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fconfirm"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/delete.ts",
+    "route": "/api/admin/orders/[ref]/delete",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fdelete"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/orders"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/orders"
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/extend.ts",
+    "route": "/api/admin/orders/[ref]/extend",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fextend"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/message.ts",
+    "route": "/api/admin/orders/[ref]/message",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fmessage"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/proof.ts",
+    "route": "/api/admin/orders/[ref]/proof",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fproof"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/status.ts",
+    "route": "/api/admin/orders/[ref]/status",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fstatus"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/thread.ts",
+    "route": "/api/admin/orders/[ref]/thread",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Fthread"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/[ref]/tracking.ts",
+    "route": "/api/admin/orders/[ref]/tracking",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2FASB-ZZZZ%2Ftracking"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/orders/ASB-ZZZZ?e=state"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/orders/clear.ts",
+    "route": "/api/admin/orders/clear",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Forders%2Fclear"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/orders?cleared=0"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/report-cover.ts",
+    "route": "/api/admin/report-cover",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Freport-cover"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/sales/books.ts",
+    "route": "/api/admin/sales/books",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fsales%2Fbooks"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/sales/index.ts",
+    "route": "/api/admin/sales",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fsales"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/settings/unbind-telegram.ts",
+    "route": "/api/admin/settings/unbind-telegram",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fsettings%2Funbind-telegram"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/settings?saved=1"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/settings?saved=1"
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/settings.ts",
+    "route": "/api/admin/settings",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fsettings"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/settings?saved=1"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shelves/create.ts",
+    "route": "/api/admin/shelves/create",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshelves%2Fcreate"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/shelves"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shelves/delete.ts",
+    "route": "/api/admin/shelves/delete",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshelves%2Fdelete"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/shelves"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shelves/move.ts",
+    "route": "/api/admin/shelves/move",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshelves%2Fmove"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/shelves"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shelves/update.ts",
+    "route": "/api/admin/shelves/update",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshelves%2Fupdate"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/shelves"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shipments/[id]/add.ts",
+    "route": "/api/admin/shipments/[id]/add",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshipments%2F9999999%2Fadd"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shipments/[id]/arrived.ts",
+    "route": "/api/admin/shipments/[id]/arrived",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshipments%2F9999999%2Farrived"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shipments/[id]/details.ts",
+    "route": "/api/admin/shipments/[id]/details",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshipments%2F9999999%2Fdetails"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/shipments/9999999?e=a%20shipment%20needs%20a%20name"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shipments/[id]/notices.ts",
+    "route": "/api/admin/shipments/[id]/notices",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshipments%2F9999999%2Fnotices"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shipments/[id]/open.ts",
+    "route": "/api/admin/shipments/[id]/open",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshipments%2F9999999%2Fopen"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/shipments/9999999?e=there%20is%20nothing%20on%20this%20shipment%20yet"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/shipments/9999999?e=there%20is%20nothing%20on%20this%20shipment%20yet"
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shipments/[id]/promote.ts",
+    "route": "/api/admin/shipments/[id]/promote",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshipments%2F9999999%2Fpromote"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shipments/[id]/save.ts",
+    "route": "/api/admin/shipments/[id]/save",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshipments%2F9999999%2Fsave"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/shipments/9999999?e=This+shipment+is+no+longer+editable"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/shipments/index.ts",
+    "route": "/api/admin/shipments",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fshipments"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/sign-out-everywhere.ts",
+    "route": "/api/admin/sign-out-everywhere",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fsign-out-everywhere"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?e=signedout"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?e=signedout"
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/upload.ts",
+    "route": "/api/admin/upload",
+    "method": "POST",
+    "methods": [
+      "POST",
+      "DELETE"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fupload"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/admin/upload.ts",
+    "route": "/api/admin/upload",
+    "method": "DELETE",
+    "methods": [
+      "POST",
+      "DELETE"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "DELETE",
+        "status": 302,
+        "location": "/admin/login?next=%2Fapi%2Fadmin%2Fupload"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "DELETE",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "DELETE",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "DELETE",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/basket.ts",
+    "route": "/api/basket",
+    "method": "GET",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/basket.ts",
+    "route": "/api/basket",
+    "method": "POST",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/books/alert.ts",
+    "route": "/api/books/alert",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/group/index.ts",
+    "route": "/api/group",
+    "method": "POST",
+    "methods": [
+      "POST",
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/group/index.ts",
+    "route": "/api/group",
+    "method": "GET",
+    "methods": [
+      "POST",
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/group/line.ts",
+    "route": "/api/group/line",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/orders/cancel.ts",
+    "route": "/api/orders/cancel",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/orders/link-status.ts",
+    "route": "/api/orders/link-status",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/orders/lookup.ts",
+    "route": "/api/orders/lookup",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 302,
+        "location": "/order?e=1"
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 302,
+        "location": "/order?e=1"
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/orders/message.ts",
+    "route": "/api/orders/message",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/orders/proof.ts",
+    "route": "/api/orders/proof",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/orders/reservation.ts",
+    "route": "/api/orders/reservation",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 500,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/orders/status.ts",
+    "route": "/api/orders/status",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/orders.ts",
+    "route": "/api/orders",
+    "method": "POST",
+    "methods": [
+      "POST"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 400,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/search/suggest.ts",
+    "route": "/api/search/suggest",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/telegram/webhook.ts",
+    "route": "/api/telegram/webhook",
+    "method": "POST",
+    "methods": [
+      "POST",
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "malformed",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "csrf",
+        "method": "POST",
+        "status": 403,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/api/telegram/webhook.ts",
+    "route": "/api/telegram/webhook",
+    "method": "GET",
+    "methods": [
+      "POST",
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/feed.xml.ts",
+    "route": "/feed.xml",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/img/[...key].ts",
+    "route": "/img/[...key]",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/model/[...key].ts",
+    "route": "/model/[...key]",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 404,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  },
+  {
+    "source": "src/pages/sitemap.xml.ts",
+    "route": "/sitemap.xml",
+    "method": "GET",
+    "methods": [
+      "GET"
+    ],
+    "observations": [
+      {
+        "mode": "unauthenticated",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "authenticated-empty",
+        "method": "GET",
+        "status": 200,
+        "location": null
+      },
+      {
+        "mode": "unsupported-method",
+        "method": "PUT",
+        "status": 404,
+        "location": null
+      }
+    ]
+  }
+]
