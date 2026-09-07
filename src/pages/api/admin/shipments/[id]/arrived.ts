@@ -4,12 +4,14 @@ import { receiveDelivery, ReceiptConflict } from '../../../../../lib/arrival';
 import { env } from 'cloudflare:workers';
 import { forgetHomeRows } from '../../../../../lib/db';
 import { forgetDashboard } from '../../../../../lib/dashboard';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
 export const POST: APIRoute = async ({ params, request }) => {
   const shipmentId = Number(params.id);
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const key = String(form.get('receipt_key') ?? '');
   const version = Number(form.get('delivery_version'));
   if (!Number.isSafeInteger(shipmentId) || !/^[\w-]{16,80}$/.test(key) ||

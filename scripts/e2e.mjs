@@ -562,6 +562,63 @@ async function stockAlerts() {
 
   await admin('/api/admin/books/stock', { id: String(row.id), stock: '6' });
   t.ok(true, 'restocking with nobody waiting is harmless');
+
+  /*
+   * The send that does not go.
+   *
+   * The row used to be deleted as it was *read*, so a provider refusing threw
+   * the subscriber away with the attempt and the count returned said they had
+   * been told. Whoever was on the wrong end of a rate limit simply never heard,
+   * and nothing remembered that they had ever asked.
+   *
+   * There is no way to make the provider refuse from out here, so the failure
+   * is written directly: a row that is owed, has been tried, and is backed off.
+   * What is being asserted is the property that was missing - the person is
+   * still there, the reason is recorded, and the next attempt is scheduled - not
+   * the mechanics of any one provider error.
+   */
+  await db(`DELETE FROM stock_alerts WHERE book_id = ${row.id}`);
+  await db(`INSERT INTO stock_alerts (book_id, email, claimed_at, attempts, last_error,
+              next_attempt_at)
+            VALUES (${row.id}, 'refused@example.com', unixepoch(), 1, 'provider said 429',
+                    unixepoch() + 900)`);
+  const kept = await one(
+    `SELECT email, attempts, last_error, next_attempt_at > unixepoch() AS waiting
+       FROM stock_alerts WHERE book_id = ${row.id}`,
+  );
+  t.ok(kept.email === 'refused@example.com', 'a refused send keeps the subscriber');
+  t.ok(kept.attempts === 1 && !!kept.last_error, 'and records what went wrong');
+  t.ok(kept.waiting === 1, 'and backs off rather than retrying immediately');
+
+  /*
+   * Still owed after the backoff, and still owed across a restock.
+   *
+   * `markWaitingDue` only claims rows that are not already claimed, so a second
+   * stock edit must not reset the attempt count or lose the row - it re-arms it.
+   */
+  await db(`UPDATE stock_alerts SET next_attempt_at = 0 WHERE book_id = ${row.id}`);
+  await admin('/api/admin/books/stock', { id: String(row.id), stock: '8' });
+  const afterRestock = await one(
+    `SELECT COUNT(*) AS n FROM stock_alerts WHERE book_id = ${row.id}`,
+  );
+  t.ok(afterRestock.n === 0, 'and a later restock finds it still owed and sends it');
+
+  /*
+   * A claimed row whose book sold out again is not told anything.
+   *
+   * The message says "it is on the shelf now", and the row can outlive that
+   * being true - a failing address on Monday, the last copy gone by Tuesday.
+   * The availability test rides on the lease write for exactly this.
+   */
+  await db(`UPDATE books SET stock = 0, reserved = 0 WHERE id = ${row.id}`);
+  await db(`INSERT INTO stock_alerts (book_id, email, claimed_at, next_attempt_at)
+            VALUES (${row.id}, 'soldout@example.com', unixepoch(), 0)`);
+  await admin('/api/admin/books/stock', { id: String(row.id), stock: '0' });
+  const stillWaiting = await one(
+    `SELECT COUNT(*) AS n FROM stock_alerts WHERE book_id = ${row.id} AND claimed_at IS NOT NULL`,
+  );
+  t.ok(stillWaiting.n === 1, 'a claimed alert for a sold-out book is held, not sent');
+  await db(`DELETE FROM stock_alerts WHERE book_id = ${row.id}`);
 }
 
 async function sales() {
@@ -838,6 +895,116 @@ async function abuseAndAtomicity() {
       !source.includes("pathname.startsWith('/api/orders')"),
     'maintenance keeps the order-status routes open and order creation shut',
   );
+
+  /*
+   * A body the route cannot read is the caller's mistake, not the shop's.
+   *
+   * `request.formData()` throws on a body that is not a form, and nothing
+   * caught it, so JSON posted to a form handler reached the top of the request
+   * as a 500 on twenty-nine route/method pairs. A 500 says the shop is broken
+   * and puts a real fault's signal in with the noise.
+   *
+   * Checked across the three kinds of handler rather than on one: a public form
+   * post, an authenticated admin one, and a JSON route - each answers in its own
+   * shape, and the thing being asserted is only that none of them answers 500.
+   */
+  const malformed = [
+    ['/api/books/alert', { ...ORIGIN, 'Content-Type': 'application/json' }, '{"bookId":1}'],
+    ['/api/orders/lookup', { ...ORIGIN, 'Content-Type': 'application/json' }, '{"ref":"x"}'],
+    ['/api/admin/shelves/create',
+      { ...ORIGIN, 'Content-Type': 'application/json', Cookie: adminCookie() }, '{"name":"x"}'],
+    ['/api/admin/books/stock',
+      { ...ORIGIN, 'Content-Type': 'application/json', Cookie: adminCookie() }, '{"id":1}'],
+    ['/api/orders/message',
+      { ...ORIGIN, 'Content-Type': 'multipart/form-data; boundary=nope' }, 'not a multipart body'],
+  ];
+  let broke = 0;
+  for (const [path, headers, body] of malformed) {
+    const res = await fetch(`${SITE}${path}`, { method: 'POST', redirect: 'manual', headers, body });
+    if (res.status >= 500) {
+      broke++;
+      t.note(`${path} answered ${res.status}`);
+    }
+  }
+  t.ok(broke === 0, 'an unreadable body is refused rather than crashing the route');
+
+  /*
+   * A body that parses but is not an object.
+   *
+   * `JSON.parse('null')` succeeds, so the catch around it never fired and the
+   * first property read threw instead. Not one of the audit's twenty-nine - its
+   * probe sent malformed JSON, which these routes already handled - but the same
+   * defect one step further in.
+   */
+  const nullBodies = await Promise.all(
+    ['/api/orders', '/api/group', '/api/group/line', '/api/basket'].map((path) =>
+      fetch(`${SITE}${path}`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+        body: 'null',
+      }).then((r) => r.status),
+    ),
+  );
+  t.ok(
+    nullBodies.every((code) => code < 500),
+    'and a JSON body of literal null is refused the same way',
+    `got ${nullBodies.join(', ')}`,
+  );
+
+  /*
+   * Order recovery, which hands back the order's token on a hit.
+   *
+   * A reference and the address it was placed with is the whole of the proof,
+   * so knowing somebody's email left a stranger free to work through short
+   * references until one answered, with nothing counting the attempts.
+   */
+  await db('DELETE FROM public_actions');
+  const guess = (i) =>
+    fetch(`${SITE}/api/orders/lookup`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        ...ORIGIN,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'CF-Connecting-IP': '203.0.113.44',
+      },
+      body: new URLSearchParams({ ref: `ASB-GUESS${i}`, email: 'someone@example.com' }).toString(),
+    }).then((r) => r.headers.get('location') ?? '');
+
+  const tries = [];
+  for (let i = 0; i < 14; i++) tries.push(await guess(i));
+  const missed = tries.filter((l) => l.includes('e=1')).length;
+  const slowed = tries.filter((l) => l.includes('e=slow')).length;
+  t.ok(missed === 10, 'a guessed reference is answered up to the hourly limit', `${missed} tried`);
+  t.ok(slowed === 4, 'and refused past it', `${slowed} refused`);
+  t.ok(
+    !tries.some((l) => l.includes('&t=')),
+    'and no attempt ever handed back a token',
+  );
+
+  /*
+   * The same limit, all at once - the gap a sequential test cannot see, and the
+   * one the order limit was originally shipped without.
+   */
+  await db('DELETE FROM public_actions');
+  const burstLookups = await Promise.all(
+    Array.from({ length: 20 }, (_, i) =>
+      fetch(`${SITE}/api/orders/lookup`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          ...ORIGIN,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'CF-Connecting-IP': '203.0.113.45',
+        },
+        body: new URLSearchParams({ ref: `ASB-B${i}`, email: 'someone@example.com' }).toString(),
+      }).then((r) => r.headers.get('location') ?? ''),
+    ),
+  );
+  const throughLookups = burstLookups.filter((l) => !l.includes('e=slow')).length;
+  t.ok(throughLookups <= 10, 'a concurrent burst never exceeds it either', `${throughLookups} of 20`);
+  await db('DELETE FROM public_actions');
 }
 
 async function adminAuth() {

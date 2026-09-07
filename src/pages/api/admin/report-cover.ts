@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import { readForm } from '../../../lib/request-body';
 
 export const prerender = false;
 
@@ -29,7 +30,8 @@ export const POST: APIRoute = async ({ request }) => {
   const bucket = (env as unknown as UploadEnv).UPLOADS;
   if (!bucket) return new Response('Photo storage is not configured.', { status: 503 });
 
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const original = form.get('original');
   const result = form.get('result');
 

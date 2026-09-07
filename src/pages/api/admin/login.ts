@@ -1,11 +1,13 @@
 import type { APIRoute } from 'astro';
 import { checkPassword, createSessionCookie, SESSION_COOKIE } from '../../../lib/admin-auth';
 import { callerAddress, checkThrottle, recordAttempt } from '../../../lib/login-throttle';
+import { readForm } from '../../../lib/request-body';
 
 export const prerender = false;
 
 export const POST: APIRoute = async ({ request, url }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const password = String(form.get('password') ?? '');
   const nextRaw = String(form.get('next') ?? '/admin');
 

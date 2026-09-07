@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { askToBeTold } from '../../../lib/stock-alerts';
+import { readForm } from '../../../lib/request-body';
 
 export const prerender = false;
 
@@ -14,7 +15,8 @@ export const prerender = false;
  * so there is one path and one set of words rather than two.
  */
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const bookId = Number.parseInt(String(form.get('bookId') ?? ''), 10);
   const slug = String(form.get('slug') ?? '').trim();
   const email = String(form.get('email') ?? '');

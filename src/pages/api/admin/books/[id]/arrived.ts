@@ -3,11 +3,13 @@ import { forgetHomeRows } from '../../../../../lib/db';
 import { forgetDashboard } from '../../../../../lib/dashboard';
 import { tellWaiting } from '../../../../../lib/stock-alerts';
 import { fillClaims, ReceiptConflict } from '../../../../../lib/arrival';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 export const POST: APIRoute = async ({ params, request }) => {
   const bookId = Number(params.id);
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const arrived = Number(form.get('arrived'));
   const key = String(form.get('receipt_key') ?? '');
   const version = Number(form.get('delivery_version'));

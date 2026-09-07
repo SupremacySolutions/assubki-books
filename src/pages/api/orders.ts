@@ -6,6 +6,7 @@ import { checkOrder, clean, type Field } from '../../lib/validate';
 import { formatAddress } from '../../lib/address';
 import { forgetDashboard } from '../../lib/dashboard';
 import { takePublicAction } from '../../lib/public-throttle';
+import { readJson } from '../../lib/request-body';
 
 export const prerender = false;
 
@@ -25,14 +26,8 @@ function badField(field: Field, message: string) {
 }
 
 export const POST: APIRoute = async ({ request, url, locals }) => {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return bad('Send a JSON body.');
-  }
-
-  const data = body as Record<string, unknown>;
+  const data = await readJson(request);
+  if (!data) return bad('Send a JSON body.');
 
   const name = clean(data.name);
   const email = clean(data.email);

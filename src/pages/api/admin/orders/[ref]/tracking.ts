@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { isPostageProvider } from '../../../../../lib/order-status';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -18,7 +19,8 @@ export const prerender = false;
  */
 export const POST: APIRoute = async ({ params, request }) => {
   const ref = params.ref!;
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
 
   const tracking = String(form.get('tracking') ?? '').trim().slice(0, 80) || null;
   const submitted = String(form.get('postage_provider') ?? '').trim();

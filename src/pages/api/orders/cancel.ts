@@ -5,6 +5,7 @@ import { releaseHold } from '../../../lib/stock-release';
 import { cancelRight, REASON_MAX } from '../../../lib/cancellation';
 import { notifyCancelRequest } from '../../../lib/notify';
 import { forgetDashboard } from '../../../lib/dashboard';
+import { readForm } from '../../../lib/request-body';
 
 export const prerender = false;
 
@@ -20,7 +21,8 @@ export const prerender = false;
  * A plain form post, because the whole flow has to work with JavaScript off.
  */
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const ref = String(form.get('ref') ?? '').trim();
   const token = String(form.get('t') ?? '');
   const reason = String(form.get('reason') ?? '').trim().slice(0, REASON_MAX) || null;

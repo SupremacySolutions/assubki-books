@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { isPreset, IMAGE_PRESETS } from '../../../lib/image-presets';
+import { readForm } from '../../../lib/request-body';
 
 export const prerender = false;
 
@@ -24,7 +25,8 @@ export const POST: APIRoute = async ({ request }) => {
   const bucket = (env as unknown as UploadEnv).UPLOADS;
   if (!bucket) return new Response('Photo storage is not configured.', { status: 503 });
 
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const bookId = Number.parseInt(String(form.get('bookId') ?? ''), 10);
   const file = form.get('photo');
 
@@ -111,7 +113,8 @@ export const POST: APIRoute = async ({ request }) => {
 
 export const DELETE: APIRoute = async ({ request }) => {
   const bucket = (env as unknown as UploadEnv).UPLOADS;
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const imageId = Number.parseInt(String(form.get('imageId') ?? ''), 10);
   if (!Number.isInteger(imageId)) return new Response('Missing image', { status: 400 });
 

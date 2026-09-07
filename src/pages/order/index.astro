@@ -23,12 +23,15 @@ import { getShipment } from '../../lib/shipments';
 import Thread from '../../components/Thread.astro';
 import { THREAD } from '../../lib/order-status';
 import { markRead, thread, threadOpen } from '../../lib/messages';
+import { takePublicAction } from '../../lib/public-throttle';
+import { readForm } from '../../lib/request-body';
 import QRCode from 'qrcode';
 
 const params = Astro.url.searchParams;
 let ref = params.get('ref')?.trim() ?? '';
 let token = params.get('t') ?? '';
 let failedLookup = params.get('e') === '1';
+let throttledLookup = params.get('e') === 'slow';
 
 /*
  * The lookup posts here rather than redirecting away.
@@ -44,18 +47,37 @@ let failedLookup = params.get('e') === '1';
  */
 let history: OrderSummary[] = [];
 if (Astro.request.method === 'POST') {
-  const form = await Astro.request.formData();
-  const askedRef = String(form.get('ref') ?? '').trim();
-  const askedEmail = String(form.get('email') ?? '').trim();
-  const found = askedRef && askedEmail ? await findOrder(askedRef, askedEmail) : null;
+  /*
+   * Throttled like `/api/orders/lookup`, and for the same reason: a hit here
+   * does not just confirm the order, it renders it, along with everything else
+   * that address has bought. This is the form customers actually use, so
+   * limiting only the API route would have left the front door open.
+   *
+   * A body that will not parse is treated as a miss rather than a crash - the
+   * page has a way to say "we could not find that" and no way to say 500.
+   */
+  const form = await readForm(Astro.request);
+  const verdict = form
+    ? await takePublicAction('lookup', Astro.request)
+    : { blocked: false, retryAfter: 0 };
 
-  if (found) {
-    ref = found.ref;
-    token = found.token;
-    history = await ordersForCustomer(askedEmail);
+  if (verdict.blocked) {
+    throttledLookup = true;
+  } else if (form) {
+    const askedRef = String(form.get('ref') ?? '').trim();
+    const askedEmail = String(form.get('email') ?? '').trim();
+    const found = askedRef && askedEmail ? await findOrder(askedRef, askedEmail) : null;
+
+    if (found) {
+      ref = found.ref;
+      token = found.token;
+      history = await ordersForCustomer(askedEmail);
+    } else {
+      // A miss is always reported the same way. "That reference exists but the
+      // email is wrong" would confirm to a stranger that somebody ordered.
+      failedLookup = true;
+    }
   } else {
-    // A miss is always reported the same way. "That reference exists but the
-    // email is wrong" would confirm to a stranger that somebody ordered.
     failedLookup = true;
   }
 }
@@ -964,13 +986,27 @@ if (offerTelegram && telegramLink) {
             </p>
           )}
 
-          {failedLookup && (
+          {failedLookup && !throttledLookup && (
             <p
               role="alert"
               class="p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]"
             >
               We could not find an order with that reference and email. Check both, or message us on
               Telegram and we will look it up.
+            </p>
+          )}
+
+          {/* Its own message rather than another miss. Somebody who has
+              mistyped their reference several times is not helped by being told
+              a fourth time that it does not exist, and telling them that would
+              also be untrue. */}
+          {throttledLookup && (
+            <p
+              role="alert"
+              class="p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]"
+            >
+              That is a lot of attempts from one place. Give it a little while and try again, or
+              message us on Telegram and we will find your order for you.
             </p>
           )}
 

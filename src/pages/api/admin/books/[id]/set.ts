@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { forgetCategoryCounts, forgetHomeRows } from '../../../../../lib/db';
 import { partCandidates } from '../../../../../lib/admin-db';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -68,7 +69,8 @@ export const POST: APIRoute = async ({ params, request }) => {
     .first<{ id: number; slug: string; title: string; status: string; set_id: number | null }>();
   if (!book) return new Response('No such listing', { status: 404 });
 
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const action = String(form.get('action') ?? '');
   const back = `/admin/books/${id}`;
   const fail = (why: string) =>

@@ -5,6 +5,7 @@ import { forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
 import { tellWaiting } from '../../../../lib/stock-alerts';
 import { validIsbn, normaliseIsbn } from '../../../../lib/isbn-search';
 import { captionToStore } from '../../../../lib/channel-caption';
+import { readForm } from '../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -48,7 +49,8 @@ async function uniqueSlug(base: string, excludeId: number | null): Promise<strin
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
 
   const idRaw = String(form.get('id') ?? '').trim();
   const id = idRaw ? Number.parseInt(idRaw, 10) : null;

@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { forgetOrderDiscount } from '../../../lib/sales';
 import { forgetMaintenance } from '../../../lib/maintenance';
+import { readForm } from '../../../lib/request-body';
 import {
   setSetting,
   getSetting,
@@ -31,7 +32,8 @@ const text = async (
 };
 
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
 
   // Looped rather than written out a dozen times, so adding a slot to the lists
   // in lib/settings is the whole change.

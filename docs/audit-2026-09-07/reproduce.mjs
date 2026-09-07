@@ -107,8 +107,7 @@ export {GET as adminThread} from './src/pages/api/admin/orders/[ref]/thread';
 export {GET as customerStatus} from './src/pages/api/orders/status';
 export {POST as customerMessage} from './src/pages/api/orders/message';
 export {POST as webhook} from './src/pages/api/telegram/webhook';
-export {notifyBackInStock} from './src/lib/notify';
-export {askToBeTold} from './src/lib/stock-alerts';
+export {askToBeTold,tellWaiting} from './src/lib/stock-alerts';
 export {expireGroupBaskets,sweepProofs} from './workers/expire-holds/index';
 
 export {receiveDelivery,fillClaims} from './src/lib/arrival';
@@ -215,7 +214,9 @@ await audit('F01 arrival email primary link has reversed arguments',async()=>{
 await audit('F02 failed back-in-stock notices are deleted and reported as sent',async()=>{
  const b=book(null,0,1);await app.askToBeTold(b,'test@example.invalid');globalThis.reservationTestEnv.EMAIL_DRY_RUN='0';
  globalThis.fetch=async()=>new Response('simulated rejection',{status:429});
- assert.equal(await app.notifyBackInStock(b,'https://example.invalid'),1);
+ // `notifyBackInStock` was the entry point when this was written; the outbox
+ // replaced it with mark-then-drain, and `tellWaiting` is the same public act.
+ assert.equal(await app.tellWaiting(b,'https://example.invalid'),1);
  assert.equal(row('SELECT COUNT(*) n FROM stock_alerts').n,0);globalThis.reservationTestEnv.EMAIL_DRY_RUN='1';
 });
 await audit('F03 restocked set appears available but checkout rejects it',async()=>{

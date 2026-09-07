@@ -1,11 +1,13 @@
 import type { APIRoute } from 'astro';
 import { moveShelf } from '../../../../lib/shelves';
 import { forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
+import { readForm } from '../../../../lib/request-body';
 
 export const prerender = false;
 
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const id = Number.parseInt(String(form.get('id') ?? ''), 10);
   const direction = String(form.get('direction') ?? '') === 'up' ? 'up' : 'down';
 

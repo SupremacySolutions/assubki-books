@@ -6,6 +6,7 @@ import { notifyStatusChange } from '../../../../../lib/notify';
 import { canTransition, closesOnDispatch, isPostageProvider } from '../../../../../lib/order-status';
 import { collectionAddress } from '../../../../../lib/settings';
 import { forgetDashboard } from '../../../../../lib/dashboard';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -17,7 +18,8 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   const order = await getOrderByRef(ref);
   if (!order) return new Response('No such order', { status: 404 });
 
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const next = String(form.get('status') ?? '');
   const tracking = String(form.get('tracking') ?? '').trim().slice(0, 80) || null;
   // Checked against the list that draws the picker, so a stored carrier always

@@ -1,11 +1,12 @@
 import type { APIRoute } from 'astro';
 import { setGroupLine, cleanName, MAX_QTY } from '../../../lib/group';
+import { readJson } from '../../../lib/request-body';
 
 export const prerender = false;
 
 /** Set one person's quantity for one title. Zero removes their line. */
 export const POST: APIRoute = async ({ request }) => {
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await readJson(request)) ?? {};
   const code = String(body.code ?? '').trim();
   const token = String(body.token ?? '').trim();
   const person = cleanName(body.name);
