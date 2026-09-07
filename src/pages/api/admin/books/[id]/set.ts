@@ -119,12 +119,39 @@ export const POST: APIRoute = async ({ params, request }) => {
      * One batch, because a pool that has moved and a listing that has not is
      * exactly the disagreement being fixed.
      */
-    await env.DB.batch([
-      env.DB.prepare('UPDATE book_set_stock SET have = ?1 WHERE set_id = ?2').bind(sets, book.set_id),
+    /*
+     * The same condition again, inside the write.
+     *
+     * The count above is read before the transaction, so it answers for the
+     * moment it ran and not the moment the pool moves. Two reservations landing
+     * in between - one on the complete set, one on an overlapping part - each
+     * leave their own listing satisfying CHECK (reserved <= stock) while
+     * together claiming two copies of a volume the pool now says there is one
+     * of. Per-listing constraints cannot see a sum across listings; only this
+     * predicate can, and it has to be evaluated where the write happens.
+     *
+     * Both statements carry it, so neither the pool nor the shadow `stock` can
+     * move without the other.
+     */
+    const roomForClaims = `NOT EXISTS (
+      SELECT 1 FROM book_set_stock v
+       WHERE v.set_id = ?2
+         AND ?1 < COALESCE((SELECT SUM(o.reserved) FROM books o
+                             WHERE o.set_id = v.set_id
+                               AND v.volume BETWEEN o.set_from AND o.set_to), 0))`;
+    const [pool] = await env.DB.batch([
       env.DB.prepare(
-        'UPDATE books SET stock = ?1, updated_at = unixepoch() WHERE set_id = ?2',
+        `UPDATE book_set_stock SET have = ?1 WHERE set_id = ?2 AND ${roomForClaims}`,
+      ).bind(sets, book.set_id),
+      env.DB.prepare(
+        `UPDATE books SET stock = ?1, updated_at = unixepoch()
+          WHERE set_id = ?2
+            AND EXISTS (SELECT 1 FROM book_set_stock WHERE set_id = ?2 AND have = ?1)`,
       ).bind(sets, book.set_id),
     ]);
+    /* Nothing moved: somebody reserved a copy while this was being decided. */
+    if (!pool.meta.changes) return fail('heldsets');
+
     forgetCategoryCounts();
     forgetHomeRows();
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });

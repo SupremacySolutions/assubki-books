@@ -43,16 +43,42 @@ export function readGroup(): Membership | null {
     if (!raw || typeof raw !== 'object') return null;
     const { code, token, name, organiser, shareToken, memberToken } = raw as Record<string, unknown>;
     if (typeof code !== 'string' || typeof token !== 'string' || typeof name !== 'string') return null;
-    return {
+    const membership: Membership = {
       code,
       token,
       name,
       organiser: Boolean(organiser),
       shareToken: typeof shareToken === 'string' ? shareToken : undefined,
-      /* A membership stored before this existed gets one now. Its earlier
-         lines carry no token and stay the organiser's to manage. */
-      memberToken: typeof memberToken === 'string' && memberToken ? memberToken : newMemberToken(),
+      memberToken: '',
     };
+    /*
+     * A membership stored before member keys existed gets one now - and keeps
+     * it.
+     *
+     * Minting one on every read looked like an upgrade but was not: two reads
+     * returned two different keys, so a line added under one could not be
+     * edited after a reload. The key is written back the first time, and every
+     * read after that returns the same one. Earlier lines carry no key at all
+     * and stay the organiser's to manage, which is the documented trade.
+     */
+    if (typeof memberToken === 'string' && memberToken) {
+      membership.memberToken = memberToken;
+    } else {
+      membership.memberToken = newMemberToken();
+      /*
+       * Writing it back must never cost the read.
+       *
+       * Storage can refuse - a private window, a full quota - and a failure to
+       * remember the new key is a nuisance, while losing the membership it was
+       * attached to would put somebody out of their own group basket.
+       */
+      try {
+        joinGroup(membership);
+      } catch {
+        /* keep the key for this page at least */
+      }
+    }
+    return membership;
   } catch {
     return null;
   }

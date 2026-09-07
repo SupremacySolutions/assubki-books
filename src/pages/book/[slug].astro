@@ -588,7 +588,17 @@ const jsonLd = {
         const put = await fetch('/api/group/line', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: member.code, token: member.token, name: member.name, bookId, qty: total }),
+          /* The member key travels with every change, from every caller. The
+             basket had it and this did not, so adding from a book page was
+             refused as malformed and reported as a closed group. */
+          body: JSON.stringify({
+            code: member.code,
+            token: member.token,
+            name: member.name,
+            memberToken: member.memberToken,
+            bookId,
+            qty: total,
+          }),
         });
         if (!put.ok) return null;
       }

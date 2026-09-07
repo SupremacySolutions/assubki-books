@@ -25,7 +25,23 @@ export const POST: APIRoute = async ({ request, url }) => {
   let next = '/admin';
   try {
     const target = new URL(nextRaw, url.origin);
-    if (target.origin === url.origin) next = `${target.pathname}${target.search}${target.hash}`;
+    /*
+     * Same origin, and not a network-path reference.
+     *
+     * Resolving against this origin catches `/\evil.invalid`, which a browser
+     * normalises into another host. It does not catch the other side of the
+     * same trick: `https://<this site>//evil.invalid` passes an origin check,
+     * and the path left after stripping the origin is `//evil.invalid` - which
+     * a browser resolving a relative Location reads as a jump to somebody
+     * else's domain. `/..//evil.invalid` normalises to the same thing.
+     *
+     * So the path is checked after resolution, not the string before it, and
+     * anything beginning with two slashes is refused rather than trimmed - a
+     * destination that needs rewriting to be safe is not a destination anybody
+     * asked for honestly.
+     */
+    const path = `${target.pathname}${target.search}${target.hash}`;
+    if (target.origin === url.origin && !path.startsWith('//')) next = path;
   } catch {
     /* unparseable: /admin, as above */
   }

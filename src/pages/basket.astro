@@ -325,8 +325,26 @@ import Rosette from '../components/Rosette.astro';
       }
     }
 
-    /** One person's line, editable only by them - everyone else's is read-only. */
-    function groupRow(line: GroupLine, mine: boolean, wantedByAll: number): string {
+    /**
+     * One person's line.
+     *
+     * `mine` and `editable` are two different questions and were one flag.
+     * The organiser may change anybody's line, but it is still not theirs -
+     * conflating the two labelled everyone else's line "(you)" and, worse, sent
+     * the organiser's own name with the change, so editing Alice's quantity
+     * created or altered the organiser's line instead of hers.
+     *
+     * `row` only exists to keep control ids unique: two people ordering the
+     * same title share a bookId, and duplicate ids make a label point at the
+     * wrong box.
+     */
+    function groupRow(
+      line: GroupLine,
+      mine: boolean,
+      editable: boolean,
+      row: number,
+      wantedByAll: number,
+    ): string {
       // Short against what the *group* asked for, not against this one line: two
       // people each wanting the last two copies is a shortfall neither line
       // shows on its own.
@@ -352,17 +370,26 @@ import Rosette from '../components/Rosette.astro';
           </div>
           <div class="col-start-2 flex items-center gap-4 justify-start sm:ml-auto sm:shrink-0">
             ${
-              mine
-                ? `<label class="sr-only" for="g${line.bookId}">Quantity for ${line.title}</label>
-                   <input id="g${line.bookId}" type="number" min="0" max="${ceiling}" value="${line.qty}"
-                          class="field !w-16 !py-1.5 tabular-nums" data-group-id="${line.bookId}">`
+              editable
+                ? `<label class="sr-only" for="g${row}">Quantity for ${escapeHtml(line.title)}, added by ${escapeHtml(line.addedBy)}</label>
+                   <input id="g${row}" type="number" min="0" max="${ceiling}" value="${line.qty}"
+                          class="field !w-16 !py-1.5 tabular-nums"
+                          data-group-id="${line.bookId}" data-group-owner="${escapeHtml(line.addedBy)}">`
                 : `<span class="text-[15px] tabular-nums text-[var(--color-ink-soft)]">×${line.qty}</span>`
             }
           </div>
         </li>`;
     }
 
-    async function setGroupQty(bookId: number, qty: number) {
+    /**
+     * Change one line.
+     *
+     * `owner` is whose line it is, which is not always who is asking: an
+     * organiser may change anybody's. Sending the caller's own name instead
+     * quietly edited the wrong line - or created a second one under their
+     * name - while appearing to work.
+     */
+    async function setGroupQty(bookId: number, qty: number, owner: string) {
       if (!member) return;
       const res = await fetch('/api/group/line', {
         method: 'POST',
@@ -370,7 +397,7 @@ import Rosette from '../components/Rosette.astro';
         body: JSON.stringify({
           code: member.code,
           token: member.token,
-          name: member.name,
+          name: owner,
           memberToken: member.memberToken,
           bookId,
           qty,
@@ -395,11 +422,13 @@ import Rosette from '../components/Rosette.astro';
       const rows = el<HTMLUListElement>('#rows');
       rows.innerHTML = view.lines.length
         ? view.lines
-            .map((line) =>
+            .map((line, i) =>
               groupRow(
                 line,
-                /* Yours, or anyone's if you started the group. */
+                line.addedBy === member!.name,
+                /* Yours to change - or anyone's, if you started the group. */
                 line.addedBy === member!.name || member!.organiser,
+                i,
                 wantedByAll.get(line.bookId) ?? line.qty,
               ),
             )
@@ -427,7 +456,11 @@ import Rosette from '../components/Rosette.astro';
 
       for (const input of rows.querySelectorAll<HTMLInputElement>('input[data-group-id]')) {
         input.addEventListener('change', () => {
-          setGroupQty(Number(input.dataset.groupId), Math.max(0, Number(input.value) || 0));
+          setGroupQty(
+            Number(input.dataset.groupId),
+            Math.max(0, Number(input.value) || 0),
+            input.dataset.groupOwner ?? member!.name,
+          );
         });
       }
       return true;
@@ -629,10 +662,11 @@ import Rosette from '../components/Rosette.astro';
         groupError('We could not email your link just now - keep this page, or copy your own link from the address bar.');
       }
 
-      // Whatever they had already chosen becomes their share of the group.
+      // Whatever they had already chosen becomes their share of the group -
+      // their own, so their own name is the right one to send.
       const existing = read();
       for (const [id, qty] of Object.entries(existing)) {
-        await setGroupQty(Number(id), qty);
+        await setGroupQty(Number(id), qty, name);
       }
       groupError('');
       render();
