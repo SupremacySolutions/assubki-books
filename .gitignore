@@ -13,3 +13,7 @@ public/img/books/
 
 # Working files for scripts/standardise-covers.mjs - derived, never source.
 .cache/
+
+# Database backups taken before a migration (scripts/backup-remote.mjs). Real
+# customer names, emails and addresses - they belong on the owner's disk.
+backup-*.sql

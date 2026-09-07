@@ -120,14 +120,32 @@ npx wrangler d1 time-travel info assubki-books
 ```
 
 Record the bookmark it prints. **Also take a real file, because a bookmark is
-Cloudflare's to keep and a file is yours:**
+Cloudflare's to keep, is thirty days long, and a file is yours:**
 
 ```sh
-npx wrangler d1 export assubki-books --remote \
-    --output "backup-$(date +%Y%m%d-%H%M).sql"
+node scripts/backup-remote.mjs
 ```
 
+Not `wrangler d1 export`, which refuses this database outright — *cannot export
+databases with Virtual Tables (fts5)* — and `books_fts` is not going anywhere.
+The script sends only SELECTs and writes the same shape the export would have:
+schema, then rows, restorable with `wrangler d1 execute --file`.
+
 Check the file is not empty and contains `CREATE TABLE books` before going on.
+Better, restore it somewhere disposable and count what came back — a backup
+nobody has read back is a hope:
+
+```sh
+printf 'PRAGMA trusted_schema=ON;\n' | cat - backup-*.sql | sqlite3 /tmp/restore-check.db
+sqlite3 /tmp/restore-check.db \
+    "SELECT count(*) FROM books; SELECT count(*) FROM books_fts WHERE books_fts MATCH 'fiqh';"
+```
+
+The second count is the one worth having. `books_fts` keeps no copy of the text
+and is filled only by the triggers as books are written, so a restore that
+creates those triggers after the rows leaves every table correct, every count
+in agreement, and the shop's search answering nothing. The file ends with the
+`rebuild` that prevents it.
 
 ### 2. Record the invariants as they stand
 
