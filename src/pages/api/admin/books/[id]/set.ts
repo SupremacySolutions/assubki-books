@@ -143,10 +143,23 @@ export const POST: APIRoute = async ({ params, request }) => {
       env.DB.prepare(
         `UPDATE book_set_stock SET have = ?1 WHERE set_id = ?2 AND ${roomForClaims}`,
       ).bind(sets, book.set_id),
+      /*
+       * The same condition, not a look at the result.
+       *
+       * This asked whether some volume already stood at the new number, which
+       * an uneven pool can satisfy before the transaction begins - a pool is
+       * routinely uneven after parts have sold. So a refused restock still
+       * rewrote every listing's stock: the pool kept volume 2 at two while the
+       * listings dropped to one, and a later part checkout failed against a
+       * copy that was physically free.
+       *
+       * `roomForClaims` names only the new count and the claims against each
+       * volume, never `have`, so it reads the same in both statements. Both
+       * fire or neither does, which is what "rejected" has to mean.
+       */
       env.DB.prepare(
         `UPDATE books SET stock = ?1, updated_at = unixepoch()
-          WHERE set_id = ?2
-            AND EXISTS (SELECT 1 FROM book_set_stock WHERE set_id = ?2 AND have = ?1)`,
+          WHERE set_id = ?2 AND ${roomForClaims}`,
       ).bind(sets, book.set_id),
     ]);
     /* Nothing moved: somebody reserved a copy while this was being decided. */

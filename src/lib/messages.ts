@@ -202,13 +202,28 @@ export async function markRead(
   throughId: number,
 ): Promise<void> {
   const column = side === 'customer' ? 'unread_for_customer' : 'unread_for_owner';
+  const cursor = side === 'customer' ? 'read_cursor_customer' : 'read_cursor_owner';
   // Unread for the owner means written by the customer, and the other way round.
   const from: Sender = side === 'customer' ? 'owner' : 'customer';
+  /*
+   * The cursor only ever moves forward.
+   *
+   * Recounting from whatever id the latest request carried was still order
+   * dependent: two polls, or two tabs, can finish out of order, and an older
+   * acknowledgement then put the badge back for a message already read.
+   * `MAX` makes a late arrival harmless - it can only ever confirm ground
+   * already covered.
+   *
+   * Every SET expression reads the row as it was before this statement, so
+   * both mentions of the cursor mean the same old value.
+   */
   await env.DB.prepare(
-    `UPDATE orders SET ${column} = (
-       SELECT COUNT(*) FROM messages
-        WHERE order_id = ?1 AND sender = ?3 AND id > ?2
-     ) WHERE id = ?1`,
+    `UPDATE orders
+        SET ${cursor} = MAX(${cursor}, ?2),
+            ${column} = (SELECT COUNT(*) FROM messages
+                          WHERE order_id = ?1 AND sender = ?3
+                            AND id > MAX(${cursor}, ?2))
+      WHERE id = ?1`,
   )
     .bind(orderId, throughId, from)
     .run();
