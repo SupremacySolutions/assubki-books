@@ -53,6 +53,17 @@ const partsEmpty = Boolean(book) && !book!.set_id && (book!.volumes ?? 0) <= 1;
  * line, and on every other visit the page is as it was - the jump nav points
  * into those sections, and an anchor into a closed panel is a dead link.
  */
+/** What each refusal from `set.ts` means, in the owner's words. */
+const SET_REFUSALS: Record<string, string> = {
+  heldsets:
+    'That is fewer sets than customers are already holding. Cancel or complete those orders first, or set a number at least as high as what is reserved.',
+  notaset: 'This listing is not sold in parts, so there is no shelf count to change.',
+  alreadyset: 'This listing is already sold in parts.',
+  parts:
+    'One of those rows is half filled in. Every part needs a name, a first and last volume inside the set, and a price - or leave the row completely empty.',
+  volumes: 'A set needs between 2 and 200 volumes.',
+};
+
 const justSaved = Astro.url.searchParams.get('saved') === '1';
 
 /* A section that cannot be used yet is shown dashed and says why, rather than
@@ -214,6 +225,21 @@ const captionStale = Boolean(
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
         This listing cannot be deleted while copies are reserved by an open order. Cancel or complete
         that order first.
+      </p>
+    )
+  }
+  {/*
+    * Refusals from the set actions.
+    *
+    * `set.ts` has always redirected with these codes and the page has never
+    * rendered any of them, so a refused restock or a mistyped part row changed
+    * nothing on screen and said nothing about why. Silence reads as a bug in
+    * the button.
+    */}
+  {
+    SET_REFUSALS[error ?? ''] && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        {SET_REFUSALS[error!]}
       </p>
     )
   }

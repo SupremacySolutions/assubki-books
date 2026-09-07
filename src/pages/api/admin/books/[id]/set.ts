@@ -78,11 +78,55 @@ export const POST: APIRoute = async ({ params, request }) => {
   if (action === 'restock') {
     if (!book.set_id) return fail('notaset');
     const sets = Math.max(0, Math.min(999, Math.round(Number(form.get('sets')) || 0)));
-    await env.DB.prepare('UPDATE book_set_stock SET have = ? WHERE set_id = ?')
-      .bind(sets, book.set_id)
-      .run();
+
+    /*
+     * A shelf count cannot go below what customers already hold.
+     *
+     * Every volume is checked, not the set as a whole: what is committed
+     * against volume 1 is every listing covering volume 1, and "volumes 1-2"
+     * and the complete set both do. Taking the pool under that number would
+     * create inventory below the claims already made against it - an oversold
+     * shelf that no later payment can reconcile.
+     *
+     * `CHECK (reserved <= stock)` on `books` would abort the batch below
+     * anyway, but an aborted batch is an unexplained failure; this is the same
+     * refusal with a sentence attached.
+     */
+    const committed = await env.DB.prepare(
+      `SELECT COALESCE(MAX(held), 0) AS floor FROM (
+         SELECT COALESCE((
+           SELECT SUM(o.reserved) FROM books o
+            WHERE o.set_id = v.set_id
+              AND v.volume BETWEEN o.set_from AND o.set_to
+         ), 0) AS held
+         FROM book_set_stock v WHERE v.set_id = ?1
+       )`,
+    )
+      .bind(book.set_id)
+      .first<{ floor: number }>();
+    if (sets < (committed?.floor ?? 0)) return fail('heldsets');
+
+    /*
+     * The pool and the listings' own `stock`, together.
+     *
+     * `stock` on a set member is not what decides availability - the per-volume
+     * pool is - but `books` carries CHECK (reserved <= stock), so a listing
+     * whose stock is stale can never be held at all. Creating a set writes the
+     * same number to both (see the create path below); restocking wrote only
+     * the pool, so a set that had sold out came back with availability saying
+     * two and every checkout refused by a constraint reading zero.
+     *
+     * One batch, because a pool that has moved and a listing that has not is
+     * exactly the disagreement being fixed.
+     */
+    await env.DB.batch([
+      env.DB.prepare('UPDATE book_set_stock SET have = ?1 WHERE set_id = ?2').bind(sets, book.set_id),
+      env.DB.prepare(
+        'UPDATE books SET stock = ?1, updated_at = unixepoch() WHERE set_id = ?2',
+      ).bind(sets, book.set_id),
+    ]);
     forgetCategoryCounts();
-  forgetHomeRows();
+    forgetHomeRows();
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
@@ -132,26 +176,38 @@ export const POST: APIRoute = async ({ params, request }) => {
     // the count of complete sets on the shelf, which is what a volume count is.
     const sets = Math.max(0, Math.min(999, Math.round(Number(form.get('sets')) || 0)));
 
-    const created = await env.DB.prepare(
-      'INSERT INTO book_sets (name, volumes) VALUES (?, ?) RETURNING id',
-    )
-      .bind(book.title.slice(0, 200), volumes)
-      .first<{ id: number }>();
-    const setId = created!.id;
-
-    const statements = [];
+    /*
+     * Header, pool and attachments in one transaction.
+     *
+     * The header used to be inserted on its own and everything else batched
+     * after it, so a failure in the batch left a `book_sets` row describing a
+     * set that does not exist - no volumes, nothing attached to it.
+     *
+     * The id is taken once, straight after the insert and before any other
+     * INSERT can move `last_insert_rowid()`, by writing it onto the listing
+     * that becomes the complete set. Everything after that reads it back from
+     * there, so no statement depends on the sequence number a second time.
+     */
+    const statements = [
+      env.DB.prepare('INSERT INTO book_sets (name, volumes) VALUES (?, ?)').bind(
+        book.title.slice(0, 200),
+        volumes,
+      ),
+      // This listing is the complete set, and carries the new id for the rest.
+      env.DB.prepare(
+        `UPDATE books SET set_id = last_insert_rowid(), set_from = 1, set_to = ?1,
+                          volumes = ?1, stock = ?2, updated_at = unixepoch()
+          WHERE id = ?3`,
+      ).bind(volumes, sets, id),
+    ];
+    const setOf = '(SELECT set_id FROM books WHERE id = ?1)';
     for (let v = 1; v <= volumes; v++) {
       statements.push(
-        env.DB.prepare('INSERT INTO book_set_stock (set_id, volume, have) VALUES (?, ?, ?)')
-          .bind(setId, v, sets),
+        env.DB.prepare(
+          `INSERT INTO book_set_stock (set_id, volume, have) VALUES (${setOf}, ?2, ?3)`,
+        ).bind(id, v, sets),
       );
     }
-    // This listing is the complete set.
-    statements.push(
-      env.DB.prepare(
-        'UPDATE books SET set_id = ?, set_from = 1, set_to = ?, volumes = ?, updated_at = unixepoch() WHERE id = ?',
-      ).bind(setId, volumes, volumes, id),
-    );
     for (const part of adopted) {
       /*
        * Only the set columns are written. Title, price, cover, description and
@@ -160,9 +216,10 @@ export const POST: APIRoute = async ({ params, request }) => {
        */
       statements.push(
         env.DB.prepare(
-          `UPDATE books SET set_id = ?, set_from = ?, set_to = ?, volumes = ?, updated_at = unixepoch()
-            WHERE id = ? AND set_id IS NULL`,
-        ).bind(setId, part.from, part.to, part.to - part.from + 1, part.id),
+          `UPDATE books SET set_id = ${setOf}, set_from = ?2, set_to = ?3, volumes = ?4,
+                            stock = MAX(stock, ?5), updated_at = unixepoch()
+            WHERE id = ?6 AND set_id IS NULL`,
+        ).bind(id, part.from, part.to, part.to - part.from + 1, sets, part.id),
       );
     }
 
@@ -226,29 +283,36 @@ export const POST: APIRoute = async ({ params, request }) => {
   const parts = rows.filter((r): r is Exclude<typeof r, null | 'empty'> => r !== 'empty');
   if (parts.length === 0) return fail('parts');
 
-  const created = await env.DB.prepare(
-    'INSERT INTO book_sets (name, volumes) VALUES (?, ?) RETURNING id',
-  )
-    .bind(book.title.slice(0, 200), volumes)
-    .first<{ id: number }>();
-  const setId = created!.id;
-
-  const statements = [];
+  /*
+   * Header, pool and part listings in one transaction - see the note on the
+   * adopt path above. The header used to be inserted on its own, so a failure
+   * anywhere in the batch left a set with no volumes and nothing attached.
+   */
+  const statements = [
+    env.DB.prepare('INSERT INTO book_sets (name, volumes) VALUES (?, ?)').bind(
+      book.title.slice(0, 200),
+      volumes,
+    ),
+    /*
+     * This listing becomes the complete set - it already has the cover, the
+     * description and any channel post, and re-creating all that would be
+     * worse than reusing it. It also carries the new id for everything after,
+     * taken before any other INSERT can move `last_insert_rowid()`.
+     */
+    env.DB.prepare(
+      `UPDATE books SET set_id = last_insert_rowid(), set_from = 1, set_to = ?1,
+                        volumes = ?1, stock = ?2, updated_at = unixepoch()
+        WHERE id = ?3`,
+    ).bind(volumes, sets, id),
+  ];
+  const setOf = '(SELECT set_id FROM books WHERE id = ?1)';
   for (let v = 1; v <= volumes; v++) {
     statements.push(
-      env.DB.prepare('INSERT INTO book_set_stock (set_id, volume, have) VALUES (?, ?, ?)')
-        .bind(setId, v, sets),
+      env.DB.prepare(
+        `INSERT INTO book_set_stock (set_id, volume, have) VALUES (${setOf}, ?2, ?3)`,
+      ).bind(id, v, sets),
     );
   }
-
-  // This listing becomes the complete set - it already has the cover, the
-  // description and any channel post, and re-creating all that would be worse
-  // than reusing it.
-  statements.push(
-    env.DB.prepare(
-      'UPDATE books SET set_id = ?, set_from = 1, set_to = ?, volumes = ?, stock = ? WHERE id = ?',
-    ).bind(setId, volumes, volumes, sets, id),
-  );
 
   for (const p of parts) {
     /*
@@ -261,14 +325,14 @@ export const POST: APIRoute = async ({ params, request }) => {
       env.DB.prepare(
         `INSERT INTO books (slug, title, price_pence, stock, reserved, status,
                             set_id, set_from, set_to, volumes)
-         VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+         VALUES (?2, ?3, ?4, ?5, 0, ?6, ${setOf}, ?7, ?8, ?9)`,
       ).bind(
+        id,
         `${slugify(book.slug)}-${p.from}-${p.to}`.slice(0, 120),
         p.name,
         p.pence,
         sets,
         book.status,
-        setId,
         p.from,
         p.to,
         p.to - p.from + 1,
