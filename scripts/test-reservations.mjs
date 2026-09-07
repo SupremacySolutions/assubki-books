@@ -120,6 +120,7 @@ export {importLines} from './src/lib/shipments';
 export {createGroup,getGroup,setGroupLine} from './src/lib/group';
 export {expireOrders} from './src/lib/stock-release';
 export {drainArrivalNotices,pendingNotices} from './src/lib/shipment-notify';
+export {drainStockAlerts,leaseAlert,alertFailed,alertSent} from './src/lib/stock-alerts';
 export {forgetOrderDiscount} from './src/lib/sales';
 export {planBasketLine,basketDeliveryNote} from './src/lib/basket-plan';
 export {POST as confirm} from './src/pages/api/admin/orders/[ref]/confirm';
@@ -203,6 +204,54 @@ async function test(name, fn) {
   passed++;
 }
 try {
+  await test('stock alerts recover a restock that never reached the notification hook', async () => {
+    const id = book(null, 0, 0);
+    sql(`INSERT INTO stock_alerts(book_id,email) VALUES (${id},'waiting@example.invalid')`);
+    assert.equal((await app.drainStockAlerts(db, 'https://example.invalid')).sent, 0);
+    sql(`UPDATE books SET stock=2 WHERE id=${id}`);
+    assert.equal((await app.drainStockAlerts(db, 'https://example.invalid')).sent, 1);
+    assert.equal(row('SELECT COUNT(*) AS n FROM stock_alerts').n, 0);
+  });
+  await test('a provider refusal retains the stock alert and respects backoff before retry', async () => {
+    const id = book(null, 0, 1);
+    sql(`INSERT INTO stock_alerts(book_id,email) VALUES (${id},'waiting@example.invalid')`);
+    const oldFetch = globalThis.fetch;
+    Object.assign(globalThis.reservationTestEnv, {
+      EMAIL_DRY_RUN:'0', RESEND_API_KEY:'test-only', ORDER_FROM:'shop@example.invalid',
+    });
+    globalThis.fetch = async () => new Response('provider refused', {status:429});
+    try {
+      assert.deepEqual(await app.drainStockAlerts(db, 'https://example.invalid'), {sent:0,failed:1});
+      const held = row('SELECT *, next_attempt_at > unixepoch() AS backed_off FROM stock_alerts');
+      assert.equal(held.email, 'waiting@example.invalid');
+      assert.equal(held.attempts, 1);
+      assert.equal(held.backed_off, 1);
+      assert.ok(held.last_error);
+      assert.equal(held.lease_token, null);
+      assert.deepEqual(await app.drainStockAlerts(db, 'https://example.invalid'), {sent:0,failed:0});
+      sql('UPDATE stock_alerts SET next_attempt_at=0');
+      globalThis.fetch = oldFetch;
+      assert.equal((await app.drainStockAlerts(db, 'https://example.invalid')).sent, 1);
+      assert.equal(row('SELECT COUNT(*) AS n FROM stock_alerts').n, 0);
+    } finally {
+      globalThis.fetch = oldFetch;
+      globalThis.reservationTestEnv.EMAIL_DRY_RUN='1';
+      delete globalThis.reservationTestEnv.RESEND_API_KEY;
+      delete globalThis.reservationTestEnv.ORDER_FROM;
+    }
+  });
+  await test('stock alert leases exclude another sender and reject stale acknowledgements', async () => {
+    const id = book(null, 0, 1);
+    const alert = row(`INSERT INTO stock_alerts(book_id,email,claimed_at) VALUES (${id},'waiting@example.invalid',unixepoch()) RETURNING id`).id;
+    const token = await app.leaseAlert(db, alert);
+    assert.ok(token);
+    assert.equal(await app.leaseAlert(db, alert), null);
+    await app.alertSent(db, alert, 'obsolete-token');
+    await app.alertFailed(db, alert, 'obsolete-token', 'late failure');
+    assert.equal(row(`SELECT lease_token FROM stock_alerts WHERE id=${alert}`).lease_token, token);
+    await app.alertSent(db, alert, token);
+    assert.equal(row('SELECT COUNT(*) AS n FROM stock_alerts').n, 0);
+  });
   await test('shelf + two shipments commit separately with the basket discount preserved', async () => {
     const s1 = shipment(),
       s2 = shipment(),

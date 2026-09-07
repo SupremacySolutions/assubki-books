@@ -314,9 +314,10 @@ export default {
     const result = await expireHolds(env.DB);
     const unpaid = await expireUnpaidReservations(env.DB);
     const told = await drainArrivalNotices(env.DB, SITE.url);
+    const alerts = await drainStockAlerts(env.DB, SITE.url);
     const groups = await expireGroupBaskets(env.DB);
     const proofs = await sweepProofs(env.DB, env.UPLOADS);
     const searches = await pruneSearches(env.DB);
-    return Response.json({ ...result, unpaid, told, groups, proofs, searches });
+    return Response.json({ ...result, unpaid, told, alerts, groups, proofs, searches });
   },
 } satisfies ExportedHandler<Env>;

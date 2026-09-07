@@ -171,7 +171,9 @@ export function mountCoverReview(): void {
       if (!out) return;
       cropped = out;
       // A new crop is a new picture; whatever was erased belonged to the old one.
+      erased = null;
       erasedImage = null;
+      eraseRun++;
       showResult();
     };
 
@@ -418,7 +420,7 @@ export function mountCoverReview(): void {
         eraseNote.hidden = true;
       } catch (err) {
         console.error('background removal failed', err);
-        if (run !== eraseRun) return;
+        if (!current()) return;
         showing('Could not do that here - the cropped photo is unchanged.');
         erase.checked = false;
         if (qualityRow) qualityRow.hidden = true;

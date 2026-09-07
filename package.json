@@ -20,8 +20,9 @@
     "test:e2e:prod": "node scripts/run-check.mjs node --experimental-strip-types --no-warnings scripts/e2e.mjs --prod",
     "typecheck": "node scripts/run-check.mjs astro check --minimumSeverity error",
     "deploy:sweep": "wrangler deploy -c workers/expire-holds/wrangler.jsonc",
+    "test:backup": "node scripts/run-check.mjs node scripts/test-backup.mjs",
     "test:reservations": "node scripts/run-check.mjs node scripts/test-reservations.mjs",
-    "test:covers": "node scripts/run-check.mjs node --experimental-strip-types --no-warnings scripts/test-cover-clean.mjs"
+    "test:covers": "node scripts/run-check.mjs node --experimental-strip-types --no-warnings scripts/test-cover-clean.mjs && node scripts/run-check.mjs node scripts/test-cover-review.mjs && node scripts/run-check.mjs node scripts/test-model-route.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.2.5",

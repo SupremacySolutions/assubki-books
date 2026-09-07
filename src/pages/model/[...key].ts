@@ -57,11 +57,8 @@ export const GET: APIRoute = async ({ params, request }) => {
   const wanted = request.headers.get('Range');
   const object = await bucket.get(key, wanted ? { range: request.headers } : undefined);
   if (!object) {
-    // A range that falls outside the object is a 416, not a 404 - the file is
-    // there, the ask was not satisfiable, and the two are not the same answer.
-    return wanted
-      ? new Response('Range not satisfiable', { status: 416 })
-      : new Response('Not found', { status: 404 });
+    // R2 returns null for a missing key, including when Range was supplied.
+    return new Response('Not found', { status: 404 });
   }
 
   const headers = new Headers();
