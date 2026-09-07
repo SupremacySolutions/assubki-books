@@ -59,8 +59,7 @@ export function detectQuad(image: {
   }
 
   const cut = threshold(dist);
-  const raw = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) raw[i] = dist[i] > cut ? 1 : 0;
+  const raw = hysteresis(dist, cut, w, h);
 
   /*
    * Corners come from the cover's four *sides*, not from its four furthest
@@ -102,7 +101,19 @@ export function detectQuad(image: {
    * a broader one when the cheaper reading did not produce one.
    */
   const base = Math.max(1, Math.round(Math.min(w, h) / 160));
-  for (const radius of [base, base * 2, base * 4]) {
+  /*
+   * The last two are for a hand.
+   *
+   * Somebody holding a book up to photograph it is the commonest shot there
+   * is, and a thumb over a corner reaches the mask as a lobe fused to the
+   * cover - too broad for the narrow openings to sever, so every reading came
+   * back mis-shapen, `isSane` refused them all, and the owner was handed the
+   * whole frame and four corners to place by hand. A thumb is on the order of
+   * a tenth of the frame across, which is what these reach. They are only ever
+   * tried after the cheap ones have failed, so the common photo pays nothing
+   * for them.
+   */
+  for (const radius of [base, base * 2, base * 4, base * 8, base * 16]) {
     const quad = attempt(radius);
     // A fitted line can cross outside the picture when the cover runs off the
     // edge of it. There is nothing out there to sample, so bring it back in.
@@ -179,6 +190,103 @@ function threshold(dist: Float32Array): number {
     }
   }
   return (best / (bins - 1)) * max;
+}
+
+/**
+ * The lower of the two bars: clear of the surface's own grain, and nothing more.
+ *
+ * Neither obvious statistic works, and both were tried.
+ *
+ * A fraction of the cut is wrong because the cut is not where it sounds like
+ * it is. Otsu returns the split with the best between-class variance, and when
+ * the picture is two clean groups - a pale book on a dark table - that split
+ * lands at the *top of the background cluster*, not between the two: measured
+ * on these fixtures it comes out at 9, and on a noiseless one at 0. Any
+ * fraction of that is inside the table's own grain, so every pixel is at least
+ * weakly subject and the flood takes the whole frame.
+ *
+ * A high percentile of the border ring is wrong because the ring is not all
+ * background: a cover shot to fill the frame intrudes on it, about a sixth of
+ * it on these fixtures, which is enough to put the 99th percentile up on the
+ * cover itself - 414 where the background measures 18.
+ *
+ * The median and its deviation survive both. A sixth of the ring being cover
+ * moves neither, because that is what a median is for, and together they say
+ * where the background's own spread ends. Three deviations past the middle of
+ * it, plus a few units so a perfectly flat background is not held to zero.
+ */
+function weakBar(dist: Float32Array, w: number, h: number): number {
+  const band = Math.max(2, Math.round(Math.min(w, h) * 0.04));
+  const ring: number[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (x >= band && x < w - band && y >= band && y < h - band) continue;
+      ring.push(dist[y * w + x]);
+    }
+  }
+  if (ring.length === 0) return 0;
+
+  const middle = median(ring);
+  const deviation = median(ring.map((v) => Math.abs(v - middle)));
+  return middle + 3 * deviation + 4;
+}
+
+/**
+ * Subject pixels, by hysteresis rather than by one cut.
+ *
+ * This is the fix for the worst thing the detector did. Otsu returns a single
+ * number for the whole picture, and a cover is not one colour: the shop's own
+ * Fiqh in 40 Days is cream and lilac down its top half and near-black navy
+ * down its bottom. Photographed on anything dark, that navy half sits closer
+ * to the surface than to the rest of the cover, falls on the background side
+ * of the cut, and is discarded - and what is left is a clean, plausible,
+ * book-shaped rectangle covering the top half, so `isSane` passed it and the
+ * owner was confidently handed half his cover. On white paper the same thing
+ * happens the other way up and he gets the bottom half.
+ *
+ * Hysteresis asks two questions instead of one. A pixel well clear of the
+ * background is subject outright. A pixel only somewhat clear of it is subject
+ * *if it is joined to one that is* - so the navy half comes back, because it
+ * is attached to the lilac half, while the table's grain does not, because it
+ * is attached to nothing. Being joined is the whole of it: simply lowering the
+ * cut would take the navy and the grain alike.
+ */
+function hysteresis(dist: Float32Array, cut: number, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(w * h);
+  if (!Number.isFinite(cut)) return out;
+
+  /*
+   * Where the background's own spread reaches past the cut there is nothing
+   * ambiguous to reclaim, the flood finds no pixel to take, and this is
+   * exactly the single threshold it used to be. That is the common case and it
+   * is meant to be.
+   */
+  const weak = weakBar(dist, w, h);
+  const stack = new Int32Array(w * h);
+  let top = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (dist[i] > cut) {
+      out[i] = 1;
+      stack[top++] = i;
+    }
+  }
+
+  while (top > 0) {
+    const i = stack[--top];
+    const x = i % w;
+    const y = (i / w) | 0;
+    const reach = (j: number) => {
+      if (!out[j] && dist[j] > weak) {
+        out[j] = 1;
+        stack[top++] = j;
+      }
+    };
+    if (x > 0) reach(i - 1);
+    if (x < w - 1) reach(i + 1);
+    if (y > 0) reach(i - w);
+    if (y < h - 1) reach(i + w);
+  }
+  return out;
 }
 
 /**

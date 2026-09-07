@@ -187,10 +187,24 @@ function withSecurityHeaders(response: Response, secure: boolean, nonce: string)
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      // Our own `is:inline` blocks carry the nonce. Astro's bundles are
-      // separate files (see assetsInlineLimit in astro.config), so 'self'
-      // covers them - which is why nothing here needs 'unsafe-inline'.
-      `script-src 'self' 'nonce-${nonce}'`,
+      /*
+       * Our own `is:inline` blocks carry the nonce. Astro's bundles are
+       * separate files (see assetsInlineLimit in astro.config), so 'self'
+       * covers them - which is why nothing here needs 'unsafe-inline'.
+       *
+       * `wasm-unsafe-eval` is what lets the portal's background remover run at
+       * all. Chromium refuses to compile any WebAssembly module once a CSP is
+       * present unless script-src grants this, so onnxruntime-web threw on
+       * every attempt and the dialog reported "could not do that here" -
+       * while Safari and Firefox, which do not gate wasm on script-src, ran it
+       * fine. That is the whole of "it works sometimes".
+       *
+       * It is far narrower than it sounds: it permits compiling wasm and
+       * nothing else. `eval` and `new Function` stay refused, which is the
+       * property that matters - a script injected into this site still cannot
+       * turn a string into code.
+       */
+      `script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval'`,
       "style-src 'self' 'unsafe-inline'",
       // The 62x30 official attribution image is shown beside Google Books
       // cover results. Candidate covers themselves remain on our id-only proxy.

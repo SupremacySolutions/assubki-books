@@ -99,8 +99,27 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   book in the shot, warps its corners square and crops the rest, then shows it
   in a dialog with four draggable handles and uploads nothing until the owner
   agrees (src/scripts/cover-clean.ts, src/components/CoverReview.astro).
-  `/clean-check` mounts that dialog on its own in dev, which is the only way to
-  drive it - the HTTP suite cannot click and the portal needs a password.
+  `/clean-check` mounts that dialog on its own in dev; `npm run test:covers`
+  drives the detector itself against painted fixtures, which is where a
+  regression in it will actually be caught - the HTTP suite cannot click and
+  the portal needs a password.
+- **The detector reads the background twice, and that is load-bearing.** One
+  Otsu cut splits a *two-tone* cover rather than splitting the cover from the
+  table - the shop's own Fiqh in 40 Days is cream above and near-black navy
+  below, and on a dark surface the navy half fell on the background side and
+  was thrown away. What was left was still a book-shaped rectangle, so nothing
+  refused it and the owner was handed half his cover. `hysteresis` in
+  cover-clean.ts keeps a pixel that is only weakly clear of the background when
+  it is *joined* to one that is clearly clear of it, and `weakBar` sets that
+  lower bar from the border ring's median and deviation. Do not set it from a
+  fraction of the cut (the cut sits on top of the background cluster, often at
+  0) or from a high percentile of the ring (a frame-filling cover is part of
+  the ring). Both were tried; `npm run test:covers` holds them out.
+- **What the review pane shows is what gets stored.** The pane runs the same
+  `frameToBox` the upload does, so the 5:7 framing - which for a cover narrower
+  than the box either continues its outer columns sideways or takes about eight
+  percent off its height - is visible before the owner agrees to it. It used to
+  show the bare warp and frame afterwards, silently.
 - **Background removal is optional and refuses rather than guesses.** U²-Net
   (Apache-2.0; *not* BRIA RMBG, which is non-commercial, and *not* the
   `u2net_portrait` checkpoint, whose training set is not) runs in the browser
@@ -110,8 +129,12 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   book turns noise into a confident mask and paints the cover white;
   `checkMask` refuses instead, and `refineMask` tightens the soft edge that
   otherwise leaves a fringe of background round the cover. The weights live in
-  R2 under `models/` and are served by src/pages/model/[...key].ts; the runtime
-  is bundled with the site.
+  R2 under `models/` and are served by src/pages/model/[...key].ts (which
+  honours `Range`, so a 168MB download on a phone can resume); the runtime is
+  bundled with the site. It needs `'wasm-unsafe-eval'` in the CSP's
+  `script-src`: Chromium refuses to compile any wasm module without it, so
+  removing it does not weaken this feature, it deletes it - and only in
+  Chromium, which is what made it look intermittent.
 - **The shelf crops, and that is load-bearing.** The scans carry a white margin
   of their own - six pixels each side of a 168px hero on most of them - and
   `object-fit: cover` is what removes it. Anything that stops it cropping puts

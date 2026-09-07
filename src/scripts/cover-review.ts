@@ -134,6 +134,9 @@ export function mountCoverReview(): void {
      */
     let cropped: ImageData | null = null;
 
+    /** The same crop with the mask applied, when there is one. */
+    let erasedImage: ImageData | null = null;
+
     /**
      * The quad, warped out of whichever copy of the photo is asked for.
      *
@@ -167,9 +170,37 @@ export function mountCoverReview(): void {
       const out = fine && source ? warpFrom(source, MAX_EDGE) : warpFrom(full, STAGE_EDGE);
       if (!out) return;
       cropped = out;
-      resultCanvas.width = out.width;
-      resultCanvas.height = out.height;
-      resultCanvas.getContext('2d')!.putImageData(out, 0, 0);
+      // A new crop is a new picture; whatever was erased belonged to the old one.
+      erasedImage = null;
+      showResult();
+    };
+
+    /**
+     * Put the current state of the cover into the pane, framed as it will be
+     * stored.
+     *
+     * The framing is the part that was missing, and it made the pane a liar.
+     * It showed the warp; `dress` then put that warp through `frameToBox` on
+     * its way to R2, which for a cover narrower than 5:7 either continues its
+     * outer columns sideways or - far more often, because artwork rarely
+     * reaches the edge in a flat colour - takes about eight percent off the
+     * height. So the owner approved one picture and the listing got another,
+     * with a slice off the top and bottom he was never shown. Running the same
+     * plan here means the pane is labelled "On the listing" and is.
+     */
+    const showResult = () => {
+      const shown = erasedImage ?? cropped;
+      if (!shown) return;
+      const flat = document.createElement('canvas');
+      flat.width = shown.width;
+      flat.height = shown.height;
+      flat.getContext('2d')!.putImageData(shown, 0, 0);
+      // Falls back to the unframed crop rather than showing nothing: a pane
+      // that cannot frame is still a useful look at the cover.
+      const framed = frameToBox(flat, shown.width, shown.height) ?? flat;
+      resultCanvas.width = framed.width;
+      resultCanvas.height = framed.height;
+      resultCanvas.getContext('2d')!.drawImage(framed, 0, 0);
     };
 
     /*
@@ -227,41 +258,49 @@ export function mountCoverReview(): void {
       });
     }
 
-    // One session per model, so switching back and forth does not re-download.
-    const sessions: Record<string, unknown> = {};
-    let session: unknown = null;
-    let loading: Promise<unknown> | null = null;
-    let loadedQuality: string | null = null;
+    /**
+     * One in-flight load per model, and the session comes back through the
+     * promise.
+     *
+     * There used to be a single `session` variable that every load wrote to
+     * and every run read afterwards. Two loads in flight - which is one tick
+     * of the Quick/Better radio - meant the second one landed in that variable
+     * while the first was still awaiting, and whichever run resumed next used
+     * whichever model had written last. Keyed promises have no such variable
+     * to fight over.
+     */
+    const sessions: Record<string, Promise<InferenceLike>> = {};
+    /** Which models have finished downloading, so the wait is only announced once. */
+    const ready = new Set<string>();
 
-    const loadModel = (quality: string) => {
-      if (sessions[quality]) {
-        session = sessions[quality];
-        loadedQuality = quality;
-        return Promise.resolve(session);
-      }
-      if (!loading || loadedQuality !== quality) {
-        loadedQuality = quality;
-        loading = (async () => {
-          // The wasm-only entry point, not the default one: the default
-          // bundles WebGPU and asks for a separate JSEP build of the runtime,
-          // which is more to host for a backend this does not need.
-          const ort = await import('onnxruntime-web/wasm');
-          // No `wasmPaths`: the bundler already emits the runtime as a hashed
-          // asset on this origin and the runtime resolves it from its own
-          // module URL. Pointing it elsewhere only meant hosting a second copy
-          // of a file that was being shipped anyway.
-          // Threads need cross-origin isolation headers the site does not send;
-          // without this it would try, fail, and fall back noisily.
-          ort.env.wasm.numThreads = 1;
-          session = await ort.InferenceSession.create(MODELS[quality]);
-          sessions[quality] = session;
-          return session;
-        })().catch((err) => {
-          loading = null; // let them try again rather than being stuck
-          throw err;
-        });
-      }
-      return loading;
+    interface InferenceLike {
+      inputNames: string[];
+      outputNames: string[];
+      run: (feeds: Record<string, unknown>) => Promise<Record<string, { data: Float32Array }>>;
+    }
+
+    const loadModel = (quality: string): Promise<InferenceLike> => {
+      const held = sessions[quality];
+      if (held) return held;
+      const started = (async () => {
+        // The wasm-only entry point, not the default one: the default
+        // bundles WebGPU and asks for a separate JSEP build of the runtime,
+        // which is more to host for a backend this does not need.
+        const ort = await import('onnxruntime-web/wasm');
+        // No `wasmPaths`: the bundler already emits the runtime as a hashed
+        // asset on this origin and the runtime resolves it from its own
+        // module URL. Pointing it elsewhere only meant hosting a second copy
+        // of a file that was being shipped anyway.
+        // Threads need cross-origin isolation headers the site does not send;
+        // without this it would try, fail, and fall back noisily.
+        ort.env.wasm.numThreads = 1;
+        return (await ort.InferenceSession.create(MODELS[quality])) as unknown as InferenceLike;
+      })().catch((err) => {
+        delete sessions[quality]; // let them try again rather than being stuck
+        throw err;
+      });
+      sessions[quality] = started;
+      return started;
     };
 
     /**
@@ -270,9 +309,30 @@ export function mountCoverReview(): void {
      * Every failure here keeps the crop and says so. A model that will not
      * load, a browser that cannot run it, or a mask with no range in it are
      * all reasons to leave the photo alone, never to paint over it.
+     *
+     * Every run is numbered, and a run that is no longer the newest one stops
+     * at the next check rather than painting. It has to be: this is fired by
+     * the checkbox, by the model radios and by every pointerup, each awaits a
+     * module import, a download and a wasm inference, and on a phone that is
+     * seconds. Without the number, four nudges of a corner queued four runs
+     * that finished in whatever order they finished in, and the last to land -
+     * not the last to be asked for - decided both what was on screen and, via
+     * `erased`, what was uploaded. Worse, `cropped` was read again *after* the
+     * awaits while `fit` had been measured before them, so a mask cut for one
+     * crop was stretched onto another: the book half whited out and the
+     * background kept, which is exactly what a glitch looks like.
      */
+    let eraseRun = 0;
+
     const applyErase = async () => {
       if (!cropped || !erase || !eraseNote) return;
+
+      const run = ++eraseRun;
+      // Snapshotted, not re-read. Everything below belongs to this one crop.
+      const subject = cropped;
+      const fit = maskFit(subject.width, subject.height);
+      /** Whether this run still speaks for the dialog. */
+      const current = () => run === eraseRun && erase.checked && cropped === subject;
 
       const showing = (text: string) => {
         eraseNote.hidden = false;
@@ -282,17 +342,18 @@ export function mountCoverReview(): void {
       const quality = chosenQuality();
       try {
         showing(
-          sessions[quality]
+          ready.has(quality)
             ? 'Working…'
             : quality === 'better'
               ? 'Fetching the better model, 168MB - this happens once…'
               : 'Fetching the model, a few megabytes - this happens once…',
         );
         const ort = await import('onnxruntime-web/wasm');
-        await loadModel(quality);
+        const model = await loadModel(quality);
+        ready.add(quality);
+        if (!current()) return;
 
         // The crop, letterboxed into the square the model expects.
-        const fit = maskFit(cropped.width, cropped.height);
         const square = document.createElement('canvas');
         square.width = MASK_EDGE;
         square.height = MASK_EDGE;
@@ -300,9 +361,9 @@ export function mountCoverReview(): void {
         sctx.fillStyle = '#000';
         sctx.fillRect(0, 0, MASK_EDGE, MASK_EDGE);
         const cropCanvas = document.createElement('canvas');
-        cropCanvas.width = cropped.width;
-        cropCanvas.height = cropped.height;
-        cropCanvas.getContext('2d')!.putImageData(cropped, 0, 0);
+        cropCanvas.width = subject.width;
+        cropCanvas.height = subject.height;
+        cropCanvas.getContext('2d')!.putImageData(subject, 0, 0);
         sctx.drawImage(cropCanvas, 0, 0, fit.width, fit.height);
 
         const input = new ort.Tensor(
@@ -310,54 +371,96 @@ export function mountCoverReview(): void {
           toTensor(sctx.getImageData(0, 0, MASK_EDGE, MASK_EDGE)),
           [1, 3, MASK_EDGE, MASK_EDGE],
         );
-        const run = session as {
-          inputNames: string[];
-          outputNames: string[];
-          run: (feeds: Record<string, unknown>) => Promise<Record<string, { data: Float32Array }>>;
-        };
-        const result = await run.run({ [run.inputNames[0]]: input });
-        const raw = result[run.outputNames[0]]?.data;
+        const result = await model.run({ [model.inputNames[0]]: input });
+        if (!current()) return;
+        const raw = result[model.outputNames[0]]?.data;
 
         const mask = raw ? checkMask(Float32Array.from(raw), fit) : null;
         if (!mask) {
-          showing('Nothing here it could separate from the book - the photo is unchanged.');
+          /*
+           * Said plainly, because the honest answer reads like a fault.
+           *
+           * Once the crop is tight the picture is all book, the model has
+           * nothing to separate it from, and it says so - a maximum around
+           * 0.017 rather than a mask. That is the model being right. But the
+           * box then unticks itself, and "nothing it could separate" sounds
+           * like the feature failing rather than the feature having nothing to
+           * do, so it is worth spending a sentence on which of the two it is.
+           */
+          showing(
+            'There is nothing behind the book to erase - the crop already ends at its edges. ' +
+              'This is for a thumb or a shadow still inside the crop.',
+          );
           erase.checked = false;
+          if (qualityRow) qualityRow.hidden = true;
           erased = null;
+          erasedImage = null;
+          showResult();
           return;
         }
 
         const out = new ImageData(
-          new Uint8ClampedArray(cropped.data),
-          cropped.width,
-          cropped.height,
+          new Uint8ClampedArray(subject.data),
+          subject.width,
+          subject.height,
         );
         // Tightened before it is applied, or the soft boundary leaves a fringe
         // of whatever was behind the book smeared along every edge.
         const tightened = refineMask(mask);
         eraseBackground(out, tightened, fit);
+        if (!current()) return;
         // Held on to rather than recomputed: the export warps the same corners
         // out of a larger copy, and the mask is addressed by relative position,
         // so the one already approved on screen is the right one to apply.
         erased = tightened;
-        resultCanvas.getContext('2d')!.putImageData(out, 0, 0);
+        erasedImage = out;
+        showResult();
         eraseNote.hidden = true;
       } catch (err) {
         console.error('background removal failed', err);
+        if (run !== eraseRun) return;
         showing('Could not do that here - the cropped photo is unchanged.');
         erase.checked = false;
+        if (qualityRow) qualityRow.hidden = true;
         erased = null;
-        if (cropped) resultCanvas.getContext('2d')!.putImageData(cropped, 0, 0);
+        erasedImage = null;
+        showResult();
       }
+    };
+
+    /**
+     * The same, but collapsed when it is asked for repeatedly.
+     *
+     * A nudge of a corner is one pointerup, and somebody lining a cover up
+     * makes a dozen of them in a few seconds. Each one was a fresh 320x320
+     * inference on single-threaded wasm; they cannot overlap usefully and on a
+     * phone they cannot even keep up. Waiting a moment for the hand to settle
+     * turns twelve runs into one.
+     */
+    let erasePending: ReturnType<typeof setTimeout> | null = null;
+    const queueErase = () => {
+      if (erasePending) clearTimeout(erasePending);
+      erasePending = setTimeout(() => {
+        erasePending = null;
+        void applyErase();
+      }, 250);
     };
 
     erase?.addEventListener('change', () => {
       if (qualityRow) qualityRow.hidden = !erase.checked;
       if (erase.checked) {
         void applyErase();
-      } else if (cropped) {
+      } else {
+        // Anything in flight belongs to a box that is no longer ticked.
+        eraseRun++;
+        if (erasePending) {
+          clearTimeout(erasePending);
+          erasePending = null;
+        }
         if (eraseNote) eraseNote.hidden = true;
         erased = null;
-        resultCanvas.getContext('2d')!.putImageData(cropped, 0, 0);
+        erasedImage = null;
+        showResult();
       }
     });
 
@@ -381,15 +484,52 @@ export function mountCoverReview(): void {
       e.preventDefault();
     });
 
+    /**
+     * Whether four corners still describe a book rather than a bow tie.
+     *
+     * Nothing stopped a corner being dragged past its neighbour, and a crossed
+     * quad is still four points the warp will happily sample: the preview
+     * folded over on itself at whatever proportions the crossing happened to
+     * produce. Every turn going the same way is the whole test - convex, and
+     * still in the order the warp reads.
+     */
+    const holdsShape = (quad: Point[]): boolean => {
+      let sign = 0;
+      for (let i = 0; i < 4; i++) {
+        const a = quad[i];
+        const b = quad[(i + 1) % 4];
+        const c = quad[(i + 2) % 4];
+        const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+        if (Math.abs(cross) < 1e-6) return false; // three in a line
+        const way = cross > 0 ? 1 : -1;
+        if (sign === 0) sign = way;
+        else if (way !== sign) return false;
+      }
+      return true;
+    };
+
     stage.addEventListener('pointermove', (e) => {
       if (dragging === null || !full) return;
       const p = at(e);
       // Clamped to the photo: a corner outside it warps in white, which
       // looks like a fault rather than a choice.
-      corners[dragging] = {
+      const moved = {
         x: Math.min(full.width, Math.max(0, p.x)),
         y: Math.min(full.height, Math.max(0, p.y)),
       };
+      const next = corners.map((c, i) => (i === dragging ? moved : c));
+      /*
+       * A move that would fold the quad is simply not made. The corner stops
+       * against its neighbour instead, which is what a handle should do.
+       *
+       * Only ever a refusal to make it worse. If the quad is already folded -
+       * the detector's four fitted lines can in principle meet that way, and
+       * `isSane` measures its angles without minding which way they turn -
+       * then refusing every move would leave the owner with four handles that
+       * do not move and no way to put it right.
+       */
+      if (holdsShape(corners) && !holdsShape(next)) return;
+      corners = next;
       paintOverlay();
       // Back to the plain crop while they drag: the erased version belongs to
       // the corners it was made from, not to wherever they have got to. Quick,
@@ -408,8 +548,9 @@ export function mountCoverReview(): void {
         paintResult(true);
         // Re-erase once they let go. Without this the box stays ticked while
         // the preview quietly shows the un-erased crop, which is the preview
-        // telling them something that is not true.
-        if (erase?.checked) void applyErase();
+        // telling them something that is not true. Queued rather than run, so
+        // a series of small adjustments costs one inference and not one each.
+        if (erase?.checked) queueErase();
       });
     }
 
@@ -431,6 +572,15 @@ export function mountCoverReview(): void {
       source = null;
       chosen = null;
       erased = null;
+      erasedImage = null;
+      cropped = null;
+      // Retires anything still running, so a model that returns after the
+      // dialog has gone cannot paint into the next photo's pane.
+      eraseRun++;
+      if (erasePending) {
+        clearTimeout(erasePending);
+        erasePending = null;
+      }
       if (panel.open) panel.close();
       done?.(file);
     };
@@ -623,13 +773,27 @@ export function mountCoverReview(): void {
       pane.height = Math.max(1, Math.round(source.height * paneScale));
       pane.getContext('2d')!.drawImage(source, 0, 0, pane.width, pane.height);
 
-      // Detection runs smaller again - it only needs to find a book, and
-      // a quarter of a million pixels is enough for that.
-      const detectScale = Math.min(1, DETECT_EDGE / Math.max(full.width, full.height));
+      /*
+       * Detection runs smaller again - it only needs to find a book, and a
+       * quarter of a million pixels is enough for that - but it is reduced
+       * from the large copy rather than from the working one.
+       *
+       * Going through `full` meant two reductions, the second of them from an
+       * already-small picture, and what that costs is exactly the edge
+       * definition the whole detector is reading. One step from 1600 to 240,
+       * with the browser's own filter, is both cheaper and truer. The corners
+       * are still expressed in `full`'s pixels below, by ratio, so nothing
+       * downstream knows the difference.
+       */
+      const detectFrom = source;
+      const detectScale = Math.min(
+        1,
+        DETECT_EDGE / Math.max(detectFrom.width, detectFrom.height),
+      );
       const small = document.createElement('canvas');
-      small.width = Math.max(1, Math.round(full.width * detectScale));
-      small.height = Math.max(1, Math.round(full.height * detectScale));
-      small.getContext('2d')!.drawImage(full, 0, 0, small.width, small.height);
+      small.width = Math.max(1, Math.round(detectFrom.width * detectScale));
+      small.height = Math.max(1, Math.round(detectFrom.height * detectScale));
+      small.getContext('2d')!.drawImage(detectFrom, 0, 0, small.width, small.height);
 
       const found = detectQuad(
         small.getContext('2d')!.getImageData(0, 0, small.width, small.height),
@@ -660,6 +824,9 @@ export function mountCoverReview(): void {
       // Each photo starts from the crop. Carrying the tick over would put an
       // 18MB download and a wait in front of somebody who only wanted to
       // straighten the next one.
+      eraseRun++;
+      erased = null;
+      erasedImage = null;
       if (erase) erase.checked = false;
       if (eraseNote) eraseNote.hidden = true;
       if (qualityRow) qualityRow.hidden = true;
@@ -718,7 +885,7 @@ export async function dress(
     return bare;
   }
 
-  const framed = frameToBox(bitmap);
+  const framed = frameToBox(bitmap, bitmap.width, bitmap.height);
   if (!framed) return bare;
   const master = await toWebp(framed, 0.92);
   if (!master) return bare;
@@ -756,19 +923,29 @@ export async function dress(
   return { master, width: framed.width, height: framed.height, variants };
 }
 
-/** The photo on a canvas of the shop's shape, widened or cropped per the rule. */
-function frameToBox(bitmap: ImageBitmap): HTMLCanvasElement | null {
+/**
+ * The photo on a canvas of the shop's shape, widened or cropped per the rule.
+ *
+ * Takes anything drawable rather than an ImageBitmap so the review pane can
+ * run it on the crop it is about to show. That pane and the upload have to
+ * agree, and the only way to be sure they do is for both to call this.
+ */
+function frameToBox(
+  picture: CanvasImageSource,
+  width: number,
+  height: number,
+): HTMLCanvasElement | null {
   const source = document.createElement('canvas');
-  source.width = bitmap.width;
-  source.height = bitmap.height;
+  source.width = width;
+  source.height = height;
   const from = source.getContext('2d', { willReadFrequently: true });
   if (!from) return null;
-  from.drawImage(bitmap, 0, 0);
+  from.drawImage(picture, 0, 0);
 
   // Measured on the outermost column of each side, which is what decides
   // whether widening would be seamless or would show its join.
   const columnAt = (x: number) => {
-    const strip = from.getImageData(x, 0, 1, bitmap.height).data;
+    const strip = from.getImageData(x, 0, 1, height).data;
     return (y: number): [number, number, number] => [
       strip[y * 4],
       strip[y * 4 + 1],
@@ -776,10 +953,10 @@ function frameToBox(bitmap: ImageBitmap): HTMLCanvasElement | null {
     ];
   };
   const plan = framePlan({
-    width: bitmap.width,
-    height: bitmap.height,
-    leftSpread: edgeSpread(columnAt(0), bitmap.height),
-    rightSpread: edgeSpread(columnAt(bitmap.width - 1), bitmap.height),
+    width,
+    height,
+    leftSpread: edgeSpread(columnAt(0), height),
+    rightSpread: edgeSpread(columnAt(width - 1), height),
   });
 
   const out = document.createElement('canvas');
@@ -789,27 +966,27 @@ function frameToBox(bitmap: ImageBitmap): HTMLCanvasElement | null {
   if (plan.mode === 'extend') {
     out.width = plan.width;
     out.height = plan.height;
-    if (plan.left) to.drawImage(source, 0, 0, 1, bitmap.height, 0, 0, plan.left, plan.height);
+    if (plan.left) to.drawImage(source, 0, 0, 1, height, 0, 0, plan.left, plan.height);
     if (plan.right) {
       to.drawImage(
-        source, bitmap.width - 1, 0, 1, bitmap.height,
-        plan.left + bitmap.width, 0, plan.right, plan.height,
+        source, width - 1, 0, 1, height,
+        plan.left + width, 0, plan.right, plan.height,
       );
     }
     to.drawImage(source, plan.left, 0);
     return out;
   }
 
-  const ratio = bitmap.width / bitmap.height;
+  const ratio = width / height;
   if (ratio < BOX) {
-    out.width = bitmap.width;
-    out.height = Math.round(bitmap.width / BOX);
-    const spare = bitmap.height - out.height;
+    out.width = width;
+    out.height = Math.round(width / BOX);
+    const spare = height - out.height;
     to.drawImage(source, 0, plan.anchor === 'north' ? 0 : -Math.round(spare / 2));
   } else {
-    out.height = bitmap.height;
-    out.width = Math.round(bitmap.height * BOX);
-    to.drawImage(source, -Math.round((bitmap.width - out.width) / 2), 0);
+    out.height = height;
+    out.width = Math.round(height * BOX);
+    to.drawImage(source, -Math.round((width - out.width) / 2), 0);
   }
   return out;
 }
