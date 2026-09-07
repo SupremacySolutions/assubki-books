@@ -5,51 +5,49 @@ that cannot be fixed by a commit.** Everything else the audit found is now in th
 code. This is a deployment, and it needs the owner's credentials and the owner's
 decision, so what follows is the procedure and the rehearsal, not the act.
 
-Nothing here has been run against production. The gap below was computed from
-the schema the audit captured read-only on 7 September 2026
-([live-schema.json](../audit-2026-09-07/evidence/live-schema.json)), and the
-procedure was rehearsed end to end against a local replica built from it.
+The gap was computed from the schema the audit captured read-only on
+7 September 2026, and the procedure was rehearsed end to end against a local
+replica built from it.
+
+**`0035`–`0039` have since been applied to production**, in the deploy of
+7 September 14:03 UTC. What is written below as a six-migration reconciliation
+is now a one-migration one. The history is kept because the argument for every
+step of it is unchanged, and because `d1_migrations` is still empty, which is
+the part that outlives any particular migration.
 
 ---
 
 ## What is wrong
 
-Production is running the schema that migrations `0001`–`0034` produce. Six
-migrations have been written since and none has been applied:
+Production is running the schema that migrations `0001`–`0039` produce.
+`0040` has been written since and has not been applied:
 
 | | | |
 |---|---|---|
-| `0035_split_checkout` | `orders.split_group`, its partial index | pending |
-| `0036_reservation_integrity` | `delivery_version` on `books` and `shipments`; `deliveries`, `delivery_items`, `delivery_allocations`; rebuilds `shipment_notices` | pending |
-| `0037_group_member_token` | `group_basket_items.member_token` | pending |
-| `0038_read_cost` | narrows the FTS trigger, `idx_messages_cursor`, `idx_public_actions_at` | pending |
-| `0039_read_cursor` | `orders.read_cursor_customer`, `orders.read_cursor_owner` | pending |
+| `0035_split_checkout` | `orders.split_group`, its partial index | **applied** |
+| `0036_reservation_integrity` | `delivery_version` on `books` and `shipments`; `deliveries`, `delivery_items`, `delivery_allocations`; rebuilds `shipment_notices` | **applied** |
+| `0037_group_member_token` | `group_basket_items.member_token` | **applied** |
+| `0038_read_cost` | narrows the FTS trigger, `idx_messages_cursor`, `idx_public_actions_at` | **applied** |
+| `0039_read_cursor` | `orders.read_cursor_customer`, `orders.read_cursor_owner` | **applied** |
 | `0040_stock_alert_outbox` | delivery state on `stock_alerts`, `idx_alerts_due` | pending |
 
-Concretely, production is missing nine objects and eight definitions differ:
+Concretely, production is missing one object and one definition differs -
+`check-schema.mjs --remote`, run against production on 7 September:
 
 ```
-MISSING          deliveries, delivery_items, delivery_allocations
-                 idx_orders_split, idx_messages_cursor,
-                 idx_public_actions_at, idx_alerts_due
-                 orders_wait_for_arrival, shipment_claims_open   (triggers)
+MISSING          idx_alerts_due
 
-DIFFERS          books              + delivery_version
-                 shipments          + delivery_version
-                 orders             + split_group, read_cursor_customer,
-                                      read_cursor_owner
-                 group_basket_items + member_token
-                 stock_alerts       + claimed_at, attempts, last_error,
+DIFFERS          stock_alerts       + claimed_at, attempts, last_error,
                                       next_attempt_at, lease_until, lease_token
-                 shipment_notices   + next_attempt_at, lease_until, lease_token
-                                    - UNIQUE (shipment_id, order_id)
-                 idx_notices_pending, books_fts_update
 ```
 
-**The code on `main` requires all of it.** Deploying before reconciling puts a
-Worker that reads `orders.split_group` in front of a database that has no such
-column. Production `/shipments` returning 404 while the local build serves it is
-the same gap seen from outside.
+**The code on `main` requires it.** Every column above is read by
+`src/lib/stock-alerts.ts`, so a Worker carrying the outbox in front of a
+`stock_alerts` that has none of it fails on the first back-in-stock claim.
+
+The nine missing objects and eight differences the audit found are recorded in
+the git history of this file. What made them dangerous - new code in front of an
+old schema - is what makes the remaining one worth doing in the same order.
 
 ### Why `wrangler d1 migrations apply` must not be used here
 
@@ -151,21 +149,21 @@ If it prints anything not listed in **What is wrong**, stop. Something has
 changed since the audit and this procedure no longer describes the database in
 front of you.
 
-### 4. Apply the six, in order, one at a time
+### 4. Apply what step 3 says is missing, in order, one at a time
+
+Today that is one file:
 
 ```sh
-npx wrangler d1 execute assubki-books --remote --file=migrations/0035_split_checkout.sql
-npx wrangler d1 execute assubki-books --remote --file=migrations/0036_reservation_integrity.sql
-npx wrangler d1 execute assubki-books --remote --file=migrations/0037_group_member_token.sql
-npx wrangler d1 execute assubki-books --remote --file=migrations/0038_read_cost.sql
-npx wrangler d1 execute assubki-books --remote --file=migrations/0039_read_cursor.sql
 npx wrangler d1 execute assubki-books --remote --file=migrations/0040_stock_alert_outbox.sql
 ```
 
-Separately, and reading each result, rather than in a loop. `0036` is the one to
-watch: it is the only one that rebuilds a table rather than adding to it, and it
-carries data fixes for orders that were told too early. If any command reports an
-error, **stop and go to Rollback** — do not run the next one.
+Separately, and reading each result, rather than in a loop. If a command reports
+an error, **stop and go to Rollback** — do not run the next one.
+
+`0040` is six `ADD COLUMN`s and one partial index: additive, so the Worker that
+is already deployed keeps working against it untouched. A migration that
+*rebuilds* a table is the one to watch — `0036` was that, and it also carried
+data fixes for orders told too early.
 
 ### 5. Tell the ledger the truth
 
@@ -227,7 +225,7 @@ npm run deploy:sweep    # the quarter-hourly worker
 additive apart from the `shipment_notices` rebuild, so the currently deployed
 Worker keeps working against the new schema for the minutes between the two —
 whereas new code against the old schema fails on the first request that touches
-`split_group`. Deploy the sweeper too: `0036` and `0040` both add work it is the
+`split_group`. Deploy the sweeper too: `0040` adds an outbox that the sweep is the
 only thing that drains.
 
 ### 8. Afterwards
@@ -236,9 +234,9 @@ only thing that drains.
 node docs/audit-2026-09-07/live-smoke.mjs
 ```
 
-Eight read-only public URL checks. `/shipments` returning 200 rather than 404 is
-the single clearest sign that the deployed code and the schema are finally the
-same generation.
+Eight read-only public URL checks. `/shipments` answering 200 was the clearest
+sign of this the first time round, when it had been answering 404; it should
+stay 200.
 
 Then watch the Worker's logs and D1 metrics for an hour or so. The sweep runs
 quarter-hourly, so the first drain of the two new outboxes happens within
@@ -285,4 +283,8 @@ It ignores `_cf_KV`, `d1_migrations`, the `books_fts_*` shadow tables and
 comments before comparing, because wrangler discards them and `sqlite3` does not,
 and every commented table in the repository would otherwise read as a difference.
 
-Needs `sqlite3` on the path, and for `--remote`, a logged-in wrangler.
+Needs `sqlite3` on the path, and for `--remote`, a logged-in wrangler. It asks
+for `trusted_schema=ON` when replaying the migrations, because the `sqlite3`
+macOS ships will not otherwise let a trigger name a virtual table — the FTS
+triggers are rejected, the seed's books never land, and the reference the check
+compares against is not the schema at all. D1 has no such restriction.

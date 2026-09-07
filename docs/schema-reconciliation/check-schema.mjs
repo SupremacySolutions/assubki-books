@@ -41,7 +41,20 @@ function reference() {
   const file = join(dir, 'reference.db');
   try {
     for (const name of readdirSync('migrations').filter((f) => f.endsWith('.sql')).sort()) {
-      execFileSync('sqlite3', [file], { input: readFileSync(join('migrations', name), 'utf8') });
+      /*
+       * `trusted_schema=ON` for every file, because the setting is per
+       * connection and each migration gets its own.
+       *
+       * The macOS system `sqlite3` ships with it off, and with it off a trigger
+       * is not allowed to name a virtual table - so `books_fts_insert` is
+       * rejected on every row the seed adds, the seed's 226 books never land,
+       * and each later migration that references them fails a foreign key until
+       * the replay is nothing like the schema it is supposed to be. D1 has no
+       * such restriction, so this only ever made the reference wrong.
+       */
+      execFileSync('sqlite3', [file], {
+        input: `PRAGMA trusted_schema=ON;\n${readFileSync(join('migrations', name), 'utf8')}`,
+      });
     }
     /*
      * JSON, so the newlines survive the trip.
