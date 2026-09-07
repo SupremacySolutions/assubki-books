@@ -1,7 +1,7 @@
 # As-Subkī Books
 
 The shop's catalogue and order-capture site. Astro 7 (SSR) on Cloudflare
-Workers, with D1 for data and the book covers shipped as static assets.
+Workers, with D1 for data and book covers stored in R2.
 
 Migrated off WordPress + WooCommerce at IONOS. Nothing about WordPress remains.
 
@@ -30,20 +30,21 @@ npm install
 npm run dev
 ```
 
-The local D1 needs seeding once. Every migration, in order - the schema and the
-seed alone leave out the portal and everything the order lifecycle added, and
-the first page that reads a missing column just fails:
+For a fresh local D1, apply all migrations through Wrangler so its ledger is
+recorded as well as the schema:
 
 ```bash
-for f in ./migrations/*.sql; do npx wrangler d1 execute assubki-books --local --file="$f"; done
+npx wrangler d1 migrations apply assubki-books --local
 ```
 
-A new migration is applied the same way, to local and then to production:
-
-```bash
-npx wrangler d1 execute assubki-books --local --file=./migrations/0006_cash_payment.sql
-npx wrangler d1 execute assubki-books --remote --file=./migrations/0006_cash_payment.sql
-```
+Production was reconciled through migration `0040` on 7 September 2026, with
+all 40 filenames recorded in `d1_migrations`. For new migrations, inspect what
+is pending, back up production, test locally, and apply remotely before deploying
+code that requires the new schema. Follow the
+[schema and backup guide](docs/schema-reconciliation/README.md#current-status--verified-7-september-2026).
+Do not replay an old migration file or seed the ledger for unapplied migrations.
+A local database created by the former manual SQL loop needs its own ledger
+reconciliation before using `migrations apply`.
 
 Do not delete `.wrangler/state` while the dev server is running - miniflare
 holds the SQLite file open and every request then fails with an internal error.
@@ -227,12 +228,6 @@ can only message someone who messaged it first. That is why an order carries a
 exists - tapping it is the moment permission is granted. Email is the fallback
 for anyone who never taps.
 
-## Not built yet
-
-The domain cutover. See the cutover plan - the domain carries the owner's IONOS
-email, and moving nameservers without recreating the MX records first will
-silently kill their mail.
-
 ## Deploying
 
 ```bash
@@ -240,8 +235,7 @@ npm run deploy
 npx wrangler deploy -c workers/expire-holds/wrangler.jsonc
 ```
 
-The site has no `routes` in `wrangler.jsonc`, so it deploys to
-`assubki-books.<subdomain>.workers.dev`. The live domain still points at
-WordPress and is untouched. See the cutover plan before changing that - the
-domain carries the owner's IONOS email, and moving nameservers without
-recreating the MX records first will silently kill their mail.
+The live shop is served at https://assubkibooks.co.uk. Custom-domain routing is
+managed in Cloudflare, outside this repository's `wrangler.jsonc`; the absence
+of a `routes` array does not mean a deployment leaves the live shop untouched.
+Deploy the sweeper as well when changing its shared notification or stock code.

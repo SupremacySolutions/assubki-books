@@ -18,8 +18,8 @@
  * produced.
  *
  * The virtual table is written as its CREATE and none of its contents: its
- * shadow tables are SQLite's to fill, and the triggers in 0001 rebuild the
- * index from `books` as the rows go back in.
+ * shadow tables are SQLite's to fill. An explicit rebuild after loading the
+ * rows populates the external-content index.
  */
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -28,6 +28,7 @@ const DB = 'assubki-books';
 const outArg = process.argv.indexOf('--out');
 const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
 const OUT = outArg > -1 ? process.argv[outArg + 1] : `backup-${stamp}.sql`;
+if (!OUT || OUT.startsWith('--')) throw new Error('--out requires a file path');
 
 /** One read-only statement, as JSON. */
 function query(sql) {
@@ -63,7 +64,7 @@ const skipRows = (n) => shadow.test(n) || n === 'books_fts';
 
 const lines = [
   `-- ${DB}, read from production ${new Date().toISOString()}`,
-  '-- Restore: npx wrangler d1 execute assubki-books --remote --file=<this file>',
+  '-- Restore into an EMPTY database: npx wrangler d1 execute <destination> --remote --file=<this file>',
   '-- Written by scripts/backup-remote.mjs; `wrangler d1 export` cannot read an fts5 database.',
   'PRAGMA defer_foreign_keys = TRUE;',
   '',
@@ -111,5 +112,6 @@ for (const o of schema.filter((o) => o.type !== 'table')) lines.push(`${o.sql};`
 lines.push("INSERT INTO books_fts(books_fts) VALUES('rebuild');");
 lines.push('');
 
-writeFileSync(OUT, lines.join('\n'));
+// Backups contain customer details. Never overwrite a previous restore point.
+writeFileSync(OUT, lines.join('\n'), { mode: 0o600, flag: 'wx' });
 console.log(`\n${total} rows from ${schema.filter((o) => o.type === 'table' && !shadow.test(o.name)).length} tables -> ${OUT}`);

@@ -230,6 +230,15 @@ export async function drainStockAlerts(
   let failed = 0;
 
   try {
+    // Recover availability changes that did not reach tellWaiting: shipment
+    // receipts, released holds, or a Worker stopped after committing stock.
+    // Existing retries keep their backoff and lease; only new promises are armed.
+    await db.prepare(
+      `UPDATE stock_alerts SET claimed_at = unixepoch(), next_attempt_at = 0
+        WHERE claimed_at IS NULL
+          AND EXISTS (SELECT 1 FROM books b WHERE b.id = stock_alerts.book_id
+                       AND b.status = 'live' AND (b.stock - b.reserved) > 0)`,
+    ).run();
     const due = await dueAlerts(db, limit);
 
     for (const alert of due) {

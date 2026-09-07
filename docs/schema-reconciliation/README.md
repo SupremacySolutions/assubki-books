@@ -1,4 +1,43 @@
-# Bringing production's schema back in step
+# Production schema reconciliation
+
+## Current status — verified 7 September 2026
+
+Reconciliation is complete. Production matches all **74 schema objects** from
+migrations `0001`–`0040`; its ledger contains the exact **40 migration filenames**.
+Migration `0040_stock_alert_outbox.sql` and both Workers were deployed on
+7 September. The read-only schema and ledger checks were repeated during review.
+
+**Do not rerun the historical reconciliation below.** In particular, do not
+reapply `0040` or seed the ledger from whatever files happen to exist now: that
+could mark a future migration applied without executing it.
+
+For future migrations, inspect pending work, back up, apply locally and verify,
+then apply remotely before deploying code that needs it:
+
+```sh
+npx wrangler d1 migrations list assubki-books --remote
+node scripts/backup-remote.mjs --out backup-before-next-migration.sql
+npx wrangler d1 migrations apply assubki-books --local
+# Run the relevant tests against the migrated local database.
+npx wrangler d1 migrations apply assubki-books --remote
+node docs/schema-reconciliation/check-schema.mjs --remote
+```
+
+The local `migrations apply` command assumes a fresh database or an accurate
+local ledger. A local database seeded by the old manual loop needs separate
+reconciliation; a reconciled production ledger says nothing about local state.
+
+The SQL backup is a logical copy intended for an **empty database**, not an
+in-place restore over existing tables. Its reads span multiple requests: pause
+all writers, including customer orders and the sweeper, if a consistent file
+snapshot is required. A portal pause alone is insufficient. Record a D1 Time
+Travel bookmark as the point-in-time rollback before changing production.
+
+## Historical reconciliation — completed
+
+The following records the pre-deployment state and the procedure used to repair
+it. References to pending migrations and an empty ledger describe that earlier
+state, not the current database.
 
 **F19 from [the audit](../audit-2026-09-07/REPORT.md), which is the one thing there
 that cannot be fixed by a commit.** Everything else the audit found is now in the
@@ -108,8 +147,8 @@ that distinction could matter.
 
 ## The procedure
 
-Run it in one sitting, with nobody using the portal. Every command is quoted in
-full so it can be read before it is run.
+This was the one-time repair procedure. Do not run it on the reconciled database.
+Every command is quoted in full so it can be read before it is run.
 
 ### 1. Take a restore point, and write it down
 
@@ -123,7 +162,7 @@ Record the bookmark it prints. **Also take a real file, because a bookmark is
 Cloudflare's to keep, is thirty days long, and a file is yours:**
 
 ```sh
-node scripts/backup-remote.mjs
+node scripts/backup-remote.mjs --out backup-before-next-migration.sql
 ```
 
 Not `wrangler d1 export`, which refuses this database outright — *cannot export
@@ -136,8 +175,11 @@ Better, restore it somewhere disposable and count what came back — a backup
 nobody has read back is a hope:
 
 ```sh
-printf 'PRAGMA trusted_schema=ON;\n' | cat - backup-*.sql | sqlite3 /tmp/restore-check.db
-sqlite3 /tmp/restore-check.db \
+# Use one exact backup path and a fresh destination, never backup-*.sql.
+restore_dir=$(mktemp -d /tmp/asb-restore.XXXXXX)
+{ printf 'PRAGMA trusted_schema=ON;\n'; cat backup-before-next-migration.sql; } | \
+  sqlite3 -bail "$restore_dir/check.db"
+sqlite3 "$restore_dir/check.db" \
     "SELECT count(*) FROM books; SELECT count(*) FROM books_fts WHERE books_fts MATCH 'fiqh';"
 ```
 
@@ -153,9 +195,10 @@ in agreement, and the shop's search answering nothing. The file ends with the
 node docs/audit-2026-09-07/read-live.mjs
 ```
 
-That runner is restricted to `SELECT`/`EXPLAIN`/`PRAGMA` and writes nothing.
-Keep its output. Step 6 compares against it, and a difference in the *counts*
-either side of a schema change is the thing you most want to notice.
+That runner is restricted to `SELECT`/`EXPLAIN`/`PRAGMA` against production, but
+overwrites its local audit evidence file. Preserve the original point-in-time
+evidence before running it and keep the new output separately. Step 6 compares
+against it; counts changing across a schema change need investigation.
 
 ### 3. Confirm the gap is still the one described above
 
@@ -203,8 +246,9 @@ cat /tmp/seed-ledger.sql          # read it before you run it
 npx wrangler d1 execute assubki-books --remote --file=/tmp/seed-ledger.sql
 ```
 
-`INSERT OR IGNORE`, so it is safe to run twice, and safe to run again after the
-next migration is added.
+`INSERT OR IGNORE` makes this repeatable only for migrations whose application
+has been verified. Never run it after adding an unapplied migration: it would
+hide that migration from Wrangler.
 
 Check it took:
 
