@@ -17,13 +17,31 @@ export interface Membership {
   organiser: boolean;
   /** Organisers only: the other key, the one that goes in the shared link. */
   shareToken?: string;
+  /**
+   * This browser's own key, proving which lines it added.
+   *
+   * The share link says which group somebody is in; it cannot say which person
+   * they are, and a display name is not an answer - anyone holding the link
+   * could send somebody else's name and edit their line. This is opaque, made
+   * here, never shown and never sent anywhere but the line endpoint.
+   *
+   * It is not a login. Losing it - clearing site data, or joining from a
+   * second device - costs the ability to change lines already added from the
+   * first one, not access to the group.
+   */
+  memberToken: string;
+}
+
+/** A key for this browser, made once and kept with the membership. */
+export function newMemberToken(): string {
+  return crypto.randomUUID();
 }
 
 export function readGroup(): Membership | null {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null');
     if (!raw || typeof raw !== 'object') return null;
-    const { code, token, name, organiser, shareToken } = raw as Record<string, unknown>;
+    const { code, token, name, organiser, shareToken, memberToken } = raw as Record<string, unknown>;
     if (typeof code !== 'string' || typeof token !== 'string' || typeof name !== 'string') return null;
     return {
       code,
@@ -31,6 +49,9 @@ export function readGroup(): Membership | null {
       name,
       organiser: Boolean(organiser),
       shareToken: typeof shareToken === 'string' ? shareToken : undefined,
+      /* A membership stored before this existed gets one now. Its earlier
+         lines carry no token and stay the organiser's to manage. */
+      memberToken: typeof memberToken === 'string' && memberToken ? memberToken : newMemberToken(),
     };
   } catch {
     return null;

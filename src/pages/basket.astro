@@ -80,23 +80,16 @@ import Rosette from '../components/Rosette.astro';
           <button type="button" id="groupcopy" class="btn btn-ghost !px-4 shrink-0" aria-label="Copy the link">Copy</button>
         </div>
         {/*
-          * What the link actually gives away.
+          * What the link gives away, now that it is enforced.
           *
-          * It said "anyone with this link can add to the basket", which is
-          * true and incomplete: the group is identified by the link and a
-          * person by the name they type, so anybody holding it can also change
-          * or remove a line somebody else put in. The page used to imply the
-          * opposite by showing your own lines as editable and everyone else's
-          * as plain numbers.
-          *
-          * A group basket is a shared list - a class or a family ordering
-          * together - and that is a reasonable thing for it to be. It is not a
-          * reasonable thing to be quiet about.
+          * The link says which group somebody is in. It does not say which
+          * person they are - so a line is now tied to the browser that added
+          * it, and the organiser, who is answerable for the whole list, can
+          * change any of them.
           */}
         <p class="mt-3 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-          Anyone with this link can add to the basket, and can change or remove anything on it,
-          including lines somebody else added. Share it with people you are ordering with. It
-          lasts a week.
+          Anyone with this link can add to the basket. You can change or remove what you added
+          from this device; the person who started the group can change anything. It lasts a week.
         </p>
         <p id="groupkeep" hidden class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
           Your own link - the one that sends the order - is in your email. This page is that link;
@@ -187,7 +180,7 @@ import Rosette from '../components/Rosette.astro';
   <script>
     import {planBasketLine,basketDeliveryNote} from "../lib/basket-plan";
     import { read, setQty, remove, setBadge, count } from '../scripts/basket.ts';
-    import { readGroup, joinGroup, leaveGroup, shareLink, parseShare, escapeHtml } from '../scripts/group.ts';
+    import { readGroup, joinGroup, leaveGroup, shareLink, parseShare, escapeHtml, newMemberToken } from '../scripts/group.ts';
     import { IMAGE_VERSION } from '../lib/image-presets.ts';
 
     const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
@@ -374,7 +367,14 @@ import Rosette from '../components/Rosette.astro';
       const res = await fetch('/api/group/line', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: member.code, token: member.token, name: member.name, bookId, qty }),
+        body: JSON.stringify({
+          code: member.code,
+          token: member.token,
+          name: member.name,
+          memberToken: member.memberToken,
+          bookId,
+          qty,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as {error?:string};
@@ -396,7 +396,12 @@ import Rosette from '../components/Rosette.astro';
       rows.innerHTML = view.lines.length
         ? view.lines
             .map((line) =>
-              groupRow(line, line.addedBy === member!.name, wantedByAll.get(line.bookId) ?? line.qty),
+              groupRow(
+                line,
+                /* Yours, or anyone's if you started the group. */
+                line.addedBy === member!.name || member!.organiser,
+                wantedByAll.get(line.bookId) ?? line.qty,
+              ),
             )
             .join('')
         : `<li class="py-8 text-center text-[14.5px] text-[var(--color-ink-faint)]">
@@ -617,6 +622,7 @@ import Rosette from '../components/Rosette.astro';
         shareToken: data.token,
         name,
         organiser: true,
+        memberToken: newMemberToken(),
       };
       joinGroup(member);
       if (!data.emailed) {
@@ -637,7 +643,7 @@ import Rosette from '../components/Rosette.astro';
       if (!parsed) return groupError('That does not look like a group link.');
       if (name.length < 2) return groupError('Add your name first, so the others know whose books are whose.');
 
-      member = { ...parsed, name, organiser: false };
+      member = { ...parsed, name, organiser: false, memberToken: newMemberToken() };
       const view = await fetchGroup();
       if (!view) return;
       // fetchGroup has already promoted us if that key was the organiser's -

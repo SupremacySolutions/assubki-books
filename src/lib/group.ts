@@ -194,7 +194,7 @@ export async function getGroup(code: string, key: string): Promise<GroupView | n
   };
 }
 
-export type LineResult = 'ok' | 'not-found' | 'sent' | 'full';
+export type LineResult = 'ok' | 'not-found' | 'sent' | 'full' | 'denied';
 
 /**
  * Set one person's quantity for one book. Zero removes their line.
@@ -208,18 +208,55 @@ export async function setGroupLine(
   bookId: number,
   qty: number,
   person: string,
+  memberToken: string,
 ): Promise<LineResult> {
   const group = await findGroup(code, key);
   if (!group) return 'not-found';
   if (group.order_ref) return 'sent';
 
+  /*
+   * Who is allowed to change this line.
+   *
+   * The link says which group; the member token says which browser put the
+   * line there. Without the second, a name was the whole of somebody's
+   * identity and anyone with the link could edit anyone's line.
+   *
+   * The organiser is exempt. They hold the key that sends the order and are
+   * answerable for the whole list, so removing a line somebody added and left
+   * is part of running it - and a class list with no way to correct it would
+   * be worse than one anybody can edit.
+   */
+  const organiser = group.role === 'organiser' ? 1 : 0;
+
+  /*
+   * No key, no edit.
+   *
+   * The route refuses a request without one, but this is the function that
+   * decides who owns a line and it should not depend on a caller having
+   * checked. A missing token must be a refusal rather than a null that
+   * compares equal to the rows written before tokens existed.
+   */
+  const mine = typeof memberToken === 'string' && memberToken.length >= 8 ? memberToken : null;
+  if (!organiser && !mine) return 'denied';
+
   if (qty <= 0) {
-    await env.DB.prepare(
-      `DELETE FROM group_basket_items WHERE group_id = ? AND book_id = ? AND added_by = ?`,
+    const removed = await env.DB.prepare(
+      `DELETE FROM group_basket_items
+        WHERE group_id = ?1 AND book_id = ?2 AND added_by = ?3
+          AND (?5 = 1 OR member_token IS ?4)`,
+    )
+      .bind(group.id, bookId, person, mine, organiser)
+      .run();
+    if (removed.meta.changes) return 'ok';
+
+    /* Nothing went. Either it was never there - which is what the caller
+       wanted anyway - or it belongs to somebody else. */
+    const theirs = await env.DB.prepare(
+      `SELECT 1 FROM group_basket_items WHERE group_id = ? AND book_id = ? AND added_by = ?`,
     )
       .bind(group.id, bookId, person)
-      .run();
-    return 'ok';
+      .first();
+    return theirs ? 'denied' : 'ok';
   }
 
   const counts = await env.DB.prepare(
@@ -245,14 +282,20 @@ export async function setGroupLine(
     return 'full';
   }
 
-  await env.DB.prepare(
-    `INSERT INTO group_basket_items (group_id, book_id, qty, added_by)
-     VALUES (?,?,?,?)
+  /*
+   * The guard rides on the upsert rather than a check before it, so two
+   * browsers racing cannot both pass a test and then both write.
+   */
+  const written = await env.DB.prepare(
+    `INSERT INTO group_basket_items (group_id, book_id, qty, added_by, member_token)
+     VALUES (?1,?2,?3,?4,?5)
      ON CONFLICT(group_id, book_id, added_by)
-       DO UPDATE SET qty = excluded.qty, updated_at = unixepoch()`,
+       DO UPDATE SET qty = excluded.qty, updated_at = unixepoch()
+        WHERE ?6 = 1 OR group_basket_items.member_token IS ?5`,
   )
-    .bind(group.id, bookId, Math.min(qty, MAX_QTY), person)
+    .bind(group.id, bookId, Math.min(qty, MAX_QTY), person, mine, organiser)
     .run();
+  if (!written.meta.changes) return 'denied';
 
   return 'ok';
 }

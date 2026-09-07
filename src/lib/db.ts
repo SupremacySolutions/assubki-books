@@ -415,6 +415,20 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
     saving: 'COALESCE(b.price_pence * si.percent_off, 0) DESC, b.title COLLATE NOCASE',
   }[sort];
 
+  /*
+   * Whether choosing the page needs the sale join at all.
+   *
+   * Three of the sorts read `si.percent_off` - the two price orders sort by
+   * what the card actually shows, and `saving` by the money taken off - and
+   * `onSale` filters on it. Everything else can pick its twenty-four ids from
+   * `books` alone. Worked out here rather than guessed at below, because a
+   * missing join does not fail loudly: it silently sorts by nothing.
+   */
+  const needsSale =
+    Boolean(opts.onSale) || sort === 'saving' || sort === 'price-asc' || sort === 'price-desc';
+  const saleJoin = ` LEFT JOIN sale_items si ON si.book_id = b.id
+             AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')`;
+
   // Out-of-stock titles stay browsable but sink to the bottom of every sort;
   // a shop whose first row is unavailable reads as abandoned.
   const order = ` ORDER BY (b.stock - b.reserved) > 0 DESC, ${orderBy}`;
@@ -436,20 +450,56 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
       : '') +
     whereSql;
 
+  /*
+   * Which titles, then what they look like - two statements, not one.
+   *
+   * The projection carries a correlated subquery for a book's shelves, a join
+   * to its cover and another to the live sale. None of that can be worked out
+   * before the row is chosen, and the ORDER BY sorts on `(stock - reserved) > 0`,
+   * which no index covers - so SQLite had to build every one of those columns
+   * for every live book in the shop and then throw away all but the
+   * twenty-four on the page. On a catalogue of 229 titles that read about
+   * 1,325 rows a request, and the catalogue projections together were two
+   * thirds of the database's daily reads.
+   *
+   * Choosing the ids first is one scan of `books` and nothing else. The second
+   * statement does the expensive work for the page that was actually asked
+   * for. The comment on `BOOK_SELECT` warns that a correlated subquery here
+   * once cost this project most of its read budget; this is the same lesson,
+   * applied to when the subquery runs rather than whether it exists.
+   */
   const wantsTotal = opts.withTotal !== false;
-  const [countRow, listRes] = await Promise.all([
+  const [countRow, pageIds] = await Promise.all([
     wantsTotal
       ? db().prepare(countSql).bind(...binds).first<{ n: number; inStock: number }>()
       : Promise.resolve(null),
     db()
-      .prepare(`${from}${whereSql}${order} LIMIT ? OFFSET ?`)
+      .prepare(
+        `SELECT b.id FROM books b` +
+          (match ? ' JOIN books_fts f ON f.rowid = b.id' : '') +
+          (needsSale ? saleJoin : '') +
+          `${whereSql}${order} LIMIT ? OFFSET ?`,
+      )
       .bind(...binds, perPage, (page - 1) * perPage)
-      .all<BookRow>(),
+      .all<{ id: number }>(),
   ]);
+
+  const ids = pageIds.results.map((r) => r.id);
+  let rows: BookRow[] = [];
+  if (ids.length) {
+    const { results } = await db()
+      .prepare(`${from} WHERE b.id IN (SELECT value FROM json_each(?))`)
+      .bind(JSON.stringify(ids))
+      .all<BookRow>();
+    /* The second statement has no ORDER BY of its own - re-ordering here keeps
+       the page in the order the first one chose, whatever the sort was. */
+    const byId = new Map(results.map((r) => [r.id, r]));
+    rows = ids.map((id) => byId.get(id)).filter((r): r is BookRow => Boolean(r));
+  }
 
   const total = countRow?.n ?? 0;
   return {
-    books: await applySetAvailability(listRes.results),
+    books: await applySetAvailability(rows),
     total,
     inStock: countRow?.inStock ?? 0,
     page,

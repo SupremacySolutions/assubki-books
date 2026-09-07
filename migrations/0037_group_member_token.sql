@@ -1,0 +1,21 @@
+-- Who may change a line in a group basket.
+--
+-- The share link authorises the group; a person was identified only by the
+-- display name they typed and sent with the request. So anybody holding the
+-- link could pass somebody else's name and change or delete their line - while
+-- the page showed your own lines as editable and everyone else's as plain
+-- numbers, which promised an ownership nothing enforced.
+--
+-- The token is opaque, generated in the browser when somebody joins, and never
+-- shown. It is not a login: it says only "the browser that added this line is
+-- the one asking to change it". Losing it (clearing site data, a second
+-- device) costs the ability to edit lines already added, not access to the
+-- group - which is the right trade for a class list.
+--
+-- Nullable, because rows written before this exist in dev databases. A line
+-- with no token can be changed only by the organiser, who holds the owner key.
+ALTER TABLE group_basket_items ADD COLUMN member_token TEXT;
+
+-- Ownership is only ever asked about within one group and one line, and the
+-- UNIQUE (group_id, book_id, added_by) index already answers that lookup, so
+-- no further index is added: it would cost writes and buy nothing.

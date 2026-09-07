@@ -799,6 +799,7 @@ async function abuseAndAtomicity() {
     method: 'POST', headers: { ...ORIGIN, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       code: started.code, token: started.token, bookId: book.id, qty: 2, name: 'Bilal Khan',
+      memberToken: 'e2e-member-bilal-0001',
     }),
   });
 
@@ -1197,8 +1198,12 @@ async function groupOrders() {
   t.ok((await post('/api/group', { name: 'Yusuf', email: 'not-an-email' })).status === 400,
     'nor without somewhere to send the organiser their own link');
 
-  await post('/api/group/line', { code, token, name: 'Yusuf', bookId: bookA.id, qty: 2 });
-  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookB.id, qty: 1 });
+  /* Two people, two browsers. The share link says which group; the member key
+     says which of them is asking. */
+  const YUSUF = 'e2e-member-yusuf-0001';
+  const AISHA = 'e2e-member-aisha-0001';
+  await post('/api/group/line', { code, token, name: 'Yusuf', bookId: bookA.id, qty: 2, memberToken: YUSUF });
+  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookB.id, qty: 1, memberToken: AISHA });
 
   const shared = await readGroup(code, token);
   t.ok(shared.group.lines.length === 2, 'both people see both lines');
@@ -1208,16 +1213,46 @@ async function groupOrders() {
 
   // Two people wanting the same title is six copies and two names, not a
   // disagreement about the number three.
-  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookA.id, qty: 1 });
+  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookA.id, qty: 1, memberToken: AISHA });
   const shared2 = await readGroup(code, token);
   t.ok(shared2.group.lines.filter((l) => l.bookId === bookA.id).length === 2,
     'the same title wanted by two people stays two lines');
 
   // Their own line, not everyone's: zero removes only theirs.
-  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookA.id, qty: 0 });
+  await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookA.id, qty: 0, memberToken: AISHA });
   const shared3 = await readGroup(code, token);
   t.ok(shared3.group.lines.filter((l) => l.bookId === bookA.id).length === 1,
     'and removing one person\'s line leaves the other alone');
+
+  /*
+   * A name is not an identity. Holding the share link puts somebody in the
+   * group; it does not make them everyone in it.
+   */
+  const asSomeoneElse = await post('/api/group/line',
+    { code, token, name: 'Yusuf', bookId: bookA.id, qty: 0, memberToken: AISHA });
+  t.ok(asSomeoneElse.status === 403, 'one member cannot remove another member\'s line');
+  const afterTry = await readGroup(code, token);
+  t.ok(afterTry.group.lines.filter((l) => l.bookId === bookA.id).length === 1,
+    'and the line is still there');
+
+  t.ok((await post('/api/group/line',
+    { code, token, name: 'Yusuf', bookId: bookA.id, qty: 3, memberToken: YUSUF })).status === 200,
+    'while its own author still can');
+
+  t.ok((await post('/api/group/line', { code, token, name: 'Yusuf', bookId: bookA.id, qty: 1 })).status === 400,
+    'and a request with no member key at all is refused');
+
+  /* The organiser is answerable for the whole list, so they may correct it. */
+  t.ok((await post('/api/group/line',
+    { code, token: ownerToken, name: 'Yusuf', bookId: bookA.id, qty: 0, memberToken: 'organiser-key-0001' })).status === 200,
+    'but whoever started the group can change any line');
+  const afterOrganiser = await readGroup(code, token);
+  t.ok(afterOrganiser.group.lines.filter((l) => l.bookId === bookA.id).length === 0,
+    'and that removal takes effect');
+
+  /* Put it back the way the rest of this suite expects to find it. */
+  await post('/api/group/line',
+    { code, token, name: 'Yusuf', bookId: bookA.id, qty: 2, memberToken: YUSUF });
 
   // --- the link is the permission, and says which one you hold --------------
   const guessed = await (await get(`/api/group?g=${code}&k=${'0'.repeat(32)}`)).json();
@@ -1270,7 +1305,8 @@ async function groupOrders() {
     'with a breakdown of whose books are whose');
 
   // --- and closes behind itself --------------------------------------------
-  const afterSend = await post('/api/group/line', { code, token, name: 'Aisha', bookId: bookB.id, qty: 5 });
+  const afterSend = await post('/api/group/line',
+    { code, token, name: 'Aisha', bookId: bookB.id, qty: 5, memberToken: AISHA });
   t.ok(afterSend.status === 409, 'nobody can add to a group order already sent');
 
   const again = await json('/api/orders', {
