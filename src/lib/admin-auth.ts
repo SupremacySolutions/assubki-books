@@ -245,7 +245,23 @@ export function readCookie(request: Request, name: string): string | null {
   if (!header) return null;
   for (const part of header.split(';')) {
     const [k, ...rest] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(rest.join('='));
+    if (k !== name) continue;
+    /*
+     * A cookie is whatever the caller chose to send, including something that
+     * is not valid percent-encoding at all. `decodeURIComponent('%')` throws,
+     * and the throw reached the top of the request: `asb_admin=%` turned the
+     * whole portal into a 500 rather than a sign-in page, for anyone who could
+     * persuade a browser to hold that cookie.
+     *
+     * Undecodable means unauthenticated. There is no reading of a broken
+     * cookie that should let somebody in, and none that should keep the owner
+     * out of the login page either.
+     */
+    try {
+      return decodeURIComponent(rest.join('='));
+    } catch {
+      return null;
+    }
   }
   return null;
 }

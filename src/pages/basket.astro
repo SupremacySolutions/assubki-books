@@ -171,7 +171,7 @@ import Rosette from '../components/Rosette.astro';
   <script>
     import {planBasketLine,basketDeliveryNote} from "../lib/basket-plan";
     import { read, setQty, remove, setBadge, count } from '../scripts/basket.ts';
-    import { readGroup, joinGroup, leaveGroup, shareLink, parseShare } from '../scripts/group.ts';
+    import { readGroup, joinGroup, leaveGroup, shareLink, parseShare, escapeHtml } from '../scripts/group.ts';
     import { IMAGE_VERSION } from '../lib/image-presets.ts';
 
     const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
@@ -330,9 +330,9 @@ import Rosette from '../components/Rosette.astro';
             ${line.imageKey ? `<img src="/img/${line.imageKey}?p=card&v=${IMAGE_VERSION}" alt="" class="h-full w-full object-cover">` : ''}
           </a>
           <div class="flex-1 min-w-0">
-            <a href="${href}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${line.title}</a>
+            <a href="${href}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${escapeHtml(line.title)}</a>
             <p class="price text-[15px] mt-1">${gbp(line.pricePence)}</p>
-            <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">Added by ${line.addedBy}${mine ? ' (you)' : ''}</p>
+            <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">Added by ${escapeHtml(line.addedBy)}${mine ? ' (you)' : ''}</p>
             ${
               ceiling <= 0
                 ? `<p class="mt-1 text-[13px] text-[var(--color-outstock)]">Out of stock - it will not be included</p>`
@@ -480,8 +480,8 @@ import Rosette from '../components/Rosette.astro';
             ${book.imageKey ? `<img src="/img/${book.imageKey}?p=card&v=${IMAGE_VERSION}" alt="" class="h-full w-full object-cover">` : ''}
           </a>
           <div class="flex-1 min-w-0">
-            <a href="${book.shipmentId != null ? '/shipments/'+book.shipmentId : '/book/'+book.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${book.title}</a>
-            ${book.titleAr ? `<p class="ar text-[14.5px] text-[var(--color-ink-soft)]">${book.titleAr}</p>` : ''}
+            <a href="${book.shipmentId != null ? '/shipments/'+book.shipmentId : '/book/'+book.slug}" class="font-[family-name:var(--font-display)] text-[16.5px] hover:text-[var(--color-navy)]">${escapeHtml(book.title)}</a>
+            ${book.titleAr ? `<p class="ar text-[14.5px] text-[var(--color-ink-soft)]">${escapeHtml(book.titleAr)}</p>` : ''}
             <p class="mt-1 flex items-baseline gap-2 flex-wrap">
               <span class="price text-[15px]">${gbp(salePence(book))}</span>
               ${(book.salePercent ?? 0) > 0

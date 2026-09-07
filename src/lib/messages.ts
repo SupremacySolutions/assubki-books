@@ -119,11 +119,38 @@ export async function postMessage(input: PostInput): Promise<number | null> {
 
   const side = input.sender === 'customer' ? 'unread_for_owner' : 'unread_for_customer';
 
+  /*
+   * The hourly cap is enforced here, not only by the check before the call.
+   *
+   * `overHourlyCap` is a SELECT and this is an INSERT, and twenty-five requests
+   * arriving together all read the same count below the limit and all wrote -
+   * twenty-five messages against a cap of twenty. The check remains, because it
+   * is what turns a refusal into a sentence the customer can read; this is what
+   * makes the number true.
+   *
+   * `INSERT ... SELECT ... WHERE` simply inserts no row when the cap is
+   * reached, so `RETURNING id` comes back empty and the caller already treats
+   * that as a refusal. The owner is not capped: answering ten times in an hour
+   * is the shop working.
+   */
   const [inserted] = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO messages (order_id, sender, via, body, image_key, had_image)
-       VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
-    ).bind(input.orderId, input.sender, input.via, body, imageKey, imageKey ? 1 : 0),
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6
+        WHERE ?2 <> 'customer'
+           OR (SELECT COUNT(*) FROM messages
+                WHERE order_id = ?1 AND sender = 'customer'
+                  AND created_at > unixepoch() - 3600) < ?7
+       RETURNING id`,
+    ).bind(
+      input.orderId,
+      input.sender,
+      input.via,
+      body,
+      imageKey,
+      imageKey ? 1 : 0,
+      PER_HOUR,
+    ),
     /*
      * `last_message_id` is what the poll compares against, and it has to be an
      * id rather than a time: two messages inside one second made a
@@ -131,14 +158,21 @@ export async function postMessage(input: PostInput): Promise<number | null> {
      * until a reload. `last_message_at` stays for the sweep and the debounce,
      * which do want a clock.
      */
+    /*
+     * Conditional on the message actually landing. The insert above can now
+     * decline, and a counter bumped for a message that does not exist would
+     * show the other side a badge with nothing behind it.
+     */
     env.DB.prepare(
       `UPDATE orders
           SET ${side} = ${side} + 1,
-              last_message_id = (SELECT MAX(id) FROM messages WHERE order_id = ?),
+              last_message_id = (SELECT MAX(id) FROM messages WHERE order_id = ?1),
               last_message_at = unixepoch(),
               updated_at = unixepoch()
-        WHERE id = ?`,
-    ).bind(input.orderId, input.orderId),
+        WHERE id = ?1
+          AND (SELECT MAX(id) FROM messages WHERE order_id = ?1)
+              IS NOT (SELECT last_message_id FROM orders WHERE id = ?1)`,
+    ).bind(input.orderId),
   ]);
 
   const row = (inserted.results as { id: number }[] | undefined)?.[0];
@@ -146,17 +180,37 @@ export async function postMessage(input: PostInput): Promise<number | null> {
 }
 
 /**
- * Marks the thread read for one side.
+ * Marks the thread read for one side, up to the message they were shown.
  *
  * Per thread, never per message: the shop can know "they have opened this" and
- * must never claim to know "they have seen this particular line".
+ * must never claim to know "they have seen this particular line". `throughId`
+ * is not a read receipt - it is the newest message that was actually in the
+ * response, and everything after it is still unread.
+ *
+ * It used to set the counter to nought outright, which lost any message that
+ * arrived between reading the thread and acknowledging it: the badge cleared
+ * while the message it was counting had never been sent to anybody. Both sides
+ * poll, so both sides lost messages that way.
+ *
+ * Recounting rather than decrementing also means the number repairs itself. A
+ * counter that has drifted for any other reason comes back to the truth the
+ * next time somebody opens the thread.
  */
-export async function markRead(orderId: number, side: Sender): Promise<void> {
+export async function markRead(
+  orderId: number,
+  side: Sender,
+  throughId: number,
+): Promise<void> {
   const column = side === 'customer' ? 'unread_for_customer' : 'unread_for_owner';
+  // Unread for the owner means written by the customer, and the other way round.
+  const from: Sender = side === 'customer' ? 'owner' : 'customer';
   await env.DB.prepare(
-    `UPDATE orders SET ${column} = 0 WHERE id = ? AND ${column} > 0`,
+    `UPDATE orders SET ${column} = (
+       SELECT COUNT(*) FROM messages
+        WHERE order_id = ?1 AND sender = ?3 AND id > ?2
+     ) WHERE id = ?1`,
   )
-    .bind(orderId)
+    .bind(orderId, throughId, from)
     .run();
 }
 

@@ -41,7 +41,11 @@ const siblings = order.split_group
 const messages = await thread(order.id);
 /* Counted off the thread that was just read, not asked for again. */
 const imagesHeld = messages.filter((m) => m.image_key).length;
-if ((order.unread_for_owner ?? 0) > 0) await markRead(order.id, 'owner');
+/* Acknowledged through the newest message on the page, so anything that
+   arrives while it renders stays counted. */
+if ((order.unread_for_owner ?? 0) > 0) {
+  await markRead(order.id, 'owner', messages.reduce((n, m) => Math.max(n, m.id), 0));
+}
 
 const threadError = ({
   long: THREAD.tooLong,

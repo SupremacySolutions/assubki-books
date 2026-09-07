@@ -53,7 +53,11 @@ export const GET: APIRoute = async ({ params, url }) => {
    * a window nobody is looking at - and leaving it set would show a count
    * beside messages already on the screen.
    */
-  if (messages.length > 0) await markRead(order.id, 'owner');
+  if (messages.length > 0) {
+    /* Only through the newest message actually returned - anything written
+       while this ran is still unread, and still counted. */
+    await markRead(order.id, 'owner', messages.reduce((n, m) => Math.max(n, m.id), 0));
+  }
 
   return Response.json(
     {

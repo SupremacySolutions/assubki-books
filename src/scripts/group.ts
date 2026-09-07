@@ -76,3 +76,29 @@ export function parseShare(input: string): { code: string; token: string } | nul
     return code && token ? { code, token } : null;
   }
 }
+
+/**
+ * Somebody else's words, made safe to put in HTML.
+ *
+ * A group basket is the one place in the shop where text one customer typed is
+ * rendered on another customer's screen: the organiser and every member see
+ * "Added by <name>" for lines they did not add. Both the basket and the
+ * checkout summary build those rows as HTML strings, so a name containing
+ * markup arrived as markup - stored injection inside an invited group.
+ *
+ * The site's CSP allows scripts only from itself with a nonce, so the obvious
+ * inline payload does not execute. That is a mitigation, not a reason to
+ * interpolate a stranger's text into a template: it stops a script tag, not a
+ * link, an image with an onerror-free side effect, or a name that rewrites the
+ * page around it.
+ *
+ * Named for what it is rather than dressed up as a formatter, so a future
+ * caller does not mistake it for optional.
+ */
+export function escapeHtml(text: string): string {
+  return String(text).replace(
+    /[&<>"']/g,
+    (ch) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] ?? ch,
+  );
+}

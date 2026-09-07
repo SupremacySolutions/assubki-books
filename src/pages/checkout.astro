@@ -81,7 +81,7 @@ import CheckoutFields from '../components/CheckoutFields.astro';
     import type { Field } from '../lib/validate';
     import {planBasketLine,basketDeliveryNote} from "../lib/basket-plan";
     import { read, clear, setQty } from '../scripts/basket.ts';
-    import { readGroup, leaveGroup } from '../scripts/group.ts';
+    import { readGroup, leaveGroup, escapeHtml } from '../scripts/group.ts';
     // The same rules the server applies, so the two cannot drift apart.
     import { wireCheckoutForm } from '../scripts/checkout-form.ts';
 
@@ -160,8 +160,8 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         const li = document.createElement('li');
         li.className = 'flex justify-between gap-3';
         li.innerHTML =
-          `<span class="min-w-0">${line.title}${line.qty > 1 ? ` <span class="text-[var(--color-ink-faint)]">× ${line.qty}</span>` : ''}` +
-          ` <span class="text-[var(--color-ink-faint)]">· ${line.addedBy}</span></span>` +
+          `<span class="min-w-0">${escapeHtml(line.title)}${line.qty > 1 ? ` <span class="text-[var(--color-ink-faint)]">× ${line.qty}</span>` : ''}` +
+          ` <span class="text-[var(--color-ink-faint)]">· ${escapeHtml(line.addedBy)}</span></span>` +
           `<span class="shrink-0 tabular-nums">${gbp(line.pricePence * line.qty)}</span>`;
         list.appendChild(li);
       }
@@ -222,7 +222,7 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         const li = document.createElement('li');
         li.className = 'flex justify-between gap-3';
         li.innerHTML =
-          `<span class="min-w-0">${book.title}${qty > 1 ? ` <span class="text-[var(--color-ink-faint)]">× ${qty}</span>` : ''}</span>` +
+          `<span class="min-w-0">${escapeHtml(book.title)}${qty > 1 ? ` <span class="text-[var(--color-ink-faint)]">× ${qty}</span>` : ''}</span>` +
           `<span class="shrink-0 tabular-nums">${gbp(ckSalePence(book) * qty)}</span>`;
         list.appendChild(li);
       }

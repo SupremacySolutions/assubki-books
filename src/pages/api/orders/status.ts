@@ -54,7 +54,11 @@ export const GET: APIRoute = async ({ url }) => {
    * A write on a GET, deliberately: the alternative is a second request whose
    * only job is to say "yes, I saw it".
    */
-  if (messages.length > 0) await markRead(order.id, 'customer');
+  if (messages.length > 0) {
+    /* Only through the newest message actually returned - anything written
+       while this ran is still unread, and still counted. */
+    await markRead(order.id, 'customer', messages.reduce((n, m) => Math.max(n, m.id), 0));
+  }
 
   return Response.json(
     {

@@ -102,10 +102,23 @@ async function pointAtAHuman(chatId: string): Promise<void> {
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  // Telegram echoes the secret set with setWebhook. Without checking it, anyone
-  // who learns the URL could bind their own chat to another person's order.
+  /*
+   * Telegram echoes the secret set with setWebhook. Without checking it,
+   * anyone who learns the URL could bind their own chat to another person's
+   * order.
+   *
+   * The check used to be conditional on the secret existing, which inverted it
+   * exactly when it mattered: with nothing configured, every forged update was
+   * accepted rather than refused. A missing secret is a broken deployment, not
+   * an open door - so it is a 503 and no update is read at all. Telegram
+   * retries a 503, so a webhook configured late still delivers.
+   */
   const secret = webhookSecret();
-  if (secret && request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== secret) {
+  if (!secret) {
+    console.error('Telegram webhook has no TELEGRAM_WEBHOOK_SECRET; refusing every update.');
+    return new Response('Webhook is not configured', { status: 503 });
+  }
+  if (request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== secret) {
     return new Response('Forbidden', { status: 403 });
   }
 
