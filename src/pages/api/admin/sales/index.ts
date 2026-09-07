@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { forgetSale } from '../../../../lib/sales';
+import { readForm } from '../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -12,7 +13,8 @@ export const prerender = false;
  * putting one live ending whichever was running.
  */
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const action = String(form.get('action') ?? '');
   const id = Number.parseInt(String(form.get('id') ?? ''), 10);
   const back = (to: string) => new Response(null, { status: 302, headers: { Location: to } });

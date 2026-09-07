@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { forgetSale } from '../../../../lib/sales';
+import { readForm } from '../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -16,7 +17,8 @@ export const prerender = false;
  * rather than storing a zero that every reader would then have to filter out.
  */
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const saleId = Number.parseInt(String(form.get('sale_id') ?? ''), 10);
   if (!Number.isInteger(saleId)) return new Response('Bad request', { status: 400 });
 

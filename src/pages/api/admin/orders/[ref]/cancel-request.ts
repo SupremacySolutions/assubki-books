@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { notifyCancelDeclined } from '../../../../../lib/notify';
 import { forgetDashboard } from '../../../../../lib/dashboard';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -16,7 +17,8 @@ export const prerender = false;
  */
 export const POST: APIRoute = async ({ params, request }) => {
   const ref = String(params.ref ?? '');
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const note = String(form.get('note') ?? '').trim().slice(0, 600) || null;
 
   const order = await env.DB.prepare(

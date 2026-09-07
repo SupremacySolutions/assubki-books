@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { getOrderByRef } from '../../../../../lib/admin-db';
 import { notifyNewMessage } from '../../../../../lib/notify';
 import { BODY_MAX, normaliseBody, postMessage, threadOpen } from '../../../../../lib/messages';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -24,7 +25,8 @@ export const POST: APIRoute = async ({ params, request }) => {
   const back = (query: string) =>
     new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}${query}#thread` } });
 
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const raw = String(form.get('body') ?? '').trim();
   if (!raw) return back('?e=empty');
   if (raw.length > BODY_MAX) return back('?e=long');

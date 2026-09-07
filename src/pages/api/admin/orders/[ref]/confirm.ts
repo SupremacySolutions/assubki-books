@@ -4,6 +4,7 @@ import { getOrderByRef, getOrderItems } from '../../../../../lib/admin-db';
 import { defaultMessage } from '../../../../../lib/settings';
 import { notifyOrderConfirmed } from '../../../../../lib/notify';
 import { forgetDashboard } from '../../../../../lib/dashboard';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -25,7 +26,8 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   const order = await getOrderByRef(ref);
   if (!order) return new Response('No such order', { status: 404 });
 
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const pounds = Number(form.get('postage') ?? 0);
   const postagePence =
     order.fulfilment === 'collection' ? 0 : Math.max(0, Math.round((pounds || 0) * 100));

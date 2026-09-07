@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { getOrder } from '../../../lib/orders';
 import { notifyNewMessage } from '../../../lib/notify';
 import { overHourlyCap, postMessage, threadOpen } from '../../../lib/messages';
+import { readForm } from '../../../lib/request-body';
 
 export const prerender = false;
 
@@ -30,7 +31,8 @@ const SAYS: Record<string, string> = {
 };
 
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const ref = String(form.get('ref') ?? '').trim();
   const token = String(form.get('t') ?? '');
   const action = String(form.get('action') ?? '');

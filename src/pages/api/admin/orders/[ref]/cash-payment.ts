@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { forgetDashboard } from '../../../../../lib/dashboard';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -20,7 +21,8 @@ export const POST: APIRoute = async ({ request, params }) => {
     return Response.json({ ok: false, error: 'Missing order reference' }, { status: 400 });
   }
 
-  const formData = await request.formData();
+  const formData = await readForm(request);
+  if (!formData) return new Response('Bad request', { status: 400 });
   const cashPayment = formData.get('cash_payment') === '1' ? 1 : 0;
 
   try {

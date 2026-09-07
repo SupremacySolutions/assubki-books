@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -20,7 +21,8 @@ export const POST: APIRoute = async ({ params, request }) => {
   const id = Number.parseInt(params.id ?? '', 10);
   if (!Number.isInteger(id)) return new Response('Bad request', { status: 400 });
 
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const title = String(form.get('title') ?? '').trim().slice(0, 160);
   const note = String(form.get('note') ?? '').trim().slice(0, 1000) || null;
   const vague = String(form.get('incoming_vague') ?? '').trim() || null;

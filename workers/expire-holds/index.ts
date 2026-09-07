@@ -17,7 +17,7 @@
 
 import { expireOrders } from '../../src/lib/stock-release';
 import { pruneSearches } from '../../src/lib/searches';
-import { pruneAlerts } from '../../src/lib/stock-alerts';
+import { pruneAlerts, drainStockAlerts } from '../../src/lib/stock-alerts';
 import { drainArrivalNotices } from '../../src/lib/shipment-notify';
 import { SITE } from '../../src/lib/format';
 
@@ -222,6 +222,24 @@ export default {
     const told = await stage('arrival notices', () => drainArrivalNotices(env.DB, SITE.url));
     if (told && (told.sent || told.failed)) {
       console.log(`told ${told.sent} customer(s) their shipment arrived, ${told.failed} to retry`);
+    }
+
+    /*
+     * The people waiting for a title that came back, whose message did not go.
+     *
+     * The admin action that raised the stock already tried, and for almost
+     * everybody that is the end of it. This stage is what makes the difference
+     * between "the provider had a bad minute" and "that customer never heard":
+     * the row is still there, still owed, and backing off until it is taken.
+     *
+     * It also catches a restock done while the mail provider was down entirely,
+     * where the first attempt had no chance at all.
+     */
+    const alerts = await stage('back-in-stock alerts', () =>
+      drainStockAlerts(env.DB, SITE.url),
+    );
+    if (alerts && (alerts.sent || alerts.failed)) {
+      console.log(`told ${alerts.sent} waiting customer(s) a book is back, ${alerts.failed} to retry`);
     }
 
     const groups = await stage('group baskets', () => expireGroupBaskets(env.DB));

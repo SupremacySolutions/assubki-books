@@ -19,7 +19,6 @@
 
 import { env } from 'cloudflare:workers';
 import type { CreatedOrder } from './orders';
-import { claimWaiting, restoreWaiting } from './stock-alerts';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml, noReply, noReplyText } from './email';
 import { sendMessage, sendMessageId, optInLink, esc, botConfigured, mdLink } from './telegram';
@@ -977,71 +976,40 @@ async function tokenFor(orderId: number): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Tells everybody waiting on a title that it is back, once.
+ * Tells one person that one title is back.
  *
- * Called after stock has settled rather than as it rises: a delivery raises
- * stock and *then* hands copies to the people who reserved them, so checking
- * mid-way would announce copies that are already spoken for.
+ * One message rather than the whole list, because the list is no longer a list:
+ * `drainStockAlerts` holds a lease per row and needs a per-row answer to record
+ * against it. Sending the batch here and reporting a total meant a refusal
+ * could only ever be attributed to "somebody", which is why the failures used
+ * to be put back as a group and counted as a number.
  *
- * `claimWaiting` deletes the rows as it reads them, so two admin actions at the
- * same moment cannot send the same person the same message twice - and the
- * address is not kept once it has been used, which is why there is nothing to
- * unsubscribe from.
+ * `true` means the provider took it and the row may be deleted. `deliver`
+ * reports a refusal by returning false and an outage by throwing; the caller
+ * treats both as not sent, so this deliberately does not catch.
  */
-export async function notifyBackInStock(bookId: number, origin: string): Promise<number> {
-  const waiting = await claimWaiting(bookId);
-  if (!waiting.length) return 0;
-
-  const results = await Promise.allSettled(
-    waiting.map((w) => {
-      const link = `${origin}/book/${w.slug}`;
-      return deliver({
-        to: w.email,
-        subject: BACK_IN_STOCK.subject(w.title),
-        html: shell(
-          BACK_IN_STOCK.heading,
-          w.title,
-          `<p style="margin:0;font-size:15px;line-height:1.6">You asked us to tell you when
-             <strong>${escapeHtml(w.title)}</strong> came back. It is on the shelf now.</p>` +
-            button(link, 'See it in the shop') +
-            `<p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
-               Stock is limited and we have not held a copy for you - it is first come.
-               This is the only message you will get about it; we do not keep your address
-               once it has been used.</p>`,
-        ),
-        text:
-          `${w.title} is back in stock.\n\n${link}\n\n` +
-          'We have not held a copy - it is first come. This is the only message you will ' +
-          'get about it, and we do not keep your address once it has been used.\n',
-      });
-    }),
-  );
-
-  /*
-   * Only a send that actually happened counts as having told somebody.
-   *
-   * `claimWaiting` deletes the rows as it reads them - that is what stops two
-   * admin actions telling one person twice - so a refusal from the provider
-   * used to throw the subscriber away with it, and this returned the number
-   * attempted as though every one had arrived. Whoever was on the wrong end of
-   * a rate limit simply never heard, and nothing remembered them.
-   *
-   * `deliver` reports a refusal by returning false and an outage by throwing,
-   * so both count as not told.
-   */
-  const missed: string[] = [];
-  results.forEach((r, i) => {
-    if (r.status === 'rejected') {
-      console.error('[notify] back-in-stock failed', r.reason);
-      missed.push(waiting[i].email);
-    } else if (r.value === false) {
-      missed.push(waiting[i].email);
-    }
+export async function sendBackInStock(
+  alert: { email: string; title: string; slug: string },
+  origin: string,
+): Promise<boolean> {
+  const link = `${origin}/book/${alert.slug}`;
+  return await deliver({
+    to: alert.email,
+    subject: BACK_IN_STOCK.subject(alert.title),
+    html: shell(
+      BACK_IN_STOCK.heading,
+      alert.title,
+      `<p style="margin:0;font-size:15px;line-height:1.6">You asked us to tell you when
+         <strong>${escapeHtml(alert.title)}</strong> came back. It is on the shelf now.</p>` +
+        button(link, 'See it in the shop') +
+        `<p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
+           Stock is limited and we have not held a copy for you - it is first come.
+           This is the only message you will get about it; we do not keep your address
+           once it has been used.</p>`,
+    ),
+    text:
+      `${alert.title} is back in stock.\n\n${link}\n\n` +
+      'We have not held a copy - it is first come. This is the only message you will ' +
+      'get about it, and we do not keep your address once it has been used.\n',
   });
-
-  if (missed.length) {
-    console.error(`[notify] ${missed.length} back-in-stock message(s) not sent; putting them back`);
-    await restoreWaiting(bookId, missed);
-  }
-  return waiting.length - missed.length;
 }

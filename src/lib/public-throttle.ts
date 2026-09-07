@@ -18,6 +18,23 @@ import { env } from 'cloudflare:workers';
 export const LIMITS = {
   order: { perHour: 12, window: 3600 },
   group: { perHour: 6, window: 3600 },
+  /*
+   * Order recovery is the third, and it is the one that is guessed at rather
+   * than abused.
+   *
+   * A reference and the address it was placed with hands back the order's
+   * token - the whole of it, immediately, in the redirect. Somebody who knows a
+   * customer's email address is then one short reference away, and there was
+   * nothing at all to stop them trying every one. That is not a flood the other
+   * two limits describe; it is a slow read of the keyspace, and it only needs
+   * to be made too slow to be worth doing.
+   *
+   * Ten an hour, because a real person recovering an order types it wrong once
+   * or twice and looks up perhaps two orders in a sitting. Every attempt is
+   * counted, hit or miss: counting only the misses would let a caller who knows
+   * one good pair keep their allowance topped up for ever.
+   */
+  lookup: { perHour: 10, window: 3600 },
 } as const;
 
 export type PublicAction = keyof typeof LIMITS;

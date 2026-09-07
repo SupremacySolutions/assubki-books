@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { getOrder } from '../../../lib/orders';
 import { notifyNewMessage } from '../../../lib/notify';
 import { THREAD } from '../../../lib/order-status';
+import { readForm } from '../../../lib/request-body';
 import {
   BODY_MAX,
   IMAGES_PER_ORDER,
@@ -43,7 +44,8 @@ interface UploadEnv {
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const ref = String(form.get('ref') ?? '').trim();
   const token = String(form.get('t') ?? '');
 

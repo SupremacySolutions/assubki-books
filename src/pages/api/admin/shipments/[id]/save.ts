@@ -1,11 +1,13 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 export const POST: APIRoute = async ({ params, request }) => {
   const shipmentId = Number(params.id);
   if (!Number.isSafeInteger(shipmentId)) return new Response('Bad request', { status: 400 });
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const rows = form
     .getAll('row')
     .map((v) => Number(v))

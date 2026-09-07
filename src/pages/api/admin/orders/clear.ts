@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { forgetDashboard } from '../../../../lib/dashboard';
+import { readForm } from '../../../../lib/request-body';
 
 export const prerender = false;
 
@@ -18,7 +19,8 @@ export const prerender = false;
 const CLEARABLE = ['cancelled', 'expired'];
 
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  const form = await readForm(request);
+  if (!form) return new Response('Bad request', { status: 400 });
   const scopeRaw = String(form.get('scope') ?? 'both');
   const statuses = CLEARABLE.includes(scopeRaw) ? [scopeRaw] : CLEARABLE;
 

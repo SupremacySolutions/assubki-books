@@ -7,12 +7,17 @@ import { env } from 'cloudflare:workers';
  * since it was written, and until now that promise was kept by the owner
  * remembering.
  *
- * **The row is deleted the moment the message is sent.** The address is held
- * only until it has been used, which is the honest answer to "how long do you
- * keep this" and the reason there is nothing to unsubscribe from - nothing
- * persists to unsubscribe from. There is no double opt-in either: it halves
- * the number of people who finish, and would mean a second kind of token to
- * build and guard for a single low-stakes message.
+ * **The row is deleted the moment the message is sent** - and not one moment
+ * earlier. The address is held only until it has been used, which is the honest
+ * answer to "how long do you keep this" and the reason there is nothing to
+ * unsubscribe from: nothing persists to unsubscribe from. There is no double
+ * opt-in either: it halves the number of people who finish, and would mean a
+ * second kind of token to build and guard for a single low-stakes message.
+ *
+ * The row used to be deleted the moment it was *read*, which is not the same
+ * thing and cost people their alerts whenever a provider refused. It is a small
+ * outbox now - claimed, attempted, backed off, deleted on success - built the
+ * way `shipment-notify.ts` builds the same idea. See `0040_stock_alert_outbox`.
  */
 
 /** One address may be waiting on this many titles at once. */
@@ -74,52 +79,188 @@ export interface Waiting {
 }
 
 /**
- * Everybody waiting on a book, and the row is taken as it is read.
+ * Marks everybody waiting on a book as owed a message.
  *
- * Read and delete together so a second call cannot send the same person the
- * same message twice - two admin actions can raise stock at the same moment,
- * and `RETURNING` makes the claim atomic.
+ * This replaces reading-and-deleting in one go. That was atomic, which is what
+ * stopped two admin actions telling one person twice, but it made the delete
+ * the *only* record that the promise had been taken on - so a provider refusing
+ * threw the subscriber away with the attempt.
+ *
+ * Setting `claimed_at` is just as atomic and throws nobody away. The row now
+ * disappears at one moment only: after a send that actually succeeded.
+ *
+ * `next_attempt_at = 0` so a restock re-arms a row that had backed off. Somebody
+ * whose address was refusing mail a week ago is worth another go the next time
+ * the book comes back.
  */
-export async function claimWaiting(bookId: number): Promise<Waiting[]> {
-  const book = await env.DB.prepare('SELECT title, slug FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<{ title: string; slug: string }>();
-  if (!book) return [];
-
-  const { results } = await env.DB.prepare(
-    'DELETE FROM stock_alerts WHERE book_id = ? RETURNING email',
+export async function markWaitingDue(bookId: number): Promise<number> {
+  const done = await env.DB.prepare(
+    `UPDATE stock_alerts SET claimed_at = unixepoch(), next_attempt_at = 0
+      WHERE book_id = ? AND claimed_at IS NULL`,
   )
     .bind(bookId)
-    .all<{ email: string }>();
+    .run();
+  return done.meta.changes ?? 0;
+}
 
-  return results.map((r) => ({ email: r.email, title: book.title, slug: book.slug }));
+export interface DueAlert extends Waiting {
+  id: number;
+  bookId: number;
+}
+
+/** How many at once. The mail quota is the constraint, not the database. */
+const PER_SWEEP = 20;
+
+/**
+ * What is owed, ready to try, and not already being sent by somebody else.
+ *
+ * Availability is re-checked here rather than trusted from whenever the row was
+ * claimed. A title can be restocked on Monday and sell out on Tuesday before a
+ * failing address finally accepts mail, and "it is back on the shelf" would
+ * then be a lie that sends somebody to an empty page.
+ */
+export async function dueAlerts(db: D1Database, limit = PER_SWEEP): Promise<DueAlert[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT a.id, a.email, a.book_id AS bookId, b.title, b.slug
+         FROM stock_alerts a
+         JOIN books b ON b.id = a.book_id
+        WHERE a.claimed_at IS NOT NULL
+          AND a.next_attempt_at <= unixepoch()
+          AND a.lease_until <= unixepoch()
+          AND b.status = 'live'
+          AND (b.stock - b.reserved) > 0
+        ORDER BY a.id
+        LIMIT ?`,
+    )
+    .bind(Math.min(PER_SWEEP, limit))
+    .all<DueAlert>();
+  return results;
 }
 
 /**
- * Puts back the people the message never reached.
+ * Takes one row for sending, or returns null if it is no longer ours to send.
  *
- * `claimWaiting` deletes as it reads, which is what stops two admin actions at
- * the same moment telling one person twice. The cost of that is that a failed
- * send - a provider refusing, a rate limit, a timeout - threw the subscriber
- * away along with the attempt, and the count returned said they had been told.
- * They were simply dropped, and the next restock knew nothing about them.
+ * The whole condition rides on the write. Reading "is this free?" and then
+ * writing "mine now" is two statements with a gap between them, and the gap is
+ * exactly what a quarter-hourly sweep and an admin stock edit will find.
  *
- * Restoring the row keeps the dedupe and turns a failure back into a wait: the
- * next time this title comes back, they are told. `OR IGNORE` because they may
- * have asked again in the meantime, and asking twice is asking once.
- *
- * This is not the delivery outbox the audit asks for - there is still no record
- * of *why* it failed, or how many times. It is the part that stops a customer
- * losing their alert to a bad minute at the provider.
+ * Availability is re-tested here as well as in `dueAlerts`, and that repetition
+ * is the point: between selecting the row and sending its message, somebody can
+ * buy the last copy. Whoever loses that race must not post "it is on the shelf
+ * now" about a book that is not. Losing here leaves the row claimed and
+ * untouched, so the next restock finds it still owed and still waiting - which
+ * is the honest outcome, and needs no separate bookkeeping to arrange.
  */
-export async function restoreWaiting(bookId: number, emails: string[]): Promise<void> {
-  if (!emails.length) return;
-  await env.DB.prepare(
-    `INSERT OR IGNORE INTO stock_alerts (book_id, email)
-     SELECT ?1, value FROM json_each(?2)`,
-  )
-    .bind(bookId, JSON.stringify(emails))
+export async function leaseAlert(db: D1Database, id: number): Promise<string | null> {
+  const token = crypto.randomUUID();
+  const claimed = await db
+    .prepare(
+      `UPDATE stock_alerts SET lease_token = ?, lease_until = unixepoch() + 300
+        WHERE id = ? AND claimed_at IS NOT NULL
+          AND next_attempt_at <= unixepoch() AND lease_until <= unixepoch()
+          AND EXISTS (SELECT 1 FROM books b
+                       WHERE b.id = stock_alerts.book_id
+                         AND b.status = 'live' AND (b.stock - b.reserved) > 0)`,
+    )
+    .bind(token, id)
     .run();
+  return claimed.meta.changes ? token : null;
+}
+
+/**
+ * Told, and forgotten.
+ *
+ * The delete is the acknowledgement, and it happens here and nowhere else. It
+ * also keeps the promise printed on the book page: the address is not kept once
+ * it has been used.
+ */
+export async function alertSent(db: D1Database, id: number, token: string): Promise<void> {
+  await db
+    .prepare('DELETE FROM stock_alerts WHERE id = ? AND lease_token = ?')
+    .bind(id, token)
+    .run();
+}
+
+/**
+ * Not told, and why.
+ *
+ * Backs off the same way the shipment notices do - fifteen minutes doubling to
+ * a day - so a provider having a bad hour is waited out rather than hammered,
+ * and an address that will never accept mail costs one send a day until the
+ * six-month prune forgets it.
+ */
+export async function alertFailed(
+  db: D1Database,
+  id: number,
+  token: string,
+  why: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE stock_alerts
+          SET attempts = attempts + 1,
+              last_error = ?,
+              next_attempt_at = unixepoch() + MIN(86400, 900 * (1 << MIN(attempts, 7))),
+              lease_token = NULL,
+              lease_until = 0
+        WHERE id = ? AND lease_token = ?`,
+    )
+    .bind(why.slice(0, 200), id, token)
+    .run();
+}
+
+/**
+ * Sends what is owed, and records what happened to each.
+ *
+ * Called both from the admin action that raised the stock - so a customer hears
+ * within seconds, as they did before - and from the quarter-hourly sweep, which
+ * is what makes a failure temporary rather than final. Neither can send the
+ * same message twice, because neither can hold the same lease.
+ *
+ * Never throws. This runs at the end of somebody's stock edit, and an email
+ * provider having a bad minute must not fail that edit.
+ */
+export async function drainStockAlerts(
+  db: D1Database,
+  origin: string,
+  limit = PER_SWEEP,
+): Promise<{ sent: number; failed: number }> {
+  let sent = 0;
+  let failed = 0;
+
+  try {
+    const due = await dueAlerts(db, limit);
+
+    for (const alert of due) {
+      const token = await leaseAlert(db, alert.id);
+      if (!token) continue;
+
+      // Imported here rather than at the top: notify.ts imports this module,
+      // and a top-level pair would be a cycle.
+      const { sendBackInStock } = await import('./notify');
+
+      let ok = false;
+      let why = '';
+      try {
+        ok = await sendBackInStock(alert, origin);
+      } catch (err) {
+        why = String(err);
+      }
+
+      if (ok) {
+        sent++;
+        await alertSent(db, alert.id, token);
+      } else {
+        failed++;
+        await alertFailed(db, alert.id, token, why || 'the provider would not take it');
+      }
+    }
+  } catch (err) {
+    console.error('[stock-alerts] could not drain', err);
+  }
+
+  return { sent, failed };
 }
 
 /** How many people are waiting, for the owner's own screens. */
@@ -152,12 +293,22 @@ export async function tellWaiting(
       .first<{ available: number }>();
     if (!row || row.available <= 0) return 0;
 
-    if ((await waitingCount(bookId)) === 0) return 0;
-
-    // Imported here rather than at the top: notify.ts imports this module for
-    // `claimWaiting`, and a top-level pair would be a cycle.
-    const { notifyBackInStock } = await import('./notify');
-    return await notifyBackInStock(bookId, origin);
+    /*
+     * Owed first, sent second.
+     *
+     * The marking is a single statement and it is the part that must not be
+     * lost: once it has run, the promise is recorded as outstanding and the
+     * sweep will keep trying until it is kept. The send that follows is only an
+     * attempt to keep it *now*, which is what a customer watching a book page
+     * expects - it is not what makes it true.
+     *
+     * So a worker evicted between the two lines costs a few minutes' delay
+     * rather than a subscriber, which is precisely the failure that used to be
+     * silent and permanent.
+     */
+    await markWaitingDue(bookId);
+    const { sent } = await drainStockAlerts(env.DB, origin);
+    return sent;
   } catch (err) {
     console.error('[stock-alerts] could not tell anybody', err);
     return 0;

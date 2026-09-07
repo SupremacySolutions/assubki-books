@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { createGroup, getGroup, cleanName } from '../../../lib/group';
 import { notifyGroupStarted } from '../../../lib/notify';
 import { takePublicAction } from '../../../lib/public-throttle';
+import { readJson } from '../../../lib/request-body';
 
 export const prerender = false;
 
@@ -35,7 +36,7 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     );
   }
 
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await readJson(request)) ?? {};
   const organiser = cleanName(body.name);
   const email = String(body.email ?? '').trim();
 
