@@ -68,20 +68,25 @@ export async function expireUnpaidReservations(
  * wakes up every quarter of an hour with the database to hand.
  */
 export async function expireGroupBaskets(db: D1Database): Promise<number> {
-  const { results } = await db
-    .prepare(`SELECT id FROM group_baskets WHERE order_ref IS NULL AND expires_at < ?`)
-    .bind(Math.floor(Date.now() / 1000))
-    .all<{ id: number }>();
-
-  if (!results.length) return 0;
-
-  const ids = results.map((r) => r.id);
-  const holes = ids.map(() => '?').join(',');
-  await db.batch([
-    db.prepare(`DELETE FROM group_basket_items WHERE group_id IN (${holes})`).bind(...ids),
-    db.prepare(`DELETE FROM group_baskets WHERE id IN (${holes})`).bind(...ids),
+  /*
+   * Deleted by the condition, not by a list of ids.
+   *
+   * This used to read the ids and build `IN (?,?,...)` from them, one bound
+   * parameter per basket. D1 refuses a statement with more than a hundred, so
+   * the hundred-and-first abandoned basket did not merely fail to be cleared -
+   * it threw, and every stage after it in the sweep was skipped along with it.
+   *
+   * Naming the condition twice removes the ceiling rather than raising it: the
+   * count of rows no longer has anything to do with the count of parameters.
+   * Both statements share one batch, so the items cannot outlive their basket.
+   */
+  const now = Math.floor(Date.now() / 1000);
+  const gone = `SELECT id FROM group_baskets WHERE order_ref IS NULL AND expires_at < ?1`;
+  const [, baskets] = await db.batch([
+    db.prepare(`DELETE FROM group_basket_items WHERE group_id IN (${gone})`).bind(now),
+    db.prepare(`DELETE FROM group_baskets WHERE order_ref IS NULL AND expires_at < ?1`).bind(now),
   ]);
-  return ids.length;
+  return baskets.meta.changes ?? 0;
 }
 
 /**
@@ -139,20 +144,35 @@ export async function sweepProofs(
    * finds the row again and deletes an object that is already gone, which R2
    * treats as success - the other order would leave a file nothing points at
    * and nothing will ever come back for.
+   *
+   * One object failing no longer abandons the rest. The rows whose objects did
+   * go are cleared; the rest keep their pointers and are found again next time,
+   * which is what makes a partial run safe to repeat.
    */
+  const cleared: number[] = [];
   for (const row of results) {
-    await bucket.delete(row.image_key);
+    try {
+      await bucket.delete(row.image_key);
+      cleared.push(row.id);
+    } catch (err) {
+      console.error(`could not remove ${row.image_key}, leaving its row for the next sweep:`, err);
+    }
   }
+  if (!cleared.length) return 0;
 
-  const ids = results.map((r) => r.id);
+  /*
+   * `json_each` rather than a placeholder per id. Two hundred rows are read at
+   * a time and D1 refuses more than a hundred bound parameters, so the list
+   * became a thrown error at a hundred and one - after the objects had already
+   * been deleted, leaving every one of those rows pointing at a file that was
+   * no longer there.
+   */
   await db
-    .prepare(
-      `UPDATE messages SET image_key = NULL WHERE id IN (${ids.map(() => '?').join(',')})`,
-    )
-    .bind(...ids)
+    .prepare(`UPDATE messages SET image_key = NULL WHERE id IN (SELECT value FROM json_each(?1))`)
+    .bind(JSON.stringify(cleared))
     .run();
 
-  return ids.length;
+  return cleared.length;
 }
 
 /**

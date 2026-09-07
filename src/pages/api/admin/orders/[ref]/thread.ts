@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getOrderByRef } from '../../../../../lib/admin-db';
+import { pollOrderByRef } from '../../../../../lib/orders';
 import { markRead, thread } from '../../../../../lib/messages';
 
 export const prerender = false;
@@ -25,7 +25,7 @@ export const prerender = false;
  */
 export const GET: APIRoute = async ({ params, url }) => {
   const ref = params.ref ?? '';
-  const order = ref ? await getOrderByRef(ref) : null;
+  const order = ref ? await pollOrderByRef(ref) : null;
 
   if (!order) {
     return Response.json({ status: null }, { headers: { 'Cache-Control': 'no-store' } });
@@ -38,8 +38,8 @@ export const GET: APIRoute = async ({ params, url }) => {
    * ambiguous, so the second one stayed invisible until a reload.
    *
    * Comparing two integers we already have first means the common case,
-   * nothing having happened, stays at the single read `getOrderByRef` was
-   * making anyway.
+   * nothing having happened, stays at the one narrow read `pollOrderByRef`
+   * makes.
    */
   const since = Number.parseInt(url.searchParams.get('since') ?? '', 10);
   const cursor = Number.isInteger(since) && since >= 0 ? since : null;

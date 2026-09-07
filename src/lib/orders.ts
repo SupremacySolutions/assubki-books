@@ -509,6 +509,69 @@ export async function siblingOrders(
   return results;
 }
 
+/**
+ * Just enough of an order to answer a poll.
+ *
+ * The order page asks every twenty seconds whether the status moved or a
+ * message arrived, and `getOrder` answers that question by reading the whole
+ * order and then every line on it - a second query, for items the poll never
+ * looks at. Both sides poll now, so an idle conversation was costing four
+ * statements a cycle to say that nothing had happened.
+ *
+ * A separate function rather than a flag on `getOrder`, because a flag returns
+ * an `OrderView` whose `items` are silently empty and the next caller has no
+ * way to know. This type simply has no items to read.
+ */
+export interface OrderPollView {
+  id: number;
+  status: string;
+  unread_for_customer: number;
+  unread_for_owner: number;
+  last_message_id: number | null;
+  last_message_at: number | null;
+  completed_at: number | null;
+}
+
+/** The poll's read, token-checked exactly as `getOrder` is. */
+export async function pollOrder(ref: string, token: string): Promise<OrderPollView | null> {
+  const order = await env.DB.prepare(
+    `SELECT id, status, access_token, completed_at,
+            COALESCE(unread_for_customer, 0) AS unread_for_customer,
+            COALESCE(unread_for_owner, 0) AS unread_for_owner,
+            last_message_at, last_message_id
+       FROM orders WHERE ref = ?`,
+  )
+    .bind(ref)
+    .first<OrderPollView & { access_token: string }>();
+  if (!order) return null;
+
+  // The same constant-time-ish comparison `getOrder` makes: length, then a
+  // full scan, so a timing difference does not leak the token a character at
+  // a time.
+  const a = new TextEncoder().encode(order.access_token);
+  const b = new TextEncoder().encode(token);
+  if (a.length !== b.length) return null;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  if (diff !== 0) return null;
+
+  const { access_token: _drop, ...rest } = order;
+  return rest;
+}
+
+/** The same narrow read for the portal, where the session is the authority. */
+export async function pollOrderByRef(ref: string): Promise<OrderPollView | null> {
+  return env.DB.prepare(
+    `SELECT id, status, completed_at,
+            COALESCE(unread_for_customer, 0) AS unread_for_customer,
+            COALESCE(unread_for_owner, 0) AS unread_for_owner,
+            last_message_at, last_message_id
+       FROM orders WHERE ref = ?`,
+  )
+    .bind(ref)
+    .first<OrderPollView>();
+}
+
 /** Token-checked so a guessed reference cannot expose someone else's order. */
 export async function getOrder(ref: string, token: string): Promise<OrderView | null> {
   const order = await env.DB.prepare(

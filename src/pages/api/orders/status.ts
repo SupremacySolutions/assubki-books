@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getOrder } from '../../../lib/orders';
+import { pollOrder } from '../../../lib/orders';
 import { markRead, thread } from '../../../lib/messages';
 
 export const prerender = false;
@@ -12,14 +12,17 @@ export const prerender = false;
  * to show the new status without requiring a manual reload.
  *
  * The thread rides along here rather than getting an endpoint of its own.
- * `getOrder` already selects both counters and `last_message_at` from the row
- * it was fetching anyway, so telling the page about a new message costs no
- * extra D1 read - and the page keeps one poll instead of two.
+ * The read is deliberately narrow: identity, status and the message cursor,
+ * and nothing else. It used to call `getOrder`, which also loads every line on
+ * the order - a second query, every twenty seconds, for items a poll never
+ * looks at. Both counters and the cursor come from the one row, so telling the
+ * page about a new message still costs no extra read, and the page keeps one
+ * poll instead of two.
  */
 export const GET: APIRoute = async ({ url }) => {
   const ref = url.searchParams.get('ref')?.trim() ?? '';
   const token = url.searchParams.get('t') ?? '';
-  const order = ref && token ? await getOrder(ref, token) : null;
+  const order = ref && token ? await pollOrder(ref, token) : null;
 
   if (!order) {
     return Response.json({ status: null }, { headers: { 'Cache-Control': 'no-store' } });
@@ -32,7 +35,7 @@ export const GET: APIRoute = async ({ url }) => {
    * Reading the thread on every poll would put a second query behind a
    * five-second timer on every open order page; comparing two integers we
    * already have first means the common case - nothing has happened - stays at
-   * the one read `getOrder` was making anyway.
+   * the one narrow read `pollOrder` makes.
    *
    * An id, not a timestamp. It used to be `created_at`, which is whole seconds,
    * so two messages written inside the same second left the page's cursor equal

@@ -95,6 +95,33 @@ export async function claimWaiting(bookId: number): Promise<Waiting[]> {
   return results.map((r) => ({ email: r.email, title: book.title, slug: book.slug }));
 }
 
+/**
+ * Puts back the people the message never reached.
+ *
+ * `claimWaiting` deletes as it reads, which is what stops two admin actions at
+ * the same moment telling one person twice. The cost of that is that a failed
+ * send - a provider refusing, a rate limit, a timeout - threw the subscriber
+ * away along with the attempt, and the count returned said they had been told.
+ * They were simply dropped, and the next restock knew nothing about them.
+ *
+ * Restoring the row keeps the dedupe and turns a failure back into a wait: the
+ * next time this title comes back, they are told. `OR IGNORE` because they may
+ * have asked again in the meantime, and asking twice is asking once.
+ *
+ * This is not the delivery outbox the audit asks for - there is still no record
+ * of *why* it failed, or how many times. It is the part that stops a customer
+ * losing their alert to a bad minute at the provider.
+ */
+export async function restoreWaiting(bookId: number, emails: string[]): Promise<void> {
+  if (!emails.length) return;
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO stock_alerts (book_id, email)
+     SELECT ?1, value FROM json_each(?2)`,
+  )
+    .bind(bookId, JSON.stringify(emails))
+    .run();
+}
+
 /** How many people are waiting, for the owner's own screens. */
 export async function waitingCount(bookId: number): Promise<number> {
   const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM stock_alerts WHERE book_id = ?')

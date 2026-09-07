@@ -79,8 +79,24 @@ import Rosette from '../components/Rosette.astro';
           <input id="groupshare" readonly class="field flex-1 min-w-0 text-[13.5px]" />
           <button type="button" id="groupcopy" class="btn btn-ghost !px-4 shrink-0" aria-label="Copy the link">Copy</button>
         </div>
+        {/*
+          * What the link actually gives away.
+          *
+          * It said "anyone with this link can add to the basket", which is
+          * true and incomplete: the group is identified by the link and a
+          * person by the name they type, so anybody holding it can also change
+          * or remove a line somebody else put in. The page used to imply the
+          * opposite by showing your own lines as editable and everyone else's
+          * as plain numbers.
+          *
+          * A group basket is a shared list - a class or a family ordering
+          * together - and that is a reasonable thing for it to be. It is not a
+          * reasonable thing to be quiet about.
+          */}
         <p class="mt-3 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-          Anyone with this link can add to the basket. It lasts a week.
+          Anyone with this link can add to the basket, and can change or remove anything on it,
+          including lines somebody else added. Share it with people you are ordering with. It
+          lasts a week.
         </p>
         <p id="groupkeep" hidden class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
           Your own link - the one that sends the order - is in your email. This page is that link;

@@ -19,7 +19,7 @@
 
 import { env } from 'cloudflare:workers';
 import type { CreatedOrder } from './orders';
-import { claimWaiting } from './stock-alerts';
+import { claimWaiting, restoreWaiting } from './stock-alerts';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml, noReply, noReplyText } from './email';
 import { sendMessage, sendMessageId, optInLink, esc, botConfigured, mdLink } from './telegram';
@@ -1017,8 +1017,31 @@ export async function notifyBackInStock(bookId: number, origin: string): Promise
     }),
   );
 
-  for (const r of results) {
-    if (r.status === 'rejected') console.error('[notify] back-in-stock failed', r.reason);
+  /*
+   * Only a send that actually happened counts as having told somebody.
+   *
+   * `claimWaiting` deletes the rows as it reads them - that is what stops two
+   * admin actions telling one person twice - so a refusal from the provider
+   * used to throw the subscriber away with it, and this returned the number
+   * attempted as though every one had arrived. Whoever was on the wrong end of
+   * a rate limit simply never heard, and nothing remembered them.
+   *
+   * `deliver` reports a refusal by returning false and an outage by throwing,
+   * so both count as not told.
+   */
+  const missed: string[] = [];
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      console.error('[notify] back-in-stock failed', r.reason);
+      missed.push(waiting[i].email);
+    } else if (r.value === false) {
+      missed.push(waiting[i].email);
+    }
+  });
+
+  if (missed.length) {
+    console.error(`[notify] ${missed.length} back-in-stock message(s) not sent; putting them back`);
+    await restoreWaiting(bookId, missed);
   }
-  return waiting.length;
+  return waiting.length - missed.length;
 }
