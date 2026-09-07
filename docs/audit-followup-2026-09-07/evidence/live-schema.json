@@ -1,0 +1,498 @@
+[
+  {
+    "results": [
+      {
+        "type": "index",
+        "name": "idx_alerts_book",
+        "tbl_name": "stock_alerts",
+        "sql": "CREATE INDEX idx_alerts_book ON stock_alerts(book_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_bookcats_category",
+        "tbl_name": "book_categories",
+        "sql": "CREATE INDEX idx_bookcats_category ON book_categories(category_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_bookimages_book",
+        "tbl_name": "book_images",
+        "sql": "CREATE INDEX idx_bookimages_book ON book_images(book_id, sort)"
+      },
+      {
+        "type": "index",
+        "name": "idx_books_created",
+        "tbl_name": "books",
+        "sql": "CREATE INDEX idx_books_created ON books(created_at DESC)"
+      },
+      {
+        "type": "index",
+        "name": "idx_books_incoming",
+        "tbl_name": "books",
+        "sql": "CREATE INDEX idx_books_incoming ON books(incoming) WHERE incoming > 0"
+      },
+      {
+        "type": "index",
+        "name": "idx_books_language",
+        "tbl_name": "books",
+        "sql": "CREATE INDEX idx_books_language ON books(status, language)"
+      },
+      {
+        "type": "index",
+        "name": "idx_books_legacy",
+        "tbl_name": "books",
+        "sql": "CREATE INDEX idx_books_legacy  ON books(legacy_slug)"
+      },
+      {
+        "type": "index",
+        "name": "idx_books_legacy_lower",
+        "tbl_name": "books",
+        "sql": "CREATE INDEX idx_books_legacy_lower ON books(LOWER(legacy_slug))"
+      },
+      {
+        "type": "index",
+        "name": "idx_books_set",
+        "tbl_name": "books",
+        "sql": "CREATE INDEX idx_books_set ON books(set_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_books_shipment",
+        "tbl_name": "books",
+        "sql": "CREATE INDEX idx_books_shipment  ON books(shipment_id, shipment_sort) WHERE shipment_id IS NOT NULL"
+      },
+      {
+        "type": "index",
+        "name": "idx_books_status",
+        "tbl_name": "books",
+        "sql": "CREATE INDEX idx_books_status  ON books(status)"
+      },
+      {
+        "type": "index",
+        "name": "idx_categories_parent",
+        "tbl_name": "categories",
+        "sql": "CREATE INDEX idx_categories_parent ON categories(parent_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_group_baskets_expiry",
+        "tbl_name": "group_baskets",
+        "sql": "CREATE INDEX idx_group_baskets_expiry ON group_baskets(expires_at) WHERE order_ref IS NULL"
+      },
+      {
+        "type": "index",
+        "name": "idx_group_items_group",
+        "tbl_name": "group_basket_items",
+        "sql": "CREATE INDEX idx_group_items_group ON group_basket_items(group_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_ledger_book",
+        "tbl_name": "stock_ledger",
+        "sql": "CREATE INDEX idx_ledger_book  ON stock_ledger(book_id, at DESC)"
+      },
+      {
+        "type": "index",
+        "name": "idx_ledger_order",
+        "tbl_name": "stock_ledger",
+        "sql": "CREATE INDEX idx_ledger_order ON stock_ledger(order_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_login_attempts",
+        "tbl_name": "login_attempts",
+        "sql": "CREATE INDEX idx_login_attempts ON login_attempts(ip, at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_messages_cursor",
+        "tbl_name": "messages",
+        "sql": "CREATE INDEX idx_messages_cursor ON messages(order_id, id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_messages_order",
+        "tbl_name": "messages",
+        "sql": "CREATE INDEX idx_messages_order ON messages(order_id, created_at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_notices_pending",
+        "tbl_name": "shipment_notices",
+        "sql": "CREATE INDEX idx_notices_pending ON shipment_notices(next_attempt_at,id) WHERE sent_at IS NULL"
+      },
+      {
+        "type": "index",
+        "name": "idx_order_items_sale",
+        "tbl_name": "order_items",
+        "sql": "CREATE INDEX idx_order_items_sale ON order_items(sale_id) WHERE sale_id IS NOT NULL"
+      },
+      {
+        "type": "index",
+        "name": "idx_orderitems_book",
+        "tbl_name": "order_items",
+        "sql": "CREATE INDEX idx_orderitems_book  ON order_items(book_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_orderitems_order",
+        "tbl_name": "order_items",
+        "sql": "CREATE INDEX idx_orderitems_order ON order_items(order_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_cancel_requested",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_cancel_requested ON orders(cancel_requested_at) WHERE cancel_requested_at IS NOT NULL"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_chat",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_chat    ON orders(telegram_chat_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_created",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_created ON orders(created_at DESC)"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_email",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_email   ON orders(email)"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_expiry",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_expiry  ON orders(status, expires_at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_pay_by",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_pay_by   ON orders(status, pay_by) WHERE pay_by IS NOT NULL"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_shipment",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_shipment ON orders(shipment_id) WHERE shipment_id IS NOT NULL"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_split",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_split ON orders(split_group) WHERE split_group IS NOT NULL"
+      },
+      {
+        "type": "index",
+        "name": "idx_orders_status",
+        "tbl_name": "orders",
+        "sql": "CREATE INDEX idx_orders_status  ON orders(status)"
+      },
+      {
+        "type": "index",
+        "name": "idx_owner_notices_at",
+        "tbl_name": "owner_notices",
+        "sql": "CREATE INDEX idx_owner_notices_at ON owner_notices(at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_public_actions",
+        "tbl_name": "public_actions",
+        "sql": "CREATE INDEX idx_public_actions ON public_actions(action, ip, at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_public_actions_at",
+        "tbl_name": "public_actions",
+        "sql": "CREATE INDEX idx_public_actions_at ON public_actions(at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_sale_items_book",
+        "tbl_name": "sale_items",
+        "sql": "CREATE INDEX idx_sale_items_book ON sale_items(book_id)"
+      },
+      {
+        "type": "index",
+        "name": "idx_sales_one_live",
+        "tbl_name": "sales",
+        "sql": "CREATE UNIQUE INDEX idx_sales_one_live ON sales(status) WHERE status = 'live'"
+      },
+      {
+        "type": "index",
+        "name": "idx_searches_at",
+        "tbl_name": "searches",
+        "sql": "CREATE INDEX idx_searches_at ON searches(at)"
+      },
+      {
+        "type": "index",
+        "name": "idx_shipments_status",
+        "tbl_name": "shipments",
+        "sql": "CREATE INDEX idx_shipments_status ON shipments(status)"
+      },
+      {
+        "type": "table",
+        "name": "_cf_KV",
+        "tbl_name": "_cf_KV",
+        "sql": "CREATE TABLE _cf_KV (\n        key TEXT PRIMARY KEY,\n        value BLOB\n      ) WITHOUT ROWID"
+      },
+      {
+        "type": "table",
+        "name": "book_categories",
+        "tbl_name": "book_categories",
+        "sql": "CREATE TABLE book_categories (\n  book_id     INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,\n  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,\n  PRIMARY KEY (book_id, category_id)\n)"
+      },
+      {
+        "type": "table",
+        "name": "book_images",
+        "tbl_name": "book_images",
+        "sql": "CREATE TABLE book_images (\n  id       INTEGER PRIMARY KEY AUTOINCREMENT,\n  book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,\n  -- Storage key, e.g. \"books/al-nahw-al-wadih/1.webp\". The prefix decides\n  -- where it is served from: \"books/\" are the migrated covers, shipped as\n  -- static assets under public/img/ and immutable; \"uploads/\" are images the\n  -- owner adds later, which live in R2. Both resolve under /img/<key>.\n  image_key TEXT   NOT NULL,\n  alt      TEXT,\n  sort     INTEGER NOT NULL DEFAULT 0,\n  width    INTEGER,\n  height   INTEGER\n)"
+      },
+      {
+        "type": "table",
+        "name": "book_set_stock",
+        "tbl_name": "book_set_stock",
+        "sql": "CREATE TABLE book_set_stock (\n  set_id  INTEGER NOT NULL REFERENCES book_sets(id) ON DELETE CASCADE,\n  volume  INTEGER NOT NULL,\n  have    INTEGER NOT NULL DEFAULT 0 CHECK (have >= 0),\n  PRIMARY KEY (set_id, volume)\n)"
+      },
+      {
+        "type": "table",
+        "name": "book_sets",
+        "tbl_name": "book_sets",
+        "sql": "CREATE TABLE book_sets (\n  id       INTEGER PRIMARY KEY AUTOINCREMENT,\n  -- What the owner calls the whole thing, for the portal only.\n  name     TEXT    NOT NULL,\n  -- How many volumes the complete set has.\n  volumes  INTEGER NOT NULL CHECK (volumes > 0 AND volumes <= 200),\n  created_at INTEGER NOT NULL DEFAULT (unixepoch())\n)"
+      },
+      {
+        "type": "table",
+        "name": "books",
+        "tbl_name": "books",
+        "sql": "CREATE TABLE books (\n  id               INTEGER PRIMARY KEY AUTOINCREMENT,\n  slug             TEXT    NOT NULL UNIQUE,\n  -- The old percent-encoded WooCommerce slug. Kept so /product/<legacy_slug>/\n  -- links already posted in the Telegram channel can 301 to the new page.\n  legacy_slug      TEXT,\n  legacy_wc_id     INTEGER,\n\n  -- Titles are bilingual. Splitting them lets each be rendered with the right\n  -- font and `dir`, which the old WordPress theme did badly.\n  title            TEXT    NOT NULL,\n  title_ar         TEXT,\n\n  author           TEXT,\n  publisher        TEXT,\n  description_html TEXT,\n\n  price_pence      INTEGER NOT NULL CHECK (price_pence >= 0),\n\n  stock            INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),\n  reserved         INTEGER NOT NULL DEFAULT 0 CHECK (reserved >= 0),\n\n  status           TEXT    NOT NULL DEFAULT 'live'\n                     CHECK (status IN ('draft', 'live', 'archived')),\n\n  created_at       INTEGER NOT NULL DEFAULT (unixepoch()),\n  updated_at       INTEGER NOT NULL DEFAULT (unixepoch()), telegram_message_id INTEGER, telegram_posted_at INTEGER, volumes INTEGER, set_id   INTEGER REFERENCES book_sets(id) ON DELETE SET NULL, set_from INTEGER, set_to   INTEGER, incoming INTEGER NOT NULL DEFAULT 0 CHECK (incoming >= 0), reserved_incoming INTEGER NOT NULL DEFAULT 0 CHECK (reserved_incoming >= 0), incoming_vague TEXT, incoming_month TEXT, isbn TEXT, title_ur TEXT, language TEXT GENERATED ALWAYS AS (\n  CASE\n    WHEN title_ar IS NOT NULL AND trim(title_ar) <> '' THEN 'arabic'\n    WHEN title_ur IS NOT NULL AND trim(title_ur) <> '' THEN 'urdu'\n    ELSE 'english'\n  END\n) VIRTUAL, telegram_album_ids TEXT, telegram_caption TEXT, shipment_id   INTEGER REFERENCES shipments(id) ON DELETE SET NULL, shipment_sort INTEGER, delivery_version INTEGER NOT NULL DEFAULT 0,\n\n  -- A reservation must never exceed the copies actually held.\n  CHECK (reserved <= stock)\n)"
+      },
+      {
+        "type": "table",
+        "name": "books_fts",
+        "tbl_name": "books_fts",
+        "sql": "CREATE VIRTUAL TABLE books_fts USING fts5(\n  title,\n  title_ar,\n  title_ur,\n  author,\n  description_html,\n  content = 'books',\n  content_rowid = 'id',\n  tokenize = 'unicode61 remove_diacritics 2'\n)"
+      },
+      {
+        "type": "table",
+        "name": "books_fts_config",
+        "tbl_name": "books_fts_config",
+        "sql": "CREATE TABLE 'books_fts_config'(k PRIMARY KEY, v) WITHOUT ROWID"
+      },
+      {
+        "type": "table",
+        "name": "books_fts_data",
+        "tbl_name": "books_fts_data",
+        "sql": "CREATE TABLE 'books_fts_data'(id INTEGER PRIMARY KEY, block BLOB)"
+      },
+      {
+        "type": "table",
+        "name": "books_fts_docsize",
+        "tbl_name": "books_fts_docsize",
+        "sql": "CREATE TABLE 'books_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB)"
+      },
+      {
+        "type": "table",
+        "name": "books_fts_idx",
+        "tbl_name": "books_fts_idx",
+        "sql": "CREATE TABLE 'books_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID"
+      },
+      {
+        "type": "table",
+        "name": "categories",
+        "tbl_name": "categories",
+        "sql": "CREATE TABLE categories (\n  id          INTEGER PRIMARY KEY,\n  slug        TEXT    NOT NULL UNIQUE,\n  name        TEXT    NOT NULL,\n  parent_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,\n  sort        INTEGER NOT NULL DEFAULT 0,\n  -- Denormalised full path (\"syllabus/dars-nizami\") so /catalogue/<path>\n  -- resolves in one lookup instead of walking parents on every request.\n  path        TEXT    NOT NULL UNIQUE\n)"
+      },
+      {
+        "type": "table",
+        "name": "d1_migrations",
+        "tbl_name": "d1_migrations",
+        "sql": "CREATE TABLE \"d1_migrations\"(\n\t\tid         INTEGER PRIMARY KEY AUTOINCREMENT,\n\t\tname       TEXT UNIQUE,\n\t\tapplied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n)"
+      },
+      {
+        "type": "table",
+        "name": "deliveries",
+        "tbl_name": "deliveries",
+        "sql": "CREATE TABLE deliveries (\n  id TEXT PRIMARY KEY,\n  shipment_id INTEGER REFERENCES shipments(id) ON DELETE SET NULL,\n  book_id INTEGER REFERENCES books(id) ON DELETE SET NULL,\n  created_at INTEGER NOT NULL DEFAULT (unixepoch()),\n  applied_at INTEGER\n)"
+      },
+      {
+        "type": "table",
+        "name": "delivery_allocations",
+        "tbl_name": "delivery_allocations",
+        "sql": "CREATE TABLE delivery_allocations (\n  delivery_id TEXT NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,\n  item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,\n  qty INTEGER NOT NULL CHECK (qty > 0),\n  paid INTEGER NOT NULL CHECK (paid IN (0,1)),\n  PRIMARY KEY (delivery_id, item_id)\n)"
+      },
+      {
+        "type": "table",
+        "name": "delivery_items",
+        "tbl_name": "delivery_items",
+        "sql": "CREATE TABLE delivery_items (\n  delivery_id TEXT NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,\n  book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,\n  qty INTEGER NOT NULL CHECK (qty >= 0),\n  PRIMARY KEY (delivery_id, book_id)\n)"
+      },
+      {
+        "type": "table",
+        "name": "group_basket_items",
+        "tbl_name": "group_basket_items",
+        "sql": "CREATE TABLE \"group_basket_items\" (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  group_id   INTEGER NOT NULL REFERENCES group_baskets(id) ON DELETE CASCADE,\n  book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,\n  qty        INTEGER NOT NULL CHECK (qty > 0 AND qty <= 99),\n  -- Whose copy it is. Forty books and no idea whose is whose would leave the\n  -- organiser worse off than the pile of messages this replaces.\n  added_by   TEXT NOT NULL,\n  updated_at INTEGER NOT NULL DEFAULT (unixepoch()), member_token TEXT,\n  UNIQUE (group_id, book_id, added_by)\n)"
+      },
+      {
+        "type": "table",
+        "name": "group_baskets",
+        "tbl_name": "group_baskets",
+        "sql": "CREATE TABLE group_baskets (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  -- Same shape as an order reference: these get read aloud and typed back.\n  code       TEXT NOT NULL UNIQUE,\n  -- Holding the link is the permission. Nobody signs in to a bookshop basket.\n  token      TEXT NOT NULL,\n  organiser  TEXT NOT NULL,\n  created_at INTEGER NOT NULL DEFAULT (unixepoch()),\n  expires_at INTEGER NOT NULL,\n  -- Set once it has been sent, so the page can say so rather than letting\n  -- people keep adding to an order that has already gone.\n  order_ref  TEXT\n, owner_token TEXT NOT NULL DEFAULT '', organiser_email TEXT)"
+      },
+      {
+        "type": "table",
+        "name": "login_attempts",
+        "tbl_name": "login_attempts",
+        "sql": "CREATE TABLE login_attempts (\n  id  INTEGER PRIMARY KEY AUTOINCREMENT,\n  ip  TEXT    NOT NULL,\n  at  INTEGER NOT NULL DEFAULT (unixepoch()),\n  ok  INTEGER NOT NULL DEFAULT 0\n)"
+      },
+      {
+        "type": "table",
+        "name": "messages",
+        "tbl_name": "messages",
+        "sql": "CREATE TABLE messages (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  order_id   INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,\n  sender     TEXT    NOT NULL CHECK (sender IN ('customer', 'owner')),\n  -- \"They said it on Telegram\" and \"they typed it on the site\" are different\n  -- facts, and the owner should be able to see which door someone came through.\n  via        TEXT    NOT NULL CHECK (via IN ('web', 'telegram')),\n  body       TEXT,\n  -- Under the `proofs/` prefix, which the public /img route deliberately does\n  -- not serve. Nulled when the image is swept, leaving the message behind so\n  -- the conversation still reads.\n  image_key  TEXT,\n  -- That there *was* a photo here, which outlives the photo.\n  --\n  -- Without it a swept row could no longer tell \"somebody sent words\" from\n  -- \"somebody sent words and a screenshot that has since been removed\", so a\n  -- swept message quietly lost half of what it said.\n  had_image  INTEGER NOT NULL DEFAULT 0,\n  created_at INTEGER NOT NULL DEFAULT (unixepoch()),\n  /*\n   * A message is words, a picture, or a picture that has since been swept.\n   *\n   * The third clause is not decoration. Without it the constraint forbids the\n   * one state the sweep has to produce - a photo-only message whose photo is\n   * gone - and the sweep would fail on exactly the rows it exists to clear,\n   * the first time it ran.\n   */\n  CHECK (body IS NOT NULL OR image_key IS NOT NULL OR had_image = 1)\n)"
+      },
+      {
+        "type": "table",
+        "name": "order_items",
+        "tbl_name": "order_items",
+        "sql": "CREATE TABLE order_items (\n  id                   INTEGER PRIMARY KEY AUTOINCREMENT,\n  order_id             INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,\n  -- Deliberately not CASCADE: deleting a book must not erase the record of it\n  -- having been ordered.\n  book_id              INTEGER REFERENCES books(id) ON DELETE SET NULL,\n  title_snapshot       TEXT    NOT NULL,\n  price_pence_snapshot INTEGER NOT NULL CHECK (price_pence_snapshot >= 0),\n  qty                  INTEGER NOT NULL CHECK (qty > 0)\n, from_incoming INTEGER NOT NULL DEFAULT 0, sale_id INTEGER REFERENCES sales(id), full_price_pence INTEGER)"
+      },
+      {
+        "type": "table",
+        "name": "orders",
+        "tbl_name": "orders",
+        "sql": "CREATE TABLE \"orders\" (\n  id             INTEGER PRIMARY KEY AUTOINCREMENT,\n  ref            TEXT    NOT NULL UNIQUE,\n  access_token   TEXT    NOT NULL,\n\n  customer_name  TEXT    NOT NULL,\n  email          TEXT    NOT NULL,\n  phone          TEXT,\n  telegram       TEXT,\n\n  fulfilment     TEXT    NOT NULL DEFAULT 'delivery'\n                   CHECK (fulfilment IN ('delivery', 'collection')),\n  address        TEXT,\n  notes          TEXT,\n\n  -- 'completed' is new: delivered for a posted order, collected for one picked\n  -- up in person. 'dispatched' is now delivery-only, enforced in the endpoint.\n  status         TEXT    NOT NULL DEFAULT 'requested'\n                   CHECK (status IN ('requested', 'awaiting_payment', 'paid',\n                                     'dispatched', 'completed', 'cancelled',\n                                     'expired')),\n\n  subtotal_pence INTEGER NOT NULL CHECK (subtotal_pence >= 0),\n\n  created_at     INTEGER NOT NULL DEFAULT (unixepoch()),\n  updated_at     INTEGER NOT NULL DEFAULT (unixepoch()),\n  expires_at     INTEGER,\n  notified_at    INTEGER,\n\n  postage_pence      INTEGER,\n  total_pence        INTEGER,\n  confirmed_at       INTEGER,\n  payment_sent_at    INTEGER,\n  telegram_chat_id   TEXT,\n  telegram_linked_at INTEGER,\n  paid_at            INTEGER,\n  dispatched_at      INTEGER,\n  tracking_number    TEXT,\n\n  -- When the delivery arrived, or the books were collected.\n  completed_at     INTEGER,\n  -- Who carried it, so the tracking number can be linked to the right site\n  -- rather than always assuming Royal Mail.\n  postage_provider TEXT,\n  postage_service  TEXT,\n  -- What the owner actually sent this customer. Held per order because\n  -- different orders are paid into different accounts, so a single template in\n  -- settings could not cover it.\n  payment_message  TEXT,\n  -- How many payment screenshots the customer has sent through the bot. Capped,\n  -- so a linked chat cannot use the shop as an image relay.\n  payment_proofs   INTEGER NOT NULL DEFAULT 0\n, cash_payment INTEGER NOT NULL DEFAULT 0, address_line1 TEXT, address_line2 TEXT, address_city TEXT, address_region TEXT, address_postcode TEXT, address_country TEXT, payment_preference TEXT, cancel_note TEXT, customer_cancel_note TEXT, cancel_requested_at INTEGER, discount_pence INTEGER NOT NULL DEFAULT 0\n  CHECK (discount_pence >= 0), unread_for_owner    INTEGER NOT NULL DEFAULT 0, unread_for_customer INTEGER NOT NULL DEFAULT 0, last_message_at     INTEGER, message_notified_at INTEGER, last_message_id INTEGER, shipment_id INTEGER REFERENCES shipments(id), pay_by INTEGER, split_group TEXT)"
+      },
+      {
+        "type": "table",
+        "name": "owner_notices",
+        "tbl_name": "owner_notices",
+        "sql": "CREATE TABLE owner_notices (\n  -- Telegram's id for the message the bot sent to the owner's chat.\n  message_id INTEGER PRIMARY KEY,\n  order_id   INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,\n  at         INTEGER NOT NULL DEFAULT (unixepoch())\n)"
+      },
+      {
+        "type": "table",
+        "name": "public_actions",
+        "tbl_name": "public_actions",
+        "sql": "CREATE TABLE public_actions (\n  id     INTEGER PRIMARY KEY AUTOINCREMENT,\n  -- 'order' or 'group'. Kept apart so a busy day of ordering cannot lock\n  -- somebody out of starting a class list.\n  action TEXT    NOT NULL,\n  ip     TEXT    NOT NULL,\n  at     INTEGER NOT NULL DEFAULT (unixepoch())\n)"
+      },
+      {
+        "type": "table",
+        "name": "sale_items",
+        "tbl_name": "sale_items",
+        "sql": "CREATE TABLE sale_items (\n  sale_id     INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,\n  book_id     INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,\n  percent_off INTEGER NOT NULL CHECK (percent_off > 0 AND percent_off <= 90),\n  PRIMARY KEY (sale_id, book_id)\n)"
+      },
+      {
+        "type": "table",
+        "name": "sales",
+        "tbl_name": "sales",
+        "sql": "CREATE TABLE sales (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  -- Customer-facing: it becomes the heading on the home page row.\n  name       TEXT    NOT NULL,\n  -- The owner's optional line beneath the heading.\n  blurb      TEXT,\n  status     TEXT    NOT NULL DEFAULT 'draft'\n             CHECK (status IN ('draft', 'live', 'ended')),\n  created_at INTEGER NOT NULL DEFAULT (unixepoch()),\n  started_at INTEGER,\n  ended_at   INTEGER\n)"
+      },
+      {
+        "type": "table",
+        "name": "searches",
+        "tbl_name": "searches",
+        "sql": "CREATE TABLE searches (\n  id    INTEGER PRIMARY KEY AUTOINCREMENT,\n  -- Normalised on the way in - trimmed, lower-cased, spaces collapsed - so\n  -- \"Nur al Idah\", \"nur al-idah\" and \"  Nur Al Idah \" are one row saying one\n  -- thing rather than three saying it separately.\n  terms TEXT    NOT NULL,\n  at    INTEGER NOT NULL DEFAULT (unixepoch())\n)"
+      },
+      {
+        "type": "table",
+        "name": "settings",
+        "tbl_name": "settings",
+        "sql": "CREATE TABLE settings (\n  key        TEXT PRIMARY KEY,\n  value      TEXT NOT NULL,\n  updated_at INTEGER NOT NULL DEFAULT (unixepoch())\n)"
+      },
+      {
+        "type": "table",
+        "name": "shipment_notices",
+        "tbl_name": "shipment_notices",
+        "sql": "CREATE TABLE \"shipment_notices\" (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  shipment_id INTEGER REFERENCES shipments(id) ON DELETE SET NULL,\n  order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,\n  queued_at INTEGER NOT NULL DEFAULT (unixepoch()),\n  sent_at INTEGER,\n  attempts INTEGER NOT NULL DEFAULT 0,\n  last_error TEXT,\n  next_attempt_at INTEGER NOT NULL DEFAULT 0,\n  lease_until INTEGER NOT NULL DEFAULT 0,\n  lease_token TEXT\n)"
+      },
+      {
+        "type": "table",
+        "name": "shipments",
+        "tbl_name": "shipments",
+        "sql": "CREATE TABLE shipments (\n  id             INTEGER PRIMARY KEY AUTOINCREMENT,\n  title          TEXT NOT NULL,               -- 'India Shipment August 2026'\n  note           TEXT,                        -- shown to customers under the list\n  /*\n   * draft   - being pasted and checked over, nobody can see it\n   * open    - customers can reserve\n   * arrived - the box landed; the list stays readable, reservations are shut\n   * closed  - put away\n   */\n  status         TEXT NOT NULL DEFAULT 'draft'\n                 CHECK (status IN ('draft','open','arrived','closed')),\n  -- Same vocabulary as books.incoming_vague / incoming_month, so `whenText`\n  -- in src/lib/incoming.ts formats a shipment exactly as it formats a book.\n  incoming_vague TEXT,\n  incoming_month TEXT,\n  created_at     INTEGER NOT NULL DEFAULT (unixepoch()),\n  updated_at     INTEGER NOT NULL DEFAULT (unixepoch()),\n  opened_at      INTEGER,\n  arrived_at     INTEGER\n, delivery_version INTEGER NOT NULL DEFAULT 0)"
+      },
+      {
+        "type": "table",
+        "name": "stock_alerts",
+        "tbl_name": "stock_alerts",
+        "sql": "CREATE TABLE stock_alerts (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,\n  email      TEXT    NOT NULL,\n  created_at INTEGER NOT NULL DEFAULT (unixepoch()),\n  -- Asking twice is asking once.\n  UNIQUE (book_id, email)\n)"
+      },
+      {
+        "type": "table",
+        "name": "stock_ledger",
+        "tbl_name": "stock_ledger",
+        "sql": "CREATE TABLE stock_ledger (\n  id       INTEGER PRIMARY KEY AUTOINCREMENT,\n  book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,\n  -- Negative takes copies away, positive puts them back.\n  delta    INTEGER NOT NULL,\n  field    TEXT    NOT NULL CHECK (field IN ('stock', 'reserved')),\n  reason   TEXT    NOT NULL,\n  order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,\n  at       INTEGER NOT NULL DEFAULT (unixepoch())\n)"
+      },
+      {
+        "type": "trigger",
+        "name": "books_fts_delete",
+        "tbl_name": "books",
+        "sql": "CREATE TRIGGER books_fts_delete AFTER DELETE ON books BEGIN\n  INSERT INTO books_fts(books_fts, rowid, title, title_ar, title_ur, author, description_html)\n  VALUES ('delete', old.id, old.title, old.title_ar, old.title_ur, old.author, old.description_html);\nEND"
+      },
+      {
+        "type": "trigger",
+        "name": "books_fts_insert",
+        "tbl_name": "books",
+        "sql": "CREATE TRIGGER books_fts_insert AFTER INSERT ON books BEGIN\n  INSERT INTO books_fts(rowid, title, title_ar, title_ur, author, description_html)\n  VALUES (new.id, new.title, new.title_ar, new.title_ur, new.author, new.description_html);\nEND"
+      },
+      {
+        "type": "trigger",
+        "name": "books_fts_update",
+        "tbl_name": "books",
+        "sql": "CREATE TRIGGER books_fts_update\nAFTER UPDATE OF title, title_ar, title_ur, author, description_html ON books BEGIN\n  INSERT INTO books_fts(books_fts, rowid, title, title_ar, title_ur, author, description_html)\n  VALUES ('delete', old.id, old.title, old.title_ar, old.title_ur, old.author, old.description_html);\n  INSERT INTO books_fts(rowid, title, title_ar, title_ur, author, description_html)\n  VALUES (new.id, new.title, new.title_ar, new.title_ur, new.author, new.description_html);\nEND"
+      },
+      {
+        "type": "trigger",
+        "name": "books_incoming_not_oversold",
+        "tbl_name": "books",
+        "sql": "CREATE TRIGGER books_incoming_not_oversold\nBEFORE UPDATE OF reserved_incoming, incoming ON books\nWHEN NEW.reserved_incoming > NEW.incoming\nBEGIN\n  SELECT RAISE(ABORT, 'more copies claimed than are coming');\nEND"
+      },
+      {
+        "type": "trigger",
+        "name": "books_incoming_not_oversold_insert",
+        "tbl_name": "books",
+        "sql": "CREATE TRIGGER books_incoming_not_oversold_insert\nBEFORE INSERT ON books WHEN NEW.reserved_incoming > NEW.incoming\nBEGIN\n  SELECT RAISE(ABORT, 'more copies claimed than are coming');\nEND"
+      },
+      {
+        "type": "trigger",
+        "name": "books_set_not_oversold",
+        "tbl_name": "books",
+        "sql": "CREATE TRIGGER books_set_not_oversold\nBEFORE UPDATE OF reserved ON books\nWHEN NEW.set_id IS NOT NULL AND NEW.reserved > OLD.reserved\nBEGIN\n  SELECT RAISE(ABORT, 'set pool oversold')\n  WHERE EXISTS (\n    SELECT 1\n      FROM book_set_stock v\n     WHERE v.set_id = NEW.set_id\n       AND v.volume BETWEEN NEW.set_from AND NEW.set_to\n       -- What this listing wants, plus what every *other* listing covering the\n       -- same volume already holds, must fit in that volume's shelf count.\n       AND v.have - COALESCE((\n             SELECT SUM(o.reserved) FROM books o\n              WHERE o.set_id = NEW.set_id\n                AND o.id <> NEW.id\n                AND v.volume BETWEEN o.set_from AND o.set_to\n           ), 0) < NEW.reserved\n  );\nEND"
+      },
+      {
+        "type": "trigger",
+        "name": "orders_wait_for_arrival",
+        "tbl_name": "orders",
+        "sql": "CREATE TRIGGER orders_wait_for_arrival\nBEFORE UPDATE OF status ON orders\nWHEN NEW.status IN ('paid','dispatched','completed') AND NEW.status != OLD.status\n AND EXISTS (SELECT 1 FROM order_items WHERE order_id=NEW.id AND from_incoming=1)\nBEGIN SELECT RAISE(ABORT, 'order is still waiting for books'); END"
+      },
+      {
+        "type": "trigger",
+        "name": "shipment_claims_open",
+        "tbl_name": "books",
+        "sql": "CREATE TRIGGER shipment_claims_open\nBEFORE UPDATE OF reserved_incoming ON books\nWHEN NEW.reserved_incoming > OLD.reserved_incoming AND NEW.shipment_id IS NOT NULL\n AND NOT EXISTS (SELECT 1 FROM shipments WHERE id=NEW.shipment_id AND status='open')\nBEGIN SELECT RAISE(ABORT, 'shipment is not open'); END"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "WEUR",
+      "served_by_colo": "LHR",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 1.0211
+      },
+      "duration": 1.0211,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 880640,
+      "rows_read": 175,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  }
+]

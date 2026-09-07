@@ -1,0 +1,129 @@
+PASS Fixed F01 arrival button targets the order
+[email] resend rejected → test@example.invalid: 429 rejected
+[notify] 1 back-in-stock message(s) not sent; putting them back
+PASS Improved F02 provider rejection restores subscriber and reports zero sent
+[email] dry run → test@example.invalid: Order ASB-ZDH4 confirmed - £10.00 to pay
+[email] dry run → test@example.invalid: Ready to collect - ASB-ZDH4
+PASS Fixed F03 restocked set completes another checkout
+PASS Improved F04 existing holds prevent an ordinary reduction
+PASS Fixed F05 set creation failure rolls back header and attachment
+PASS Fixed F06 intervening message remains unread
+PASS Fixed F07 101 groups expire successfully
+PASS Fixed F08 101 deleted proof objects have metadata cleared
+PASS Fixed F09 member ownership and organiser API override
+PASS Fixed F10 group-name escaping handles markup and quotes
+PASS Fixed F11 idle customer status uses one SQL query
+Telegram webhook has no TELEGRAM_WEBHOOK_SECRET; refusing every update.
+PASS Fixed F12 absent webhook secret fails closed
+PASS Fixed F13 shipment date edits roll back on child failure
+PASS Fixed F14 concurrent message admission caps writes at twenty
+PASS Fixed F15 shipment refuses invalid concurrent edit
+PASS Fixed F18 malformed cookie is treated as absent
+PASS Remaining F16 malformed form body still throws
+PASS R01 restock races overlapping sibling holds and oversubscribes volume
+PASS R02 organiser UI payload changes own line instead of selected member
+PASS R03 legacy membership generates a different key on each read
+PASS R04 an older acknowledgement resurrects already-read messages
+[email] resend rejected → test@example.invalid: 429 rejected
+[notify] 1 back-in-stock message(s) not sent; putting them back
+PASS R05 failed restoration still loses a stock-alert subscriber
+PASS R06 same-origin URL with double-slash path still redirects externally
+PASS R07 product-page group additions omit the now-required member token
+[
+  {
+    "name": "Fixed F01 arrival button targets the order",
+    "passed": true
+  },
+  {
+    "name": "Improved F02 provider rejection restores subscriber and reports zero sent",
+    "passed": true
+  },
+  {
+    "name": "Fixed F03 restocked set completes another checkout",
+    "passed": true
+  },
+  {
+    "name": "Improved F04 existing holds prevent an ordinary reduction",
+    "passed": true
+  },
+  {
+    "name": "Fixed F05 set creation failure rolls back header and attachment",
+    "passed": true
+  },
+  {
+    "name": "Fixed F06 intervening message remains unread",
+    "passed": true
+  },
+  {
+    "name": "Fixed F07 101 groups expire successfully",
+    "passed": true
+  },
+  {
+    "name": "Fixed F08 101 deleted proof objects have metadata cleared",
+    "passed": true
+  },
+  {
+    "name": "Fixed F09 member ownership and organiser API override",
+    "passed": true
+  },
+  {
+    "name": "Fixed F10 group-name escaping handles markup and quotes",
+    "passed": true
+  },
+  {
+    "name": "Fixed F11 idle customer status uses one SQL query",
+    "passed": true
+  },
+  {
+    "name": "Fixed F12 absent webhook secret fails closed",
+    "passed": true
+  },
+  {
+    "name": "Fixed F13 shipment date edits roll back on child failure",
+    "passed": true
+  },
+  {
+    "name": "Fixed F14 concurrent message admission caps writes at twenty",
+    "passed": true
+  },
+  {
+    "name": "Fixed F15 shipment refuses invalid concurrent edit",
+    "passed": true
+  },
+  {
+    "name": "Fixed F18 malformed cookie is treated as absent",
+    "passed": true
+  },
+  {
+    "name": "Remaining F16 malformed form body still throws",
+    "passed": true
+  },
+  {
+    "name": "R01 restock races overlapping sibling holds and oversubscribes volume",
+    "passed": true
+  },
+  {
+    "name": "R02 organiser UI payload changes own line instead of selected member",
+    "passed": true
+  },
+  {
+    "name": "R03 legacy membership generates a different key on each read",
+    "passed": true
+  },
+  {
+    "name": "R04 an older acknowledgement resurrects already-read messages",
+    "passed": true
+  },
+  {
+    "name": "R05 failed restoration still loses a stock-alert subscriber",
+    "passed": true
+  },
+  {
+    "name": "R06 same-origin URL with double-slash path still redirects externally",
+    "passed": true
+  },
+  {
+    "name": "R07 product-page group additions omit the now-required member token",
+    "passed": true
+  }
+]

@@ -1,0 +1,103 @@
+[
+  {
+    "results": [
+      {
+        "migration_records": 0
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "WEUR",
+      "served_by_colo": "LHR",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.2474
+      },
+      "duration": 0.2474,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 880640,
+      "rows_read": 0,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  },
+  {
+    "results": [
+      {
+        "books": 229,
+        "orders": 3,
+        "shipments": 0,
+        "deliveries": 0,
+        "groups": 0,
+        "stock_alerts": 0
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "WEUR",
+      "served_by_colo": "LHR",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.2948
+      },
+      "duration": 0.2948,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 880640,
+      "rows_read": 232,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  },
+  {
+    "results": [],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "WEUR",
+      "served_by_colo": "LHR",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 1.0446
+      },
+      "duration": 1.0446,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 880640,
+      "rows_read": 3144,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  },
+  {
+    "results": [
+      {
+        "oversubscribed_volumes": 0
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "WEUR",
+      "served_by_colo": "LHR",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.2807
+      },
+      "duration": 0.2807,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 880640,
+      "rows_read": 16,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  }
+]

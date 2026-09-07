@@ -1,0 +1,10 @@
+{
+  "path": "/book/100-narratives-of-hadhrat-ali-murtaza",
+  "status": 200,
+  "scripts": [
+    {
+      "path": "/_astro/_slug_.astro_astro_type_script_index_0_lang.Ll7hJ3zA.js",
+      "groupRequestExcerpt": ",l=Math.max(0,r-c),u=Math.min(s+n,l);if(u>s&&!(await fetch(`/api/group/line`,{method:`POST`,headers:{\"Content-Type\":`application/json`},body:JSON.stringify({code:e.code,token:e.token,name:e.name,bookId:t,qty:u})})).ok)return null;let d=o.filter(n=>n.addedBy===e.name&&n.bookId!==t).reduce((e,t)=>e+t.qty,0);return window.asbBasket.setBadge(d+u),{added:u-s,requested:n,total:u,capped:u-s<n,ceiling:l}};n?.addEventListener(`click`,async()=>{let t=n.dataset.bookId;if(!t)return;let a=Math.max(1,Number(r?.value??`1`)||1),l=e();n.disabled=!0;let u=await s(t,Number"
+    }
+  ]
+}

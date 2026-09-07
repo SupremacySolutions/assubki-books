@@ -1,0 +1,144 @@
+PASS Fixed F01 arrival button targets the order
+[email] resend rejected → test@example.invalid: 429 rejected
+[notify] 1 back-in-stock message(s) not sent; putting them back
+PASS Improved F02 provider rejection restores subscriber and reports zero sent
+[email] dry run → test@example.invalid: Order ASB-KYCM confirmed - £10.00 to pay
+[email] dry run → test@example.invalid: Ready to collect - ASB-KYCM
+PASS Fixed F03 restocked set completes another checkout
+PASS Improved F04 existing holds prevent an ordinary reduction
+PASS Fixed F05 set creation failure rolls back header and attachment
+PASS Fixed F06 intervening message remains unread
+PASS Fixed F07 101 groups expire successfully
+PASS Fixed F08 101 deleted proof objects have metadata cleared
+PASS Fixed F09 member ownership and organiser API override
+PASS Fixed F10 group-name escaping handles markup and quotes
+PASS Fixed F11 idle customer status uses one SQL query
+Telegram webhook has no TELEGRAM_WEBHOOK_SECRET; refusing every update.
+PASS Fixed F12 absent webhook secret fails closed
+PASS Fixed F13 shipment date edits roll back on child failure
+PASS Fixed F14 concurrent message admission caps writes at twenty
+PASS Fixed F15 shipment refuses invalid concurrent edit
+PASS Fixed F18 malformed cookie is treated as absent
+PASS Remaining F16 malformed form body still throws
+PASS Closed R01 concurrent overlapping holds prevent restock
+PASS Closed R02 organiser controls carry the selected owner
+PASS Closed R03 legacy membership persists its key across reads
+PASS R03 unavailable storage preserves membership
+PASS Closed R04 stale acknowledgement cannot restore read badge
+[email] resend rejected → test@example.invalid: 429 rejected
+[notify] 1 back-in-stock message(s) not sent; putting them back
+PASS R05 failed restoration still loses a stock-alert subscriber
+PASS Closed R06 double-slash redirect falls back to admin
+PASS Closed R07 product page supplies member key and API accepts addition
+PASS Closed R08 refused uneven-pool restock leaves listing stock intact
+PASS Read cursors are independent and preserve later messages
+[
+  {
+    "name": "Fixed F01 arrival button targets the order",
+    "passed": true
+  },
+  {
+    "name": "Improved F02 provider rejection restores subscriber and reports zero sent",
+    "passed": true
+  },
+  {
+    "name": "Fixed F03 restocked set completes another checkout",
+    "passed": true
+  },
+  {
+    "name": "Improved F04 existing holds prevent an ordinary reduction",
+    "passed": true
+  },
+  {
+    "name": "Fixed F05 set creation failure rolls back header and attachment",
+    "passed": true
+  },
+  {
+    "name": "Fixed F06 intervening message remains unread",
+    "passed": true
+  },
+  {
+    "name": "Fixed F07 101 groups expire successfully",
+    "passed": true
+  },
+  {
+    "name": "Fixed F08 101 deleted proof objects have metadata cleared",
+    "passed": true
+  },
+  {
+    "name": "Fixed F09 member ownership and organiser API override",
+    "passed": true
+  },
+  {
+    "name": "Fixed F10 group-name escaping handles markup and quotes",
+    "passed": true
+  },
+  {
+    "name": "Fixed F11 idle customer status uses one SQL query",
+    "passed": true
+  },
+  {
+    "name": "Fixed F12 absent webhook secret fails closed",
+    "passed": true
+  },
+  {
+    "name": "Fixed F13 shipment date edits roll back on child failure",
+    "passed": true
+  },
+  {
+    "name": "Fixed F14 concurrent message admission caps writes at twenty",
+    "passed": true
+  },
+  {
+    "name": "Fixed F15 shipment refuses invalid concurrent edit",
+    "passed": true
+  },
+  {
+    "name": "Fixed F18 malformed cookie is treated as absent",
+    "passed": true
+  },
+  {
+    "name": "Remaining F16 malformed form body still throws",
+    "passed": true
+  },
+  {
+    "name": "Closed R01 concurrent overlapping holds prevent restock",
+    "passed": true
+  },
+  {
+    "name": "Closed R02 organiser controls carry the selected owner",
+    "passed": true
+  },
+  {
+    "name": "Closed R03 legacy membership persists its key across reads",
+    "passed": true
+  },
+  {
+    "name": "R03 unavailable storage preserves membership",
+    "passed": true
+  },
+  {
+    "name": "Closed R04 stale acknowledgement cannot restore read badge",
+    "passed": true
+  },
+  {
+    "name": "R05 failed restoration still loses a stock-alert subscriber",
+    "passed": true
+  },
+  {
+    "name": "Closed R06 double-slash redirect falls back to admin",
+    "passed": true
+  },
+  {
+    "name": "Closed R07 product page supplies member key and API accepts addition",
+    "passed": true
+  },
+  {
+    "name": "Closed R08 refused uneven-pool restock leaves listing stock intact",
+    "passed": true
+  },
+  {
+    "name": "Read cursors are independent and preserve later messages",
+    "passed": true
+  }
+]

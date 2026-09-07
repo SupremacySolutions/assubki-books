@@ -1,0 +1,195 @@
+NOT REPRODUCED F01 arrival email primary link has reversed arguments: The input did not match the regular expression /href="See your order"/. Input:
+
+'<!doctype html><html><head>\n' +
+  '  <meta charset="utf-8">\n' +
+  '  <meta name="viewport" content="width=device-width,initial-scale=1">\n' +
+  '  <meta name="color-scheme" content="light">\n' +
+  '  <meta name="supported-color-schemes" content="light">\n' +
+  '  </head><body style="margin:0;background:#f5f4f0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#101828">\n' +
+  '  <div style="max-width:560px;margin:0 auto;padding:28px 22px">\n' +
+  '    <div style="background:#0e2a55;color:#ffffff;padding:20px 24px 22px;border-radius:3px 3px 0 0">\n' +
+  '      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">\n' +
+  '        <tr>\n' +
+  '          <td valign="middle" style="padding-right:10px">\n' +
+  '            <img src="https://assubkibooks.co.uk/email/mark.png" width="28" height="28" alt=""\n' +
+  '                 style="display:block;border:0;outline:none;text-decoration:none">\n' +
+  '          </td>\n' +
+  '          <td valign="middle" style="line-height:1.25">\n' +
+  '            <div style="font-size:15px;font-weight:600;color:#ffffff">As-Subkī Books</div>\n' +
+  '            <div style="font-size:12.5px;color:#8fa3c4;direction:rtl">مكتبة السبكي</div>\n' +
+  '          </td>\n' +
+  '        </tr>\n' +
+  '      </table>\n' +
+  '      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0 0">\n' +
+  '        <tr><td height="1" bgcolor="#2a4a78" style="height:1px;line-height:1px;font-size:0">&nbsp;</td></tr>\n' +
+  '      </table>\n' +
+  '      <h1 style="margin:16px 0 0;font-size:20px;font-weight:600;color:#ffffff">Your reserved books have arrived</h1>\n' +
+  '      <p style="margin:6px 0 0;color:#c3ccde;font-size:15px">السلام عليكم Regression</p>\n' +
+  '    </div>\n' +
+  '    <div style="background:#fff;border:1px solid #ddd9d1;border-top:none;padding:24px;border-radius:0 0 3px 3px">\n' +
+  '      \n' +
+  '    <p>The books you reserved from <strong>Test shipment</strong>\n' +
+  '       have arrived, and your copies are set aside in your name.</p>\n' +
+  '    <p>See your order for the latest total and payment instructions. Please let us know by <strong>Monday 14 September</strong> - after that the copies go back on the shelf and the reservation is cancelled.</p>\n' +
+  '    <p>If you need longer, or would rather not go ahead, just reply and tell us.</p>\n' +
+  '    <p style="margin:22px 0 0"><a href="https://example.invalid/order?ref=ASB-K4D8&amp;t=fc405722b8043569290b57a1db3a1689" style="background:#184485;color:#fff;padding:11px 20px;border-radius:2px;text-decoration:none;font-size:15px;display:inline-block">See your order</a></p>\n' +
+  '    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0">\n' +
+  '    <tr><td height="1" bgcolor="#ddd9d1" style="height:1px;line-height:1px;font-size:0">&nbsp;</td></tr>\n' +
+  '  </table>\n' +
+  '  <p style="margin:14px 0 0;font-size:13px;color:#8b93a1;line-height:1.6">\n' +
+  '    This address is not monitored - replies to it are not read.\n' +
+  '    <a href="https://example.invalid/order?ref=ASB-K4D8&amp;t=fc405722b8043569290b57a1db3a1689" style="color:#184485">Answer on your order page</a>,\n' +
+  '    where the shop will see it,\n' +
+  '    or message us on <a href="https://t.me/alsubkibooks" style="color:#184485">Telegram</a>.\n' +
+  '  </p>\n' +
+  '    </div>\n' +
+  '    <p style="margin:16px 0 0;font-size:12.5px;color:#8b93a1;text-align:center">\n' +
+  '      <a href="https://assubkibooks.co.uk" style="color:#8b93a1;text-decoration:none">assubkibooks.co.uk</a>\n' +
+  '    </p>\n' +
+  '  </div></body></html>'
+
+[email] resend rejected → test@example.invalid: 429 simulated rejection
+[notify] 1 back-in-stock message(s) not sent; putting them back
+NOT REPRODUCED F02 failed back-in-stock notices are deleted and reported as sent: Expected values to be strictly equal:
+
+0 !== 1
+
+[email] resend rejected → test@example.invalid: 429 simulated rejection
+NOT REPRODUCED F03 restocked set appears available but checkout rejects it: Expected values to be strictly equal:
+
+2 !== 0
+
+NOT REPRODUCED F04 reducing a set pool below existing holds is accepted: Expected values to be strictly equal:
+
+1 !== 0
+
+NOT REPRODUCED F05 failed set creation leaves an orphan header: Expected values to be strictly equal:
+
+0 !== 1
+
+NOT REPRODUCED F06 unread message arriving between fetch and acknowledgement is cleared: Expected values to be strictly equal:
+
+1 !== 0
+
+NOT REPRODUCED F07 group expiry exceeds D1 bind limit above 100 abandoned baskets: Missing expected rejection.
+NOT REPRODUCED F08 proof sweep deletes 101 objects then fails to clear their rows: Missing expected rejection.
+PASS F09 shared group member can overwrite another named member line
+NOT REPRODUCED F10 group member name reaches browser HTML interpolation unchanged: Cannot read properties of undefined (reading 'addedBy')
+NOT REPRODUCED F11 an idle customer poll reads order items unnecessarily: Expected values to be strictly equal:
+
+1 !== 2
+
+Telegram webhook has no TELEGRAM_WEBHOOK_SECRET; refusing every update.
+NOT REPRODUCED F12 missing webhook secret accepts a forged update: Expected values to be strictly equal:
+
+503 !== 200
+
+NOT REPRODUCED F13 shipment date edits partially commit on a book update failure: Expected values to be strictly equal:
+
+null !== '2027-01'
+
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+[email] resend rejected → orders@assubkibooks.co.uk: 429 simulated rejection
+NOT REPRODUCED F14 concurrent customer messages bypass the hourly cap: Expected values to be strictly equal:
+
+20 !== 25
+
+NOT REPRODUCED F15 a concurrent draft edit can open a shipment with no price: Expected values to be strictly equal:
+
+false !== true
+
+PASS S01 300-title import, open and complete receipt
+[
+  {
+    "name": "F01 arrival email primary link has reversed arguments",
+    "result": "not reproduced",
+    "detail": "The input did not match the regular expression /href=\"See your order\"/. Input:\n\n'<!doctype html><html><head>\\n' +\n  '  <meta charset=\"utf-8\">\\n' +\n  '  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\\n' +\n  '  <meta name=\"color-scheme\" content=\"light\">\\n' +\n  '  <meta name=\"supported-color-schemes\" content=\"light\">\\n' +\n  '  </head><body style=\"margin:0;background:#f5f4f0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#101828\">\\n' +\n  '  <div style=\"max-width:560px;margin:0 auto;padding:28px 22px\">\\n' +\n  '    <div style=\"background:#0e2a55;color:#ffffff;padding:20px 24px 22px;border-radius:3px 3px 0 0\">\\n' +\n  '      <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:collapse\">\\n' +\n  '        <tr>\\n' +\n  '          <td valign=\"middle\" style=\"padding-right:10px\">\\n' +\n  '            <img src=\"https://assubkibooks.co.uk/email/mark.png\" width=\"28\" height=\"28\" alt=\"\"\\n' +\n  '                 style=\"display:block;border:0;outline:none;text-decoration:none\">\\n' +\n  '          </td>\\n' +\n  '          <td valign=\"middle\" style=\"line-height:1.25\">\\n' +\n  '            <div style=\"font-size:15px;font-weight:600;color:#ffffff\">As-Subkī Books</div>\\n' +\n  '            <div style=\"font-size:12.5px;color:#8fa3c4;direction:rtl\">مكتبة السبكي</div>\\n' +\n  '          </td>\\n' +\n  '        </tr>\\n' +\n  '      </table>\\n' +\n  '      <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:16px 0 0\">\\n' +\n  '        <tr><td height=\"1\" bgcolor=\"#2a4a78\" style=\"height:1px;line-height:1px;font-size:0\">&nbsp;</td></tr>\\n' +\n  '      </table>\\n' +\n  '      <h1 style=\"margin:16px 0 0;font-size:20px;font-weight:600;color:#ffffff\">Your reserved books have arrived</h1>\\n' +\n  '      <p style=\"margin:6px 0 0;color:#c3ccde;font-size:15px\">السلام عليكم Regression</p>\\n' +\n  '    </div>\\n' +\n  '    <div style=\"background:#fff;border:1px solid #ddd9d1;border-top:none;padding:24px;border-radius:0 0 3px 3px\">\\n' +\n  '      \\n' +\n  '    <p>The books you reserved from <strong>Test shipment</strong>\\n' +\n  '       have arrived, and your copies are set aside in your name.</p>\\n' +\n  '    <p>See your order for the latest total and payment instructions. Please let us know by <strong>Monday 14 September</strong> - after that the copies go back on the shelf and the reservation is cancelled.</p>\\n' +\n  '    <p>If you need longer, or would rather not go ahead, just reply and tell us.</p>\\n' +\n  '    <p style=\"margin:22px 0 0\"><a href=\"https://example.invalid/order?ref=ASB-K4D8&amp;t=fc405722b8043569290b57a1db3a1689\" style=\"background:#184485;color:#fff;padding:11px 20px;border-radius:2px;text-decoration:none;font-size:15px;display:inline-block\">See your order</a></p>\\n' +\n  '    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:24px 0 0\">\\n' +\n  '    <tr><td height=\"1\" bgcolor=\"#ddd9d1\" style=\"height:1px;line-height:1px;font-size:0\">&nbsp;</td></tr>\\n' +\n  '  </table>\\n' +\n  '  <p style=\"margin:14px 0 0;font-size:13px;color:#8b93a1;line-height:1.6\">\\n' +\n  '    This address is not monitored - replies to it are not read.\\n' +\n  '    <a href=\"https://example.invalid/order?ref=ASB-K4D8&amp;t=fc405722b8043569290b57a1db3a1689\" style=\"color:#184485\">Answer on your order page</a>,\\n' +\n  '    where the shop will see it,\\n' +\n  '    or message us on <a href=\"https://t.me/alsubkibooks\" style=\"color:#184485\">Telegram</a>.\\n' +\n  '  </p>\\n' +\n  '    </div>\\n' +\n  '    <p style=\"margin:16px 0 0;font-size:12.5px;color:#8b93a1;text-align:center\">\\n' +\n  '      <a href=\"https://assubkibooks.co.uk\" style=\"color:#8b93a1;text-decoration:none\">assubkibooks.co.uk</a>\\n' +\n  '    </p>\\n' +\n  '  </div></body></html>'\n"
+  },
+  {
+    "name": "F02 failed back-in-stock notices are deleted and reported as sent",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\n0 !== 1\n"
+  },
+  {
+    "name": "F03 restocked set appears available but checkout rejects it",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\n2 !== 0\n"
+  },
+  {
+    "name": "F04 reducing a set pool below existing holds is accepted",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\n1 !== 0\n"
+  },
+  {
+    "name": "F05 failed set creation leaves an orphan header",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\n0 !== 1\n"
+  },
+  {
+    "name": "F06 unread message arriving between fetch and acknowledgement is cleared",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\n1 !== 0\n"
+  },
+  {
+    "name": "F07 group expiry exceeds D1 bind limit above 100 abandoned baskets",
+    "result": "not reproduced",
+    "detail": "Missing expected rejection."
+  },
+  {
+    "name": "F08 proof sweep deletes 101 objects then fails to clear their rows",
+    "result": "not reproduced",
+    "detail": "Missing expected rejection."
+  },
+  {
+    "name": "F09 shared group member can overwrite another named member line",
+    "result": "reproduced"
+  },
+  {
+    "name": "F10 group member name reaches browser HTML interpolation unchanged",
+    "result": "not reproduced",
+    "detail": "Cannot read properties of undefined (reading 'addedBy')"
+  },
+  {
+    "name": "F11 an idle customer poll reads order items unnecessarily",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\n1 !== 2\n"
+  },
+  {
+    "name": "F12 missing webhook secret accepts a forged update",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\n503 !== 200\n"
+  },
+  {
+    "name": "F13 shipment date edits partially commit on a book update failure",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\nnull !== '2027-01'\n"
+  },
+  {
+    "name": "F14 concurrent customer messages bypass the hourly cap",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\n20 !== 25\n"
+  },
+  {
+    "name": "F15 a concurrent draft edit can open a shipment with no price",
+    "result": "not reproduced",
+    "detail": "Expected values to be strictly equal:\n\nfalse !== true\n"
+  }
+]

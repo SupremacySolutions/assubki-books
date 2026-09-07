@@ -1,0 +1,56 @@
+[
+  {
+    "path": "/",
+    "status": 200,
+    "title": "As-Subkī Books - An affordable Islamic bookshop with a vast catalogue",
+    "csp": "default-src 'self'; script-src 'self' 'nonce-14c0ae0d0337487db9bf99614c1db138'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  },
+  {
+    "path": "/catalogue",
+    "status": 200,
+    "title": "All titles - As-Subkī Books",
+    "csp": "default-src 'self'; script-src 'self' 'nonce-4012e4720b8c4ca9869f1f20ddaad971'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  },
+  {
+    "path": "/catalogue?q=fiqh",
+    "status": 200,
+    "title": "“fiqh” - As-Subkī Books",
+    "csp": "default-src 'self'; script-src 'self' 'nonce-2c45d65529fb4b24b0ba9756bb4357ca'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  },
+  {
+    "path": "/shipments",
+    "status": 200,
+    "title": "Upcoming shipments - As-Subkī Books",
+    "csp": "default-src 'self'; script-src 'self' 'nonce-bf825efea6094d18a666b7951bdb7a6c'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  },
+  {
+    "path": "/basket",
+    "status": 200,
+    "title": "Your basket - As-Subkī Books",
+    "csp": "default-src 'self'; script-src 'self' 'nonce-af5a7e14ff424d5494a08012a4ea1813'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    "organiserCopy": true,
+    "scripts": [
+      {
+        "path": "/_astro/basket.astro_astro_type_script_index_0_lang.Bng4Jm7F.js",
+        "status": 200,
+        "memberToken": true
+      },
+      {
+        "path": "/_astro/Dialog.astro_astro_type_script_index_0_lang.C9GIJ27Y.js",
+        "status": 200,
+        "memberToken": false
+      },
+      {
+        "path": "/_astro/Base.astro_astro_type_script_index_0_lang.TwE4ddYc.js",
+        "status": 200,
+        "memberToken": false
+      }
+    ]
+  },
+  {
+    "path": "/admin/login",
+    "status": 200,
+    "title": "Portal sign in",
+    "csp": "default-src 'self'; script-src 'self' 'nonce-4e1b77d963b4408980217bba25552512'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://books.google.com; font-src 'self'; connect-src 'self' https://api.postcodes.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  }
+]

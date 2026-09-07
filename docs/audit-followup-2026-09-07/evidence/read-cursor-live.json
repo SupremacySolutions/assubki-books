@@ -1,0 +1,61 @@
+[
+  {
+    "results": [
+      {
+        "name": "read_cursor_customer",
+        "type": "INTEGER",
+        "notnull": 1,
+        "dflt_value": "0"
+      },
+      {
+        "name": "read_cursor_owner",
+        "type": "INTEGER",
+        "notnull": 1,
+        "dflt_value": "0"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "WEUR",
+      "served_by_colo": "LHR",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.8496
+      },
+      "duration": 0.8496,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 880640,
+      "rows_read": 52,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  },
+  {
+    "results": [
+      {
+        "migration_records": 0
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "WEUR",
+      "served_by_colo": "LHR",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.1437
+      },
+      "duration": 0.1437,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 880640,
+      "rows_read": 0,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  }
+]
