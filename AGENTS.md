@@ -12,8 +12,11 @@ in this checkout and every worktree, including browser investigations.
   `npm run dev:status` and `lsof -nP -iTCP -sTCP:LISTEN`. Check remaining listeners'
   command and working directory; do not kill unrelated applications by port.
 - Run checks sequentially through `scripts/run-check.mjs` (the npm commands do
-  this). Stop interactive dev/preview/sweeper servers before checks, image sync,
-  migrations or builds. Do not delete storage while a process has it open.
+  this). Stop the interactive dev/preview/sweeper server *in this checkout*
+  before checks, image sync, migrations or builds; a server or check in another
+  workspace is not yours to stop. Checks queue for a shared slot when the
+  machine is busy - that wait is expected, not a failure. Do not delete storage
+  while a process has it open.
 - `npm run test:e2e` owns a disposable checkout, migrated D1, local R2, fake
   credentials, production build, server and cleanup. Never point the mutation
   suite at production or a developer database. `--only=<suite>` narrows it.

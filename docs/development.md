@@ -35,9 +35,37 @@ owned by that session. The implementation supports macOS and Linux.
 
 Run `lsof -nP -iTCP -sTCP:LISTEN` after stopping; use `ps` and `lsof -a -p PID -d
 cwd` to attribute unexpected listeners. Never kill other apps by matching a port
-number. A stale check lock prints its owner PID: verify that PID and its children
-are gone before removing that exact lock. A machine restart/force-kill can leave
-lock files or disposable folders; these do not prove a process is running.
+number. A machine restart/force-kill can leave disposable folders behind; these
+do not prove a process is running.
+
+## Several workspaces at once
+
+Each checkout is independent: its own server registry, its own local D1 and R2,
+its own port. Two workspaces can serve and check at the same time. Two things
+follow from that.
+
+**Give each one a port.** Both default to 4321 and `strictPort` is on, so a
+second server on the same port fails loudly rather than drifting to another one
+and leaving you testing against the wrong thing. `PORT=4325 npm run dev`.
+
+**Checks share slots, and queue rather than fail.** One slot per 4 GB of RAM,
+minimum two, maximum eight, overridable with `ASSUBKI_CHECK_SLOTS`. A check that
+finds them all busy waits, names who is holding them, and then runs - it does
+not exit non-zero, because nothing reading an exit code could tell a busy
+machine from a broken build. Only a check *in the same checkout* stops that
+checkout's server starting; another workspace's check is not your concern.
+
+**`test:e2e` counts as two.** It builds the Worker and runs `wrangler dev`
+beside the assertions, and two of those at once on an 8 GB machine is enough for
+the OS to kill one of the servers. That surfaces as `TypeError: terminated`
+followed by every later suite "crashing" - a failure with nothing to do with the
+code under test, and one that takes a while to disbelieve. Weighing it at two
+means a second full E2E run waits its turn while lighter checks still share the
+machine. On a two-slot machine that gives E2E the machine to itself, which is
+the intent.
+
+A new worktree starts with an empty database. Apply migrations in it before the
+site will serve anything, and symlink or install `node_modules`.
 
 ## Tests
 
