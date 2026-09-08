@@ -64,3 +64,44 @@ export function cropsCleanly(
   if (ratio < BOX_RATIO) return false; // would trim the top and bottom
   return (ratio - BOX_RATIO) / ratio <= MAX_TRIM;
 }
+
+/**
+ * How far from the box a picture may sit and still be treated as a cover.
+ *
+ * A spine is about 0.2 and a wide detail shot about 1.5; a cover is within a
+ * few percent of 0.714 either way. This is the line between them, and it is
+ * the same band the upload's own `frameToBox` uses to decide what not to frame
+ * - exported rather than written twice, because the shape a photo is stored at
+ * and the shape it is shown at cannot be allowed to disagree.
+ */
+export const SHAPE_TOLERANCE = 0.88;
+
+/**
+ * Whether this picture should fill the cover box rather than sit inside it.
+ *
+ * A different question from `cropsCleanly`, and the distinction is the whole
+ * point. `cropsCleanly` asks "can this be cropped without losing artwork?" -
+ * the right question when deciding whether to *trim*. This asks "is this a
+ * cover at all?", which is what decides whether to *fill*.
+ *
+ * Answering the first question with the second is how the shop briefly
+ * letterboxed 121 of its 217 covers. The catalogue's median cover is 0.713 and
+ * `BOX_RATIO` is 0.714, so more than half of them are a hair narrower than the
+ * box - `cropsCleanly` says no to every one of those, correctly, because they
+ * would lose a sliver top and bottom. That sliver is a rounding error, not a
+ * title; padding the cover away from the edges of its own frame to avoid it is
+ * the padded cut-out look that was compared against full bleed and rejected.
+ *
+ * So an ordinary cover fills its box however slightly it differs from it, and
+ * only a genuine outlier - a spine, a photograph of a page - is contained.
+ */
+export function fillsTheBox(
+  width: number | null | undefined,
+  height: number | null | undefined,
+): boolean {
+  // Nothing known, nothing assumed - and filling is what the page did for
+  // every cover before any of this, so an unmeasured upload keeps that.
+  if (!width || !height || width <= 0 || height <= 0) return true;
+  const ratio = width / height;
+  return ratio >= BOX_RATIO * SHAPE_TOLERANCE && ratio <= BOX_RATIO / SHAPE_TOLERANCE;
+}

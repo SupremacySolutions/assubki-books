@@ -2140,6 +2140,27 @@ async function integrity() {
   t.ok(!fit.cropsCleanly(null, null) && !fit.cropsCleanly(0, 0),
     'and a cover of unknown shape is never cropped on a guess');
 
+  /*
+   * Whether a picture fills its box is a different question from whether it
+   * crops cleanly, and answering the first with the second letterboxed 121 of
+   * the shop's 217 covers: the catalogue's median cover is 0.713 against a box
+   * of 0.714, so most of them are a hair narrower than it and `cropsCleanly`
+   * says no to every one - correctly, and irrelevantly. Covers are full bleed.
+   */
+  t.ok(fit.fillsTheBox(600, 840), 'a cover the exact shape of the box fills it');
+  t.ok(fit.fillsTheBox(660, 1000) && fit.fillsTheBox(617, 800),
+    'and so does one a hair narrower than the box, which is most of this catalogue');
+  t.ok(fit.fillsTheBox(677, 1000) && fit.fillsTheBox(741, 1000),
+    'the whole middle half of the catalogue fills its box rather than sitting in it');
+  t.ok(!fit.fillsTheBox(200, 1000), 'a spine keeps all of itself instead');
+  t.ok(!fit.fillsTheBox(1500, 1000), 'and so does a wide photograph of a page');
+  t.ok(fit.fillsTheBox(null, null),
+    'an upload of unknown shape fills the box, which is what every cover did before');
+  // The upload refuses to frame exactly what the page refuses to fill. Two
+  // numbers that disagreed would store a photo one shape and show it another.
+  t.ok(fit.SHAPE_TOLERANCE === 0.88,
+    'and the band the page uses is the one the upload frames by');
+
   // Cover lookup has to survive the transliteration variants this catalogue
   // actually uses, without depending on a live Open Library result to prove
   // the query construction itself.

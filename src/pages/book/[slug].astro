@@ -8,7 +8,7 @@ import { delivery } from '../../lib/incoming';
 import { liveSale } from '../../lib/sales';
 import { classmark } from '../../lib/classmarks';
 import { IMAGE_PRESETS } from '../../lib/image-presets';
-import { cropsCleanly } from '../../lib/cover-fit';
+import { fillsTheBox } from '../../lib/cover-fit';
 import MessageUs from '../../components/MessageUs.astro';
 import { BACK_IN_STOCK } from '../../lib/order-status';
 
@@ -162,7 +162,7 @@ const jsonLd = {
                 alt={book.images[0]?.alt ?? book.title}
                 width={IMAGE_PRESETS.detail.width}
                 height={IMAGE_PRESETS.detail.height}
-                class:list={['absolute inset-0 h-full w-full', cropsCleanly(book.images[0]?.width, book.images[0]?.height) ? 'object-cover' : 'object-contain p-4']}
+                class:list={['absolute inset-0 h-full w-full', fillsTheBox(book.images[0]?.width, book.images[0]?.height) ? 'object-cover' : 'object-contain']}
                 fetchpriority="high"
               />
             ) : (
@@ -182,7 +182,7 @@ const jsonLd = {
                     type="button"
                     class="thumb relative overflow-hidden w-[52px] h-[70px] bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-card)] p-1 grid place-items-center hover:border-[var(--color-navy)] transition-colors aria-pressed:border-[var(--color-navy)] aria-pressed:ring-2 aria-pressed:ring-[var(--color-navy)]"
                     data-src={imageUrl(img.image_key, 'detail')}
-                    data-fit={cropsCleanly(img.width, img.height) ? 'cover' : 'contain'}
+                    data-fit={fillsTheBox(img.width, img.height) ? 'cover' : 'contain'}
                     aria-pressed={i === 0 ? 'true' : 'false'}
                   >
                     <img src={imageUrl(img.image_key, 'thumb')} alt="" class="absolute inset-0 h-full w-full object-contain p-1" loading="lazy" />

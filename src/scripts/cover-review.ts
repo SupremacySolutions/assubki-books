@@ -26,6 +26,7 @@ import {
 } from './cover-clean';
 import { IMAGE_PRESETS } from '../lib/image-presets';
 import { BOX, framePlan, edgeSpread } from '../lib/cover-frame.mjs';
+import { SHAPE_TOLERANCE } from '../lib/cover-fit';
 
 export function mountCoverReview(): void {
   const panel = document.querySelector<HTMLDialogElement>('#cleanPanel');
@@ -954,9 +955,12 @@ function frameToBox(
       strip[y * 4 + 2],
     ];
   };
-  // Spine and wide detail photos must retain their full field of view.
+  // Spine and wide detail photos must retain their full field of view. The
+  // same band the book page uses to decide what fills its box, imported rather
+  // than repeated - a photo stored unframed and then shown cropped would be
+  // the two halves of this disagreeing.
   const ratio = width / height;
-  if (ratio < BOX * 0.88 || ratio > BOX / 0.88) {
+  if (ratio < BOX * SHAPE_TOLERANCE || ratio > BOX / SHAPE_TOLERANCE) {
     return source;
   }
   const plan = framePlan({
