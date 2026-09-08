@@ -175,10 +175,14 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
 - **Volume counts are suggested, never assumed.** `scripts/suggest-volumes.mjs`
   reads the books that say how many volumes they are and *prints* the UPDATEs.
   17 of the 38 that mention volumes give a usable number; the rest need reading.
-- **Posting a paid order closes it.** `closesOnDispatch` in lib/order-status:
-  there is no second "mark as delivered" click, because on a paid order it told
-  the portal nothing. Cash on delivery is excluded - there the second step is
-  when the money arrives.
+- **Posting is not proof of delivery.** A posted order stays `dispatched` until
+  somebody confirms it arrived, through a separate "Confirm delivered" action.
+  It briefly worked the other way - `closesOnDispatch` filed a paid order as
+  completed the moment it was posted, on the grounds that the second click told
+  the portal nothing - and that was wrong: the shop wants to know which parcels
+  are still in the post, and a completion timestamp equal to the dispatch one is
+  a record of a delivery nobody ever saw. Cash on delivery kept its second step
+  throughout, because there the money arrives at the door.
 - **Where a collecting customer is told to come** is the first written
   collection draft (`collectionAddress()` in lib/settings). There used to be a
   separate `collection_address` setting as well, so two places said where to

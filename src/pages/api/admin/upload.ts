@@ -2,6 +2,8 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { isPreset, IMAGE_PRESETS } from '../../../lib/image-presets';
 import { readForm } from '../../../lib/request-body';
+import { forgetHomeRows } from '../../../lib/db';
+import { forgetDashboard } from '../../../lib/dashboard';
 
 export const prerender = false;
 
@@ -107,6 +109,8 @@ export const POST: APIRoute = async ({ request }) => {
     ).bind(bookId, key, null, nextSort?.n ?? 0, width, height),
     env.DB.prepare('UPDATE books SET updated_at = unixepoch() WHERE id = ?').bind(bookId),
   ]);
+  forgetHomeRows();
+  forgetDashboard();
 
   return Response.json({ ok: true, key });
 };
@@ -123,7 +127,18 @@ export const DELETE: APIRoute = async ({ request }) => {
     .first<{ image_key: string; book_id: number }>();
   if (!image) return new Response('No such photo', { status: 404 });
 
-  await env.DB.prepare('DELETE FROM book_images WHERE id = ?').bind(imageId).run();
+  // Keep the remaining first photo primary in the same transaction. Deleting
+  // photo 0 used to leave only 1, 2, ... and hide the catalogue cover.
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM book_images WHERE id = ?').bind(imageId),
+    env.DB.prepare(
+      `UPDATE book_images SET sort = 0 WHERE id = (
+         SELECT id FROM book_images WHERE book_id = ? ORDER BY sort, id LIMIT 1
+       ) AND sort <> 0`,
+    ).bind(image.book_id),
+  ]);
+  forgetHomeRows();
+  forgetDashboard();
 
   /*
    * Both prefixes are in R2 now, so removing a single photo reclaims its file
