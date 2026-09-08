@@ -1,5 +1,11 @@
 # Audit evidence and reproduction guide
 
+> Historical record: use the current development guide for test/server commands.
+> E2E now owns disposable local storage; production E2E is read-only and never
+> sends messages. Old manual server instructions and assertion counts below
+> describe the original investigation, not the current workflow. See
+> [development.md](../development.md)
+
 Start with [REPORT.md](REPORT.md). The audit covers commit `cde261f4ea56d30a22e929fc2f9c1cd8b4efc9d1`; application source was not changed. All new files belong to this audit directory.
 
 ## Self-contained local checks

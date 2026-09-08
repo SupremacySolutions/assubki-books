@@ -256,17 +256,12 @@ is the test suite rather than customers.
 
 ## Testing
 
-One suite: `npm run test:e2e`, against a local `astro dev`. 444 assertions
-across sixteen groups. `npm run test:e2e:prod` runs against the live site and
-genuinely sends email and posts to Telegram, because a mock returns success and
-proves nothing — the failures that actually happened here were a reserved
-character breaking a Telegram message and an unverified domain rejecting every
-send.
-
-Fixtures are tracked and removed afterwards, including when a suite throws. If
-a run is killed part-way its teardown does not happen, and the leftovers will
-fail the ledger and pagination checks on the *next* run — that is the rubbish,
-not the code.
+`npm run test:e2e` now owns a disposable database and a production-built local
+Worker, using fake credentials and dry-run notifications. It stops its server
+and removes storage afterwards. `npm run test:e2e:prod` is a read-only public
+smoke check. See [the development guide](development.md) for the full check list,
+process ownership rules and image synchronisation. Historical assertion counts
+below are not the current baseline.
 
 **What the suite cannot see**, learned the hard way:
 

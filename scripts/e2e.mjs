@@ -1,18 +1,7 @@
 #!/usr/bin/env node
-/**
- * End-to-end suite for the whole shop.
- *
- *   npm run test:e2e            against a local `astro dev`
- *   npm run test:e2e:prod       against the live site, for real
- *
- * The production run genuinely posts to the Telegram channel and genuinely
- * sends email, because that is the only way to catch the things that have
- * actually broken here: a reserved character rejecting a Telegram message, or
- * an unverified domain rejecting a send. A mock returns success and proves
- * nothing.
- *
- * Nothing touches the 226 real listings. Every fixture is tracked and removed
- * afterwards, including when a suite throws.
+/** HTTP workflows against a disposable, production-built local Worker.
+ * Run npm run test:e2e; run-e2e owns the server and all storage.
+ * Notification delivery is simulated. Browser interaction is tested separately.
  */
 
 import {
@@ -1641,20 +1630,8 @@ async function integrity() {
   const dupes = await db(`SELECT slug FROM books GROUP BY slug HAVING COUNT(*) > 1`);
   t.ok(dupes.length === 0, 'no duplicate slugs');
 
-  /*
-   * Covers are padded into one frame as they are served rather than rewritten,
-   * so the presets have to survive the route - and an unknown one has to fall
-   * through rather than 404, or a stale link in somebody's inbox becomes a
-   * broken image.
-   *
-   * The migrated covers live in the *remote* bucket, so there is nothing local
-   * to fetch. Uploading one through the real endpoint gives this an object to
-   * ask for and exercises the upload path at the same time.
-   *
-   * Note the transform itself cannot run here: the IMAGES binding only exists
-   * in the deployed Worker, so what this proves locally is the fallthrough -
-   * that every preset serves the image rather than failing.
-   */
+  // Exercise stored variants as well as fallback-to-original. Local buckets
+  // without variants used to make every preset test pass on the wrong bytes.
   const imgBook = await makeBook();
   // A 1×1 PNG, the smallest thing the endpoint will accept.
   const png = Uint8Array.from(atob(
@@ -1666,10 +1643,26 @@ async function integrity() {
   upload.append('photo', new File([png], 'cover.png', { type: 'image/png' }));
   upload.append('width', '600');
   upload.append('height', '800');
+  const { default: sharp } = await import('sharp');
+  const cardBytes = await sharp({ create: { width: 3, height: 4, channels: 3, background: '#cc1122' } }).webp().toBuffer();
+  upload.append('variant:card', new File([cardBytes], 'card.webp', { type: 'image/webp' }));
+  upload.append('variant:toString', new File([cardBytes], 'invalid.webp', { type: 'image/webp' }));
 
   const uploaded = await adminUpload('/api/admin/upload', upload);
   const uploadedBody = uploaded.body;
   t.ok(uploaded.status === 200 && uploadedBody.key, 'a photo can be uploaded');
+  const originalResponse = await get(`/img/${uploadedBody.key}`);
+  const cardResponse = await get(`/img/${uploadedBody.key}?p=card`);
+  t.ok(Buffer.from(await originalResponse.arrayBuffer()).equals(Buffer.from(png)), 'the original retains its uploaded bytes');
+  t.ok(Buffer.from(await cardResponse.arrayBuffer()).equals(cardBytes), 'the card serves its stored variant bytes, not the original');
+  t.ok(cardResponse.headers.get('etag') !== originalResponse.headers.get('etag'), 'original and variant have distinct ETags');
+  const unchanged = await get(`/img/${uploadedBody.key}?p=card`, {headers:{'If-None-Match':cardResponse.headers.get('etag')}});
+  t.ok(unchanged.status === 304, 'the variant supports conditional requests');
+  const inherited = await get(`/img/${uploadedBody.key}?p=toString`);
+  t.ok(inherited.headers.get('etag') === originalResponse.headers.get('etag'), 'prototype names are not accepted as image presets');
+  const invalidVariant = await get(`/img/${uploadedBody.key.replace(/\.[a-z0-9]+$/i, '')}-toString.webp`);
+  t.ok(invalidVariant.status === 404, 'upload ignores an inherited property masquerading as a variant');
+
 
   /*
    * Reporting a bad cut-out. Kept for diagnosis, not for training - fine-tuning
@@ -5395,8 +5388,10 @@ const SUITES = [
   ['channel', channelPost, true],
   ['shipments', shipments, true],
   ['amend', amendingOrders, true],
-  ['integrity', integrity, false],
+  ['integrity', integrity, true],
 ];
+
+if (!SUITES.some(([name]) => wanted(name))) throw new Error(`Unknown suite selector: ${only}`);
 
 console.log(`\nRunning against ${PROD ? `\x1b[33m${SITE} (REAL)\x1b[0m` : SITE}`);
 if (PROD) console.log(`  channel ${prodVars.TELEGRAM_CHANNEL_ID}  ·  owner ${prodVars.OWNER_EMAIL}`);
@@ -5479,6 +5474,7 @@ try {
             (SELECT COALESCE(SUM(reserved),0) FROM books) AS held`,
   );
   console.log(`  fixtures left: ${left.fixtures}   stock still held: ${left.held}`);
+  suite('Cleanup').ok(left.fixtures === 0 && left.held === 0 && orphanedMessages.length === 0, 'fixtures, holds and test messages are cleared');
   if (orphanedMessages.length) {
     console.log(`  \x1b[31mchannel messages to delete by hand: ${orphanedMessages.join(', ')}\x1b[0m`);
   }

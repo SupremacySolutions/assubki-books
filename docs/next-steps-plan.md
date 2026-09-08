@@ -1,5 +1,11 @@
 # Knowing what people want, and telling them when it arrives
 
+> Historical record: use the current development guide for test/server commands.
+> E2E now owns disposable local storage; production E2E is read-only and never
+> sends messages. Old manual server instructions and assertion counts below
+> describe the original investigation, not the current workflow. See
+> [development.md](development.md)
+
 ## Context
 
 The shop works. What it cannot do is *see*. There is no analytics tag of any

@@ -25,6 +25,9 @@ That shapes everything else:
 
 ## Running it
 
+Read the [development and test guide](docs/development.md) for managed server
+shutdown, isolated E2E runs, production preview and local cover synchronisation.
+
 ```bash
 npm install
 npm run dev

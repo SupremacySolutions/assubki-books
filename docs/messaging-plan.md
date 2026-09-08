@@ -1,5 +1,11 @@
 # A message thread on every order
 
+> Historical record: use the current development guide for test/server commands.
+> E2E now owns disposable local storage; production E2E is read-only and never
+> sends messages. Old manual server instructions and assertion counts below
+> describe the original investigation, not the current workflow. See
+> [development.md](development.md)
+
 ## Context
 
 There is now real trade on the site — one order sitting at `awaiting_payment`
