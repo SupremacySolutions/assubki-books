@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { releaseHold } from '../../../../../lib/stock-release';
 import { getOrderByRef } from '../../../../../lib/admin-db';
 import { notifyStatusChange } from '../../../../../lib/notify';
-import { canTransition, closesOnDispatch, isPostageProvider } from '../../../../../lib/order-status';
+import { canTransition, isPostageProvider } from '../../../../../lib/order-status';
 import { collectionAddress } from '../../../../../lib/settings';
 import { forgetDashboard } from '../../../../../lib/dashboard';
 import { readForm } from '../../../../../lib/request-body';
@@ -70,22 +70,8 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     binds.push(cancelNote);
   }
 
-  /*
-   * Posting a paid order finishes it.
-   *
-   * The status the customer is told about is still 'dispatched' - that is what
-   * happened, and it is what the message says - but the order is filed as
-   * completed in the same write rather than waiting for a second click that
-   * carried no information. Cash on delivery is excluded: there the money has
-   * not arrived yet.
-   */
-  const finishesNow = next === 'dispatched' &&
-    closesOnDispatch(order.fulfilment, Boolean(order.cash_payment));
-
-  if (next === 'completed' || finishesNow) sets.push('completed_at = unixepoch()');
-  // `binds[0]` is what `status = ?` receives; nothing else has been bound to
-  // the front of the list, and order.id is pushed after this.
-  if (finishesNow) binds[0] = 'completed';
+  // Dispatch is not proof of delivery. Completion is a separate confirmed event.
+  if (next === 'completed') sets.push('completed_at = unixepoch()');
 
   binds.push(order.id);
 
@@ -203,9 +189,6 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     name: order.customer_name,
     email: order.email,
     telegramChatId: order.telegram_chat_id,
-    // Deliberately `next`, not the stored status: a posted order is filed as
-    // completed straight away, but what the customer needs to hear is that it
-    // has been sent, with the tracking number.
     status: next,
     cancelNote,
     fulfilment: order.fulfilment,

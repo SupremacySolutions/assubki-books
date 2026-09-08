@@ -59,7 +59,7 @@ photos.
 Add the photo in the portal as usual. The cropper opens with the book's four
 corners already found; drag them if it has picked the wrong thing.
 
-That is the whole job now. The portal frames the photo to 5:7 and cuts the
+That is the whole job now. The portal frames ordinary covers to 5:7, preserves the full proportions of narrow spine and wide detail photos, and cuts the
 five sizes the shop serves before the upload leaves the browser, so the
 listing is right the moment it is saved.
 
@@ -81,7 +81,7 @@ or nobody who has already opened the shop will see the difference.
 
 ## Why the frame is 5:7
 
-Every public cover is cropped to 5:7. That is not a guess: across the 209
+Ordinary public covers use a 5:7 frame. Narrow spine and wide detail photos are contained within it without cropping. That is not a guess: across the 209
 covers in the catalogue the median shape is 0.713, and the middle half runs
 0.677 to 0.741. 5:7 is 0.714.
 

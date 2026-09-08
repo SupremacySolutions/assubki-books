@@ -3478,14 +3478,9 @@ async function lifecycle() {
   t.ok(Boolean(dRow.pa) && Boolean(dRow.da), 'delivery: both timestamps are stamped together');
   t.ok(dRow.pp === 'Evri', 'delivery: the carrier is recorded');
 
-  /*
-   * Posting a paid order finishes it. The second click that used to be here -
-   * "Mark as delivered" - told the portal nothing it did not already know: the
-   * money was in and the parcel had gone.
-   */
-  t.ok(dRow.status === 'completed', 'delivery: posting a paid order closes it in one action');
-  t.ok((await html(`/admin/orders/${d.ref}`)).includes('Mark as delivered') === false,
-    'and there is no second button left asking to confirm it');
+  t.ok(dRow.status === 'dispatched', 'delivery: posting does not claim delivery');
+  t.ok((await html(`/admin/orders/${d.ref}`)).includes('Confirm delivered'),
+    'delivery can be confirmed separately');
 
   // The combined action must still take the copies off the shelf - skipping
   // 'paid' cannot mean skipping the sale.
@@ -3576,12 +3571,9 @@ async function lifecycle() {
   t.ok(blank.p === null, 'leaving the carrier unset records no carrier, not Royal Mail');
   t.ok(!dPage.includes('Total to pay'), 'delivery: a paid order stops asking to be paid');
 
-  // Already closed by the posting, so there is nothing left to move it to -
-  // and the endpoint refuses, because the buttons no longer offer it. This
-  // used to assert the opposite; the second click is the thing that went.
   const dDone = await admin(`/api/admin/orders/${d.ref}/status`, { status: 'completed' });
-  t.ok(dDone.location.includes('e=state'),
-    'delivery: a posted order is already closed, so it cannot be closed again');
+  t.ok(!dDone.location.includes('e=state'),
+    'delivery: confirmation completes a posted order');
   t.ok((await html(`/order?ref=${d.ref}&t=${d.token}`)).includes('Delivered'),
     'delivery: final state reads Delivered');
 }
