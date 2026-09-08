@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { managed, shutdownHooks } from './lib/managed-process.mjs';
+import { activeChecks } from './lib/check-slots.mjs';
 
 const [mode = 'dev', ...args] = process.argv.slice(2);
 const registry = resolve('.cache/dev-server.json');
@@ -30,8 +30,18 @@ if (mode === 'status' || mode === 'stop') {
   }
 } else {
   if (!['dev', 'preview', 'sweep'].includes(mode)) throw new Error(`Unknown server mode: ${mode}`);
-  const checkLock = join(tmpdir(), 'assubki-books-check.lock');
-  if (existsSync(checkLock)) throw new Error('A check lock exists. Finish the check (or inspect its owner if stale) before starting a server.');
+  /*
+   * Only *this* workspace's checks are a reason not to start a server.
+   *
+   * This used to refuse whenever any check was running anywhere on the machine,
+   * which with one person at one terminal was the same statement. With several
+   * workspaces it is not: a build in another checkout has its own D1, its own
+   * R2 and its own port, and nothing about it makes this checkout unsafe to
+   * serve. The real hazard is narrow and local - building over the state a
+   * server in the same directory has open - so that is what is checked.
+   */
+  const ourCheck = activeChecks().find((check) => check.cwd === process.cwd());
+  if (ourCheck) throw new Error(`A check is running in this checkout (PID ${ourCheck.pid}). Finish it before starting a server.`);
   if (process.env.CLOUDFLARE_ENV) throw new Error('Unset CLOUDFLARE_ENV for local managed development.');
   if (args.some(a => /^--?(remote|r|config|c|env|e|persist-to|var|env-file)(=|$)/.test(a))) throw new Error('Managed servers own their local bindings and notification settings.');
   if (mode === 'dev') {
