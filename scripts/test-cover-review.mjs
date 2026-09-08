@@ -26,12 +26,13 @@ class Element {
   showModal() { this.open = true; }
   close() { this.open = false; }
 }
+const draws = [];
 class Canvas extends Element {
   width = 100;
   height = 140;
   getContext() {
     return {
-      drawImage() {}, putImageData() {}, fillRect() {},
+      drawImage(...args) { draws.push(args); }, putImageData() {}, fillRect() {},
       getImageData: (_x, _y, w, h) => new ImageData(w, h),
     };
   }
@@ -87,7 +88,17 @@ try {
       `}));
     }}],
   });
-  const { mountCoverReview } = await import(pathToFileURL(join(temp, 'review.mjs')));
+  const { mountCoverReview, dress } = await import(pathToFileURL(join(temp, 'review.mjs')));
+  globalThis.createImageBitmap = async () => ({ width: 418, height: 2046 });
+  const dressed = await dress(new File(['photo'], 'spine.jpg', {type:'image/jpeg'}));
+  assert.equal(dressed.width, 418);
+  assert.equal(dressed.height, 2046);
+  assert.ok(dressed.variants.has('detail'));
+  const detail = draws.find(args => args.length === 5 && args[4] === 1176);
+  assert.ok(detail, 'detail variant contains the full height');
+  assert.ok(Math.abs(detail[3] / detail[4] - 418 / 2046) < 0.001, 'detail preserves spine proportions');
+  console.log('PASS narrow spine keeps full height and proportional variants');
+  globalThis.createImageBitmap = async () => ({ width: 100, height: 140 });
   mountCoverReview();
   const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
   const open = async () => {
