@@ -7,6 +7,14 @@ migrations `0001`–`0040`; its ledger contains the exact **40 migration filenam
 Migration `0040_stock_alert_outbox.sql` and both Workers were deployed on
 7 September. The read-only schema and ledger checks were repeated during review.
 
+**`0041_order_amendments.sql` has not been applied to production.** It adds the
+`order_amendments` table, its index and `orders.amended_at`, and the portal's
+amendment form and its endpoint need all three. Apply it by the procedure
+below - it is an ordinary pending migration, not part of the reconciliation -
+before deploying the code that reads them. `check-schema.mjs` builds its
+reference from whatever is in `migrations/`, so it will expect those objects
+from the moment the file exists and report the gap until they are there.
+
 **Do not rerun the historical reconciliation below.** In particular, do not
 reapply `0040` or seed the ledger from whatever files happen to exist now: that
 could mark a future migration applied without executing it.

@@ -18,6 +18,7 @@ import { price } from '../../lib/format';
 import { statusLabel, isSettled, moneyReceived, trackingUrl, cashMoment, portalLabel } from '../../lib/order-status';
 import { collectionAddress } from '../../lib/settings';
 import { cancelRight, REASON_MAX } from '../../lib/cancellation';
+import { amendments, removedSummary } from '../../lib/amend';
 import { whenText } from '../../lib/incoming';
 import { getShipment } from '../../lib/shipments';
 import Thread from '../../components/Thread.astro';
@@ -134,6 +135,16 @@ const sendError = order
       nostore: THREAD.failed,
     } as Record<string, string>)[params.get('e') ?? ''] ?? null
   : null;
+
+/*
+ * Books that have come off this order since it was placed.
+ *
+ * Read only when the order says there are any. A customer comparing this page
+ * against the confirmation in their inbox has to be able to see why the two
+ * lists differ - without it the shop looks as though it quietly changed the
+ * order, which is the opposite of what an amendment is for.
+ */
+const changes = order?.amended_at ? await amendments(order.id) : [];
 
 const placed = order ? new Date(order.created_at * 1000) : null;
 const expires = order?.expires_at ? new Date(order.expires_at * 1000) : null;
@@ -592,6 +603,41 @@ if (offerTelegram && telegramLink) {
 
         <section class="mt-9">
           <h2 class="eyebrow mb-3 text-center">What you asked for</h2>
+
+          {/* Said before the list, not after it: this is the explanation for
+              why the list below does not match the message in their inbox. */}
+          {changes.length > 0 && (
+            <div class="mb-4 p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-left">
+              <p class="eyebrow mb-1.5">This order was amended</p>
+              <ul class="space-y-2.5">
+                {changes.map((change) => (
+                  <li class="text-[14px] leading-relaxed">
+                    <span class="text-[var(--color-ink-faint)]">
+                      {new Date(change.at * 1000).toLocaleDateString('en-GB', {
+                        day: 'numeric',
+                        month: 'long',
+                      })}
+                      {' · '}
+                    </span>
+                    {removedSummary(change.removed)}{' '}
+                    {change.removed.length === 1 ? 'was' : 'were'} taken off.
+                    {change.totalBefore !== null && change.totalAfter !== null && (
+                      <span class="text-[var(--color-ink-soft)]">
+                        {' '}The total went from {price(change.totalBefore)} to{' '}
+                        {price(change.totalAfter)}.
+                      </span>
+                    )}
+                    {change.note && (
+                      <span class="block mt-1 text-[var(--color-ink-soft)] whitespace-pre-line">
+                        {change.note}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <ul class="border-y border-[var(--color-rule)] divide-y divide-[var(--color-rule)]">
             {order.items.map((item) => (
               <li class="py-3 flex justify-between gap-4 text-[15px]">

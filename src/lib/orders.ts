@@ -450,6 +450,14 @@ export interface OrderView {
   customer_cancel_note: string | null;
   /** Set while a customer is waiting on the shop to answer a cancellation. */
   cancel_requested_at: number | null;
+  /**
+   * When books were last taken off this order, if they ever were.
+   *
+   * The record of what came off lives in `order_amendments`; this is what lets
+   * a page decide whether that table is worth reading at all, which for nearly
+   * every order it is not.
+   */
+  amended_at: number | null;
   /** The order's own id, for routes that act on it. */
   id: number;
   /** Messages the customer has not opened yet. */
@@ -580,7 +588,7 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
             shipment_id, split_group,
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
             postage_provider, postage_service, telegram, cancel_note,
-            customer_cancel_note, cancel_requested_at,
+            customer_cancel_note, cancel_requested_at, amended_at,
             access_token, telegram_chat_id, COALESCE(cash_payment, 0) as cash_payment,
             COALESCE(unread_for_customer, 0) AS unread_for_customer,
             COALESCE(unread_for_owner, 0) AS unread_for_owner,

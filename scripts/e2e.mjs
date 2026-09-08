@@ -5213,6 +5213,154 @@ async function shipments() {
 }
 
 // ---------------------------------------------------------------------------
+async function amendingOrders() {
+  const t = suite('25. Amending an order');
+
+  const held = (ref, ids) =>
+    one(
+      `SELECT ${ids.map((id, i) => `(SELECT reserved FROM books WHERE id=${id}) AS b${i}`).join(', ')},
+              (SELECT subtotal_pence FROM orders WHERE ref='${ref}') AS sub,
+              (SELECT discount_pence FROM orders WHERE ref='${ref}') AS off,
+              (SELECT total_pence FROM orders WHERE ref='${ref}') AS total,
+              (SELECT amended_at FROM orders WHERE ref='${ref}') AS at,
+              (SELECT COUNT(*) FROM order_items
+                WHERE order_id=(SELECT id FROM orders WHERE ref='${ref}')) AS lines`,
+    );
+
+  const lines = async (ref) =>
+    db(`SELECT oi.id, oi.book_id, oi.qty FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id WHERE o.ref='${ref}' ORDER BY oi.id`);
+
+  // Two titles, one of them twice over: enough to take a whole line off and to
+  // trim another without emptying the order, which is a cancellation.
+  const stays = await makeBook({ stock: '5', price: '10.00' });
+  const goes = await makeBook({ stock: '5', price: '7.50' });
+  const o = await placeOrder(stays.id, 'delivery', {
+    items: [{ bookId: stays.id, qty: 2 }, { bookId: goes.id, qty: 2 }],
+  });
+
+  const start = await held(o.ref, [stays.id, goes.id]);
+  t.ok(start.b0 === 2 && start.b1 === 2, 'the order holds every copy it asked for');
+
+  const row = await lines(o.ref);
+  const lineOf = (bookId) => row.find((l) => l.book_id === bookId).id;
+
+  // Both refusals first, because what matters about them is that they change
+  // nothing - a refusal that had already released stock would be the worst of
+  // both answers.
+  const nothing = await admin(`/api/admin/orders/${o.ref}/amend`, {
+    [`qty_${lineOf(stays.id)}`]: '2',
+    [`qty_${lineOf(goes.id)}`]: '2',
+  });
+  t.ok(nothing.location.includes('e=nochange'), 'an amendment that removes nothing is refused');
+
+  const emptied = await admin(`/api/admin/orders/${o.ref}/amend`, {
+    [`qty_${lineOf(stays.id)}`]: '0',
+    [`qty_${lineOf(goes.id)}`]: '0',
+  });
+  t.ok(emptied.location.includes('e=empty'), 'and emptying an order is sent to cancel instead');
+
+  const refused = await held(o.ref, [stays.id, goes.id]);
+  t.ok(refused.b0 === 2 && refused.b1 === 2 && refused.lines === 2,
+    'neither refusal moved a copy or a line');
+
+  // One title off entirely, one trimmed from two copies to one.
+  const done = await admin(`/api/admin/orders/${o.ref}/amend`, {
+    [`qty_${lineOf(stays.id)}`]: '1',
+    [`qty_${lineOf(goes.id)}`]: '0',
+    note: 'Taken off at your request.',
+  });
+  t.ok(done.location.includes('amended=2'), 'two titles come off in one action');
+
+  const after = await held(o.ref, [stays.id, goes.id]);
+  t.ok(after.b0 === 1 && after.b1 === 0, 'the copies that came off are back on the shelf');
+  t.ok(after.sub === 1000, 'and the order is repriced to what is left');
+  t.ok(after.lines === 1, 'a line taken off entirely is deleted, not left at nought');
+  t.ok(after.at !== null, 'the order records that it was amended');
+
+  /*
+   * The invariant the integrity suite checks for every book: `reserved` is the
+   * sum of that book's ledger deltas. A release that moved stock without
+   * writing it down would pass every visible assertion above and break that.
+   */
+  const ledger = await one(
+    `SELECT (SELECT COALESCE(SUM(delta),0) FROM stock_ledger
+              WHERE book_id=${goes.id} AND field='reserved') AS balance,
+            (SELECT COUNT(*) FROM stock_ledger
+              WHERE order_id=(SELECT id FROM orders WHERE ref='${o.ref}')
+                AND reason='order amended') AS named`,
+  );
+  t.ok(ledger.balance === 0, 'every released copy is written to the ledger');
+  t.ok(ledger.named === 2, 'and named as an amendment rather than a cancellation');
+
+  const page = visibleText(await html(`/order?ref=${o.ref}&t=${o.token}`));
+  t.ok(page.includes('This order was amended'),
+    'the customer page explains why the list no longer matches their email');
+  t.ok(page.includes('Taken off at your request.'), "and carries the shop's own note");
+  const portal = visibleText(await html(`/admin/orders/${o.ref}`));
+  t.ok(/taken off/i.test(portal), 'the portal keeps the amendment in the record of what was sent');
+
+  /*
+   * The discount the order was actually given, scaled by what is left.
+   *
+   * Set on the row directly rather than by turning the shop's rule on: what is
+   * being checked is that a quoted deal survives in proportion, which must hold
+   * whatever the rule says today - including when it has been switched off.
+   */
+  const dBook = await makeBook({ stock: '5', price: '10.00' });
+  const dOther = await makeBook({ stock: '5', price: '10.00' });
+  const d = await placeOrder(dBook.id, 'delivery', {
+    items: [{ bookId: dBook.id, qty: 2 }, { bookId: dOther.id, qty: 2 }],
+  });
+  await db(`UPDATE orders SET discount_pence=400, subtotal_pence=3600 WHERE ref='${d.ref}'`);
+  const dLines = await lines(d.ref);
+  await admin(`/api/admin/orders/${d.ref}/amend`, {
+    [`qty_${dLines.find((l) => l.book_id === dBook.id).id}`]: '2',
+    [`qty_${dLines.find((l) => l.book_id === dOther.id).id}`]: '1',
+  });
+  const scaled = await held(d.ref, [dBook.id]);
+  t.ok(scaled.off === 300 && scaled.sub === 2700,
+    `a discount is kept in proportion, not recalculated (got ${scaled.off}/${scaled.sub})`);
+
+  // --- a confirmed order keeps its total in step ---------------------------
+  const cBook = await makeBook({ stock: '5', price: '10.00' });
+  const cOther = await makeBook({ stock: '5', price: '4.00' });
+  const c = await placeOrder(cBook.id, 'delivery', {
+    items: [{ bookId: cBook.id, qty: 1 }, { bookId: cOther.id, qty: 1 }],
+  });
+  await admin(`/api/admin/orders/${c.ref}/confirm`, { postage: '3.95', payment_message: 'Pay here.' });
+  const quoted = await held(c.ref, [cBook.id]);
+  t.ok(quoted.total === 1795, 'a confirmed order is quoted books plus postage');
+
+  const cLines = await lines(c.ref);
+  await admin(`/api/admin/orders/${c.ref}/amend`, {
+    [`qty_${cLines.find((l) => l.book_id === cBook.id).id}`]: '1',
+    [`qty_${cLines.find((l) => l.book_id === cOther.id).id}`]: '0',
+    postage: '2.95',
+  });
+  const requoted = await held(c.ref, [cBook.id, cOther.id]);
+  t.ok(requoted.sub === 1000 && requoted.total === 1295,
+    `the quoted total follows the books and the new postage (got ${requoted.total})`);
+  t.ok(requoted.b1 === 0, 'and the copy that came off a confirmed order is released too');
+  const requotedPage = visibleText(await html(`/order?ref=${c.ref}&t=${c.token}`));
+  t.ok(requotedPage.includes('The total went from £17.95 to £12.95'),
+    'the customer is shown both figures, not just the new one');
+
+  // --- past payment there is nothing left to amend --------------------------
+  await admin(`/api/admin/orders/${c.ref}/status`, { status: 'paid' });
+  const paidLines = await lines(c.ref);
+  const tooLate = await admin(`/api/admin/orders/${c.ref}/amend`, {
+    [`qty_${paidLines[0].id}`]: '0',
+  });
+  t.ok(tooLate.location.includes('e=state'), 'a paid order cannot be amended');
+  const sold = await one(`SELECT stock, reserved FROM books WHERE id=${cBook.id}`);
+  t.ok(sold.stock === 4 && sold.reserved === 0, 'and the refusal leaves the sale exactly as it was');
+  const paidPortal = await html(`/admin/orders/${c.ref}`);
+  t.ok(!paidPortal.includes('Take books off this order'),
+    'the portal stops offering it once the money is in');
+}
+
+// ---------------------------------------------------------------------------
 
 const SUITES = [
   ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
@@ -5233,6 +5381,7 @@ const SUITES = [
   ['languages', languages, true],
   ['channel', channelPost, true],
   ['shipments', shipments, true],
+  ['amend', amendingOrders, true],
   ['integrity', integrity, false],
 ];
 

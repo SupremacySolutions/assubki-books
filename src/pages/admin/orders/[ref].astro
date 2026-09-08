@@ -19,6 +19,13 @@ import {
 } from '../../../lib/order-status';
 import Thread from '../../../components/Thread.astro';
 import { markRead, thread, threadOpen } from '../../../lib/messages';
+import {
+  canAmend,
+  amendments,
+  removedSummary,
+  AMEND_REFUSAL,
+  NOTE_MAX,
+} from '../../../lib/amend';
 
 const { ref } = Astro.params;
 const order = ref ? await getOrderByRef(ref) : null;
@@ -78,12 +85,16 @@ const isCash = Boolean(order.cash_payment);
 // Every part is fetched, not just the ones in force: picking another, or
 // ticking "paying in cash", rebuilds the box without a page load, so the other
 // wordings have to be here to build from.
-const [items, postageDefault, payments, places, opening] = await Promise.all([
+const [items, postageDefault, payments, places, opening, changes] = await Promise.all([
   getOrderItems(order.id),
   lastPostagePence(),
   paymentOptions(),
   isCollection ? collectionPlaces() : Promise.resolve([]),
   defaultMessage(order.fulfilment, isCash),
+  // Only for an order that has actually been amended, which is nearly none of
+  // them - `amended_at` is on the order precisely so this table is not read on
+  // every view of every order.
+  order.amended_at ? amendments(order.id) : Promise.resolve([]),
 ]);
 
 // Which of each starts marked. A cash order starts on the cash wording, so bank
@@ -146,6 +157,26 @@ if (order.completed_at) {
   history.push({ at: order.completed_at, what: isCollection ? 'Collected' : 'Closed' });
 }
 
+/*
+ * Every amendment, in the timeline with everything else that was sent.
+ *
+ * The lines it names are gone from the order, so this is the only place the
+ * shop can still answer "what did this order say before?" - which is the
+ * question that arrives when a customer compares two messages from us.
+ */
+for (const change of changes) {
+  history.push({
+    at: change.at,
+    what: `${change.removed.length === 1 ? 'A book' : `${change.removed.length} books`} taken off`,
+    detail:
+      `${removedSummary(change.removed)} · ` +
+      (change.totalBefore !== null && change.totalAfter !== null
+        ? `total ${price(change.totalBefore)} → ${price(change.totalAfter)}`
+        : `subtotal ${price(change.subtotalBefore)} → ${price(change.subtotalAfter)}`),
+    body: change.note ?? undefined,
+  });
+}
+
 if (order.status === 'cancelled') {
   history.push({
     at: order.updated_at,
@@ -157,6 +188,19 @@ if (order.status === 'cancelled') {
 history.sort((a, b) => a.at - b.at);
 const waitingForBooks = items.some((item) => Boolean(item.from_incoming));
 const canConfirm = order.status === 'requested' && !waitingForBooks;
+/*
+ * Whether books may still come off this order.
+ *
+ * A single line cannot be amended down to nothing - that is a cancellation,
+ * and it already has a button that releases the copies and tells the customer -
+ * so an order with one book on it is offered nothing here.
+ */
+const amendable = canAmend(order.status);
+const amendedCount = Number(Astro.url.searchParams.get('amended') ?? 0);
+const told = Astro.url.searchParams.get('told') ?? '';
+/** Whether a total has been quoted yet, which is what postage hangs off. */
+const quoted = order.total_pence !== null;
+const totalCopies = items.reduce((n, item) => n + item.qty, 0);
 const hoursLeft = order.expires_at
   ? Math.max(0, Math.round((order.expires_at * 1000 - Date.now()) / 3_600_000))
   : null;
@@ -217,6 +261,39 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
     problem === 'state' && (
       <p class="mb-5 p-3.5 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
         That order had already moved on - nothing was changed.
+      </p>
+    )
+  }
+
+  {/* The two ways an amendment is refused before it touches anything, in the
+      words lib/amend gives them - so the endpoint and the page cannot describe
+      the same refusal differently. */}
+  {
+    (problem === 'nochange' || problem === 'empty') && (
+      <p class="mb-5 p-3.5 bg-[var(--color-brass)]/10 border border-[var(--color-brass)]/30 rounded-[3px] text-[14.5px] leading-relaxed">
+        {problem === 'empty' ? AMEND_REFUSAL.empty : AMEND_REFUSAL.none}
+      </p>
+    )
+  }
+
+  {/* Whether the customer actually heard is the part worth saying out loud.
+      The change stands either way - the copies are back on the shelf - so a
+      failed send is a job for the owner, not a reason to have refused. */}
+  {
+    amendedCount > 0 && (
+      <p
+        class:list={[
+          'mb-5 p-3.5 rounded-[3px] text-[14.5px] leading-relaxed border',
+          told
+            ? 'bg-[var(--color-instock)]/10 border-[var(--color-instock)]/30 text-[var(--color-instock)]'
+            : 'bg-[var(--color-outstock)]/10 border-[var(--color-outstock)]/30 text-[var(--color-outstock)]',
+        ]}
+      >
+        {amendedCount === 1 ? 'One book' : `${amendedCount} books`} taken off, and the copies are
+        back on the shelf.{' '}
+        {told
+          ? `They were told by ${told.replace('+', ' and ')}.`
+          : 'Nothing could be delivered to them, though - tell them yourself in the messages below.'}
       </p>
     )
   }
@@ -316,6 +393,162 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
           )
         }
       </section>
+
+      {/*
+        * Taking books off, which the shop could not do at all.
+        *
+        * A customer wrote asking for three titles to be removed and the only
+        * buttons on this page were cancel the whole order and delete it. The
+        * removal happened in the messages instead, so the order went on holding
+        * copies of books nobody wanted and quoting a total for them.
+        *
+        * Folded away, because the ordinary afternoon is packing what was
+        * ordered, not editing it - but directly under the packing list, since
+        * that is the list it changes.
+        */}
+      {amendable && totalCopies > 1 && (
+        <details
+          class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5"
+          open={problem === 'nochange' || problem === 'empty'}
+        >
+          <summary class="text-[14.5px] text-[var(--color-navy)] cursor-pointer">
+            Take books off this order
+          </summary>
+          <p class="mt-3 text-[14px] text-[var(--color-ink-soft)] leading-relaxed max-w-[38rem]">
+            Set how many of each to keep. The copies you take off go straight back on the shelf,
+            the order's figures follow them, and {order.customer_name.split(' ')[0]} is sent the
+            revised list{quoted ? ' and the new total' : ''}.
+          </p>
+
+          <form
+            method="post"
+            action={`/api/admin/orders/${order.ref}/amend`}
+            id="amendForm"
+            class="mt-4"
+          >
+            <ul class="divide-y divide-[var(--color-rule-faint)] border-y border-[var(--color-rule-faint)]">
+              {items.map((item) => (
+                <li class="py-2.5 flex items-center justify-between gap-4 text-[14.5px]">
+                  <span class="min-w-0" data-amend-title>
+                    {item.title_snapshot}
+                    <span class="block text-[13px] text-[var(--color-ink-faint)]">
+                      {price(item.price_pence_snapshot)} each
+                      {item.from_incoming ? ' · reserved from a delivery' : ''}
+                    </span>
+                  </span>
+                  <span class="shrink-0 flex items-center gap-2">
+                    <label class="text-[13px] text-[var(--color-ink-faint)]" for={`qty_${item.id}`}>
+                      Keep
+                    </label>
+                    <input
+                      id={`qty_${item.id}`}
+                      name={`qty_${item.id}`}
+                      type="number"
+                      inputmode="numeric"
+                      min="0"
+                      max={item.qty}
+                      value={item.qty}
+                      data-amend-qty
+                      data-was={item.qty}
+                      data-price={item.price_pence_snapshot}
+                      data-title={item.title_snapshot}
+                      class="field !w-16 !py-1.5 !text-[14px] tabular-nums text-center"
+                    />
+                    <span class="text-[13px] text-[var(--color-ink-faint)] tabular-nums">
+                      of {item.qty}
+                    </span>
+                    {/* One press for the ordinary case, which is a whole title
+                        coming off rather than a quantity being trimmed. */}
+                    <button
+                      type="button"
+                      data-amend-none={`qty_${item.id}`}
+                      class="px-2 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-outstock)] hover:text-[var(--color-outstock)]"
+                    >
+                      Remove
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div class="mt-3 flex justify-between text-[15px]">
+              <span>Order becomes</span>
+              <span class="price" id="amendSubtotal">{price(order.subtotal_pence)}</span>
+            </div>
+            {order.discount_pence > 0 && (
+              <p class="mt-1 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                The {price(order.discount_pence)} discount this order was given is kept in
+                proportion to what is left, rather than worked out again from today's rule -
+                a customer must not lose a deal because the shop changed its threshold
+                afterwards.
+              </p>
+            )}
+
+            {/* Only once a total has been quoted. Before that the confirm step
+                still decides postage, and inventing one here would put a figure
+                on an order nobody has priced. */}
+            {quoted && !isCollection && (
+              <div class="mt-4">
+                <label for="amendPostage" class="block text-[13px] font-medium mb-1.5">
+                  Postage (£)
+                </label>
+                <div class="flex items-center gap-3">
+                  <input
+                    id="amendPostage"
+                    name="postage"
+                    type="number"
+                    step="0.01"
+                    inputmode="decimal"
+                    min="0"
+                    value={((order.postage_pence ?? 0) / 100).toFixed(2)}
+                    class="field !w-24 !py-1.5 !text-[14px] tabular-nums text-center"
+                  />
+                  <p class="text-[13.5px] text-[var(--color-ink-soft)]">
+                    New total{' '}
+                    <strong id="amendTotal" class="price text-[16px]">
+                      {price(order.total_pence ?? 0)}
+                    </strong>
+                  </p>
+                </div>
+                <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">
+                  A smaller parcel often costs less to send, and they are holding a message
+                  quoting the old figure.
+                </p>
+              </div>
+            )}
+
+            <div class="mt-4">
+              <label for="amend_note" class="block text-[13px] font-medium mb-1.5">
+                Why, in your own words (optional)
+              </label>
+              <textarea
+                id="amend_note"
+                name="note"
+                rows="2"
+                maxlength={NOTE_MAX}
+                placeholder="e.g. Taken off at your request - the rest is unchanged."
+                class="field font-[family-name:var(--font-body)] !text-[14px]"
+              />
+              <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">
+                Goes with the email, their order page, and Telegram if they connected it.
+              </p>
+            </div>
+
+            <button type="submit" class="btn btn-ghost mt-4">
+              Take them off and tell them
+            </button>
+          </form>
+        </details>
+      )}
+
+      {/* One book on the order and nothing to trim it to. Said rather than
+          left as a missing panel, because the owner would go looking for it. */}
+      {amendable && totalCopies === 1 && (
+        <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">
+          There is one book on this order, so there is nothing to take off it -
+          removing it is a cancellation, in Next steps below.
+        </p>
+      )}
 
       {waitingForBooks && (
         <p class="p-4 bg-[var(--color-brass)]/10 text-[14px]">Waiting for reserved books to arrive. Payment and dispatch become available once every copy is here.</p>
@@ -932,7 +1165,7 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
     </aside>
   </div>
 
-  <script is:inline nonce={Astro.locals.cspNonce} define:vars={{ subtotal: order.subtotal_pence, orderRef: order.ref }}>
+  <script is:inline nonce={Astro.locals.cspNonce} define:vars={{ subtotal: order.subtotal_pence, orderRef: order.ref, amendDiscount: order.discount_pence ?? 0, amendEmpty: AMEND_REFUSAL.empty, amendNone: AMEND_REFUSAL.none }}>
     document.querySelector('#deleteOrderForm')?.addEventListener('submit', (event) => {
       if (!confirm(`Delete order ${orderRef} for good?\n\nThis cannot be undone.`)) {
         event.preventDefault();
@@ -1057,6 +1290,86 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
      * singular querySelector meant that if those conditions ever overlapped,
      * the second checkbox would silently do nothing.
      */
+    /*
+     * What the order will come to, worked out while the owner is still typing.
+     *
+     * The same arithmetic the endpoint runs, in the same order - the discount
+     * scaled by what is left, floored, then taken off - so the figure on screen
+     * is the figure that gets written. A preview that disagreed with the result
+     * would be worse than none, because this is the number the owner decides
+     * from.
+     */
+    const amendForm = document.querySelector('#amendForm');
+    if (amendForm) {
+      const boxes = [...amendForm.querySelectorAll('[data-amend-qty]')];
+      const amendPostage = amendForm.querySelector('#amendPostage');
+      const outSubtotal = document.querySelector('#amendSubtotal');
+      const outTotal = document.querySelector('#amendTotal');
+      const money = (pence) => `£${(pence / 100).toFixed(2)}`;
+      const kept = (box) =>
+        Math.min(Number(box.dataset.was), Math.max(0, Math.trunc(Number(box.value) || 0)));
+      const grossBefore = boxes.reduce(
+        (n, box) => n + Number(box.dataset.price) * Number(box.dataset.was),
+        0,
+      );
+
+      const paintAmend = () => {
+        const grossAfter = boxes.reduce((n, box) => n + Number(box.dataset.price) * kept(box), 0);
+        const discount =
+          grossBefore > 0
+            ? Math.min(grossAfter, Math.floor((amendDiscount * grossAfter) / grossBefore))
+            : 0;
+        const subtotalAfter = grossAfter - discount;
+        outSubtotal.textContent = money(subtotalAfter);
+        if (outTotal) {
+          outTotal.textContent = money(
+            subtotalAfter + Math.round((Number(amendPostage?.value) || 0) * 100),
+          );
+        }
+      };
+
+      for (const box of boxes) box.addEventListener('input', paintAmend);
+      amendPostage?.addEventListener('input', paintAmend);
+
+      for (const button of amendForm.querySelectorAll('[data-amend-none]')) {
+        button.addEventListener('click', () => {
+          const box = document.getElementById(button.dataset.amendNone);
+          if (!box) return;
+          box.value = '0';
+          paintAmend();
+        });
+      }
+
+      /*
+       * Named, not counted. "Remove 2 books?" is not a question anybody can
+       * answer - the titles are the whole point, and this message goes out to a
+       * customer under the shop's name.
+       */
+      amendForm.addEventListener('submit', (event) => {
+        const going = boxes
+          .filter((box) => kept(box) < Number(box.dataset.was))
+          .map((box) => {
+            const n = Number(box.dataset.was) - kept(box);
+            return n > 1 ? `${box.dataset.title} × ${n}` : box.dataset.title;
+          });
+        if (!going.length) {
+          event.preventDefault();
+          alert(amendNone);
+          return;
+        }
+        if (boxes.every((box) => kept(box) === 0)) {
+          event.preventDefault();
+          alert(amendEmpty);
+          return;
+        }
+        if (!confirm(`Take these off ${orderRef}?\n\n${going.join('\n')}\n\nThe copies go back on the shelf and the customer is told.`)) {
+          event.preventDefault();
+        }
+      });
+
+      paintAmend();
+    }
+
     for (const cashCheckbox of document.querySelectorAll('.toggle-cash-payment')) {
       cashCheckbox.addEventListener('change', async () => {
         const wanted = cashCheckbox.checked;

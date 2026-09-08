@@ -66,10 +66,22 @@ export interface AdminOrderRow {
   cash_payment: number;
   /** What they asked for at checkout: 'transfer', 'cash', or nothing. */
   payment_preference: string | null;
+  /**
+   * When books were last taken off this order, if they ever were.
+   *
+   * A marker rather than the record itself: the amendments live in their own
+   * table, and this is what saves every page that shows an order from reading
+   * that table for the overwhelming majority of orders that have none.
+   */
+  amended_at: number | null;
+  /** What the order was discounted by, which an amendment scales. */
+  discount_pence: number;
   item_count: number;
 }
 
 export interface AdminOrderItem {
+  /** The line's own id, which is what an amendment acts on. */
+  id: number;
   from_incoming: number;
   book_id: number | null;
   title_snapshot: string;
@@ -148,10 +160,10 @@ export async function getOrderByRef(ref: string): Promise<AdminOrderRow | null> 
 
 export async function getOrderItems(orderId: number): Promise<AdminOrderItem[]> {
   const { results } = await env.DB.prepare(
-    `SELECT oi.from_incoming, oi.book_id, oi.title_snapshot, oi.price_pence_snapshot, oi.qty,
+    `SELECT oi.id, oi.from_incoming, oi.book_id, oi.title_snapshot, oi.price_pence_snapshot, oi.qty,
             b.slug, b.shipment_id
        FROM order_items oi LEFT JOIN books b ON b.id = oi.book_id
-      WHERE oi.order_id = ?`,
+      WHERE oi.order_id = ? ORDER BY oi.id`,
   )
     .bind(orderId)
     .all<AdminOrderItem>();

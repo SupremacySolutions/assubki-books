@@ -641,6 +641,56 @@ export function statusMessage(
   }
 }
 
+/**
+ * What a customer is told when books come off their order.
+ *
+ * Here with the rest of the wording rather than in the endpoint, because three
+ * places say it - the email, the Telegram message and their own order page -
+ * and a shop that describes the same change three ways is the bug this module
+ * was written to end.
+ *
+ * It deliberately neither apologises nor explains. The shop does not know why
+ * the books came off; the owner does, and whatever they wrote is carried
+ * beside this rather than guessed at here.
+ */
+export function amendmentMessage(opts: {
+  ref: string;
+  /** What came off, already read as a sentence: "Title A, Title B x 2". */
+  removed: string;
+  /** How many titles that was, which is the only thing the grammar needs. */
+  count: number;
+  fulfilment: string;
+  /** What is left to pay, when the order had already been quoted a total. */
+  totalPence?: number | null;
+  /** Nothing is owed until the books change hands. */
+  cashPayment?: boolean;
+}): { subject: string; line: string; totalLine: string | null } {
+  const { ref, removed, count, fulfilment, totalPence, cashPayment } = opts;
+  const money = (pence: number) => `£${(pence / 100).toFixed(2)}`;
+
+  return {
+    subject: `Your order has been amended - ${ref}`,
+    line:
+      `${removed} ${count === 1 ? 'has' : 'have'} been taken off your order. ` +
+      'The rest of it is unchanged, and the copies that came off are back on the shelf.',
+    /*
+     * The new figure, and only when there is one.
+     *
+     * An order still waiting to be confirmed has never been quoted a total -
+     * postage is not known until somebody has looked at the address - so naming
+     * one here would invent it. A confirmed order has been quoted, which is
+     * exactly why the new one has to be said plainly: the customer is holding a
+     * message asking for an amount that is no longer what they owe.
+     */
+    totalLine:
+      totalPence === null || totalPence === undefined
+        ? null
+        : cashPayment
+          ? `Your order now comes to ${money(totalPence)}, payable ${cashMoment(fulfilment)}.`
+          : `Your order now comes to ${money(totalPence)}. Please pay that rather than the amount in our earlier message.`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Postage
 // ---------------------------------------------------------------------------

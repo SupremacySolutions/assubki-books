@@ -22,7 +22,8 @@ import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml, noReply, noReplyText } from './email';
 import { sendMessage, sendMessageId, optInLink, esc, botConfigured, mdLink } from './telegram';
-import { statusMessage, cashMoment, BACK_IN_STOCK } from './order-status';
+import { statusMessage, amendmentMessage, cashMoment, BACK_IN_STOCK } from './order-status';
+import { removedSummary } from './amend';
 import { getSetting } from './settings';
 
 export interface PlacedInput {
@@ -430,6 +431,145 @@ export async function notifyOrderConfirmed(
     email: emailResult.status === 'fulfilled' && emailResult.value,
     telegram: telegramResult.status === 'fulfilled' && telegramResult.value,
   };
+}
+
+// ---------------------------------------------------------------------------
+// 2b. Books came off an order
+// ---------------------------------------------------------------------------
+
+export interface AmendedInput {
+  ref: string;
+  token: string;
+  name: string;
+  email: string;
+  telegramChatId?: string | null;
+  /** What came off, as the lines read before they went. */
+  removed: { title: string; qty: number; pricePence: number }[];
+  /** What is left, which is the list that now describes the order. */
+  items: { title: string; qty: number; pricePence: number }[];
+  subtotalPence: number;
+  postagePence: number | null;
+  /** Null on an order that has not been quoted a total yet. */
+  totalPence: number | null;
+  fulfilment: string;
+  cashPayment?: boolean;
+  /** The owner's own words about the change, if they wrote any. */
+  note?: string | null;
+  origin: string;
+}
+
+/**
+ * Tells a customer their order is smaller than it was.
+ *
+ * Sent on both channels, like the confirmation and for the same reason: this
+ * one changes what they owe, and a single channel is a single point of failure
+ * for a message about money. What it must never do is fail loudly - the copies
+ * are already back on the shelf and the order already says so by the time this
+ * runs, so a Telegram outage cannot be allowed to undo a change that has
+ * happened. The owner is told what did and did not go out instead, and can say
+ * it themselves in the thread.
+ */
+export async function notifyOrderAmended(
+  input: AmendedInput,
+): Promise<{ email: boolean; telegram: boolean }> {
+  const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
+  const copy = amendmentMessage({
+    ref: input.ref,
+    removed: removedSummary(input.removed),
+    count: input.removed.length,
+    fulfilment: input.fulfilment,
+    totalPence: input.totalPence,
+    cashPayment: input.cashPayment,
+  });
+  const note = (input.note ?? '').trim();
+  // The whole point of the message is that the list has changed, so the list is
+  // the one thing it always carries - even when nothing is left to pay yet.
+  const totals: { label: string; pence: number }[] =
+    input.fulfilment === 'collection' || input.totalPence === null
+      ? []
+      : [{ label: 'Postage', pence: input.postagePence ?? 0 }];
+
+  const html = shell(
+    'Your order has been amended',
+    `Reference ${input.ref}`,
+    `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(input.name)},</p>
+     <p style="margin:0 0 18px;font-size:15px;line-height:1.6">${escapeHtml(copy.line)}</p>
+     ${
+       note
+         ? `<p style="margin:0 0 18px;font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(note)}</p>`
+         : ''
+     }
+     <p style="margin:0 0 10px;font-size:13px;color:#8b93a1;text-transform:uppercase;letter-spacing:.06em">What is on your order now</p>
+     ${itemRows(
+       input.items,
+       input.subtotalPence,
+       totals,
+       input.totalPence === null ? undefined : input.cashPayment ? 'Total, payable in cash' : 'Total to pay',
+       input.totalPence === null ? undefined : input.totalPence,
+     )}
+     ${
+       copy.totalLine
+         ? `<p style="margin:18px 0 0;font-size:15px;line-height:1.6">${escapeHtml(copy.totalLine)}</p>`
+         : `<p style="margin:18px 0 0;font-size:15px;line-height:1.6">We will send you the total and how to pay as usual.</p>`
+     }
+     ${button(link, 'View your order')}
+     ${noReply(link)}`,
+  );
+
+  const text =
+    `${copy.subject}\n\nالسلام عليكم ${input.name},\n\n${copy.line}\n\n` +
+    (note ? `${note}\n\n` : '') +
+    'What is on your order now:\n' +
+    input.items
+      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
+      .join('\n') +
+    `\n  Subtotal: ${price(input.subtotalPence)}\n` +
+    (copy.totalLine ? `\n${copy.totalLine}\n` : '\nWe will send you the total and how to pay as usual.\n') +
+    `\n${link}\n` +
+    noReplyText(link);
+
+  const first = input.name.trim().split(/\s+/)[0];
+  const telegram = [
+    ...(first ? [esc(`السلام عليكم ${first}`), ''] : []),
+    `*${esc(copy.subject)}*`,
+    '',
+    esc(copy.line),
+    ...(note ? ['', esc(note)] : []),
+    '',
+    `*${esc('What is on your order now')}*`,
+    ...input.items.map(
+      // Every literal goes through esc(). A bare "-" is reserved in MarkdownV2
+      // and rejects the whole message, which is how a payment message once
+      // stopped being delivered at all.
+      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(i.pricePence * i.qty))}`,
+    ),
+    '',
+    `${esc('Subtotal')} ${esc(price(input.subtotalPence))}`,
+    ...(copy.totalLine ? ['', `*${esc(copy.totalLine)}*`] : []),
+    '',
+    mdLink('Your order', link),
+  ].join('\n');
+
+  const [emailResult, telegramResult] = await Promise.allSettled([
+    deliver({ to: input.email, subject: copy.subject, html, text }),
+    input.telegramChatId && botConfigured()
+      ? sendMessage(input.telegramChatId, telegram)
+      : Promise.resolve(false),
+  ]);
+
+  const sent = {
+    email: emailResult.status === 'fulfilled' && emailResult.value,
+    telegram: telegramResult.status === 'fulfilled' && telegramResult.value,
+  };
+  // Recorded where the portal already looks for a delivery problem, so an
+  // amendment nobody heard about shows up beside every other failed send
+  // rather than only in a Worker log.
+  if (!sent.email && !sent.telegram) {
+    await recordNotifyFailure(`amendment for ${input.ref} - nothing could be delivered`);
+  } else {
+    await clearNotifyFailure();
+  }
+  return sent;
 }
 
 /**
