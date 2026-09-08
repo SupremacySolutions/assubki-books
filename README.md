@@ -37,10 +37,9 @@ recorded as well as the schema:
 npx wrangler d1 migrations apply assubki-books --local
 ```
 
-Production was reconciled through migration `0040` on 7 September 2026, with
-all 40 filenames recorded in `d1_migrations`. **`0041_order_amendments.sql` is
-pending there** - apply it before deploying code that reads
-`order_amendments` or `orders.amended_at`. For new migrations, inspect what
+Production was reconciled through migration `0040` on 7 September 2026, and
+`0041_order_amendments.sql` was applied on 8 September 2026, with all 41
+filenames recorded in `d1_migrations`. For new migrations, inspect what
 is pending, back up production, test locally, and apply remotely before deploying
 code that requires the new schema. Follow the
 [schema and backup guide](docs/schema-reconciliation/README.md#current-status--verified-7-september-2026).
