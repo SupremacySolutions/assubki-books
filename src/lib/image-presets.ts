@@ -89,4 +89,4 @@ export const IMAGE_PRESETS = {
 
 export type PresetName = keyof typeof IMAGE_PRESETS;
 
-export const isPreset = (name: string): name is PresetName => name in IMAGE_PRESETS;
+export const isPreset = (name: string): name is PresetName => Object.hasOwn(IMAGE_PRESETS, name);

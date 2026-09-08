@@ -111,6 +111,7 @@ globalThis.fetch = async (url, init) => {
   }
   throw new Error('Outbound network is disabled in tests');
 };
+try {
 await build({
   stdin: {
     contents: `
@@ -206,7 +207,6 @@ async function test(name, fn) {
   console.log('PASS ' + name);
   passed++;
 }
-try {
   await test('a photo-order gap still gives the catalogue the detail page cover', async () => {
     const id = book(null, 0, 1);
     sql(`INSERT INTO book_images(book_id,image_key,sort) VALUES

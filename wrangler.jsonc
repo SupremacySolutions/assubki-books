@@ -31,9 +31,9 @@
     }
   ],
 
-  // Images the owner uploads through the admin panel. The migrated covers are
-  // immutable and ship as static assets under public/img instead, so only
-  // new uploads land here.
+  // All book photos and their processed variants live in R2, including the
+  // migrated books/ covers and uploads/ photos. Local R2 must be populated
+  // separately; npm run dev:images copies public production photos locally.
   //
   // Deliberately not named IMAGES: the Astro adapter treats a binding of that
   // name as the Cloudflare Images service and wires itself to it.

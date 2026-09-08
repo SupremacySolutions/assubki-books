@@ -8,7 +8,7 @@ import tailwindcss from '@tailwindcss/vite';
 // the admin has to appear without a rebuild.
 export default defineConfig({
   output: 'server',
-  adapter: cloudflare(),
+  adapter: cloudflare({ remoteBindings: false }),
   site: 'https://assubkibooks.co.uk',
   // Honour the port the harness assigns, so this can run alongside the other
   // Supremacy dev servers.
@@ -25,6 +25,8 @@ export default defineConfig({
    * stays in src/middleware.ts.
    */
   vite: {
+    cacheDir: '.astro/vite',
+    server: { strictPort: true },
     plugins: [tailwindcss()],
     /*
      * Never inline a bundle into the page.

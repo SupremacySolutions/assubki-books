@@ -1,29 +1,32 @@
-/**
- * Shared machinery for the end-to-end suite.
- *
- * The same code runs locally and against production; only the base URL, the
- * database flag and the admin password differ. A suite that behaved
- * differently from the thing it tests is how regressions get through, so the
- * mode changes as little as possible.
- */
+/** Shared helpers for the owned, disposable local E2E environment. */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { promisify, parseEnv } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-export const PROD = process.argv.includes('--prod');
-export const SITE = PROD ? 'https://assubkibooks.co.uk' : (process.env.E2E_SITE ?? 'http://localhost:4330');
+// This suite changes catalogue rows, settings and holds. It is only safe in
+// the fresh environment owned by run-e2e, never a developer or live database.
+if (process.argv.includes('--prod') || !process.env.ASSUBKI_E2E_ROOT ||
+    resolve(process.env.ASSUBKI_E2E_ROOT) !== process.cwd() ||
+    readFileSync('.e2e-owned', 'utf8') !== process.env.ASSUBKI_E2E_TOKEN) {
+  throw new Error('Run npm run test:e2e; direct or production mutation runs are disabled.');
+}
+export const PROD = false;
+export const SITE = process.env.E2E_SITE;
+if (!SITE || new URL(SITE).hostname !== '127.0.0.1' || new URL(SITE).protocol !== 'http:') throw new Error('E2E requires its owned loopback server.');
 export const ORIGIN = { Origin: SITE };
+export const vars = parseEnv(readFileSync('.dev.vars', 'utf8'));
+if (vars.EMAIL_DRY_RUN !== '1' || vars.TELEGRAM_DRY_RUN !== '1') throw new Error('Both notification dry-run flags are required.');
 
-export const vars = Object.fromEntries(
-  readFileSync('.dev.vars', 'utf8')
-    .split('\n')
-    .filter((l) => l.includes('=') && !l.trim().startsWith('#'))
-    .map((l) => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; }),
-);
+// Bound all requests, including direct fetch calls in e2e.mjs. Do not retry
+// mutations: a server can commit a write before returning a failed response.
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = (url, init = {}) => nativeFetch(url, {
+  ...init, signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
+});
 
 export const prodVars = JSON.parse(
   readFileSync('wrangler.jsonc', 'utf8').replace(/^\s*\/\/.*$/gm, ''),
@@ -88,7 +91,9 @@ let localDbPath;
 function localDb() {
   if (localDbPath) return localDbPath;
   const dir = '.wrangler/state/v3/d1/miniflare-D1DatabaseObject';
-  const file = readdirSync(dir).find((f) => f.endsWith('.sqlite') && !f.startsWith('metadata'));
+  const files = readdirSync(dir).filter((f) => f.endsWith('.sqlite') && !f.startsWith('metadata'));
+  if (files.length !== 1) throw new Error(`Expected one owned D1 database, found ${files.length}`);
+  const file = files[0];
   if (!file) throw new Error(`no local D1 database under ${dir} - has the dev server ever run?`);
   localDbPath = join(dir, file);
   return localDbPath;
@@ -122,7 +127,7 @@ function localDb() {
 const WRANGLER_BIN = new URL('../../node_modules/.bin/wrangler', import.meta.url).pathname;
 
 const SQLITE_FLAGS = [
-  '-json',
+  '-readonly', '-json',
   '-cmd', 'PRAGMA foreign_keys=ON',
   '-cmd', 'PRAGMA trusted_schema=ON',
   '-cmd', '.timeout 8000',
@@ -154,31 +159,18 @@ const SQLITE_FLAGS = [
  * safe direction only costs speed, so anything that is not plainly a SELECT is
  * assumed to write.
  */
-const READ_ONLY = /^\s*(SELECT|PRAGMA|EXPLAIN|WITH)\b/i;
+const READ_ONLY = /^\s*(SELECT|PRAGMA|EXPLAIN)\b/i;
 
 export async function db(sql) {
   if (PROD) return viaWrangler(sql, '--remote');
 
-  /*
-   * Reads go straight at the file; writes go through wrangler.
-   *
-   * The file is WAL, and WAL is what makes a reader safe beside the dev
-   * server - readers never block and are never blocked. Writers are a
-   * different matter: SQLite allows one at a time, and miniflare does not wait
-   * for it. When this suite held the write lock, the server's next query came
-   * back `SQLITE_BUSY: database is locked`, the request 500'd, and whichever
-   * assertion happened to be behind it failed. That is what made a run's
-   * failures move around: 578/0, then 537/28, then 515/49, on the same code.
-   *
-   * So writes are handed to wrangler, which drives the same miniflare the
-   * server does and therefore queues behind it properly. Reads - the ones on
-   * the hot path of every assertion - keep the direct connection and the speed
-   * that came with it.
-   */
+  // Read-only SQLite connections are cheap for assertions. Mutations use
+  // Wrangler's local D1 interface; it is a separate runtime, not the server's
+  // transaction queue, so any concurrency failure must remain visible.
   if (READ_ONLY.test(sql)) {
     try {
       const { stdout } = await execFileAsync('sqlite3', [...SQLITE_FLAGS, localDb(), sql], {
-        maxBuffer: 40 * 1024 * 1024,
+        timeout: 60000, maxBuffer: 40 * 1024 * 1024,
       });
       return parseSqlite(stdout);
     } catch (err) {
@@ -192,27 +184,15 @@ export async function db(sql) {
   return viaWrangler(sql, '--local');
 }
 
-/** Retried, because a busy database is a wait rather than a failure. */
+// Do not replay multi-statement mutations after an ambiguous failure: some
+// statements may already have committed. Keep the failure visible to the suite.
 async function viaWrangler(sql, where) {
-  let last;
-  for (let attempt = 0; attempt < 6; attempt++) {
-    try {
-      const { stdout } = await execFileAsync(WRANGLER_BIN, [
-        'd1', 'execute', 'assubki-books',
-        where, '--json', '--command', sql,
-      ], { maxBuffer: 40 * 1024 * 1024 });
-
-      const parsed = JSON.parse(stdout);
-      if (!Array.isArray(parsed)) throw new Error(parsed.error?.text ?? 'query failed');
-      return parsed.flatMap((r) => r.results ?? []);
-    } catch (err) {
-      last = err;
-      const detail = [err.stdout, err.stderr].filter(Boolean).join(' ').slice(0, 400);
-      if (detail) last = new Error(`${err.message.split('\n')[0]}\n       ${detail.trim()}`);
-      if (attempt < 5) await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
-    }
-  }
-  throw last;
+  const { stdout } = await execFileAsync(WRANGLER_BIN, [
+    'd1', 'execute', 'assubki-books', where, '--json', '--command', sql,
+  ], { timeout: 60000, maxBuffer: 40 * 1024 * 1024 });
+  const parsed = JSON.parse(stdout);
+  if (!Array.isArray(parsed) || parsed.some(r => r.success === false)) throw new Error('D1 fixture query failed');
+  return parsed.flatMap(r => r.results ?? []);
 }
 
 /**
@@ -290,33 +270,8 @@ export async function signIn() {
  */
 export const adminCookie = () => cookie;
 
-/** A form POST to the portal, as a browser would send it. */
-/**
- * A fetch that retries the one failure this harness causes itself.
- *
- * The dev server and this suite hold the same SQLite file open, and SQLite
- * allows one writer at a time. When the suite has the write lock, miniflare
- * does not wait for it - the query comes straight back `SQLITE_BUSY: database
- * is locked`, the request 500s, and whichever assertion was behind it fails.
- * It lands on a different assertion every run, which is what made a full run
- * come back 578/0, then 537/28, then 515/49 on identical code.
- *
- * None of that exists in production: real D1 has no local file to contend
- * over. So it is retried here - and *only* on that signature, so a genuine 500
- * still fails the assertion that found it rather than being waited out.
- */
-const LOCKED = /database is locked|SQLITE_BUSY|Failed to parse body as JSON|internal error; reference/i;
-
-async function fetchSettling(url, init, attempts = 5) {
-  for (let i = 0; ; i++) {
-    const res = await fetch(url, init);
-    if (res.status !== 500 || i >= attempts) return res;
-
-    const body = await res.clone().text().catch(() => '');
-    if (!LOCKED.test(body)) return res;
-    await new Promise((r) => setTimeout(r, 150 * (i + 1)));
-  }
-}
+// Failed HTTP responses are evidence. Never replay a write to hide a 500.
+const fetchSettling = (url, init) => fetch(url, init);
 
 export async function admin(path, body = {}) {
   const res = await fetchSettling(`${SITE}${path}`, {
@@ -468,9 +423,8 @@ export async function teardown() {
     if (r.location?.includes('deleted-orphan') && messageId) {
       orphans.push(messageId);
     }
-    // Belt and braces: if the endpoint refused for any reason, the fixture must
-    // still not survive the run.
-    await db(`DELETE FROM books WHERE id = ${id}`).catch(() => {});
+    // The bulk fixture sweep below handles any refused deletions in one D1
+    // invocation, rather than booting Wrangler again for every fixture.
   }
 
   for (const id of created.shelves) {
@@ -487,8 +441,8 @@ export async function teardown() {
    * the run and then failed the *next* one's counts, which is the contamination
    * that made a whole run untrustworthy rather than one assertion.
    *
-   * Ids above the real catalogue are fixtures by definition, so this is safe to
-   * run unconditionally and safe to run twice.
+   * IDs above the fixed seed belong to fixtures ONLY in this disposable
+   * database. The module's ownership guard must stay ahead of every mutation.
    */
   await db(
     `DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders);
