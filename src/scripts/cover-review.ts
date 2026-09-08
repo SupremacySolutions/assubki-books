@@ -902,7 +902,7 @@ export async function dress(
     const context = canvas.getContext('2d');
     if (!context) continue;
 
-    if (name === 'social') {
+    if (name === 'social' || Math.abs(framed.width / framed.height - BOX) > 0.01) {
       /*
        * The one square well, Telegram's. A cover goes into it whole rather
        * than cropped, because a square crop of a book is a fragment of one.
@@ -954,6 +954,11 @@ function frameToBox(
       strip[y * 4 + 2],
     ];
   };
+  // Spine and wide detail photos must retain their full field of view.
+  const ratio = width / height;
+  if (ratio < BOX * 0.88 || ratio > BOX / 0.88) {
+    return source;
+  }
   const plan = framePlan({
     width,
     height,
@@ -979,7 +984,6 @@ function frameToBox(
     return out;
   }
 
-  const ratio = width / height;
   if (ratio < BOX) {
     out.width = width;
     out.height = Math.round(width / BOX);

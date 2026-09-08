@@ -126,6 +126,7 @@ export {booksByIds,bookBySlug} from './src/lib/db';
 export {DELETE as deletePhoto,POST as uploadPhoto} from './src/pages/api/admin/upload';
 export {planBasketLine,basketDeliveryNote} from './src/lib/basket-plan';
 export {POST as confirm} from './src/pages/api/admin/orders/[ref]/confirm';
+export {POST as ownerMessage} from './src/pages/api/admin/orders/[ref]/message';
 export {POST as status} from './src/pages/api/admin/orders/[ref]/status';
 export {POST as cancel} from './src/pages/api/orders/cancel';
 export {POST as saveShipment} from './src/pages/api/admin/shipments/[id]/save';
@@ -241,6 +242,30 @@ try {
       const {key} = await uploaded.json();
       assert.equal((await app.booksByIds([id]))[0].image_key,key);
     } finally {delete globalThis.reservationTestEnv.UPLOADS;}
+  });
+  await test('owner chat returns the saved message as JSON and keeps form fallback', async () => {
+    const [o] = await order([book(null, 0, 3)]);
+    const call = request(o.ref, {body: 'Hello from the owner'});
+    call.request.headers.set('Accept', 'application/json');
+    const response = await app.ownerMessage(call);
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.ok, true);
+    assert.equal(result.message.sender, 'owner');
+    assert.equal(result.message.body, 'Hello from the owner');
+    assert.equal(row(`SELECT COUNT(*) n FROM messages WHERE order_id=${o.id}`).n, 1);
+    assert.equal((await app.ownerMessage(request(o.ref, {body:'Plain form'}))).status, 302);
+    const empty = request(o.ref, {body:''});
+    empty.request.headers.set('Accept', 'application/json');
+    assert.equal((await (await app.ownerMessage(empty)).json()).ok, false);
+  });
+  await test('posting stays dispatched until delivery is explicitly confirmed', async () => {
+    const [o] = await order([book(null, 0, 3)]);
+    sql(`UPDATE orders SET fulfilment='delivery',status='paid',paid_at=unixepoch() WHERE id=${o.id}`);
+    assert.equal((await app.status(request(o.ref, {status:'dispatched',tracking:'TEST123',postage_provider:'InPost'}))).status,302);
+    assert.deepEqual(row(`SELECT status,completed_at,tracking_number FROM orders WHERE id=${o.id}`), {status:'dispatched',completed_at:null,tracking_number:'TEST123'});
+    assert.equal((await app.status(request(o.ref, {status:'completed'}))).status,302);
+    assert.equal(row(`SELECT status FROM orders WHERE id=${o.id}`).status,'completed');
   });
   await test('stock alerts recover a restock that never reached the notification hook', async () => {
     const id = book(null, 0, 0);
