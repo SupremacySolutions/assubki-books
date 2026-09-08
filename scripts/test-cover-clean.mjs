@@ -17,7 +17,7 @@
  */
 import assert from 'node:assert/strict';
 import { detectQuad } from '../src/scripts/cover-clean.ts';
-import { cropsCleanly } from '../src/lib/cover-fit.ts';
+import { cropsCleanly, fillsTheBox } from '../src/lib/cover-fit.ts';
 
 let passed = 0;
 function test(name, run) {
@@ -194,6 +194,12 @@ test('crops sideways but never top and bottom', () => {
   assert.equal(cropsCleanly(600, 1000), false); // taller than the box: would cut a title
   assert.equal(cropsCleanly(900, 1000), false); // too wide: the trim reaches artwork
   assert.equal(cropsCleanly(null, 800), false); // nothing known, nothing assumed
+  // Filling the box is a different question: an ordinary cover a hair narrower
+  // than 5:7 is still a cover, and covers are shown full bleed.
+  assert.equal(fillsTheBox(600, 840), true);
+  assert.equal(fillsTheBox(600, 1000), false); // far enough off to be a spine
+  assert.equal(fillsTheBox(660, 1000), true);  // ordinary, just narrow
+  assert.equal(fillsTheBox(null, 800), true);  // unmeasured uploads fill, as before
 });
 
 console.log(`\n${passed} cover regression tests passed`);
