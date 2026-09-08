@@ -122,6 +122,8 @@ export {expireOrders} from './src/lib/stock-release';
 export {drainArrivalNotices,pendingNotices} from './src/lib/shipment-notify';
 export {drainStockAlerts,leaseAlert,alertFailed,alertSent} from './src/lib/stock-alerts';
 export {forgetOrderDiscount} from './src/lib/sales';
+export {booksByIds,bookBySlug} from './src/lib/db';
+export {DELETE as deletePhoto,POST as uploadPhoto} from './src/pages/api/admin/upload';
 export {planBasketLine,basketDeliveryNote} from './src/lib/basket-plan';
 export {POST as confirm} from './src/pages/api/admin/orders/[ref]/confirm';
 export {POST as status} from './src/pages/api/admin/orders/[ref]/status';
@@ -204,6 +206,42 @@ async function test(name, fn) {
   passed++;
 }
 try {
+  await test('a photo-order gap still gives the catalogue the detail page cover', async () => {
+    const id = book(null, 0, 1);
+    sql(`INSERT INTO book_images(book_id,image_key,sort) VALUES
+      (${id},'uploads/first.webp',3),(${id},'uploads/second.webp',4)`);
+    const [card] = await app.booksByIds([id]);
+    assert.equal(card.image_key, 'uploads/first.webp');
+    const detail = await app.bookBySlug(card.slug);
+    assert.equal(detail.images[0].image_key, card.image_key);
+  });
+  await test('deleting covers promotes the next photo and never changes another listing', async () => {
+    const id = book(null, 0, 1), other = book(null, 0, 1);
+    const first = row(`INSERT INTO book_images(book_id,image_key,sort) VALUES (${id},'uploads/first.webp',0) RETURNING id`).id;
+    const second = row(`INSERT INTO book_images(book_id,image_key,sort) VALUES (${id},'uploads/second.webp',1) RETURNING id`).id;
+    sql(`INSERT INTO book_images(book_id,image_key,sort) VALUES (${other},'uploads/other.webp',0)`);
+    const remove = imageId => app.deletePhoto({request:new Request('https://example.invalid/api/admin/upload', {
+      method:'DELETE', body:new URLSearchParams({imageId:String(imageId)}),
+    })});
+    assert.equal((await remove(first)).status, 200);
+    assert.equal(row(`SELECT sort FROM book_images WHERE id=${second}`).sort, 0);
+    assert.equal((await app.booksByIds([id]))[0].image_key, 'uploads/second.webp');
+    assert.equal((await app.booksByIds([other]))[0].image_key, 'uploads/other.webp');
+    assert.equal((await remove(second)).status, 200);
+    assert.equal((await app.booksByIds([id]))[0].image_key, null);
+    globalThis.reservationTestEnv.UPLOADS = {put:async()=>{}};
+    try {
+      const form = new FormData();
+      form.set('bookId',String(id));
+      form.set('photo',new File(['fixture'],'replacement.webp',{type:'image/webp'}));
+      const uploaded = await app.uploadPhoto({request:new Request('https://example.invalid/api/admin/upload', {
+        method:'POST',body:form,
+      })});
+      assert.equal(uploaded.status,200);
+      const {key} = await uploaded.json();
+      assert.equal((await app.booksByIds([id]))[0].image_key,key);
+    } finally {delete globalThis.reservationTestEnv.UPLOADS;}
+  });
   await test('stock alerts recover a restock that never reached the notification hook', async () => {
     const id = book(null, 0, 0);
     sql(`INSERT INTO stock_alerts(book_id,email) VALUES (${id},'waiting@example.invalid')`);

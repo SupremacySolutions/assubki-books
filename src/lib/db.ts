@@ -105,7 +105,10 @@ const BOOK_SELECT = `
             JOIN categories c2 ON c2.id = bc2.category_id
            WHERE bc2.book_id = b.id) AS cat_slugs
     FROM books b
-    LEFT JOIN book_images i ON i.book_id = b.id AND i.sort = 0
+    LEFT JOIN book_images i ON i.id = (
+      SELECT first_image.id FROM book_images first_image
+       WHERE first_image.book_id = b.id ORDER BY first_image.sort, first_image.id LIMIT 1
+    )
     LEFT JOIN sale_items si ON si.book_id = b.id
          AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
 `;
@@ -546,7 +549,7 @@ export async function bookBySlug(slug: string): Promise<BookDetail | null> {
 
   const [images, cats] = await Promise.all([
     db()
-      .prepare('SELECT image_key, alt, width, height FROM book_images WHERE book_id = ? ORDER BY sort')
+      .prepare('SELECT image_key, alt, width, height FROM book_images WHERE book_id = ? ORDER BY sort, id')
       .bind(book.id)
       .all<BookDetail['images'][number]>(),
     db()
