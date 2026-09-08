@@ -64,7 +64,7 @@ out of four.
 
 ## The data model
 
-Fourteen tables. The ones that matter:
+Twenty-six tables. The ones that matter:
 
 **`books`** — a listing. `stock` is what is physically held; `reserved` is what
 open orders have spoken for. **Availability is always `stock - reserved`**, and
@@ -82,6 +82,14 @@ hand-written copies it used to be.
 **`orders`** / **`order_items`** — an order and its lines. `access_token` is a
 16-byte random hex string; it is the customer's entire authority over their own
 order, compared in constant time. There is no customer login anywhere.
+
+**`order_amendments`** — what was taken off an order after it was placed, and
+what the figures went from and to. The lines themselves are gone by then, so
+this is the only thing that can still answer "what did this order say before?"
+— the question a customer asks when the page and the email in their inbox
+disagree. `orders.amended_at` is a marker beside it, so the two order pages can
+skip this table entirely for the orders that were never amended, which is
+nearly all of them.
 
 **`categories`** — shelves, nested by a `path` string (`hadith/hadith-works`).
 Each has a three-letter **classmark** derived from the discipline's Arabic name
@@ -161,6 +169,29 @@ out the customer cancels outright and the copies return immediately. After, it
 becomes a request the owner answers; the order does not move until they do. The
 customer's stated reason and the owner's note are separate columns and are
 never shown as one voice.
+
+**Amending** is the third answer to "I have changed my mind", and the one the
+shop had no button for: a customer asked for three titles to be taken off an
+order and the portal could only cancel the whole thing. `POST
+/api/admin/orders/<ref>/amend` takes a new quantity per line, releases the
+difference exactly as cancelling releases a hold — `reserved`, or
+`reserved_incoming` for a claim on a delivery, every copy ledgered under
+`'order amended'` — reprices the order, and tells the customer what changed.
+
+Three rules make it safe:
+
+- **Only while it is unpaid.** Past payment the copies have left `stock` and
+  any money is settled off the site; the same two statuses `UNPAID` names.
+- **It never empties an order.** That is a cancellation, which has its own
+  button, releases everything and tells the customer it is over.
+- **Nothing is added.** A new line would need an availability check, the set
+  pool and a fresh hold; somebody who wants more books places another order.
+
+The order discount is *scaled* by what is left rather than worked out again
+from today's rule — a customer must not lose a deal because the shop moved its
+threshold afterwards, or gain one it never offered. The subtotal is written by
+SQL from the lines themselves, after the same batch's own deletes, so the
+figures cannot disagree with the order they describe.
 
 ---
 

@@ -37,8 +37,9 @@ recorded as well as the schema:
 npx wrangler d1 migrations apply assubki-books --local
 ```
 
-Production was reconciled through migration `0040` on 7 September 2026, with
-all 40 filenames recorded in `d1_migrations`. For new migrations, inspect what
+Production was reconciled through migration `0040` on 7 September 2026, and
+`0041_order_amendments.sql` was applied on 8 September 2026, with all 41
+filenames recorded in `d1_migrations`. For new migrations, inspect what
 is pending, back up production, test locally, and apply remotely before deploying
 code that requires the new schema. Follow the
 [schema and backup guide](docs/schema-reconciliation/README.md#current-status--verified-7-september-2026).
@@ -62,6 +63,7 @@ scripts/upload-covers.mjs    Pushes those covers into R2 under their image_key
 scripts/resize-covers.mjs    Stores each cover at the sizes the site shows it at
 src/lib/db.ts                Every catalogue read
 src/lib/orders.ts            Hold, expire, and read orders
+src/lib/amend.ts             Taking books off an order already placed
 src/lib/notify.ts            Customer + owner email, owner Telegram
 src/middleware.ts            301s from the old WooCommerce URLs
 workers/expire-holds/        Cron Worker that releases lapsed holds
@@ -219,6 +221,20 @@ is set, otherwise a shared password. See SETUP.md.
 An order marked "awaiting payment" that the customer never heard about looks
 handled but is not, so the confirm endpoint keeps it in the queue and says
 plainly that nothing went out.
+
+**Books can come off an order without cancelling it.** A customer asked for
+three titles to be removed and there was nothing to press: the portal offered
+cancelling the whole order or deleting it, so the removal happened in the
+messages and nowhere else - the order went on holding copies of books nobody
+wanted and quoting a total for them. "Take books off this order", under the
+packing list, sets a new quantity per line; the copies go back on the shelf
+through the same ledgered release cancelling uses, the figures follow, and the
+customer is sent the revised list. Unpaid orders only, never down to nothing -
+that is a cancellation - and nothing can be added, which would need an
+availability check and a fresh hold. Unlike confirming, the change stands even
+if no message could be delivered: the copies are already back on the shelf and
+somebody else may have taken them, so the owner is told what did not go out
+rather than having the amendment undone underneath them.
 
 ## Connections
 
