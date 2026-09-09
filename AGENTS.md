@@ -15,7 +15,8 @@ in this checkout and every worktree, including browser investigations.
   this). Stop the interactive dev/preview/sweeper server *in this checkout*
   before checks, image sync, migrations or builds; a server or check in another
   workspace is not yours to stop. Checks queue for a shared slot when the
-  machine is busy - that wait is expected, not a failure. Do not delete storage
+  machine is busy, and for exclusive access when another check uses the same
+  checkout - those waits are expected, not failures. Do not delete storage
   while a process has it open.
 - `npm run test:e2e` owns a disposable checkout, migrated D1, local R2, fake
   credentials, production build, server and cleanup. Never point the mutation

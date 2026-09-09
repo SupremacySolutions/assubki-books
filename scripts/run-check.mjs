@@ -23,17 +23,30 @@ if (!command) throw new Error('Usage: node scripts/run-check.mjs <command> [args
  * with several workspaces each running their own checks. Waiting says the same
  * thing honestly and still finishes.
  */
-const held = await acquireSlot({
-  weight: weightOf([command, ...args]),
-  onWait: (busy, slots, want) => {
-    console.error(`Waiting for ${want} of ${slots} check slots; the machine is busy.`);
-    for (const b of busy) console.error(`  PID ${b.pid}  ${b.cwd}${b.command ? `  (${b.command})` : ''}`);
-    console.error('Set ASSUBKI_CHECK_SLOTS to change how many run at once.');
-  },
+let held, job;
+const controller = new AbortController();
+// Cancellation/parent-death handling must exist while queued, not only after
+// admission, or an abandoned queued task can start a new check later.
+const dispose = shutdownHooks(async () => {
+  controller.abort();
+  await job?.stop();
 });
-process.on('exit', () => held.release());
-
-const job = managed(command, args);
-const dispose = shutdownHooks(job.stop);
-try { process.exitCode = await job.exited; }
-finally { await job.stop(); dispose(); held.release(); }
+process.on('exit', () => held?.release());
+try {
+  held = await acquireSlot({
+    weight: weightOf([command, ...args]), signal: controller.signal,
+    onWait: (busy, slots, want) => {
+      console.error(`Waiting for ${want} of ${slots} check slots and exclusive access to this checkout.`);
+      for (const b of busy) console.error(`  PID ${b.pid}  ${b.cwd}  (${b.kind}: ${b.command})`);
+    },
+  });
+  controller.signal.throwIfAborted();
+  job = managed(command, args);
+  process.exitCode = await job.exited;
+} catch (error) {
+  if (!controller.signal.aborted) throw error;
+  process.exitCode = 130;
+} finally {
+  try { await job?.stop(); }
+  finally { dispose(); held?.release(); }
+}

@@ -50,95 +50,104 @@ try {process.exitCode=await job.exited;} finally {await job.stop();dispose();}`)
   }
   console.log('PASS mutation E2E refuses direct and production invocation');
 
-  /*
-   * Several workspaces must be able to check at once, and the one that arrives
-   * when they are all busy must wait rather than fail - an exit code cannot say
-   * "the machine was busy" and "your code is broken" differently.
-   */
-  const slots = join(temp, 'slots');
   const runCheck = new URL('./run-check.mjs', import.meta.url).pathname;
-  const checkEnv = (n, cwd) => ({ ...process.env, ASSUBKI_CHECK_SLOTS: String(n), TMPDIR: slots, ...(cwd ? { PWD: cwd } : {}) });
-  mkdirSync(slots, { recursive: true });
-
-  // Two slots, two checks: both run at once rather than one refusing.
-  const started = [];
-  const pair = ['a', 'b'].map(name => {
-    const child = spawn(process.execPath, [runCheck, process.execPath, '-e', `
-      import('node:fs').then(fs => fs.writeFileSync(${JSON.stringify(join(temp, 'x'))} + '${name}', '1'));
-      setTimeout(() => {}, 2500);`], { env: checkEnv(2), stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = ''; child.stderr.on('data', c => err += c);
-    started.push(child);
-    return { child, name, err: () => err, done: new Promise(r => child.once('exit', r)) };
-  });
-  await waitFor(() => pair.every(p => existsSync(join(temp, 'x' + p.name))));
-  console.log('PASS two workspaces run their checks concurrently');
-
-  // A third, with both slots busy, waits and then succeeds.
-  const third = spawn(process.execPath, [runCheck, process.execPath, '-e', '0'], { env: checkEnv(2), stdio: ['ignore', 'ignore', 'pipe'] });
-  let thirdErr = ''; third.stderr.on('data', c => thirdErr += c);
-  const thirdCode = await new Promise(r => third.once('exit', r));
-  assert.equal(thirdCode, 0, 'a queued check must succeed, not fail');
-  assert.match(thirdErr, /Waiting for \d+ of \d+ check slots/);
-  await Promise.all(pair.map(p => p.done));
-  console.log('PASS a check beyond the limit queues and still succeeds');
-
-  /*
-   * A slot whose owner was force-killed must not cost anybody their turn. This
-   * is the stale-lock problem the single lock made everybody solve by hand, so
-   * the dead PID here is a real one that really exited rather than a number
-   * chosen for being improbable.
-   */
-  const corpse = spawn(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { stdio: 'ignore' });
-  const deadPid = corpse.pid;
-  corpse.kill('SIGKILL');
-  await new Promise(r => corpse.once('exit', r));
-  await waitFor(() => !live(deadPid));
-  const staleDir = join(slots, 'assubki-books-checks');
-  mkdirSync(staleDir, { recursive: true });
-  for (const i of [0, 1]) writeFileSync(join(staleDir, `${i}.slot`), JSON.stringify({ pid: deadPid, cwd: '/gone', at: Date.now() }));
-  const revived = spawn(process.execPath, [runCheck, process.execPath, '-e', '0'], { env: checkEnv(2), stdio: ['ignore', 'ignore', 'pipe'] });
-  let revivedErr = ''; revived.stderr.on('data', c => revivedErr += c);
-  assert.equal(await new Promise(r => revived.once('exit', r)), 0, 'a slot held by a dead PID must be reclaimed');
-  assert.doesNotMatch(revivedErr, /waiting/, 'and reclaimed without waiting for it');
-  console.log('PASS a slot left by a force-killed check is reclaimed');
-
-  /*
-   * The E2E suite weighs two, because two of them at once on a small machine
-   * gets one of their servers killed by the OS. A light check may share what is
-   * left; a second heavy one must wait. And two heavy jobs must never each grab
-   * half the machine and wait for the other half for ever.
-   */
-  const { acquireSlot, weightOf, slotDir } = await import(new URL('./lib/check-slots.mjs', import.meta.url).href);
-  assert.equal(weightOf(['node', 'scripts/run-e2e.mjs']), 2);
-  assert.equal(weightOf(['astro', 'check']), 1);
-
-  // Its own directory: these must not share slots with the run-check that is
-  // running this test, which already holds one of the real ones.
-  process.env.TMPDIR = join(temp, 'w');
-  mkdirSync(slotDir(), { recursive: true });
-  process.env.ASSUBKI_CHECK_SLOTS = '4';
-  const heavy = await acquireSlot({ weight: 2 });
-  assert.equal(heavy.slots, 2, 'a heavy job takes two slots');
-  const light = await acquireSlot({ weight: 1, timeoutMs: 3000 });
-  assert.equal(light.slots, 1, 'a light check still fits beside it');
-  await assert.rejects(
-    acquireSlot({ weight: 2, timeoutMs: 1500 }),
-    /Waited .* for 2 of 4 check slots/,
-    'a second heavy job waits rather than squeezing in',
-  );
-  heavy.release(); light.release();
-
-  // Deadlock check: with two slots, two heavy jobs must not hold one each.
+  const { acquireSlot, acquireServer, activeChecks, weightOf } = await import('./lib/check-slots.mjs');
+  const originalTmp = process.env.TMPDIR, originalSlots = process.env.ASSUBKI_CHECK_SLOTS;
+  process.env.TMPDIR = join(temp, 'scheduler');
   process.env.ASSUBKI_CHECK_SLOTS = '2';
-  const [first, second] = await Promise.allSettled([
-    acquireSlot({ weight: 2, timeoutMs: 4000 }),
-    acquireSlot({ weight: 2, timeoutMs: 4000 }),
-  ]);
-  const winners = [first, second].filter(r => r.status === 'fulfilled');
-  assert.equal(winners.length, 1, 'exactly one heavy job wins; the other waits rather than deadlocking');
-  winners[0].value.release();
-  console.log('PASS the heavy suite excludes a second one without deadlocking');
+  const workspace = name => { const path = join(temp,name); mkdirSync(path,{recursive:true}); return path; };
+  const launch = (cwd, code) => {
+    const child=spawn(process.execPath,[runCheck,process.execPath,'-e',code],{
+      cwd, env:{...process.env}, stdio:['ignore','ignore','pipe'],
+    });
+    managers.push(child);
+    let error='';child.stderr.on('data',chunk=>error+=chunk);
+    return {child,error:()=>error,done:new Promise(r=>child.once('exit',r))};
+  };
+  const mark = (file, ms=0) => `require('node:fs').writeFileSync(${JSON.stringify(file)},'1');setTimeout(()=>{},${ms})`;
+  const hold = (file, release) => `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(file)},'1');const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(release)}))clearInterval(timer)},30)`;
+  try {
+    const a=workspace('a'),b=workspace('b');
+    const release=join(temp,'release-pair');
+    const pair=[a,b].map(cwd=>launch(cwd,hold(join(cwd,'started'),release)));
+    await waitFor(()=>pair.every((p,i)=>existsSync(join([a,b][i],'started'))));
+    const thirdMark=join(temp,'third');
+    const third=launch(workspace('c'),mark(thirdMark));
+    await waitFor(()=>third.error().includes('Waiting for'));
+    assert.equal(existsSync(thirdMark),false);
+    writeFileSync(release,'1');
+    for(const p of [...pair,third]) assert.equal(await p.done,0,p.error());
+    console.log('PASS distinct workspaces run concurrently; excess checks queue');
+
+    const same=workspace('same'),one=join(same,'one'),two=join(same,'two'),unlock=join(same,'unlock');
+    const first=launch(same,hold(one,unlock));
+    await waitFor(()=>existsSync(one));
+    // An alias must not become a second checkout lock.
+    const alias=join(temp,'alias');
+    const {symlinkSync}=await import('node:fs');symlinkSync(same,alias,'dir');
+    const second=launch(alias,mark(two));
+    await waitFor(()=>second.error().includes('Waiting for'));
+    assert.equal(existsSync(two),false);
+    assert.throws(()=>acquireServer({cwd:same}),/already running a check/);
+    writeFileSync(unlock,'1');
+    assert.equal(await first.done,0);assert.equal(await second.done,0);
+    console.log('PASS same checkout and symlink aliases serialize; checks exclude servers');
+
+    // Fill all machine capacity, queue a check, THEN start its local server.
+    const capacity=await acquireSlot({cwd:workspace('capacity'),weight:2});
+    const target=workspace('queued-server'),ran=join(target,'ran');
+    const queued=launch(target,mark(ran));
+    await waitFor(()=>queued.error().includes('Waiting for'));
+    const server=acquireServer({cwd:target});
+    capacity.release();
+    await delay(1000);assert.equal(existsSync(ran),false);
+    server.release();assert.equal(await queued.done,0);assert.ok(existsSync(ran));
+    console.log('PASS a server started during the queue wait still excludes the check');
+
+    const blocked=await acquireSlot({cwd:workspace('blocker'),weight:2});
+    const never=join(temp,'must-not-run');
+    const cancelled=launch(workspace('cancelled'),mark(never));
+    await waitFor(()=>cancelled.error().includes('Waiting for'));
+    cancelled.child.kill('SIGTERM');assert.notEqual(await cancelled.done,0);
+    blocked.release();assert.equal(existsSync(never),false);
+    console.log('PASS cancellation while queued never launches the command');
+
+    // Simultaneous real processes, not same-process calls between awaits.
+    // Atomic admission must never exceed two even while scanners reap leases.
+    const events=join(temp,'events');
+    const racers=Array.from({length:12},(_,i)=>launch(workspace('race-'+i),
+      `const fs=require('node:fs');fs.appendFileSync(${JSON.stringify(events)},'start ${i}\\n');setTimeout(()=>fs.appendFileSync(${JSON.stringify(events)},'end ${i}\\n'),200)`));
+    for(const racer of racers)assert.equal(await racer.done,0,racer.error());
+    let running=0,peak=0;
+    for(const line of readFileSync(events,'utf8').trim().split('\n')){
+      running+=line.startsWith('start')?1:-1;peak=Math.max(peak,running);
+      assert.ok(running>=0 && running<=2,`capacity breached: ${running}`);
+    }
+    assert.equal(running,0);assert.equal(peak,2);
+    console.log('PASS simultaneous admission never exceeds machine capacity');
+
+    // A completed-but-unreleased lease stands in for a force-killed owner.
+    const owner=spawn(process.execPath,['--input-type=module','-e',
+      `import {acquireSlot} from ${JSON.stringify(new URL('./lib/check-slots.mjs',import.meta.url).href)};await acquireSlot();`],
+      {cwd:workspace('dead'),env:{...process.env},stdio:'ignore'});
+    managers.push(owner);assert.equal(await new Promise(r=>owner.once('exit',r)),0);
+    assert.ok(!activeChecks().some(r=>r.pid===owner.pid));
+    console.log('PASS dead owners are reclaimed without deleting another lease');
+
+    assert.equal(weightOf(['node','scripts/run-e2e.mjs']),2);
+    const heavy=await acquireSlot({cwd:workspace('heavy'),weight:2});
+    await assert.rejects(acquireSlot({cwd:workspace('other-heavy'),weight:2,timeoutMs:500}),/Waited .* for 2 of 2/);
+    heavy.release();
+    const next=await acquireSlot({cwd:workspace('other-heavy'),weight:2,timeoutMs:1000});next.release();
+    assert.equal(activeChecks().length,0);
+    console.log('PASS heavy E2E admission is all-or-nothing and releases all capacity');
+  } finally {
+    if(originalTmp===undefined)delete process.env.TMPDIR;else process.env.TMPDIR=originalTmp;
+    if(originalSlots===undefined)delete process.env.ASSUBKI_CHECK_SLOTS;else process.env.ASSUBKI_CHECK_SLOTS=originalSlots;
+  }
 } finally {
-  for(const manager of managers) if(manager.exitCode===null && manager.signalCode===null) manager.kill('SIGTERM');
+  for(const manager of managers) if(manager.exitCode===null && manager.signalCode===null) {
+    const ended=new Promise(r=>manager.once('exit',r));manager.kill('SIGTERM');await ended;
+  }
   rmSync(temp,{recursive:true,force:true});
 }
