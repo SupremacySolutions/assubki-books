@@ -41,7 +41,9 @@ do not prove a process is running.
 ## Several workspaces at once
 
 Each checkout is independent: its own server registry, its own local D1 and R2,
-its own port. Two workspaces can serve and check at the same time. Two things
+its own port. Different workspaces can serve and check at the same time. Within
+one checkout, checks queue for exclusive access and cannot overlap each other
+or its managed server. Symlink paths count as the same checkout. Two things
 follow from that.
 
 **Give each one a port.** Both default to 4321 and `strictPort` is on, so a
@@ -63,6 +65,17 @@ code under test, and one that takes a while to disbelieve. Weighing it at two
 means a second full E2E run waits its turn while lighter checks still share the
 machine. On a two-slot machine that gives E2E the machine to itself, which is
 the intent.
+
+Admission uses a small SQLite database under the system temporary directory
+(`assubki-books-checks/leases.sqlite`), using the same `sqlite3` CLI already
+required by local tests. One transaction checks both machine capacity and
+checkout ownership before admitting work. There are no half-written slot files.
+A server that starts while a check is queued still excludes that check when
+capacity becomes available. Cancellation while queued cannot start work later.
+
+All collaborating workspaces should use this scheduler revision; finish checks
+using the old slot-file runner before updating those workspaces. Old runner
+versions do not participate in the new transactional admission protocol.
 
 A new worktree starts with an empty database. Apply migrations in it before the
 site will serve anything, and symlink or install `node_modules`.
