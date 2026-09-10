@@ -54,11 +54,14 @@ for (const top of tree) {
         </label>
         <input id="newName" name="name" required maxlength="80" class="field" placeholder="e.g. Tajweed" />
       </div>
-      <div>
+      <!-- The shelf names are long, and a content-sized select carries its
+           longest option as a minimum width. Without room to shrink, that
+           minimum pushed the card off the side of a narrow phone. -->
+      <div class="min-w-0 max-w-full">
         <label for="newParent" class="block text-[13px] font-medium mb-1.5 text-[var(--color-ink-soft)]">
           Sits under
         </label>
-        <select id="newParent" name="parent" class="field !w-auto">
+        <select id="newParent" name="parent" class="field !w-auto max-w-full">
           <option value="">Nothing, a top-level shelf</option>
           {parentOptions.map((o) => <option value={o.id} set:html={o.label} />)}
         </select>

@@ -283,6 +283,25 @@
 
   .field:focus { border-color: var(--color-navy); outline-offset: 0; }
 
+  /*
+   * Safari on iOS zooms the whole page in when you focus a control whose text
+   * is under 16px, and never zooms back out - so a customer tapping "Email" on
+   * the checkout is left scrolled sideways on a page they now have to pinch
+   * back. The size utilities that tune these controls on a desk are all below
+   * that threshold and most of them are `!important`, so the floor is set here
+   * for the phone widths only, and has to outrank them.
+   *
+   * The alternative, `maximum-scale=1` on the viewport, stops the zoom by
+   * taking pinch-zoom away from everyone. That is not a trade worth making.
+   */
+  @media (max-width: 767px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
   /* Prose for the imported book descriptions. Only the tags the sanitiser
      lets through are styled. */
   .prose-book { color: var(--color-ink-soft); font-size: 15.5px; }
