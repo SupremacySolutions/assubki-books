@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { missesQuery, type Miss } from './searches';
+import { requestCountQuery } from './book-requests';
 
 /**
  * The numbers behind the dashboard.
@@ -46,6 +47,15 @@ export interface Dashboard {
    * somebody who came looking and left with nothing.
    */
   misses: Miss[];
+  /**
+   * How many people asked the shop to go and find something.
+   *
+   * The half of a fruitless search that can actually be answered: a miss is
+   * anonymous, this has an address attached to it. Counted here rather than
+   * read on its own page so it costs no extra round trip and inherits this
+   * object's minute of cache.
+   */
+  requests: number;
   /** The catalogue worklist - listings missing something. */
   backlog: {
     noImage: number; thinImage: number; noDescription: number; noCategory: number;
@@ -61,7 +71,7 @@ async function read(days: number): Promise<Dashboard> {
   const from = now - days * DAY;
   const previousFrom = from - days * DAY;
 
-  const [waiting, money, daily, splits, best, low, repeat, shelves, work, misses] =
+  const [waiting, money, daily, splits, best, low, repeat, shelves, work, misses, requests] =
     await env.DB.batch([
     // Everything the owner might need to act on, counted in one pass.
     env.DB.prepare(
@@ -104,7 +114,8 @@ async function read(days: number): Promise<Dashboard> {
     ).bind(from),
     env.DB.prepare(
       `SELECT title, slug, (stock - reserved) AS left_
-         FROM books WHERE status = 'live' AND (stock - reserved) BETWEEN 1 AND 2
+         FROM books WHERE status = 'live' AND deleted_at IS NULL
+          AND (stock - reserved) BETWEEN 1 AND 2
         ORDER BY left_, title LIMIT 6`,
     ),
     /*
@@ -154,24 +165,27 @@ async function read(days: number): Promise<Dashboard> {
      */
     env.DB.prepare(
       `SELECT
-         (SELECT COUNT(*) FROM books b WHERE b.status='live'
+         (SELECT COUNT(*) FROM books b WHERE b.status='live' AND b.deleted_at IS NULL
             AND NOT EXISTS (SELECT 1 FROM book_images WHERE book_id = b.id)) AS noImage,
-         (SELECT COUNT(*) FROM books WHERE status='live'
+         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
             AND (description_html IS NULL OR description_html='')) AS noDescription,
-         (SELECT COUNT(*) FROM books b WHERE b.status='live'
+         (SELECT COUNT(*) FROM books b WHERE b.status='live' AND b.deleted_at IS NULL
             AND NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)) AS noCategory,
-         (SELECT COUNT(*) FROM books b2 WHERE b2.status='live'
+         (SELECT COUNT(*) FROM books b2 WHERE b2.status='live' AND b2.deleted_at IS NULL
             AND EXISTS (SELECT 1 FROM book_images i WHERE i.book_id = b2.id AND i.sort = 0
                           AND i.width IS NOT NULL AND i.height > 0
                           AND MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) < 300)) AS thinImage,
-         (SELECT COUNT(*) FROM books WHERE status='live' AND telegram_message_id IS NULL) AS unposted,
-         (SELECT COUNT(*) FROM books WHERE status='live' AND (stock - reserved) <= 0) AS outOfStock,
-         (SELECT COUNT(*) FROM books WHERE status='live'
+         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
+            AND telegram_message_id IS NULL AND announced_by_hand IS NULL) AS unposted,
+         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
+            AND (stock - reserved) <= 0) AS outOfStock,
+         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
             AND (stock - reserved) > 0 AND (stock - reserved) <= 2) AS lowStock`,
     ),
     // Reads inside the batch the dashboard was already making, so the panel
     // costs no extra round trip and inherits the 60-second cache.
     missesQuery(days),
+    requestCountQuery(),
   ]);
 
   const w = (waiting.results[0] ?? {}) as Record<string, number | null>;
@@ -225,6 +239,7 @@ async function read(days: number): Promise<Dashboard> {
       const row = r as Record<string, unknown>;
       return { terms: String(row.terms), times: Number(row.times), lastAt: Number(row.lastAt) };
     }),
+    requests: Number((requests.results[0] as { n?: number } | undefined)?.n ?? 0),
     byShelf: shelves.results.map((r) => {
       const row = r as Record<string, unknown>;
       return { name: String(row.name), pence: Number(row.pence) };

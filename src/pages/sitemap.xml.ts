@@ -10,7 +10,8 @@ export const GET: APIRoute = async ({ site, url }) => {
   const origin = (site ?? new URL(url.origin)).origin;
 
   const [books, categories] = await Promise.all([
-    env.DB.prepare(`SELECT slug, updated_at FROM books WHERE status = 'live' ORDER BY slug`).all<{
+    env.DB.prepare(`SELECT slug, updated_at FROM books
+        WHERE status = 'live' AND deleted_at IS NULL ORDER BY slug`).all<{
       slug: string;
       updated_at: number;
     }>(),

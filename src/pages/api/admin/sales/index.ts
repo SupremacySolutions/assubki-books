@@ -59,10 +59,17 @@ export const POST: APIRoute = async ({ request }) => {
      * `sale_items` counts rows, not sellable books, and the public sale query
      * joins `books` on `status = 'live'` - so a sale made entirely of drafts
      * published happily and then showed customers an empty row.
+     *
+     * A listing in the bin is the second way to be a row here and not a book a
+     * customer can see: `saleBooks` and `saleBookCount` both filter it out. The
+     * condition has to be whatever the public query's is, or this check goes on
+     * approving sales that show nothing - the same failure as before, from a
+     * different direction.
      */
     const members = await env.DB.prepare(
       `SELECT COUNT(*) AS n FROM sale_items si
          JOIN books b ON b.id = si.book_id AND b.status = 'live'
+              AND b.deleted_at IS NULL
         WHERE si.sale_id = ?`,
     )
       .bind(id)

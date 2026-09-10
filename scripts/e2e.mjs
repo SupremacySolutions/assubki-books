@@ -1038,6 +1038,62 @@ async function adminAuth() {
 // ---------------------------------------------------------------------------
 async function listings() {
   const t = suite('8. Portal: listings');
+
+  /*
+   * Every query against `books` has to know about the bin.
+   *
+   * Deleting a listing sets `deleted_at` and leaves the row where it is for
+   * thirty days (migration 0042). There is no status value hiding it in the
+   * background - `books.status` is fenced by a CHECK constraint SQLite cannot
+   * alter without rebuilding a table eight others point at - so every query
+   * that lists books says `deleted_at IS NULL` itself, and *that* is the whole
+   * defence. A query that forgets goes on selling a book the owner withdrew.
+   *
+   * A checklist somebody reruns from memory is not a defence, so this is the
+   * defence: the source of every string mentioning `FROM books` or `JOIN books`
+   * must either carry the filter or be named below with a reason. The
+   * allowlist is the point of the exercise - it makes each exemption something
+   * that was decided once and can be read later, and it makes a *new* query
+   * that forgets fail the build rather than ship quietly.
+   */
+  const GUARD_EXEMPT = [
+    // Fragments whose WHERE is supplied by the caller, and does carry the filter.
+    ['src/lib/db.ts', 'BOOK_SELECT has no WHERE; every caller adds one'],
+    ['src/lib/admin-db.ts', 'listBooksAdmin/bookFilterCounts interpolate the guard'],
+    // A shipment is a different population. Its rows carry `shipment_id` and are
+    // never catalogue listings, so a catalogue delete cannot reach them.
+    ['src/lib/shipments.ts', 'shipment-scoped rows, which a catalogue delete never touches'],
+    ['src/lib/arrival.ts', 'delivery-scoped, same population as shipments'],
+    ['src/pages/api/admin/shipments/', 'shipment-scoped'],
+    // Reading one book by id, from a page that already holds it - including the
+    // portal's own view of a deleted listing, which has to load it to restore it.
+    ['src/pages/api/admin/books/', 'acts on one listing by id, the bin included'],
+    ['src/pages/api/admin/upload.ts', 'one listing by id'],
+    ['src/lib/orders.ts', 'order lines keep naming a book that has since gone'],
+    // The module that implements the bin. Every query in it is deliberately
+    // about deleted listings - finding them, restoring them, destroying them -
+    // so the rule the rest of the codebase follows is the one thing it cannot.
+    ['src/lib/book-deletion.ts', 'is the bin; its queries are about deleted rows by definition'],
+    // An order already placed must go on reading correctly. A book cannot be
+    // deleted while it holds copies, so these cannot be about a live promise.
+    ['src/pages/api/admin/orders/', 'a placed order still names what was bought'],
+  ];
+  const STRINGS = /`(?:[^`\\]|\\.)*`|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g;
+  const unguarded = [];
+  for (const file of walk(new URL('../src/', import.meta.url).pathname)) {
+    if (!/\.(ts|astro)$/.test(file)) continue;
+    const rel = 'src/' + file.split('/src/')[1];
+    if (GUARD_EXEMPT.some(([prefix]) => rel.startsWith(prefix))) continue;
+    const source = readFileSync(file, 'utf8');
+    for (const literal of source.match(STRINGS) ?? []) {
+      if (!/\b(?:FROM|JOIN)\s+books\b/i.test(literal)) continue;
+      if (/deleted_at|NOT_DELETED/.test(literal)) continue;
+      unguarded.push(`${rel}: ${literal.replace(/\s+/g, ' ').slice(0, 60)}`);
+    }
+  }
+  t.ok(unguarded.length === 0,
+    `every books query knows about the bin${unguarded.length ? ` (${unguarded.join(' | ')})` : ''}`);
+
   const book = await makeBook();
   const page = await html(`/admin/books/${book.id}`);
   t.ok(page.includes('Test Author'), 'author is saved');
@@ -1079,8 +1135,40 @@ async function listings() {
   t.ok(!binDead(freeRow), 'and it comes back to life once nothing is held');
   const gone = await admin(`/api/admin/books/${book.id}/delete`);
   t.ok(gone.location.includes('deleted'), 'delete succeeds once nothing is held');
-  created.books = created.books.filter((id) => id !== book.id);
   t.ok((await get(`/book/${row.slug}`)).status === 404, 'and it leaves the shop');
+
+  /*
+   * The listing leaves the shop immediately and the row does not.
+   *
+   * Deleting is two steps a month apart now (migration 0042): the copies come
+   * off sale at once, but the row, its photographs and its stock ledger stay
+   * until the sweep destroys them. The fixture is therefore still the suite's
+   * to clean up - it is not in `created.books.filter` any more for exactly
+   * that reason.
+   */
+  const binned = await one(`SELECT deleted_at, status FROM books WHERE id=${book.id}`);
+  t.ok(binned?.deleted_at > 0, 'the row waits in the bin rather than being destroyed');
+
+  const ledgerKept = await one(`SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id=${book.id}`);
+  t.ok(ledgerKept.n > 0, 'and its stock history is still answerable');
+
+  const binPage = await html('/admin/books?filter=deleted');
+  t.ok(binPage.includes(book.title), 'it is listed under Recently deleted');
+  t.ok(binPage.includes(`/api/admin/books/${book.id}/restore`), 'with a way to put it back');
+
+  await admin(`/api/admin/books/${book.id}/restore`);
+  t.ok((await get(`/book/${row.slug}`)).status === 200, 'restoring puts it back in the shop');
+  t.ok((await one(`SELECT status FROM books WHERE id=${book.id}`)).status === row.status,
+    'with the visibility it had before, not a guess at one');
+
+  // Then really destroy it, which is what the rest of this suite expects to
+  // find - and what proves the second half of the delete works at all.
+  await admin(`/api/admin/books/${book.id}/delete`);
+  const destroyed = await admin(`/api/admin/books/${book.id}/purge`);
+  t.ok(destroyed.location.includes('purged'), 'and it can be destroyed without waiting');
+  created.books = created.books.filter((id) => id !== book.id);
+  t.ok(!(await one(`SELECT COUNT(*) AS n FROM books WHERE id=${book.id}`)).n,
+    'which is when the row finally goes');
 
   const survived = await one(
     `SELECT title_snapshot AS s, book_id FROM order_items
@@ -2623,11 +2711,19 @@ async function integrity() {
   t.ok(dbSource.includes('forgetCategoryCounts'),
     'and the cache can be cleared when the owner changes something');
 
-  // Every route that moves a book or a shelf has to clear it, or the owner
-  // waits a minute to see their own edit.
+  /*
+   * Every path that moves a book or a shelf has to clear it, or the owner waits
+   * a minute to see their own edit.
+   *
+   * Deleting is named by its module rather than its route: the route is now a
+   * redirect and a refusal, and every listing that goes into or comes out of
+   * the bin passes through `book-deletion.ts` - including restore, and the
+   * purge, which the route knows nothing about.
+   */
   for (const route of [
     'src/pages/api/admin/books/save.ts',
-    'src/pages/api/admin/books/[id]/delete.ts',
+    'src/lib/book-deletion.ts',
+    'src/pages/api/admin/books/bulk.ts',
     'src/pages/api/admin/shelves/create.ts',
     'src/pages/api/admin/shelves/delete.ts',
     'src/pages/api/admin/shelves/move.ts',
@@ -5418,7 +5514,338 @@ async function amendingOrders() {
     'the portal stops offering it once the money is in');
 }
 
+async function bulkEdits() {
+  const t = suite('26. Bulk edits and undo');
+
+  const a = await makeBook({ stock: '4', price: '10.00', status: 'draft' });
+  const b = await makeBook({ stock: '2', price: '20.00', status: 'draft' });
+  const ids = [a.id, b.id];
+  /*
+   * A selection is many `id` fields with the same name, which `admin()` cannot
+   * send - it url-encodes an object, so an array arrives as one comma-joined
+   * value and `form.getAll('id')` sees a single nonsense id. Built by hand here
+   * for the same reason suite 19 posts the alert form by hand.
+   */
+  const bulk = async (fields) => {
+    const body = new URLSearchParams();
+    for (const [key, value] of Object.entries(fields)) {
+      for (const one of Array.isArray(value) ? value : [value]) body.append(key, String(one));
+    }
+    const res = await fetch(`${SITE}/api/admin/books/bulk`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        ...ORIGIN,
+        Cookie: adminCookie(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+    return { status: res.status, location: res.headers.get('location') ?? '' };
+  };
+
+  const rows = async () =>
+    await db(`SELECT id, status, stock, price_pence FROM books
+               WHERE id IN (${ids.join(',')}) ORDER BY id`);
+
+  // --- status -------------------------------------------------------------
+  const published = await bulk({ action: 'publish', id: ids.map(String) });
+  t.ok(published.location.includes('bulk=publish&n=2'), 'two drafts publish in one action');
+  t.ok((await rows()).every((r) => r.status === 'live'), 'and both are really live');
+
+  /*
+   * The undo token is what the banner carries. Following it has to put the
+   * *prior* status back - which for these two was `draft`, not a guess at
+   * whatever the default is.
+   */
+  const token = new URL(published.location, SITE).searchParams.get('undo');
+  t.ok(Boolean(token), 'the action hands back something to undo it with');
+  await bulk({ action: 'undo', token });
+  t.ok((await rows()).every((r) => r.status === 'draft'), 'undo puts the old status back');
+
+  const twice = await bulk({ action: 'undo', token });
+  t.ok(twice.location.includes('undone=spent'), 'and the same undo cannot be spent twice');
+
+  // --- stock, and the ledger ---------------------------------------------
+  const ledgerBefore = await one(
+    `SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id IN (${ids.join(',')})`,
+  );
+  await bulk({ action: 'stock-set', value: '9', id: ids.map(String) });
+  t.ok((await rows()).every((r) => r.stock === 9), 'stock can be set across a selection');
+
+  /*
+   * The deltas are asserted by value, not just by existence.
+   *
+   * D1 runs a batch in order, so a ledger INSERT placed after the UPDATE reads
+   * the new stock and records every movement as zero - a ledger that looks
+   * healthy and says nothing. Only the numbers catch that.
+   */
+  const deltas = await db(
+    `SELECT book_id, delta FROM stock_ledger
+      WHERE book_id IN (${ids.join(',')}) AND reason = 'bulk edit in portal'
+      ORDER BY book_id`,
+  );
+  t.ok(deltas.length === 2, 'and each movement is written to the ledger');
+  t.ok(deltas[0].delta === 5 && deltas[1].delta === 7,
+    `with the delta it actually moved (got ${deltas.map((d) => d.delta).join(', ')})`);
+  t.ok(
+    (await one(`SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id IN (${ids.join(',')})`)).n
+      === ledgerBefore.n + 2,
+    'and nothing else',
+  );
+
+  // --- the reserved floor -------------------------------------------------
+  // Live first: a draft cannot be ordered, so it cannot hold anything either,
+  // and the floor being tested would never come into existence.
+  await bulk({ action: 'publish', id: ids.map(String) });
+  const held = await placeOrder(a.id, 'collection');
+  const clamped = await bulk({ action: 'stock-set', value: '0', id: ids.map(String) });
+  t.ok(clamped.location.includes('clamped=1'), 'a stock cut that would break a promise is counted');
+  t.ok((await one(`SELECT stock, reserved FROM books WHERE id=${a.id}`)).stock >= 1,
+    'and the held listing keeps enough copies to keep it');
+
+  const refused = await bulk({ action: 'archive', id: [String(a.id)] });
+  t.ok(refused.location.includes('skipped=1') && refused.location.includes('n=0'),
+    'archiving is refused outright while copies are promised');
+
+  await admin(`/api/admin/orders/${held.ref}/status`, { status: 'cancelled' });
+
+  // --- price --------------------------------------------------------------
+  await bulk({ action: 'price-percent', value: '10', id: [String(b.id)] });
+  t.ok((await one(`SELECT price_pence FROM books WHERE id=${b.id}`)).price_pence === 2200,
+    'a percentage is applied and rounded in the database');
+
+  // --- shelves ------------------------------------------------------------
+  const shelf = await one(`SELECT id FROM categories WHERE slug='fiqh'`);
+  const added = await bulk({ action: 'shelf-add', categoryId: String(shelf.id), id: ids.map(String) });
+  t.ok(added.location.includes('n=2'), 'a shelf takes a whole selection at once');
+  t.ok(
+    (await one(`SELECT COUNT(*) AS n FROM book_categories
+                 WHERE category_id=${shelf.id} AND book_id IN (${ids.join(',')})`)).n === 2,
+    'and both are filed under it',
+  );
+
+  /*
+   * Adding a shelf must not replace the others. `books/save.ts` sets membership
+   * by deleting every row and reinserting, which is right for a form that just
+   * submitted the whole set and would strip every other shelf off two hundred
+   * listings here.
+   */
+  t.ok(
+    (await one(`SELECT COUNT(*) AS n FROM book_categories WHERE book_id=${a.id}`)).n >= 2,
+    'without taking them off the shelves they were already on',
+  );
+
+  const shelfToken = new URL(added.location, SITE).searchParams.get('undo');
+  await bulk({ action: 'undo', token: shelfToken });
+  t.ok(
+    (await one(`SELECT COUNT(*) AS n FROM book_categories
+                 WHERE category_id=${shelf.id} AND book_id IN (${ids.join(',')})`)).n === 0,
+    'and undoing takes off only what it put on',
+  );
+
+  // --- refusals -----------------------------------------------------------
+  t.ok((await bulk({ action: 'publish' })).location.includes('why=none'),
+    'an empty selection changes nothing');
+  t.ok(
+    (await bulk({ action: 'archive', scope: 'filter', filter: 'draft', expect: '1' }))
+      .location.includes('why=notforfilter'),
+    'archiving cannot be aimed at a filter, only at listings that were ticked',
+  );
+  t.ok(
+    (await bulk({ action: 'publish', scope: 'filter', filter: 'draft', expect: '99999' }))
+      .location.includes('why=moved'),
+    'and a count that no longer matches refuses rather than acting on a set nobody saw',
+  );
+
+  t.ok((await bulk({ action: 'undo', token: 'not-a-real-token' })).location.includes('undone=unknown'),
+    'an undo token that means nothing says so');
+
+  // --- undo where the world moved on --------------------------------------
+  const priced = await bulk({ action: 'price-fixed', value: '100', id: ids.map(String) });
+  const priceToken = new URL(priced.location, SITE).searchParams.get('undo');
+  await admin(`/api/admin/books/${b.id}/delete`);
+  const partly = await bulk({ action: 'undo', token: priceToken });
+  t.ok(partly.location.includes('undone=partly') && partly.location.includes('gone=1'),
+    'an undo says how much of it could not be put back');
+  t.ok((await one(`SELECT price_pence FROM books WHERE id=${a.id}`)).price_pence === 1000,
+    'and still puts back the ones that are still there');
+
+  /*
+   * What the sweep would pick up, and what happens when it does.
+   *
+   * The cron Worker is not reachable from here - this suite drives the site,
+   * not the sweeper - so the two halves are checked apart: that a listing
+   * backdated past its month satisfies exactly the condition
+   * `purgeDeletedBooks` selects on, and that destroying one really does destroy
+   * it. Running them together would need a second server for no more coverage.
+   */
+  await db(`UPDATE books SET deleted_at = unixepoch() - 31 * 86400 WHERE id=${b.id}`);
+  const due = await one(
+    `SELECT COUNT(*) AS n FROM books
+      WHERE id=${b.id} AND deleted_at IS NOT NULL AND deleted_at < unixepoch() - 30 * 86400`,
+  );
+  t.ok(due.n === 1, 'a listing past its month in the bin is due to be destroyed');
+
+  const destroyed = await admin(`/api/admin/books/${b.id}/purge`);
+  t.ok(destroyed.location.includes('purged'), 'and destroying it reports what went');
+  t.ok(!(await one(`SELECT COUNT(*) AS n FROM books WHERE id=${b.id}`)).n,
+    'the row is gone for good');
+  t.ok(!(await one(`SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id=${b.id}`)).n,
+    'and its stock history goes with it, which is why the bin exists at all');
+  created.books = created.books.filter((id) => id !== b.id);
+
+  // A listing that is not in the bin cannot be destroyed by pointing at it -
+  // deleting stays two decisions, and this is only ever the second.
+  t.ok((await admin(`/api/admin/books/${a.id}/purge`)).location.includes('e=gone'),
+    'a live listing cannot be destroyed without being deleted first');
+
+  /*
+   * The selection arithmetic, checked directly.
+   *
+   * The HTTP suite cannot click, so the parts of the toolbar that only exist in
+   * the browser are written as pure functions and checked here - the same
+   * arrangement `shelf.ts` uses for its drift. An off-by-one in a range select
+   * silently misses the last row of a selection of two hundred, and nothing
+   * else in this suite would catch it.
+   */
+  const { rangeBetween, selectionState } = await import('../src/scripts/bulk-select.ts');
+
+  t.ok(JSON.stringify(rangeBetween(2, 5)) === '[2,3,4,5]', 'a shift-click sweeps both ends of its range');
+  t.ok(JSON.stringify(rangeBetween(5, 2)) === '[2,3,4,5]', 'and does it whichever way the drag went');
+  t.ok(JSON.stringify(rangeBetween(3, 3)) === '[3]', 'a range of one is that one row');
+  t.ok(rangeBetween(-1, 4).length === 0, 'and a range with no anchor selects nothing');
+
+  t.ok(selectionState(0, 40, false).disabled, 'with nothing chosen the actions are dead');
+  t.ok(!selectionState(1, 40, false).disabled, 'one ticked row is enough to act on');
+  t.ok(!selectionState(0, 40, true).disabled,
+    'and "all matching" counts as chosen, though no row is ticked');
+  t.ok(selectionState(40, 40, false).all && !selectionState(40, 40, false).some,
+    'the master box is full when every row is');
+  t.ok(selectionState(3, 40, false).some, 'and part-way when only some are');
+
+  // The toolbar cannot be inside the list: a nested form is discarded by the
+  // browser and the row controls start posting the bulk action instead.
+  const page = await html('/admin/books');
+  t.ok(page.includes('id="bulkForm"'), 'the listings page carries a bulk toolbar');
+  t.ok(page.includes('form="bulkForm"'), 'and the row checkboxes belong to it by association');
+  const listStart = page.indexOf('<ul');
+  t.ok(page.indexOf('id="bulkForm"') < listStart, 'with the form outside the list, never nested in it');
+}
+
+
 // ---------------------------------------------------------------------------
+
+
+async function bookRequests() {
+  const t = suite('27. Asking for a book we do not have');
+
+  const nothing = '/catalogue?q=zzzznosuchtitlezzzz';
+  const empty = await html(nothing);
+  t.ok(empty.includes('/api/books/request'), 'a fruitless search offers to go and find it');
+
+  /*
+   * Nested forms are discarded by the browser and their button submits the
+   * outer one. That has broken this codebase twice, so it is asserted here the
+   * same way suite 19 asserts it on the book page.
+   */
+  const forms = empty.match(/<\/?form\b/gi) ?? [];
+  let depth = 0;
+  let deepest = 0;
+  for (const tag of forms) {
+    if (tag.toLowerCase() === '<form') deepest = Math.max(deepest, ++depth);
+    else depth--;
+  }
+  t.ok(deepest <= 1 && depth === 0, 'and its form is not nested inside another');
+
+  /*
+   * An empty grid produced by a filter is not somebody asking for a book.
+   * Offering to source "nothing in stock, in Urdu, on sale" would be offering
+   * to find a title nobody named.
+   */
+  const filtered = await html('/catalogue?instock=1&sale=1&lang=urdu');
+  t.ok(!filtered.includes('/api/books/request'),
+    'but a filter that matches nothing is not treated as a request');
+
+  const ask = (fields) =>
+    fetch(`${SITE}/api/books/request`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ back: nothing, ...fields }).toString(),
+    });
+
+  const terms = 'nur al idah e2e';
+  const asked = await ask({ terms, email: 'wants@example.com', note: 'Any edition' });
+  t.ok((asked.headers.get('location') ?? '').includes('want=added'), 'a request can be left');
+  t.ok((await ask({ terms, email: 'wants@example.com' })).headers.get('location').includes('want=already'),
+    'asking twice is asking once');
+  t.ok((await ask({ terms, email: 'not-an-email' })).headers.get('location').includes('want=bad'),
+    'and a bad address is refused');
+
+  const row = await one(`SELECT COUNT(*) AS n FROM book_requests WHERE terms='${terms}'`);
+  t.ok(row.n === 1, 'leaving exactly one request');
+
+  /*
+   * The terms are normalised by the same function the miss log uses, so a
+   * request and the search behind it are one string rather than two spellings.
+   */
+  const spelled = await ask({ terms: '  NUR  Al-Idah   E2E ', email: 'spelling@example.com' });
+  t.ok((spelled.headers.get('location') ?? '').includes('want=added'), 'a differently typed ask lands');
+  t.ok(
+    (await one(`SELECT COUNT(*) AS n FROM book_requests WHERE terms='${terms}'`)).n === 2,
+    'and normalises onto the same terms the miss log records',
+  );
+
+  /*
+   * `back` is a free-text redirect target on a public unauthenticated POST -
+   * the classic phishing hop. `alert.ts`, which this was copied from, has no
+   * such field and so no such hazard, which is exactly why it is easy to forget.
+   */
+  const offsite = await ask({ terms: 'somewhere else', email: 'x@example.com', back: 'https://evil.example/login' });
+  const where = offsite.headers.get('location') ?? '';
+  t.ok(where.startsWith('/catalogue') && !where.includes('evil.example'),
+    'a return path pointing off-site is refused, not followed');
+
+  const offpath = await ask({ terms: 'wrong path', email: 'y@example.com', back: '/admin/settings' });
+  t.ok((offpath.headers.get('location') ?? '').startsWith('/catalogue'),
+    'and so is one pointing somewhere else on this site');
+
+  // The customer sees the answer where they asked, in the shop's own words.
+  const answered = await html(`${nothing}&want=added`);
+  t.ok(answered.includes('we will look for it'), 'the answer is shown on the page they asked from');
+
+  // --- the portal ---------------------------------------------------------
+  const portal = await html('/admin/requests');
+  t.ok(portal.includes(terms), 'the portal lists what people asked for');
+  t.ok(portal.includes('wants@example.com'), 'with an address to reply to');
+  t.ok(portal.includes('mailto:'), 'as a mail link rather than something to retype');
+
+  const mine = await one(`SELECT id FROM book_requests WHERE email='wants@example.com'`);
+  const cleared = await admin('/api/admin/requests/delete', { id: String(mine.id), terms });
+  t.ok(cleared.location.includes('done='), 'the owner can mark one done');
+  t.ok(!(await one(`SELECT COUNT(*) AS n FROM book_requests WHERE id=${mine.id}`)).n,
+    'and being done with it deletes the address, which is what the privacy page promises');
+
+  /*
+   * The sweep is the only ending some of these have: nothing is sent from a
+   * book request, so no message ever deletes one.
+   */
+  await db(`UPDATE book_requests SET at = unixepoch() - 91 * 86400 WHERE terms='${terms}'`);
+  const old = await one(
+    `SELECT COUNT(*) AS n FROM book_requests
+      WHERE terms='${terms}' AND at < unixepoch() - 90 * 86400`,
+  );
+  t.ok(old.n === 1, 'a request nobody dealt with becomes due to be forgotten');
+
+  await db(`DELETE FROM book_requests`);
+
+  // The privacy page has to describe this, and must not go on claiming the
+  // search log is the whole story.
+  const privacy = await html('/privacy');
+  t.ok(privacy.includes('Asking us to find a book'), 'the privacy page describes it');
+  t.ok(privacy.includes('90 days'), 'and states how long it is kept');
+}
 
 const SUITES = [
   ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
@@ -5440,6 +5867,8 @@ const SUITES = [
   ['channel', channelPost, true],
   ['shipments', shipments, true],
   ['amend', amendingOrders, true],
+  ['bulk', bulkEdits, true],
+  ['requests', bookRequests, true],
   ['integrity', integrity, true],
 ];
 

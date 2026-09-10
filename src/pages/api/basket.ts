@@ -83,7 +83,7 @@ export const POST: APIRoute = async ({ request }) => {
   const { results } = await env.DB.prepare(
     `SELECT id, slug, title, (stock - reserved) AS available
        FROM books
-      WHERE status = 'live' AND slug IN (${holes})`,
+      WHERE status = 'live' AND deleted_at IS NULL AND slug IN (${holes})`,
   )
     .bind(...wanted)
     .all<{ id: number; slug: string; title: string; available: number }>();

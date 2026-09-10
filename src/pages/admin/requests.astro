@@ -1,0 +1,98 @@
+---
+import Admin from '../../layouts/Admin.astro';
+import { listRequests, KEEP_DAYS } from '../../lib/book-requests';
+
+/**
+ * What customers asked the shop to find.
+ *
+ * A page of its own rather than a panel on the dashboard. `lib/dashboard.ts` is
+ * built as one batched read behind a minute's cache - the comment there says so
+ * in as many words - and putting a form that deletes rows inside it would make
+ * the dashboard a mutation surface and add a write path to a page designed to
+ * have none.
+ */
+
+const requests = await listRequests();
+const when = (at: number) =>
+  new Date(at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const done = Astro.url.searchParams.get('done');
+---
+
+<Admin
+  title="Requests"
+  sub={requests.length === 0 ? 'nothing waiting' : `${requests.length} waiting`}
+>
+  {
+    done && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Done with “{done}” - the address has been deleted.
+      </p>
+    )
+  }
+
+  <p class="mb-5 text-[14.5px] text-[var(--color-ink-soft)] max-w-2xl leading-relaxed">
+    Someone searched for these and the shop had nothing. Write back from here, then mark it done -
+    which deletes the address, because that is what the privacy page promises. Anything nobody
+    deals with is forgotten after {KEEP_DAYS} days.
+  </p>
+
+  {
+    requests.length === 0 ? (
+      <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
+        Nobody has asked for anything the shop does not have.
+      </p>
+    ) : (
+      <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
+        {requests.map((r) => (
+          <li class="flex flex-wrap items-start gap-x-4 gap-y-2 p-4">
+            <div class="min-w-0 flex-1">
+              <p class="text-[15px] font-medium">{r.terms}</p>
+              {r.note && (
+                <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-soft)] break-words">{r.note}</p>
+              )}
+              <p class="mt-1 text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-3">
+                {/* The subject is prefilled with what they asked for, because
+                    the owner writing this reply has the terms on screen and
+                    should not have to retype them. */}
+                <a
+                  href={`mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(
+                    `About the book you asked for: ${r.terms}`,
+                  )}`}
+                  class="text-[var(--color-navy)] hover:underline underline-offset-2 break-all"
+                >
+                  {r.email}
+                </a>
+                <span>{when(r.at)}</span>
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2 shrink-0">
+              {/* Straight into a new listing with the title filled in - the
+                  request becoming the thing it asked for. */}
+              <a
+                href={`/admin/books/new?title=${encodeURIComponent(r.terms)}`}
+                class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]"
+              >
+                Create a listing
+              </a>
+              {/* The simple confirm, not the rich dialog: the row's own words
+                  are on screen, so there is nothing for a dialog to name that
+                  the owner cannot already see. */}
+              <form
+                method="post"
+                action="/api/admin/requests/delete"
+                data-confirm="Done with this? The address is deleted."
+              >
+                <input type="hidden" name="id" value={r.id} />
+                <input type="hidden" name="terms" value={r.terms} />
+                <button type="submit" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">
+                  Done with this
+                </button>
+              </form>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</Admin>

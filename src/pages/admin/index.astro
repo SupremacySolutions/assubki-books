@@ -358,6 +358,16 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
         Every search in this period found something.
       </p>
     )}
+    {/* The half of this that can actually be answered. A miss is anonymous; a
+        request has somebody waiting on the other end of it. */}
+    {d.requests > 0 && (
+      <p class="mt-3 pt-3 border-t border-[var(--color-rule-faint)] text-[13px]">
+        <a href="/admin/requests" class="text-[var(--color-navy)] hover:underline underline-offset-2">
+          {d.requests} {d.requests === 1 ? 'person has' : 'people have'} asked you to find
+          something &rarr;
+        </a>
+      </p>
+    )}
   </div>
 
   {/*

@@ -103,6 +103,36 @@ export async function markWaitingDue(bookId: number): Promise<number> {
   return done.meta.changes ?? 0;
 }
 
+/**
+ * The same, for a whole selection at once.
+ *
+ * A bulk stock edit can put twenty titles back on the shelf. Calling
+ * `tellWaiting` per book would be twenty marks and twenty drains from one
+ * request - N outbound passes in a single handler, which is the shape
+ * `drainArrivalNotices` is written to avoid. One statement marks them; the
+ * caller drains once, bounded, and the quarter-hourly sweep collects the rest.
+ *
+ * Unlike the single-book version this checks the book really is sellable before
+ * arming anything, because a bulk edit's selection is not a book somebody just
+ * looked at: it may hold drafts, listings still out of stock after the change,
+ * and - if a filter was aimed carelessly - listings in the bin.
+ */
+export async function markManyWaitingDue(bookIds: number[]): Promise<number> {
+  if (!bookIds.length) return 0;
+  const done = await env.DB.prepare(
+    `UPDATE stock_alerts SET claimed_at = unixepoch(), next_attempt_at = 0
+      WHERE claimed_at IS NULL
+        AND book_id IN (SELECT value FROM json_each(?1))
+        AND EXISTS (SELECT 1 FROM books b
+                     WHERE b.id = stock_alerts.book_id
+                       AND b.status = 'live' AND b.deleted_at IS NULL
+                       AND (b.stock - b.reserved) > 0)`,
+  )
+    .bind(JSON.stringify(bookIds))
+    .run();
+  return done.meta.changes ?? 0;
+}
+
 export interface DueAlert extends Waiting {
   id: number;
   bookId: number;
@@ -129,6 +159,7 @@ export async function dueAlerts(db: D1Database, limit = PER_SWEEP): Promise<DueA
           AND a.next_attempt_at <= unixepoch()
           AND a.lease_until <= unixepoch()
           AND b.status = 'live'
+          AND b.deleted_at IS NULL
           AND (b.stock - b.reserved) > 0
         ORDER BY a.id
         LIMIT ?`,
@@ -161,7 +192,8 @@ export async function leaseAlert(db: D1Database, id: number): Promise<string | n
           AND next_attempt_at <= unixepoch() AND lease_until <= unixepoch()
           AND EXISTS (SELECT 1 FROM books b
                        WHERE b.id = stock_alerts.book_id
-                         AND b.status = 'live' AND (b.stock - b.reserved) > 0)`,
+                         AND b.status = 'live' AND b.deleted_at IS NULL
+                         AND (b.stock - b.reserved) > 0)`,
     )
     .bind(token, id)
     .run();
@@ -237,7 +269,8 @@ export async function drainStockAlerts(
       `UPDATE stock_alerts SET claimed_at = unixepoch(), next_attempt_at = 0
         WHERE claimed_at IS NULL
           AND EXISTS (SELECT 1 FROM books b WHERE b.id = stock_alerts.book_id
-                       AND b.status = 'live' AND (b.stock - b.reserved) > 0)`,
+                       AND b.status = 'live' AND b.deleted_at IS NULL
+                       AND (b.stock - b.reserved) > 0)`,
     ).run();
     const due = await dueAlerts(db, limit);
 
@@ -296,7 +329,8 @@ export async function tellWaiting(
 ): Promise<number> {
   try {
     const row = await env.DB.prepare(
-      'SELECT (stock - reserved) AS available FROM books WHERE id = ? AND status = ?',
+      `SELECT (stock - reserved) AS available FROM books
+        WHERE id = ? AND status = ? AND deleted_at IS NULL`,
     )
       .bind(bookId, 'live')
       .first<{ available: number }>();

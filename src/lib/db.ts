@@ -79,6 +79,29 @@ export interface BookDetail extends BookRow {
 
 const db = () => env.DB;
 
+/**
+ * A listing in the bin is not in the shop.
+ *
+ * Deleting a listing puts it aside for thirty days before anything irreversible
+ * happens to it (see `lib/book-deletion.ts` and migration 0042), which means
+ * every query that lists books has to say so. There is no status value doing
+ * this quietly in the background: `books.status` is fenced by a CHECK constraint
+ * from 0001 that SQLite cannot alter without rebuilding a table eight other
+ * tables point at, so a sentinel status was rejected and this clause is the
+ * whole of the defence.
+ *
+ * Which is why it is a named constant rather than six characters typed out at
+ * each site: `npm run test:e2e -- --only=listings` reads the source of every
+ * query against `books` and fails the build if one neither mentions this nor
+ * appears on the allowlist there with a reason. Adding a books query without
+ * thinking about the bin is meant to be difficult.
+ *
+ * Prefixed for the `b` alias that BOOK_SELECT establishes; `NOT_DELETED_BARE`
+ * is the same rule for the handful of queries with no alias.
+ */
+export const NOT_DELETED = 'b.deleted_at IS NULL';
+export const NOT_DELETED_BARE = 'deleted_at IS NULL';
+
 const BOOK_SELECT = `
   SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language, b.shipment_id,
          b.price_pence, b.stock, b.reserved, b.volumes,
@@ -149,7 +172,8 @@ async function readCategoryCounts(): Promise<ShelfCounts> {
         `SELECT c.path AS path, bc.book_id AS bookId, b.language AS language
            FROM book_categories bc
            JOIN categories c ON c.id = bc.category_id
-           JOIN books b ON b.id = bc.book_id AND b.status = 'live'`,
+           JOIN books b ON b.id = bc.book_id AND b.status = 'live'
+                            AND b.deleted_at IS NULL`,
       )
       .all<{ path: string; bookId: number; language: BookLanguage }>(),
   ]);
@@ -352,7 +376,7 @@ export interface ListResult {
 export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   const perPage = opts.perPage ?? 24;
   const page = Math.max(1, opts.page ?? 1);
-  const where: string[] = [`b.status = 'live'`];
+  const where: string[] = [`b.status = 'live'`, NOT_DELETED];
   const binds: unknown[] = [];
   let from = opts.withDetails ? BOOK_SELECT.replace('SELECT b.id,', 'SELECT b.publisher, b.description_html, b.id,') : BOOK_SELECT;
 
@@ -525,7 +549,7 @@ export async function bookBySlug(slug: string): Promise<BookDetail | null> {
                   AND sale_id = (SELECT id FROM sales WHERE status = 'live')) AS sale_percent,
               NULL AS image_key, NULL AS width, NULL AS height, NULL AS cat_slugs
          FROM books b
-         WHERE b.slug = ? AND b.status != 'archived'
+         WHERE b.slug = ? AND b.status != 'archived' AND ${NOT_DELETED}
            /*
             * A shipment's book has no page of its own.
             *
@@ -576,7 +600,7 @@ export async function bookBySlug(slug: string): Promise<BookDetail | null> {
  */
 export async function slugForLegacy(legacySlug: string): Promise<string | null> {
   const row = await db()
-    .prepare('SELECT slug FROM books WHERE LOWER(legacy_slug) = LOWER(?)')
+    .prepare(`SELECT slug FROM books WHERE LOWER(legacy_slug) = LOWER(?) AND ${NOT_DELETED_BARE}`)
     .bind(legacySlug)
     .first<{ slug: string }>();
   return row?.slug ?? null;
@@ -586,7 +610,7 @@ export async function relatedBooks(bookId: number, limit = 6): Promise<BookRow[]
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.status = 'live' AND b.id != ?1
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND b.id != ?1
           AND b.id IN (SELECT bc.book_id FROM book_categories bc
                         WHERE bc.category_id IN
                           (SELECT category_id FROM book_categories WHERE book_id = ?1))
@@ -610,7 +634,8 @@ export async function shelfBooks(limit = 18): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.status = 'live' AND (b.stock - b.reserved) > 0 AND i.image_key IS NOT NULL
+        WHERE b.status = 'live' AND ${NOT_DELETED}
+          AND (b.stock - b.reserved) > 0 AND i.image_key IS NOT NULL
         ORDER BY b.created_at DESC, b.id DESC LIMIT ?`,
     )
     .bind(limit)
@@ -640,7 +665,7 @@ export async function saleBookCount(): Promise<number> {
          FROM books b
          JOIN sale_items si ON si.book_id = b.id
               AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
-        WHERE b.status = 'live'`,
+        WHERE b.status = 'live' AND ${NOT_DELETED}`,
     )
     .first<{ n: number }>();
   return row?.n ?? 0;
@@ -650,7 +675,7 @@ export async function saleBooks(limit = 10): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.status = 'live' AND si.percent_off IS NOT NULL
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND si.percent_off IS NOT NULL
         ORDER BY si.percent_off DESC, b.title COLLATE NOCASE
         LIMIT ?`,
     )
@@ -705,7 +730,7 @@ export async function saleBooksFor(saleId: number, limit = 10): Promise<BookRow[
         "AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')",
         'AND si.sale_id = ?1',
       )}
-        WHERE b.status = 'live' AND si.percent_off IS NOT NULL
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND si.percent_off IS NOT NULL
         ORDER BY si.percent_off * b.price_pence DESC, b.title COLLATE NOCASE
         LIMIT ?2`,
     )
@@ -850,7 +875,8 @@ export async function backInStock(limit = 10): Promise<BookRow[]> {
                   AND reason NOT IN ('listing created', 'stocktake')
                   AND at > ?
                 GROUP BY book_id) r ON r.book_id = b.id
-        WHERE b.status = 'live' AND (b.stock - b.reserved) > 0 AND i.image_key IS NOT NULL
+        WHERE b.status = 'live' AND ${NOT_DELETED}
+          AND (b.stock - b.reserved) > 0 AND i.image_key IS NOT NULL
         ORDER BY r.back DESC LIMIT ?`,
     )
     .bind(since, limit)
@@ -889,16 +915,30 @@ async function applySetAvailability<T extends BookRow>(books: T[]): Promise<T[]>
   const ids = [...new Set(inSets.map((b) => b.set_id))];
   const { results } = await db()
     .prepare(
+      /*
+       * Both halves say `deleted_at IS NULL`, and only one of them has to.
+       *
+       * The outer one does real work: an option in the bin is not a way to buy
+       * the set and must not be offered as one. The inner subtraction cannot
+       * change either way, because a listing holding copies for an open order
+       * cannot be deleted at all - `softDelete` refuses on `reserved > 0` - so
+       * a deleted option always contributes zero to that SUM. It is written
+       * anyway so that both mentions of `books` here read the same, and so
+       * that the invariant is stated where somebody would otherwise have to
+       * rediscover it.
+       */
       `SELECT m.id AS bookId,
               MIN(v.have - COALESCE((
                 SELECT SUM(o.reserved) FROM books o
                  WHERE o.set_id = m.set_id
+                   AND o.deleted_at IS NULL
                    AND v.volume BETWEEN o.set_from AND o.set_to
               ), 0)) AS available
          FROM books m
          JOIN book_set_stock v
            ON v.set_id = m.set_id AND v.volume BETWEEN m.set_from AND m.set_to
         WHERE m.set_id IN (${ids.map(() => '?').join(',')})
+          AND m.deleted_at IS NULL
         GROUP BY m.id`,
     )
     .bind(...ids)
@@ -933,7 +973,7 @@ export async function setOptionsForOwner(setId: number): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.set_id = ? AND b.status <> 'archived'
+        WHERE b.set_id = ? AND b.status <> 'archived' AND ${NOT_DELETED}
         ORDER BY (b.set_to - b.set_from) DESC, b.set_from`,
     )
     .bind(setId)
@@ -945,7 +985,7 @@ export async function setOptions(setId: number): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.set_id = ? AND b.status = 'live'
+        WHERE b.set_id = ? AND b.status = 'live' AND ${NOT_DELETED}
         ORDER BY (b.set_to - b.set_from) DESC, b.set_from`,
     )
     .bind(setId)
@@ -958,7 +998,7 @@ export async function catalogueStats(): Promise<{ titles: number; inStock: numbe
     .prepare(
       `SELECT COUNT(*) AS titles,
               SUM(CASE WHEN (stock - reserved) > 0 THEN 1 ELSE 0 END) AS inStock
-         FROM books WHERE status = 'live'`,
+         FROM books WHERE status = 'live' AND ${NOT_DELETED_BARE}`,
     )
     .first<{ titles: number; inStock: number }>();
   return { titles: row?.titles ?? 0, inStock: row?.inStock ?? 0 };
@@ -985,7 +1025,7 @@ export async function booksByIds(ids: number[]): Promise<BookRow[]> {
      * with no separate flag to keep in step.
      */
     .prepare(
-      `${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND (
+      `${BOOK_SELECT} WHERE b.id IN (${placeholders}) AND ${NOT_DELETED} AND (
          (b.status = 'live' AND b.shipment_id IS NULL)
          OR EXISTS (SELECT 1 FROM shipments s
                      WHERE s.id = b.shipment_id AND s.status = 'open')

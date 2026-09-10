@@ -213,6 +213,11 @@ export interface AdminBookRow {
    * the card asks for 600 and the detail view for 840.
    */
   usable_width: number | null;
+  /* When it went in the bin, or null. Only ever set on rows the `deleted`
+     filter returned, since every other filter excludes them. */
+  deleted_at: number | null;
+  /* Set when the owner posted the announcement themselves. See migration 0042. */
+  announced_by_hand: number | null;
 }
 
 /**
@@ -233,7 +238,9 @@ export type BookFilter =
   | 'out-of-stock'
   | 'low-stock'
   | 'draft'
-  | 'archived';
+  | 'archived'
+  /* The bin. The only filter that shows listings the others all hide. */
+  | 'deleted';
 
 const FILTER_SQL: Record<BookFilter, string> = {
   all: '',
@@ -265,11 +272,18 @@ const FILTER_SQL: Record<BookFilter, string> = {
   urdu: "b.language = 'urdu'",
   'no-description': "(b.description_html IS NULL OR b.description_html = '')",
   'no-subject': 'NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)',
-  'not-announced': 'b.telegram_message_id IS NULL',
+  /*
+   * Two ways to be announced, because the shop's bot is not the only one who
+   * can post. Marking a batch announced by hand cannot set a message id - there
+   * is no message, the shop never sent one - so it sets `announced_by_hand`
+   * instead and this filter has to ask about both. See migration 0042.
+   */
+  'not-announced': 'b.telegram_message_id IS NULL AND b.announced_by_hand IS NULL',
   'out-of-stock': '(b.stock - b.reserved) <= 0',
   'low-stock': '(b.stock - b.reserved) > 0 AND (b.stock - b.reserved) <= 2',
   draft: "b.status = 'draft'",
   archived: "b.status = 'archived'",
+  deleted: 'b.deleted_at IS NOT NULL',
 };
 
 export type BookSort =
@@ -331,6 +345,7 @@ export async function partCandidates(book: {
     `SELECT id, title, volumes, price_pence
        FROM books
       WHERE id <> ? AND set_id IS NULL AND status <> 'archived'
+        AND deleted_at IS NULL
         AND title LIKE ? || '%'
       ORDER BY title
       LIMIT 12`,
@@ -340,22 +355,26 @@ export async function partCandidates(book: {
   return results;
 }
 
-export async function listBooksAdmin(opts: {
+export interface BookScope {
   q?: string | null;
   filter?: BookFilter;
   /** A shelf path, including everything beneath it. */
   shelf?: string | null;
   /** Only books already in this sale, applied in SQL rather than after paging. */
   inSale?: number | null;
-  sort?: BookSort;
-  page?: number;
-  perPage?: number;
-} = {}): Promise<BookListResult> {
+}
+
+/**
+ * The WHERE that turns a set of filters into a set of listings.
+ *
+ * Extracted so that the page the owner is looking at and "everything matching
+ * this filter" are resolved by the same code. A bulk action that rebuilt this
+ * itself would eventually select a different thirty-eight books than the thirty
+ * -eight the chip promised, and the owner would have no way of telling.
+ */
+export function bookListWhere(opts: BookScope): { where: string; binds: unknown[] } {
   const search = opts.q?.trim();
   const filter = opts.filter && filter_valid(opts.filter) ? opts.filter : 'all';
-  const sort = opts.sort && sort_valid(opts.sort) ? opts.sort : 'recent';
-  const perPage = Math.min(Math.max(opts.perPage ?? 40, 10), 200);
-  const page = Math.max(1, opts.page ?? 1);
 
   /*
    * A shipment's books are not listings yet.
@@ -366,7 +385,16 @@ export async function listBooksAdmin(opts: {
    * owner actually sells. They have their own page until one is promoted, at
    * which point `shipment_id` is cleared and it appears here like any other.
    */
+  /*
+   * The bin is hidden everywhere except in the one filter that is the bin.
+   *
+   * Written as a base clause rather than folded into each FILTER_SQL entry so
+   * that a new filter is deleted-safe the moment it is added, without its author
+   * having to know this rule exists. `deleted` is the single exception, and it
+   * opts out by name rather than by the absence of anything.
+   */
   const clauses: string[] = ['b.shipment_id IS NULL'];
+  if (filter !== 'deleted') clauses.push('b.deleted_at IS NULL');
   const binds: unknown[] = [];
 
   if (search) {
@@ -399,7 +427,37 @@ export async function listBooksAdmin(opts: {
     binds.push(opts.inSale);
   }
 
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', binds };
+}
+
+/**
+ * Every listing a set of filters matches, as ids.
+ *
+ * For "apply this to all 38 matching", where the owner is acting on a
+ * description of a set rather than on rows they have ticked. Capped one above
+ * the ceiling the caller enforces, so "too many" is a length test rather than a
+ * second COUNT - and so a mis-aimed bulk action cannot quietly load the whole
+ * catalogue into memory.
+ */
+export async function bookIdsMatching(opts: BookScope, cap = 1000): Promise<number[]> {
+  const { where, binds } = bookListWhere(opts);
+  const { results } = await env.DB.prepare(
+    `SELECT b.id FROM books b ${where} ORDER BY b.id LIMIT ?`,
+  )
+    .bind(...binds, cap + 1)
+    .all<{ id: number }>();
+  return results.map((r) => r.id);
+}
+
+export async function listBooksAdmin(opts: BookScope & {
+  sort?: BookSort;
+  page?: number;
+  perPage?: number;
+} = {}): Promise<BookListResult> {
+  const sort = opts.sort && sort_valid(opts.sort) ? opts.sort : 'recent';
+  const perPage = Math.min(Math.max(opts.perPage ?? 40, 10), 200);
+  const page = Math.max(1, opts.page ?? 1);
+  const { where, binds } = bookListWhere(opts);
 
   const [countRow, listRes] = await Promise.all([
     env.DB.prepare(`SELECT COUNT(*) AS n FROM books b ${where}`)
@@ -409,6 +467,7 @@ export async function listBooksAdmin(opts: {
       `SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language,
               b.price_pence, b.stock, b.reserved,
               (b.stock - b.reserved) AS available, b.status, b.telegram_message_id,
+              b.announced_by_hand, b.deleted_at,
               (SELECT image_key FROM book_images WHERE book_id = b.id ORDER BY sort LIMIT 1) AS image_key,
               (SELECT MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER))
                  FROM book_images i
@@ -438,10 +497,22 @@ const sort_valid = (v: string): v is BookSort => v in SORT_SQL;
 
 /** Counts for each filter, so the chips can show how much work is in each. */
 export async function bookFilterCounts(): Promise<Record<BookFilter, number>> {
+  /*
+   * Every count carries the same deleted rule its own filter does.
+   *
+   * `listBooksAdmin` hides the bin from every filter but `deleted`, so each chip
+   * here has to be counted the same way or it promises work the page it leads to
+   * does not show - the exact failure the note below already warns about, now
+   * with a second way to happen. `all` counts what is really there; `deleted`
+   * counts only the bin; everything else counts its own condition among the
+   * listings that are not in it.
+   */
   const parts = (Object.keys(FILTER_SQL) as BookFilter[]).map((key) =>
     key === 'all'
-      ? 'COUNT(*) AS "all"'
-      : `SUM(CASE WHEN ${FILTER_SQL[key]} THEN 1 ELSE 0 END) AS "${key}"`,
+      ? 'SUM(CASE WHEN b.deleted_at IS NULL THEN 1 ELSE 0 END) AS "all"'
+      : key === 'deleted'
+        ? `SUM(CASE WHEN ${FILTER_SQL[key]} THEN 1 ELSE 0 END) AS "deleted"`
+        : `SUM(CASE WHEN b.deleted_at IS NULL AND (${FILTER_SQL[key]}) THEN 1 ELSE 0 END) AS "${key}"`,
   );
   // The same exclusion the list itself makes, or the chips would promise work
   // that the page they lead to does not show.

@@ -35,6 +35,16 @@ export const LIMITS = {
    * one good pair keep their allowance topped up for ever.
    */
   lookup: { perHour: 10, window: 3600 },
+  /*
+   * Asking the shop to find a book.
+   *
+   * The only public form here that takes free text and stores it, which makes
+   * it both a spam target and a storage one - unlike the back-in-stock form,
+   * which can only ever name a book the shop already has and is capped per
+   * address instead. Six an hour is past any real customer who cannot find
+   * three things in a sitting.
+   */
+  request: { perHour: 6, window: 3600 },
 } as const;
 
 export type PublicAction = keyof typeof LIMITS;

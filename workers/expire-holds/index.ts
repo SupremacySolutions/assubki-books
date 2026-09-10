@@ -18,6 +18,9 @@
 import { expireOrders } from '../../src/lib/stock-release';
 import { pruneSearches } from '../../src/lib/searches';
 import { pruneAlerts, drainStockAlerts } from '../../src/lib/stock-alerts';
+import { purgeDeletedBooks } from '../../src/lib/book-deletion';
+import { pruneBulkEdits } from '../../src/lib/bulk-undo';
+import { pruneRequests } from '../../src/lib/book-requests';
 import { drainArrivalNotices } from '../../src/lib/shipment-notify';
 import { SITE } from '../../src/lib/format';
 
@@ -274,6 +277,39 @@ export default {
      */
     const stale = await stage('prune back-in-stock requests', () => pruneAlerts(env.DB));
     if (stale) console.log(`forgot ${stale} unanswered back-in-stock request(s)`);
+
+    /*
+     * Listings whose month in the bin is up.
+     *
+     * This is the only place the shop destroys anything of a listing's - the
+     * photographs in R2 and, by cascade, its whole stock ledger. Deleting one
+     * in the portal takes it off the shop and does nothing irreversible; this
+     * is the half that cannot be taken back, deliberately put a long way from
+     * the button that starts it.
+     *
+     * No Telegram call: the announcement came down thirty days ago, when the
+     * listing went in, because a bot can only delete its own post within 48
+     * hours and deferring it here would fail every time.
+     */
+    const destroyed = await stage('purge deleted listings', () =>
+      purgeDeletedBooks(env.DB, env.UPLOADS),
+    );
+    if (destroyed) console.log(`destroyed ${destroyed} listing(s) whose time in the bin ran out`);
+
+    // The undo offer lasts a day; the record of who did what lasts a week.
+    const edits = await stage('prune bulk edits', () => pruneBulkEdits(env.DB));
+    if (edits) console.log(`forgot ${edits} finished bulk edit record(s)`);
+
+    /*
+     * Requests to find a book that nobody ever dealt with.
+     *
+     * The backstop that keeps the ninety days on the privacy page true even
+     * when the owner never reaches one. Unlike the back-in-stock rows above,
+     * these hold an address with no message coming to end them, so this sweep
+     * is the only ending some of them have.
+     */
+    const asked = await stage('prune book requests', () => pruneRequests(env.DB));
+    if (asked) console.log(`forgot ${asked} unanswered book request(s)`);
   },
 
   /**
@@ -318,6 +354,14 @@ export default {
     const groups = await expireGroupBaskets(env.DB);
     const proofs = await sweepProofs(env.DB, env.UPLOADS);
     const searches = await pruneSearches(env.DB);
-    return Response.json({ ...result, unpaid, told, alerts, groups, proofs, searches });
+    // The purge belongs here for the reason stated above: a manual trigger that
+    // does less than the scheduled one is a trigger you cannot test the
+    // scheduled one with, and this is the pass that destroys things.
+    const destroyed = await purgeDeletedBooks(env.DB, env.UPLOADS);
+    const edits = await pruneBulkEdits(env.DB);
+    const asked = await pruneRequests(env.DB);
+    return Response.json({
+      ...result, unpaid, told, alerts, groups, proofs, searches, destroyed, edits, asked,
+    });
   },
 } satisfies ExportedHandler<Env>;
