@@ -2715,15 +2715,16 @@ async function integrity() {
    * Every path that moves a book or a shelf has to clear it, or the owner waits
    * a minute to see their own edit.
    *
-   * Deleting is named by its module rather than its route: the route is now a
-   * redirect and a refusal, and every listing that goes into or comes out of
-   * the bin passes through `book-deletion.ts` - including restore, and the
-   * purge, which the route knows nothing about.
+   * Deleting is named by its module rather than its route, and that now covers
+   * both routes that delete. `books/[id]/delete.ts` and `books/bulk.ts` are each
+   * a redirect and a refusal; every listing that goes into or comes out of the
+   * bin - one at a time, as a selection, restored, or purged by the sweep -
+   * passes through `book-deletion.ts`, which is where the caches are dropped and
+   * so where the check belongs.
    */
   for (const route of [
     'src/pages/api/admin/books/save.ts',
     'src/lib/book-deletion.ts',
-    'src/pages/api/admin/books/bulk.ts',
     'src/pages/api/admin/shelves/create.ts',
     'src/pages/api/admin/shelves/delete.ts',
     'src/pages/api/admin/shelves/move.ts',
@@ -5515,10 +5516,10 @@ async function amendingOrders() {
 }
 
 async function bulkEdits() {
-  const t = suite('26. Bulk edits and undo');
+  const t = suite('26. Deleting a selection');
 
   const a = await makeBook({ stock: '4', price: '10.00', status: 'draft' });
-  const b = await makeBook({ stock: '2', price: '20.00', status: 'draft' });
+  const b = await makeBook({ stock: '2', price: '20.00', status: 'live' });
   const ids = [a.id, b.id];
   /*
    * A selection is many `id` fields with the same name, which `admin()` cannot
@@ -5545,160 +5546,106 @@ async function bulkEdits() {
   };
 
   const rows = async () =>
-    await db(`SELECT id, status, stock, price_pence FROM books
+    await db(`SELECT id, status, deleted_at FROM books
                WHERE id IN (${ids.join(',')}) ORDER BY id`);
 
-  // --- status -------------------------------------------------------------
-  const published = await bulk({ action: 'publish', id: ids.map(String) });
-  t.ok(published.location.includes('bulk=publish&n=2'), 'two drafts publish in one action');
-  t.ok((await rows()).every((r) => r.status === 'live'), 'and both are really live');
+  // --- binning a selection -------------------------------------------------
+  const binned = await bulk({ action: 'delete', id: ids.map(String) });
+  t.ok(binned.location.includes('bulk=delete&n=2'), 'two ticked listings bin in one press');
+  t.ok((await rows()).every((r) => r.deleted_at !== null), 'and both are really in the bin');
 
   /*
-   * The undo token is what the banner carries. Following it has to put the
-   * *prior* status back - which for these two was `draft`, not a guess at
-   * whatever the default is.
+   * Off the shop at once. The retention window is for the owner's benefit, not
+   * the shopper's - a withdrawn listing that goes on selling for thirty days is
+   * the failure this whole feature would be.
    */
-  const token = new URL(published.location, SITE).searchParams.get('undo');
-  t.ok(Boolean(token), 'the action hands back something to undo it with');
-  await bulk({ action: 'undo', token });
-  t.ok((await rows()).every((r) => r.status === 'draft'), 'undo puts the old status back');
+  const liveRow = await one(`SELECT slug FROM books WHERE id=${b.id}`);
+  t.ok((await get(`/book/${liveRow.slug}`)).status === 404,
+    'a binned listing leaves the shop immediately, whatever its thirty days say');
 
-  const twice = await bulk({ action: 'undo', token });
-  t.ok(twice.location.includes('undone=spent'), 'and the same undo cannot be spent twice');
-
-  // --- stock, and the ledger ---------------------------------------------
-  const ledgerBefore = await one(
-    `SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id IN (${ids.join(',')})`,
-  );
-  await bulk({ action: 'stock-set', value: '9', id: ids.map(String) });
-  t.ok((await rows()).every((r) => r.stock === 9), 'stock can be set across a selection');
+  // --- one Undo puts the whole selection back ------------------------------
+  const token = new URL(binned.location, SITE).searchParams.get('undo');
+  t.ok(Boolean(token), 'the banner carries an undo token for the batch');
+  const undone = await bulk({ action: 'undo', token });
+  t.ok(undone.location.includes('undone=ok&n=2'), 'and one Undo puts both back');
 
   /*
-   * The deltas are asserted by value, not just by existence.
+   * Each listing gets its own prior status back, not a shared guess. These two
+   * went in as a draft and a live listing, and that difference has to survive
+   * a round trip through one tombstone.
+   */
+  const back = await rows();
+  t.ok(back.every((r) => r.deleted_at === null), 'both are out of the bin');
+  t.ok(back[0].status === 'draft' && back[1].status === 'live',
+    'and each came back as what it was, not as one status for the batch');
+
+  // --- Restore reaches into a batch tombstone ------------------------------
+  await bulk({ action: 'delete', id: ids.map(String) });
+  const restored = await admin(`/api/admin/books/${b.id}/restore`);
+  t.ok(restored.location.includes('restored'), 'a single Restore works on a listing binned in a batch');
+  const afterOne = await rows();
+  t.ok(afterOne[0].deleted_at !== null && afterOne[1].deleted_at === null,
+    'and takes only that one, leaving the rest of the batch where it is');
+  await admin(`/api/admin/books/${a.id}/restore`);
+
+  // --- a listing holding copies is left alone, and said so -----------------
+  /* The order goes on `b`, which is the live one: a draft cannot be bought, so
+     ordering `a` would reserve nothing and the skip being tested would never
+     happen. */
+  const order = await placeOrder(b.id, 'collection');
+  const held = await bulk({ action: 'delete', id: ids.map(String) });
+  t.ok(held.location.includes('n=1'), 'a listing promised to an open order is not binned with the rest');
+  t.ok(held.location.includes('skipped=1'), 'and the skip is counted rather than passed over quietly');
+  const heldRows = await rows();
+  t.ok(heldRows[1].deleted_at === null, 'the held listing is still there');
+  t.ok(heldRows[0].deleted_at !== null, 'and the one beside it went as asked');
+  await bulk({ action: 'undo', token: new URL(held.location, SITE).searchParams.get('undo') });
+
+  // A selection of nothing but held listings refuses outright rather than
+  // reporting a cheerful zero.
+  const allHeld = await bulk({ action: 'delete', id: [String(b.id)] });
+  t.ok(allHeld.location.includes('bulk=no') && allHeld.location.includes('why=held'),
+    'a selection of only held listings is refused, and says why');
+  await admin(`/api/admin/orders/${order.ref}/status`, { status: 'cancelled' });
+
+  // --- the scopes that are deliberately not offered ------------------------
+  const empty = await bulk({ action: 'delete' });
+  t.ok(empty.location.includes('bulk=no') && empty.location.includes('why=none'),
+    'a press with nothing ticked is refused');
+
+  /*
+   * There is no filter scope, and this is the assertion that keeps it that way.
    *
-   * D1 runs a batch in order, so a ledger INSERT placed after the UPDATE reads
-   * the new stock and records every movement as zero - a ledger that looks
-   * healthy and says nothing. Only the numbers catch that.
+   * The ten actions this replaced had one, and `archive` alone was barred from
+   * it. Deleting is more destructive than archiving, so the scope went with the
+   * actions - and a form that asks for it must not be honoured by accident.
    */
-  const deltas = await db(
-    `SELECT book_id, delta FROM stock_ledger
-      WHERE book_id IN (${ids.join(',')}) AND reason = 'bulk edit in portal'
-      ORDER BY book_id`,
-  );
-  t.ok(deltas.length === 2, 'and each movement is written to the ledger');
-  t.ok(deltas[0].delta === 5 && deltas[1].delta === 7,
-    `with the delta it actually moved (got ${deltas.map((d) => d.delta).join(', ')})`);
-  t.ok(
-    (await one(`SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id IN (${ids.join(',')})`)).n
-      === ledgerBefore.n + 2,
-    'and nothing else',
-  );
+  const widened = await bulk({ action: 'delete', scope: 'filter', expect: '999', filter: 'all' });
+  t.ok(widened.location.includes('bulk=no') && widened.location.includes('why=none'),
+    'and a form asking for filter scope is refused, not widened to the whole filter');
 
-  // --- the reserved floor -------------------------------------------------
-  // Live first: a draft cannot be ordered, so it cannot hold anything either,
-  // and the floor being tested would never come into existence.
-  await bulk({ action: 'publish', id: ids.map(String) });
-  const held = await placeOrder(a.id, 'collection');
-  const clamped = await bulk({ action: 'stock-set', value: '0', id: ids.map(String) });
-  t.ok(clamped.location.includes('clamped=1'), 'a stock cut that would break a promise is counted');
-  t.ok((await one(`SELECT stock, reserved FROM books WHERE id=${a.id}`)).stock >= 1,
-    'and the held listing keeps enough copies to keep it');
+  const tooMany = await bulk({
+    action: 'delete',
+    id: Array.from({ length: 101 }, (_, i) => String(i + 1)),
+  });
+  t.ok(tooMany.location.includes('why=toomany'), 'more than a hundred at once is refused');
 
-  const refused = await bulk({ action: 'archive', id: [String(a.id)] });
-  t.ok(refused.location.includes('skipped=1') && refused.location.includes('n=0'),
-    'archiving is refused outright while copies are promised');
-
-  await admin(`/api/admin/orders/${held.ref}/status`, { status: 'cancelled' });
-
-  // --- price --------------------------------------------------------------
-  await bulk({ action: 'price-percent', value: '10', id: [String(b.id)] });
-  t.ok((await one(`SELECT price_pence FROM books WHERE id=${b.id}`)).price_pence === 2200,
-    'a percentage is applied and rounded in the database');
-
-  // --- shelves ------------------------------------------------------------
-  const shelf = await one(`SELECT id FROM categories WHERE slug='fiqh'`);
-  const added = await bulk({ action: 'shelf-add', categoryId: String(shelf.id), id: ids.map(String) });
-  t.ok(added.location.includes('n=2'), 'a shelf takes a whole selection at once');
-  t.ok(
-    (await one(`SELECT COUNT(*) AS n FROM book_categories
-                 WHERE category_id=${shelf.id} AND book_id IN (${ids.join(',')})`)).n === 2,
-    'and both are filed under it',
-  );
-
+  // --- the actions that were taken out stay out ----------------------------
   /*
-   * Adding a shelf must not replace the others. `books/save.ts` sets membership
-   * by deleting every row and reinserting, which is right for a form that just
-   * submitted the whole set and would strip every other shelf off two hundred
-   * listings here.
+   * These ten shipped and were removed a day later: the filters that fed them
+   * were the useful part, and a toolbar of ten buttons over two hundred rows
+   * was mostly new ways to be wrong at scale. The route must not answer them
+   * again, or the toolbar can grow back one button at a time.
    */
-  t.ok(
-    (await one(`SELECT COUNT(*) AS n FROM book_categories WHERE book_id=${a.id}`)).n >= 2,
-    'without taking them off the shelves they were already on',
-  );
+  for (const gone of ['publish', 'draft', 'archive', 'announced', 'shelf-add',
+                      'shelf-remove', 'stock-set', 'stock-add', 'price-percent', 'price-fixed']) {
+    const answer = await bulk({ action: gone, id: ids.map(String) });
+    t.ok(answer.status === 400, `the route refuses "${gone}", which no longer exists`);
+  }
 
-  const shelfToken = new URL(added.location, SITE).searchParams.get('undo');
-  await bulk({ action: 'undo', token: shelfToken });
-  t.ok(
-    (await one(`SELECT COUNT(*) AS n FROM book_categories
-                 WHERE category_id=${shelf.id} AND book_id IN (${ids.join(',')})`)).n === 0,
-    'and undoing takes off only what it put on',
-  );
-
-  // --- refusals -----------------------------------------------------------
-  t.ok((await bulk({ action: 'publish' })).location.includes('why=none'),
-    'an empty selection changes nothing');
-  t.ok(
-    (await bulk({ action: 'archive', scope: 'filter', filter: 'draft', expect: '1' }))
-      .location.includes('why=notforfilter'),
-    'archiving cannot be aimed at a filter, only at listings that were ticked',
-  );
-  t.ok(
-    (await bulk({ action: 'publish', scope: 'filter', filter: 'draft', expect: '99999' }))
-      .location.includes('why=moved'),
-    'and a count that no longer matches refuses rather than acting on a set nobody saw',
-  );
-
-  t.ok((await bulk({ action: 'undo', token: 'not-a-real-token' })).location.includes('undone=unknown'),
-    'an undo token that means nothing says so');
-
-  // --- undo where the world moved on --------------------------------------
-  const priced = await bulk({ action: 'price-fixed', value: '100', id: ids.map(String) });
-  const priceToken = new URL(priced.location, SITE).searchParams.get('undo');
-  await admin(`/api/admin/books/${b.id}/delete`);
-  const partly = await bulk({ action: 'undo', token: priceToken });
-  t.ok(partly.location.includes('undone=partly') && partly.location.includes('gone=1'),
-    'an undo says how much of it could not be put back');
-  t.ok((await one(`SELECT price_pence FROM books WHERE id=${a.id}`)).price_pence === 1000,
-    'and still puts back the ones that are still there');
-
-  /*
-   * What the sweep would pick up, and what happens when it does.
-   *
-   * The cron Worker is not reachable from here - this suite drives the site,
-   * not the sweeper - so the two halves are checked apart: that a listing
-   * backdated past its month satisfies exactly the condition
-   * `purgeDeletedBooks` selects on, and that destroying one really does destroy
-   * it. Running them together would need a second server for no more coverage.
-   */
-  await db(`UPDATE books SET deleted_at = unixepoch() - 31 * 86400 WHERE id=${b.id}`);
-  const due = await one(
-    `SELECT COUNT(*) AS n FROM books
-      WHERE id=${b.id} AND deleted_at IS NOT NULL AND deleted_at < unixepoch() - 30 * 86400`,
-  );
-  t.ok(due.n === 1, 'a listing past its month in the bin is due to be destroyed');
-
-  const destroyed = await admin(`/api/admin/books/${b.id}/purge`);
-  t.ok(destroyed.location.includes('purged'), 'and destroying it reports what went');
-  t.ok(!(await one(`SELECT COUNT(*) AS n FROM books WHERE id=${b.id}`)).n,
-    'the row is gone for good');
-  t.ok(!(await one(`SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id=${b.id}`)).n,
-    'and its stock history goes with it, which is why the bin exists at all');
-  created.books = created.books.filter((id) => id !== b.id);
-
-  // A listing that is not in the bin cannot be destroyed by pointing at it -
-  // deleting stays two decisions, and this is only ever the second.
-  t.ok((await admin(`/api/admin/books/${a.id}/purge`)).location.includes('e=gone'),
-    'a live listing cannot be destroyed without being deleted first');
+  const stillThere = await rows();
+  t.ok(stillThere.every((r) => r.status !== 'archived'),
+    'and none of those refusals changed a listing on the way past');
 
   /*
    * The selection arithmetic, checked directly.
@@ -5716,23 +5663,26 @@ async function bulkEdits() {
   t.ok(JSON.stringify(rangeBetween(3, 3)) === '[3]', 'a range of one is that one row');
   t.ok(rangeBetween(-1, 4).length === 0, 'and a range with no anchor selects nothing');
 
-  t.ok(selectionState(0, 40, false).disabled, 'with nothing chosen the actions are dead');
-  t.ok(!selectionState(1, 40, false).disabled, 'one ticked row is enough to act on');
-  t.ok(!selectionState(0, 40, true).disabled,
-    'and "all matching" counts as chosen, though no row is ticked');
-  t.ok(selectionState(40, 40, false).all && !selectionState(40, 40, false).some,
+  t.ok(selectionState(0, 40).disabled, 'with nothing ticked the Delete button is dead');
+  t.ok(!selectionState(1, 40).disabled, 'one ticked row is enough to act on');
+  t.ok(selectionState(40, 40).all && !selectionState(40, 40).some,
     'the master box is full when every row is');
-  t.ok(selectionState(3, 40, false).some, 'and part-way when only some are');
+  t.ok(selectionState(3, 40).some, 'and part-way when only some are');
 
-  // The toolbar cannot be inside the list: a nested form is discarded by the
-  // browser and the row controls start posting the bulk action instead.
+  // --- the toolbar on the page --------------------------------------------
   const page = await html('/admin/books');
   t.ok(page.includes('id="bulkForm"'), 'the listings page carries a bulk toolbar');
   t.ok(page.includes('form="bulkForm"'), 'and the row checkboxes belong to it by association');
+  // The toolbar cannot be inside the list: a nested form is discarded by the
+  // browser and the row controls start posting the bulk action instead.
   const listStart = page.indexOf('<ul');
   t.ok(page.indexOf('id="bulkForm"') < listStart, 'with the form outside the list, never nested in it');
+  t.ok(page.includes('id="bulkDelete"'), 'the toolbar offers Delete');
+  t.ok(!/name="action" value="(publish|archive|stock-set|price-percent)"/.test(page),
+    'and offers none of the ten actions that were taken out');
+  t.ok(!page.includes('name="scope"'),
+    'nor an "all matching" scope, which deleting may never be pointed at');
 }
-
 
 // ---------------------------------------------------------------------------
 

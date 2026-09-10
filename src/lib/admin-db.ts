@@ -217,7 +217,6 @@ export interface AdminBookRow {
      filter returned, since every other filter excludes them. */
   deleted_at: number | null;
   /* Set when the owner posted the announcement themselves. See migration 0042. */
-  announced_by_hand: number | null;
 }
 
 /**
@@ -272,13 +271,7 @@ const FILTER_SQL: Record<BookFilter, string> = {
   urdu: "b.language = 'urdu'",
   'no-description': "(b.description_html IS NULL OR b.description_html = '')",
   'no-subject': 'NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)',
-  /*
-   * Two ways to be announced, because the shop's bot is not the only one who
-   * can post. Marking a batch announced by hand cannot set a message id - there
-   * is no message, the shop never sent one - so it sets `announced_by_hand`
-   * instead and this filter has to ask about both. See migration 0042.
-   */
-  'not-announced': 'b.telegram_message_id IS NULL AND b.announced_by_hand IS NULL',
+  'not-announced': 'b.telegram_message_id IS NULL',
   'out-of-stock': '(b.stock - b.reserved) <= 0',
   'low-stock': '(b.stock - b.reserved) > 0 AND (b.stock - b.reserved) <= 2',
   draft: "b.status = 'draft'",
@@ -430,25 +423,6 @@ export function bookListWhere(opts: BookScope): { where: string; binds: unknown[
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', binds };
 }
 
-/**
- * Every listing a set of filters matches, as ids.
- *
- * For "apply this to all 38 matching", where the owner is acting on a
- * description of a set rather than on rows they have ticked. Capped one above
- * the ceiling the caller enforces, so "too many" is a length test rather than a
- * second COUNT - and so a mis-aimed bulk action cannot quietly load the whole
- * catalogue into memory.
- */
-export async function bookIdsMatching(opts: BookScope, cap = 1000): Promise<number[]> {
-  const { where, binds } = bookListWhere(opts);
-  const { results } = await env.DB.prepare(
-    `SELECT b.id FROM books b ${where} ORDER BY b.id LIMIT ?`,
-  )
-    .bind(...binds, cap + 1)
-    .all<{ id: number }>();
-  return results.map((r) => r.id);
-}
-
 export async function listBooksAdmin(opts: BookScope & {
   sort?: BookSort;
   page?: number;
@@ -467,7 +441,7 @@ export async function listBooksAdmin(opts: BookScope & {
       `SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language,
               b.price_pence, b.stock, b.reserved,
               (b.stock - b.reserved) AS available, b.status, b.telegram_message_id,
-              b.announced_by_hand, b.deleted_at,
+              b.deleted_at,
               (SELECT image_key FROM book_images WHERE book_id = b.id ORDER BY sort LIMIT 1) AS image_key,
               (SELECT MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER))
                  FROM book_images i

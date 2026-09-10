@@ -176,7 +176,7 @@ async function read(days: number): Promise<Dashboard> {
                           AND i.width IS NOT NULL AND i.height > 0
                           AND MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) < 300)) AS thinImage,
          (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
-            AND telegram_message_id IS NULL AND announced_by_hand IS NULL) AS unposted,
+            AND telegram_message_id IS NULL) AS unposted,
          (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
             AND (stock - reserved) <= 0) AS outOfStock,
          (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
