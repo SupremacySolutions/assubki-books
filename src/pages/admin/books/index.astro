@@ -9,7 +9,7 @@ import {
 } from '../../../lib/admin-db';
 import { price, imageUrl, buildQuery } from '../../../lib/format';
 import { DELETION, RETENTION_DAYS } from '../../../lib/book-deletion';
-import { BULK_ACTIONS, BULK } from '../../../lib/bulk-edit';
+import { BULK } from '../../../lib/bulk-edit';
 import { listShelves } from '../../../lib/shelves';
 
 const params = Astro.url.searchParams;
@@ -34,26 +34,23 @@ const undoToken = params.get('undo');
 const problem = params.get('e');
 
 /* What the bulk route reported back. `bulk=no` carries a reason in `why`;
-   anything else is the action that ran, with its counts. */
+   `bulk=delete` is the one that ran, with its counts. */
 const bulkParam = params.get('bulk');
-const bulkDone = bulkParam && bulkParam !== 'no' ? bulkParam : null;
+const bulkDone = bulkParam === 'delete';
 const bulkN = Number(params.get('n') ?? 0);
 const bulkSkipped = Number(params.get('skipped') ?? 0);
-const bulkSets = Number(params.get('sets') ?? 0);
-const bulkClamped = Number(params.get('clamped') ?? 0);
+const bulkGone = Number(params.get('gone') ?? 0);
+const bulkOrphaned = Number(params.get('orphaned') ?? 0);
 const bulkRefused =
   bulkParam === 'no'
     ? ({
-        moved: BULK.moved,
         none: BULK.none,
         toomany: BULK.tooMany(bulkN),
-        notforfilter: BULK.notForFilter,
-        badshelf: BULK.badShelf,
-        badnumber: BULK.badNumber,
+        held: BULK.skippedReserved(bulkSkipped),
       } as Record<string, string>)[params.get('why') ?? ''] ?? BULK.none
     : null;
 const undoneWord = ({
-  ok: BULK.undone,
+  ok: BULK.undone(bulkN),
   partly: BULK.undonePartly(bulkN, Number(params.get('gone') ?? 0)),
   spent: BULK.undoSpent,
   expired: BULK.undoExpired,
@@ -178,19 +175,19 @@ const windowed = () => {
   }
   {
     /*
-     * What a bulk edit actually did, including what it left alone.
+     * What the delete actually did, including what it left alone.
      *
-     * Every count is shown rather than only the happy one: an action that
-     * changed forty listings and quietly skipped six is the thing this whole
-     * feature has to be trusted not to do.
+     * Every count is shown rather than only the happy one: a press that binned
+     * forty listings and quietly skipped six is the thing this whole feature
+     * has to be trusted not to do.
      */
     bulkDone && (
       <div class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)] flex flex-wrap items-center gap-x-3 gap-y-2">
         <span>
-          {BULK.done(BULK_ACTIONS[bulkDone as keyof typeof BULK_ACTIONS]?.label ?? 'Changed', bulkN)}
+          {BULK.done(bulkN)}
           {bulkSkipped > 0 && ` ${BULK.skippedReserved(bulkSkipped)}`}
-          {bulkSets > 0 && ` ${BULK.skippedSet(bulkSets)}`}
-          {bulkClamped > 0 && ` ${BULK.clamped(bulkClamped)}`}
+          {bulkGone > 0 && ` ${BULK.skippedGone(bulkGone)}`}
+          {bulkOrphaned > 0 && ` ${BULK.orphaned(bulkOrphaned)}`}
         </span>
         {undoToken && (
           <form method="post" action="/api/admin/books/bulk" class="contents">
@@ -319,13 +316,12 @@ const windowed = () => {
         class="mb-4 p-3 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] flex flex-wrap items-center gap-x-4 gap-y-3"
       >
         {/* The filters that produced this page travel with the action, so the
-            server can re-resolve "all matching" itself and land the owner back
-            on the list they were working in. */}
+            server can land the owner back on the list they were working in. */}
         {q && <input type="hidden" name="q" value={q} />}
         {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
         {sort !== 'recent' && <input type="hidden" name="sort" value={sort} />}
         {perPage !== 40 && <input type="hidden" name="per" value={perPage} />}
-        <input type="hidden" name="expect" value={result.total} />
+        <input type="hidden" name="action" value="delete" />
 
         <div class="flex items-center gap-2 text-[14px]">
           <input type="checkbox" id="bulkAll" class="w-4 h-4 accent-[var(--color-navy)]" />
@@ -335,54 +331,22 @@ const windowed = () => {
           <output id="bulkCount" class="text-[var(--color-ink-faint)] tabular-nums" />
         </div>
 
-        {result.total > result.books.length && (
-          <label class="flex items-center gap-2 text-[14px] text-[var(--color-ink-soft)]">
-            <input type="checkbox" name="scope" value="filter" class="w-4 h-4 accent-[var(--color-navy)]" />
-            all {result.total} matching
-          </label>
-        )}
-
-        <div class="flex flex-wrap items-center gap-1.5 ml-auto">
-          {(['publish', 'draft', 'announced', 'archive'] as const).map((key) => (
-            <button
-              type="submit"
-              name="action"
-              value={key}
-              data-bulk-verb={BULK_ACTIONS[key].label}
-              class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]"
-            >
-              {BULK_ACTIONS[key].label}
-            </button>
-          ))}
-        </div>
-
-        <div class="w-full flex flex-wrap items-center gap-x-3 gap-y-2 pt-3 border-t border-[var(--color-rule-faint)]">
-          <label class="flex items-center gap-1.5 text-[13.5px] text-[var(--color-ink-soft)]">
-            Shelf
-            <select name="categoryId" class="field !py-1.5 !w-auto !text-[13.5px]">
-              <option value="">choose…</option>
-              {shelves.map((s) => (
-                <option value={s.id}>{'— '.repeat(s.path.split('/').length - 1)}{s.name}</option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" name="action" value="shelf-add" data-bulk-verb="Add to shelf" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Add</button>
-          <button type="submit" name="action" value="shelf-remove" data-bulk-verb="Take off shelf" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Remove</button>
-
-          <label class="flex items-center gap-1.5 text-[13.5px] text-[var(--color-ink-soft)] ml-3">
-            Number
-            <input
-              type="number"
-              name="value"
-              value="0"
-              class="field !w-20 !py-1.5 !px-2 tabular-nums text-center !text-[13.5px]"
-            />
-          </label>
-          <button type="submit" name="action" value="stock-set" data-bulk-verb="Set stock to" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Set stock</button>
-          <button type="submit" name="action" value="stock-add" data-bulk-verb="Change stock by" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Add stock</button>
-          <button type="submit" name="action" value="price-percent" data-bulk-verb="Change price by %" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Price %</button>
-          <button type="submit" name="action" value="price-fixed" data-bulk-verb="Change price by pence" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Price pence</button>
-        </div>
+        {/*
+          * There is deliberately no "all N matching" tick beside this.
+          *
+          * It existed for the actions that could be put back by replaying a
+          * column, and every one of those has gone. Deleting is the one thing
+          * that must be pointed at rows the owner actually looked at, so the
+          * only scope left is the ticks themselves.
+          */}
+        <button
+          type="submit"
+          id="bulkDelete"
+          disabled
+          class="btn btn-ghost !py-1.5 !px-3 !text-[13px] ml-auto !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Delete
+        </button>
       </form>
     )
   }
@@ -610,17 +574,24 @@ const windowed = () => {
     </form>
   </Dialog>
 
-  <Dialog id="bulkConfirm" title="Apply this to the selection?">
+  <Dialog id="bulkConfirm" title="Delete these listings?">
     <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
       <strong id="bulkConfirmWhat" class="text-[var(--color-ink)]"></strong>
     </p>
     <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-      You can put this back afterwards - the banner offers an Undo for a day. Listings holding
-      copies for an open order, and listings that are part of a set, are left alone.
+      They come off the shop now, and their posts in the channel come down. You have 30 days to
+      put them back from Recently deleted, and the banner offers an Undo for a day. Listings
+      holding copies for an open order are left alone. Past orders keep their own record.
     </p>
     <div class="mt-4 flex gap-2 justify-end">
-      <button type="button" data-dialog-close class="btn btn-ghost !py-2">Cancel</button>
-      <button type="button" id="bulkConfirmGo" class="btn btn-primary !py-2">Do it</button>
+      <button type="button" data-dialog-close class="btn btn-ghost !py-2">Keep them</button>
+      <button
+        type="button"
+        id="bulkConfirmGo"
+        class="btn btn-ghost !py-2 !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40"
+      >
+        Delete them
+      </button>
     </div>
   </Dialog>
 

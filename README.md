@@ -261,16 +261,32 @@ restores it, and the cron Worker destroys it for good after thirty days.
   fill the channel with adverts for books that no longer exist. Restoring cannot
   bring the post back; the listing page reposts it.
 
-**A bulk edit records its inverse before it runs.** `/admin/books` acts on a
-selection - status, shelf, stock, price - and every action writes a `bulk_edits`
-row first, which is what the banner's Undo spends. Three rules hold across all of
-them: nothing loops (D1 refuses over a hundred bound parameters, so ids travel as
-one bound JSON array, as `releaseOrders` does it); nothing is silently skipped (a
-listing left alone for holding copies, or for being part of a set, or a stock
-figure bent up to the reserved floor, is counted and said out loud); and the
-stock ledger row is written **before** the update, because D1 runs a batch in
-order and an INSERT that reads `books.stock` afterwards records every delta as
-zero - a ledger that looks healthy and says nothing.
+**A selection can be binned in one press.** `/admin/books` ticks rows and
+`softDeleteMany` puts them in the bin together, writing one `bulk_edits` row
+first - which is what the banner's Undo spends, and what puts the whole
+selection back at once. `restore` finds a listing anywhere in that record, so a
+single Restore still works on something binned as part of a batch.
+
+Three rules hold. Nothing loops in SQL: ids travel as one bound JSON array,
+because D1 refuses a statement carrying more than a hundred bound parameters.
+Nothing is silently skipped: a listing left alone because copies are promised to
+an open order is counted and said out loud. And it acts only on ticked rows -
+there is no filter scope, because deleting must not be pointed at a set the
+owner described rather than looked at.
+
+The cap is a hundred listings a press, and the reason is Telegram rather than
+SQL: each announcement comes down as its listing goes, one API call per message
+and one message per photograph in an album. `softDeleteMany` spends an explicit
+budget on that and reports the posts it could not reach, rather than exhausting
+a Worker's subrequests and leaving the channel advertising books that are gone.
+
+This was ten actions once - publish, draft, mark announced, archive, shelf on
+and off, stock set and add, price by percent and by pence. They shipped in #13
+and came out again in #14: the filters that fed them were the useful part, and a
+toolbar of ten buttons over two hundred rows was mostly new ways to be wrong at
+scale. `books.announced_by_hand` from migration 0042 is left behind by that -
+the column stays because SQLite cannot drop one without rebuilding a table eight
+others point at, but nothing writes or reads it now.
 
 **A search that finds nothing can now be answered.** `searches` has always logged
 the terms anonymously; `book_requests` is the half with an address attached, left

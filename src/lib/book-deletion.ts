@@ -158,6 +158,139 @@ export async function softDelete(
 }
 
 /**
+ * How many channel messages one bulk delete may spend.
+ *
+ * The announcement has to come down as the listing goes - a bot may only delete
+ * its own message within 48 hours, so there is no deferring it to purge time -
+ * and that is one API call per message, with an album costing one per
+ * photograph. A Worker has a finite subrequest budget and Telegram has its own
+ * rate limit, and a batch that quietly exhausted either would bin the listings
+ * and leave the channel advertising them with nothing said about it.
+ *
+ * So the budget is explicit and small enough to be safe. Past it the listings
+ * are still binned - a withdrawn book must stop being for sale whatever
+ * Telegram is doing - and the posts that could not be reached are counted and
+ * handed back for the owner to remove by hand.
+ */
+const CHANNEL_BUDGET = 300;
+
+/** The message ids one listing occupies in the channel, album included. */
+function channelMessages(book: {
+  telegram_message_id: number | null;
+  telegram_album_ids: string | null;
+}): number[] {
+  if (!book.telegram_message_id) return [];
+  try {
+    const stored = book.telegram_album_ids ? JSON.parse(book.telegram_album_ids) : null;
+    if (Array.isArray(stored) && stored.length) {
+      const ids = stored.filter((n) => Number.isInteger(n));
+      if (ids.length) return ids;
+    }
+  } catch {
+    // Unreadable is not a reason to leave the post up: fall back to the id that
+    // has always been there and clear what can be cleared.
+  }
+  return [book.telegram_message_id];
+}
+
+export interface BulkDeleted {
+  token: string | null;
+  deleted: number;
+  /** Ticked, but promised to an open order, so left where they are. */
+  held: number;
+  /** Ticked, but already gone by the time the button was pressed. */
+  gone: number;
+  /** Binned, but their channel post is still up. */
+  orphaned: number;
+}
+
+/**
+ * Puts a selection of listings in the bin, as one undoable act.
+ *
+ * The same rules as the single delete, applied to several: a listing holding
+ * copies for an open order is refused rather than binned, the announcement comes
+ * down now because it cannot come down later, and what each listing *was* is
+ * recorded so Restore can give it back.
+ *
+ * One tombstone covers the whole selection, which is what makes the banner's
+ * Undo put all of them back together. `restore` looks the id up anywhere in that
+ * array, so a single row's Restore in the bin still works on a listing that was
+ * binned as part of a batch.
+ *
+ * The channel is cleared before anything is written, and the rest of the work
+ * only counts listings that got that far, so a listing is never left binned with
+ * its post untouched *and* unreported.
+ */
+export async function softDeleteMany(
+  ids: number[],
+  actor: string | null,
+): Promise<BulkDeleted> {
+  const { results: books } = await env.DB.prepare(
+    `SELECT id, title, status, reserved, telegram_message_id, telegram_album_ids
+       FROM books
+      WHERE id IN (SELECT value FROM json_each(?1)) AND deleted_at IS NULL`,
+  )
+    .bind(JSON.stringify(ids))
+    .all<{
+      id: number;
+      title: string;
+      status: string;
+      reserved: number;
+      telegram_message_id: number | null;
+      telegram_album_ids: string | null;
+    }>();
+
+  const gone = ids.length - books.length;
+  const held = books.filter((b) => b.reserved > 0).length;
+  const doing = books.filter((b) => b.reserved === 0);
+  if (!doing.length) return { token: null, deleted: 0, held, gone, orphaned: 0 };
+
+  /*
+   * The announcements, spending the budget in order and stopping when it runs
+   * out rather than firing every call and hoping.
+   */
+  let spent = 0;
+  let orphaned = 0;
+  for (const book of doing) {
+    const messages = channelMessages(book);
+    if (!messages.length) continue;
+    if (spent + messages.length > CHANNEL_BUDGET) {
+      orphaned += 1;
+      continue;
+    }
+    spent += messages.length;
+    if (!(await deleteChannelPost(messages))) orphaned += 1;
+  }
+
+  const token = await record(
+    'delete',
+    doing.length === 1 ? `deleted "${doing[0].title}"` : `deleted ${doing.length} listings`,
+    actor,
+    doing.map((b) => ({ id: b.id, status: b.status, title: b.title })),
+  );
+
+  const binned = JSON.stringify(doing.map((b) => b.id));
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE books
+          SET deleted_at = unixepoch(), updated_at = unixepoch(),
+              telegram_message_id = NULL, telegram_album_ids = NULL
+        WHERE id IN (SELECT value FROM json_each(?1))`,
+    ).bind(binned),
+    // Nobody is told a book is back when it is on its way to being destroyed -
+    // the same promise the single delete keeps, and for the same reason.
+    env.DB.prepare(
+      'DELETE FROM stock_alerts WHERE book_id IN (SELECT value FROM json_each(?1))',
+    ).bind(binned),
+  ]);
+
+  forgetCategoryCounts();
+  forgetHomeRows();
+
+  return { token, deleted: doing.length, held, gone, orphaned };
+}
+
+/**
  * Takes a listing back out of the bin.
  *
  * The slug was never freed while it sat there, which is a real argument for
@@ -165,12 +298,15 @@ export async function softDelete(
  * owner has since created something that has taken the URL.
  */
 export async function restore(id: number): Promise<{ title: string } | null> {
-  /* A delete tombstone always holds exactly one listing, so the id is at a
-     fixed path and can be matched exactly. A LIKE against the JSON text would
-     also match id 12 when looking for id 1. */
+  /* A tombstone holds one listing when a row's own bin was pressed and the
+     whole selection when several were binned together, so the id is looked for
+     anywhere in the array rather than at a fixed path. `json_each` matches the
+     value exactly; a LIKE against the JSON text would also match id 12 when
+     looking for id 1. */
   const tomb = await env.DB.prepare(
     `SELECT inverse FROM bulk_edits
-      WHERE action = 'delete' AND json_extract(inverse, '$[0].id') = ?
+      WHERE action = 'delete'
+        AND EXISTS (SELECT 1 FROM json_each(inverse) WHERE json_extract(value, '$.id') = ?)
       ORDER BY at DESC LIMIT 1`,
   )
     .bind(id)
