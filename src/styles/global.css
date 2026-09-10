@@ -283,6 +283,32 @@
 
   .field:focus { border-color: var(--color-navy); outline-offset: 0; }
 
+  /*
+   * Safari on iOS zooms the whole page in when you focus a control whose text
+   * is under 16px, and never zooms back out - so a customer tapping "Email" on
+   * the checkout is left scrolled sideways on a page they now have to pinch
+   * back. The size utilities that tune these controls on a desk are all below
+   * that threshold and most of them are `!important`, so the floor is set here
+   * for the phone widths only, and has to outrank them.
+   *
+   * The alternative, `maximum-scale=1` on the viewport, stops the zoom by
+   * taking pinch-zoom away from everyone. That is not a trade worth making.
+   *
+   * Specificity is counted per selector, not per list, and each one here has to
+   * beat a single `!important` class (0,1,0) on its own. `input` clears it on
+   * its type filters alone (0,3,1); bare `select` and `textarea` are (0,0,1) and
+   * lose to `!text-[14px]`, so both carry a filter of their own. `:not([hidden])`
+   * is the cheapest one that changes nothing: a hidden control cannot be focused,
+   * so it never needed the floor anyway.
+   */
+  @media (max-width: 767px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    select:not([hidden]),
+    textarea:not([hidden]) {
+      font-size: 16px !important;
+    }
+  }
+
   /* Prose for the imported book descriptions. Only the tags the sanitiser
      lets through are styled. */
   .prose-book { color: var(--color-ink-soft); font-size: 15.5px; }

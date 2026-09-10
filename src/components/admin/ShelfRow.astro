@@ -65,14 +65,16 @@ const consequences = [
   </form>
 
   <!-- Order is set by moving, never by typing a number: the number only ever
-       mattered relative to its siblings. -->
+       mattered relative to its siblings. The pair is a 44px touch target on a
+       phone and the tighter 28px on a desk, where the row is dense and the
+       pointer is exact. -->
   <span class="flex items-center shrink-0">
     <form method="post" action="/api/admin/shelves/move">
       <input type="hidden" name="id" value={shelf.id} />
       <input type="hidden" name="direction" value="up" />
       <button
         type="submit"
-        class="w-7 h-7 grid place-items-center rounded-s-sm border border-[var(--color-rule)] text-[var(--color-ink-faint)] hover:text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-35 disabled:hover:text-[var(--color-ink-faint)] disabled:hover:border-[var(--color-rule)]"
+        class="w-11 h-11 md:w-7 md:h-7 grid place-items-center rounded-s-sm border border-[var(--color-rule)] text-[var(--color-ink-faint)] hover:text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-35 disabled:hover:text-[var(--color-ink-faint)] disabled:hover:border-[var(--color-rule)]"
         disabled={index === 0}
         title="Move up"
       >
@@ -87,7 +89,7 @@ const consequences = [
       <input type="hidden" name="direction" value="down" />
       <button
         type="submit"
-        class="w-7 h-7 grid place-items-center rounded-e-sm border border-s-0 border-[var(--color-rule)] text-[var(--color-ink-faint)] hover:text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-35 disabled:hover:text-[var(--color-ink-faint)] disabled:hover:border-[var(--color-rule)]"
+        class="w-11 h-11 md:w-7 md:h-7 grid place-items-center rounded-e-sm border border-s-0 border-[var(--color-rule)] text-[var(--color-ink-faint)] hover:text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-35 disabled:hover:text-[var(--color-ink-faint)] disabled:hover:border-[var(--color-rule)]"
         disabled={index === lastIndex}
         title="Move down"
       >
