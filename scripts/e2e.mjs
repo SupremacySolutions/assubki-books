@@ -1056,7 +1056,27 @@ async function listings() {
   const held = await admin(`/api/admin/books/${book.id}/delete`);
   t.ok(held.location.includes('e=held'), 'delete is refused while a copy is held');
 
+  /*
+   * The bin on the row itself. Deleting used to mean opening the listing and
+   * scrolling to the bottom of the editor, so a mistaken import cost three
+   * pages to clear.
+   */
+  const listRows = await html(`/admin/books?q=${encodeURIComponent(book.title)}`);
+  t.ok(listRows.includes(`data-delete-book="${book.id}"`),
+    'a row offers a bin without opening the listing');
+  // `\sdisabled(?=[\s>])` rather than `disabled`: the enabled bin's class list
+  // carries `disabled:opacity-30`, which the looser pattern matched happily.
+  const binDead = (page) =>
+    new RegExp(`data-delete-book="${book.id}"[^>]*\\sdisabled(?=[\\s>])`).test(page);
+  t.ok(binDead(listRows),
+    'and the bin is dead while a copy is held, rather than 302ing to a refusal');
+  t.ok(listRows.includes('id="deleteBook"') && listRows.includes('id="deleteBookForm"') &&
+       !/onclick=|onsubmit=/.test(listRows),
+  'the confirmation is the site\'s own dialog, wired without inline handlers');
+
   await admin(`/api/admin/orders/${o.ref}/status`, { status: 'cancelled' });
+  const freeRow = await html(`/admin/books?q=${encodeURIComponent(book.title)}`);
+  t.ok(!binDead(freeRow), 'and it comes back to life once nothing is held');
   const gone = await admin(`/api/admin/books/${book.id}/delete`);
   t.ok(gone.location.includes('deleted'), 'delete succeeds once nothing is held');
   created.books = created.books.filter((id) => id !== book.id);
@@ -1187,6 +1207,20 @@ async function listings() {
   const editorSource = readFileSync('src/pages/admin/books/[id].astro', 'utf8');
   t.ok(!/coverClean\?\.review\([^)]*\)\s*\)\s*\?\?/.test(editorSource),
     'refusing a photo in the review panel does not upload it anyway');
+
+  /*
+   * Money is stepped a pound at a time.
+   *
+   * The browser's own spinner steps by a penny, which is useless on a price:
+   * £14 out of £13.99 was fourteen clicks. `step` cannot fix it - `step="1"`
+   * makes £3.75 invalid and blocks the form - so every money field carries
+   * its own pair of buttons instead.
+   */
+  const priced = await html(`/admin/books/${noPhoto.id}`);
+  t.ok(priced.includes('data-pound-step="1"') && priced.includes('data-pound-step="-1"'),
+    'the price field is stepped a pound at a time');
+  t.ok(!/name="price"[^>]*step="1"/.test(priced) && /name="price"[^>]*step="0.01"/.test(priced),
+    'and pence stay typeable in the box, so £3.75 is still a valid price');
 }
 
 // ---------------------------------------------------------------------------
@@ -2904,10 +2938,28 @@ async function integrity() {
   t.ok(!/\bOther'?:\s*\(n\)/.test(trackingMap),
     'and "Other" deliberately has none, so the number shows unlinked');
 
-  const orderPage = readFileSync('src/pages/admin/orders/[ref].astro', 'utf8');
-  t.ok(orderPage.includes('data-postage="1"') && orderPage.includes('data-postage="-1"'),
+  /*
+   * The stepper the orders page grew for postage is `PoundInput` now, shared by
+   * every money field. That splits the guard in two: the page has to actually
+   * reach for the stepped field rather than a bare number input, and the
+   * component has to keep stepping by a pound while pence stay typeable.
+   * Asserting only the second would let the page quietly go back to `<input
+   * type="number">` with the component still perfect and unused.
+   */
+  const orderPage = readFileSync('src/pages/admin/orders/[ref].astro', 'utf8')
+    .replace(/\n\s*/g, ' ');
+  for (const [id, which] of [['postage', 'confirming'], ['amendPostage', 'amending']]) {
+    t.ok(new RegExp(`<PoundInput[^>]*id="${id}"`).test(orderPage),
+      `postage is a stepped money field when ${which}, not a penny-stepping box`);
+  }
+
+  const poundInput = readFileSync('src/components/PoundInput.astro', 'utf8')
+    .replace(/\n\s*/g, ' ');
+  t.ok(poundInput.includes('data-pound-step="1"') && poundInput.includes('data-pound-step="-1"'),
     'postage moves a pound at a time, by button');
-  t.ok(/id="postage"[^>]*step="0\.01"/s.test(orderPage.replace(/\n\s*/g, ' ')),
+  // step="1" would make £3.75 invalid and block the form; step="any" would kill
+  // the field's own validation. 0.01 is the one that leaves both working.
+  t.ok(/type="number"[^>]*step="0\.01"/.test(poundInput),
     'while pence stay a valid amount to type');
 
   /*

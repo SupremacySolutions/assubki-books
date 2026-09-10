@@ -1,5 +1,6 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
+import Dialog from '../../../components/Dialog.astro';
 import {
   listBooksAdmin,
   bookFilterCounts,
@@ -233,6 +234,34 @@ const windowed = () => {
               />
               <button type="submit" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Save</button>
             </form>
+
+            {/*
+              * Deleting used to mean opening the listing, scrolling to the
+              * bottom of the editor and coming back - three pages to clear one
+              * mistaken import. The row itself is where the owner decides.
+              *
+              * Copies promised to an open order cannot go: the endpoint
+              * refuses them, so the button says so here rather than sending
+              * the owner off to a redirect that looks like a failure.
+              */}
+            <button
+              type="button"
+              data-delete-book={b.id}
+              data-title={b.title}
+              disabled={b.reserved > 0}
+              aria-label={`Delete ${b.title}`}
+              title={
+                b.reserved > 0
+                  ? `${b.reserved} reserved by an open order, so this cannot be deleted yet`
+                  : `Delete ${b.title}`
+              }
+              class="shrink-0 p-2 rounded-[3px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] hover:bg-[var(--color-outstock)]/10 disabled:opacity-30 disabled:hover:text-[var(--color-ink-faint)] disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+                <path d="M10 11v5M14 11v5" />
+              </svg>
+            </button>
           </li>
         ))}
       </ul>
@@ -289,4 +318,57 @@ const windowed = () => {
       </nav>
     )
   }
+
+  {/*
+    * One dialog for the whole list, not one per row: at 200 a page that would
+    * be 200 copies of the same markup. The bin that was clicked fills in the
+    * title and points the form at its own listing.
+    */}
+  <Dialog id="deleteBook" title="Delete this listing?">
+    <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+      <strong id="deleteBookTitle" class="text-[var(--color-ink)]"></strong> goes for good, with
+      any photos you uploaded and its post in the channel. Past orders keep their record of it.
+    </p>
+    <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+      To hide it without losing it, open the listing and set Visibility to Archived instead.
+    </p>
+    <form id="deleteBookForm" method="post" class="mt-4 flex gap-2 justify-end">
+      <button type="button" data-dialog-close class="btn btn-ghost !py-2">Keep it</button>
+      <button
+        type="submit"
+        class="btn btn-ghost !py-2 !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40"
+      >
+        Delete listing
+      </button>
+    </form>
+  </Dialog>
+
+  <script>
+    /*
+     * The confirmation is the site's own dialog rather than `confirm()`, which
+     * cannot show the title in the shop's type, cannot be dismissed by the
+     * backdrop, and reads as a browser warning rather than a decision the
+     * owner is making about their own catalogue.
+     */
+    const dialog = document.querySelector<HTMLDialogElement>('#deleteBook');
+    const form = document.querySelector<HTMLFormElement>('#deleteBookForm');
+    const name = document.querySelector<HTMLElement>('#deleteBookTitle');
+
+    for (const bin of document.querySelectorAll<HTMLButtonElement>('[data-delete-book]')) {
+      bin.addEventListener('click', () => {
+        if (!dialog || !form) return;
+        form.action = `/api/admin/books/${bin.dataset.deleteBook}/delete`;
+        // textContent, not innerHTML: a title is the supplier's text and may
+        // carry anything.
+        if (name) name.textContent = `\u201C${bin.dataset.title ?? 'This listing'}\u201D`;
+        dialog.showModal();
+      });
+    }
+
+    // A slow delete is still a delete. Without this a second click posts the
+    // same listing twice, and the second one 302s to an empty page.
+    form?.addEventListener('submit', () => {
+      for (const button of form.querySelectorAll('button')) button.disabled = true;
+    });
+  </script>
 </Admin>
