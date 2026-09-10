@@ -2938,10 +2938,28 @@ async function integrity() {
   t.ok(!/\bOther'?:\s*\(n\)/.test(trackingMap),
     'and "Other" deliberately has none, so the number shows unlinked');
 
-  const orderPage = readFileSync('src/pages/admin/orders/[ref].astro', 'utf8');
-  t.ok(orderPage.includes('data-postage="1"') && orderPage.includes('data-postage="-1"'),
+  /*
+   * The stepper the orders page grew for postage is `PoundInput` now, shared by
+   * every money field. That splits the guard in two: the page has to actually
+   * reach for the stepped field rather than a bare number input, and the
+   * component has to keep stepping by a pound while pence stay typeable.
+   * Asserting only the second would let the page quietly go back to `<input
+   * type="number">` with the component still perfect and unused.
+   */
+  const orderPage = readFileSync('src/pages/admin/orders/[ref].astro', 'utf8')
+    .replace(/\n\s*/g, ' ');
+  for (const [id, which] of [['postage', 'confirming'], ['amendPostage', 'amending']]) {
+    t.ok(new RegExp(`<PoundInput[^>]*id="${id}"`).test(orderPage),
+      `postage is a stepped money field when ${which}, not a penny-stepping box`);
+  }
+
+  const poundInput = readFileSync('src/components/PoundInput.astro', 'utf8')
+    .replace(/\n\s*/g, ' ');
+  t.ok(poundInput.includes('data-pound-step="1"') && poundInput.includes('data-pound-step="-1"'),
     'postage moves a pound at a time, by button');
-  t.ok(/id="postage"[^>]*step="0\.01"/s.test(orderPage.replace(/\n\s*/g, ' ')),
+  // step="1" would make £3.75 invalid and block the form; step="any" would kill
+  // the field's own validation. 0.01 is the one that leaves both working.
+  t.ok(/type="number"[^>]*step="0\.01"/.test(poundInput),
     'while pence stay a valid amount to type');
 
   /*
