@@ -121,6 +121,7 @@ export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]>
                    SELECT MIN(v.have - COALESCE((
                             SELECT SUM(o.reserved) FROM books o
                              WHERE o.set_id = b.set_id
+                               AND o.deleted_at IS NULL
                                AND v.volume BETWEEN o.set_from AND o.set_to
                           ), 0))
                      FROM book_set_stock v
@@ -134,7 +135,7 @@ export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]>
        FROM books b
        LEFT JOIN sale_items si ON si.book_id = b.id
             AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
-      WHERE b.id IN (${placeholders}) AND (
+      WHERE b.id IN (${placeholders}) AND b.deleted_at IS NULL AND (
               (b.status = 'live' AND b.shipment_id IS NULL)
               /*
                * Or it is on a shipment that is open for reservations.
@@ -289,6 +290,7 @@ export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]>
         SELECT ?1,?2,?3,?4,?5,?6,?7,?8,'requested',?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23
         WHERE NOT EXISTS (SELECT 1 FROM json_each(?24) j WHERE NOT EXISTS (
           SELECT 1 FROM books b WHERE b.id=json_extract(j.value,'$.bookId') AND
+            b.deleted_at IS NULL AND
             ((?12 IS NULL AND b.shipment_id IS NULL AND b.status='live') OR
              (b.shipment_id=?12 AND EXISTS (SELECT 1 FROM shipments WHERE id=b.shipment_id AND status='open')))
         )) RETURNING id`).bind(ref,token,input.name,input.email,input.phone??null,input.fulfilment,input.address??null,

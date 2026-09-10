@@ -9,10 +9,21 @@ import {
 } from '../../lib/db';
 import { buildQuery } from '../../lib/format';
 import { recordMiss } from '../../lib/searches';
+import { WANTED } from '../../lib/order-status';
 import { liveSale } from '../../lib/sales';
 
 const { path } = Astro.params;
 const params = Astro.url.searchParams;
+
+/* The answer to a request, mapped through the same wording the form shows, the
+   way the book page maps `tell`. */
+const wanted = ({
+  added: WANTED.added,
+  already: WANTED.already,
+  toomany: WANTED.tooMany,
+  bad: WANTED.bad,
+  busy: WANTED.busy,
+} as Record<string, string>)[params.get('want') ?? ''] ?? null;
 
 const categoryPath = path ?? null;
 const category = categoryPath ? await categoryByPath(categoryPath) : null;
@@ -389,10 +400,66 @@ const description = category
               </div>
               <h2 class="font-[family-name:var(--font-display)] text-[22px]">Nothing matches that yet</h2>
               <p class="mt-2 text-[15px] text-[var(--color-ink-soft)] max-w-sm mx-auto">
-                Try a shorter search, or the Arabic title. If we do not list a text, ask on Telegram -
+                Try a shorter search, or the Arabic title. If we do not list a text, ask us below -
                 we can often source it.
               </p>
               <a href="/catalogue" class="btn btn-ghost mt-6">Browse all titles</a>
+
+              {
+                /*
+                 * Offered only when somebody actually searched for something.
+                 *
+                 * An empty grid produced by a filter combination - in stock, on
+                 * sale, in Urdu - is not a purchase request, and asking "shall we
+                 * find it for you?" there would be asking about a book nobody
+                 * named. `q` is the whole difference between a customer who
+                 * wanted something and a customer who narrowed too far.
+                 */
+                q && (
+                  <div id="want" class="mt-12 max-w-md mx-auto text-left border-t border-[var(--color-rule)] pt-8">
+                    <h3 class="font-[family-name:var(--font-display)] text-[18px] text-center">
+                      {WANTED.ask}
+                    </h3>
+                    <form method="post" action="/api/books/request" class="mt-4 grid gap-2">
+                      <input type="hidden" name="terms" value={q} />
+                      <input type="hidden" name="back" value={Astro.url.pathname + Astro.url.search} />
+                      <label class="sr-only" for="want-note">{WANTED.notePlaceholder}</label>
+                      <input
+                        id="want-note"
+                        type="text"
+                        name="note"
+                        maxlength="300"
+                        placeholder={WANTED.notePlaceholder}
+                        class="field"
+                      />
+                      <label class="sr-only" for="want-email">{WANTED.emailPlaceholder}</label>
+                      <input
+                        id="want-email"
+                        type="email"
+                        name="email"
+                        required
+                        maxlength="160"
+                        autocomplete="email"
+                        placeholder={WANTED.emailPlaceholder}
+                        class="field"
+                      />
+                      <button type="submit" class="btn btn-primary">{WANTED.ask}</button>
+                    </form>
+                    {wanted ? (
+                      <p role="status" class:list={[
+                        'mt-3 text-[13.5px] text-center',
+                        wanted === WANTED.added
+                          ? 'text-[var(--color-instock)]'
+                          : 'text-[var(--color-ink-faint)]',
+                      ]}>{wanted}</p>
+                    ) : (
+                      <p class="mt-3 text-[13px] text-[var(--color-ink-faint)] text-center leading-relaxed">
+                        {WANTED.help}
+                      </p>
+                    )}
+                  </div>
+                )
+              }
             </div>
           ) : (
             <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-9">

@@ -457,6 +457,33 @@ export const BACK_IN_STOCK = {
   heading: 'It is back',
 } as const;
 
+/**
+ * Asking for a book the shop does not stock.
+ *
+ * Beside `BACK_IN_STOCK` because this file is already where every word the shop
+ * says to a customer lives, and because these two are the same offer made at
+ * two different moments - "we will tell you when we have it" for a title on the
+ * shelf, and this for one that never was.
+ *
+ * The help line has to be exactly true. Nothing is sent automatically here: the
+ * owner reads these and writes back themselves, so it promises a reply and a
+ * deletion rather than "one email and nothing else", which would be a promise
+ * no code keeps.
+ */
+export const WANTED = {
+  ask: 'Ask us to find it',
+  help:
+    'We will look for it and write back. Your address is used for that and ' +
+    'nothing else, and we delete it once we have dealt with it.',
+  notePlaceholder: 'Anything that helps us find it - author, publisher, edition',
+  emailPlaceholder: 'Your email address',
+  added: 'Thank you - we will look for it and write to you.',
+  already: 'You have already asked us about this one.',
+  tooMany: 'That is a lot of requests at once. Give us a chance with the last few first.',
+  bad: 'We need something to look for and an email address to reply to.',
+  busy: 'You have asked a few times just now. Try again in an hour.',
+} as const;
+
 export const THREAD = {
   heading: 'Messages',
   /** The empty state, which is the one that has to do the persuading. */

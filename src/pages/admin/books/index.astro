@@ -8,6 +8,9 @@ import {
   type BookSort,
 } from '../../../lib/admin-db';
 import { price, imageUrl, buildQuery } from '../../../lib/format';
+import { DELETION, RETENTION_DAYS } from '../../../lib/book-deletion';
+import { BULK_ACTIONS, BULK } from '../../../lib/bulk-edit';
+import { listShelves } from '../../../lib/shelves';
 
 const params = Astro.url.searchParams;
 const q = params.get('q')?.trim() || null;
@@ -16,14 +19,50 @@ const sort = (params.get('sort') ?? 'recent') as BookSort;
 const perPage = Number.parseInt(params.get('per') ?? '40', 10) || 40;
 const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
 
-const [result, counts] = await Promise.all([
+const [result, counts, shelves] = await Promise.all([
   listBooksAdmin({ q, filter, sort, page, perPage }),
   bookFilterCounts(),
+  listShelves(),
 ]);
 
 const saved = params.get('saved');
 const deleted = params.get('deleted');
 const deletedOrphan = params.get('deleted-orphan');
+const restored = params.get('restored');
+const purged = params.get('purged');
+const undoToken = params.get('undo');
+const problem = params.get('e');
+
+/* What the bulk route reported back. `bulk=no` carries a reason in `why`;
+   anything else is the action that ran, with its counts. */
+const bulkParam = params.get('bulk');
+const bulkDone = bulkParam && bulkParam !== 'no' ? bulkParam : null;
+const bulkN = Number(params.get('n') ?? 0);
+const bulkSkipped = Number(params.get('skipped') ?? 0);
+const bulkSets = Number(params.get('sets') ?? 0);
+const bulkClamped = Number(params.get('clamped') ?? 0);
+const bulkRefused =
+  bulkParam === 'no'
+    ? ({
+        moved: BULK.moved,
+        none: BULK.none,
+        toomany: BULK.tooMany(bulkN),
+        notforfilter: BULK.notForFilter,
+        badshelf: BULK.badShelf,
+        badnumber: BULK.badNumber,
+      } as Record<string, string>)[params.get('why') ?? ''] ?? BULK.none
+    : null;
+const undoneWord = ({
+  ok: BULK.undone,
+  partly: BULK.undonePartly(bulkN, Number(params.get('gone') ?? 0)),
+  spent: BULK.undoSpent,
+  expired: BULK.undoExpired,
+  unknown: BULK.undoUnknown,
+  gone: BULK.undoUnknown,
+} as Record<string, string>)[params.get('undone') ?? ''] ?? null;
+/* The bin is a list of listings, not a worklist of jobs, so the row controls
+   change with it: nothing in there has a stock to edit or a photo to fix. */
+const inBin = filter === 'deleted';
 
 // The filters double as a worklist: each one is a job the import left behind,
 // and the count is how much of it is left.
@@ -43,6 +82,8 @@ const FILTERS: { key: BookFilter; label: string }[] = [
   { key: 'low-stock', label: 'Low stock' },
   { key: 'draft', label: 'Drafts' },
   { key: 'archived', label: 'Archived' },
+  // Last, and hidden by the zero-count rule above until something is in it.
+  { key: 'deleted', label: 'Recently deleted' },
 ];
 
 const SORTS: { key: BookSort; label: string }[] = [
@@ -92,16 +133,100 @@ const windowed = () => {
     )
   }
   {
+    /*
+     * The banner says where the listing went, not that it is gone.
+     *
+     * Undo is a form rather than a link because it changes something, and
+     * because a link would be followed by anything that prefetches. It is the
+     * same restore the bin offers - this is just the moment the owner is most
+     * likely to want it.
+     */
     deleted && (
+      <div class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)] flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span>
+          “{deleted}” is in the bin. It comes off the shop now and is destroyed for good in{' '}
+          {RETENTION_DAYS} days.
+        </span>
+        {undoToken && (
+          <form method="post" action="/api/admin/books/bulk" class="contents">
+            <input type="hidden" name="action" value="undo" />
+            <input type="hidden" name="token" value={undoToken} />
+            <button type="submit" class="btn btn-ghost !py-1 !px-2.5 !text-[13px]">
+              Undo
+            </button>
+          </form>
+        )}
+        <a href={filterUrl('deleted')} class="underline underline-offset-2">
+          Recently deleted
+        </a>
+      </div>
+    )
+  }
+  {
+    restored && (
       <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
-        Deleted “{deleted}”.
+        {DELETION.restored(restored)}
+      </p>
+    )
+  }
+  {
+    purged && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        “{purged}” and its photographs are gone for good.
+      </p>
+    )
+  }
+  {
+    /*
+     * What a bulk edit actually did, including what it left alone.
+     *
+     * Every count is shown rather than only the happy one: an action that
+     * changed forty listings and quietly skipped six is the thing this whole
+     * feature has to be trusted not to do.
+     */
+    bulkDone && (
+      <div class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)] flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span>
+          {BULK.done(BULK_ACTIONS[bulkDone as keyof typeof BULK_ACTIONS]?.label ?? 'Changed', bulkN)}
+          {bulkSkipped > 0 && ` ${BULK.skippedReserved(bulkSkipped)}`}
+          {bulkSets > 0 && ` ${BULK.skippedSet(bulkSets)}`}
+          {bulkClamped > 0 && ` ${BULK.clamped(bulkClamped)}`}
+        </span>
+        {undoToken && (
+          <form method="post" action="/api/admin/books/bulk" class="contents">
+            <input type="hidden" name="action" value="undo" />
+            <input type="hidden" name="token" value={undoToken} />
+            <button type="submit" class="btn btn-ghost !py-1 !px-2.5 !text-[13px]">Undo</button>
+          </form>
+        )}
+      </div>
+    )
+  }
+  {
+    bulkRefused && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        {bulkRefused}
+      </p>
+    )
+  }
+  {
+    undoneWord && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        {undoneWord}
+      </p>
+    )
+  }
+  {
+    problem === 'gone' && (
+      <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+        That listing is not in the bin - it has either been put back already or its time ran out.
       </p>
     )
   }
   {
     deletedOrphan && (
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
-        Deleted “{deletedOrphan}”, but its Telegram post could not be removed - a bot can only
+        “{deletedOrphan}” is in the bin, but its Telegram post could not be removed - a bot can only
         delete its own posts, and only within 48 hours. Remove that one in the channel by hand.
       </p>
     )
@@ -174,6 +299,95 @@ const windowed = () => {
   </form>
 
   {
+    /*
+     * The bulk toolbar sits OUTSIDE the list, and that is not a layout choice.
+     *
+     * A <form> wrapping or nested inside the <ul> would be discarded by the
+     * browser - each row already carries its own stock form - and the row
+     * buttons would start submitting the bulk action instead. This codebase has
+     * been bitten by nested forms twice; suite 19 asserts against it on the book
+     * page and suite 8 now does the same here.
+     *
+     * The checkboxes live in the rows and belong to this form by `form="bulkForm"`,
+     * which is what makes that separation possible at all.
+     */
+    !inBin && result.books.length > 0 && (
+      <form
+        id="bulkForm"
+        method="post"
+        action="/api/admin/books/bulk"
+        class="mb-4 p-3 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] flex flex-wrap items-center gap-x-4 gap-y-3"
+      >
+        {/* The filters that produced this page travel with the action, so the
+            server can re-resolve "all matching" itself and land the owner back
+            on the list they were working in. */}
+        {q && <input type="hidden" name="q" value={q} />}
+        {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
+        {sort !== 'recent' && <input type="hidden" name="sort" value={sort} />}
+        {perPage !== 40 && <input type="hidden" name="per" value={perPage} />}
+        <input type="hidden" name="expect" value={result.total} />
+
+        <div class="flex items-center gap-2 text-[14px]">
+          <input type="checkbox" id="bulkAll" class="w-4 h-4 accent-[var(--color-navy)]" />
+          <label for="bulkAll" class="text-[var(--color-ink-soft)]">
+            Select page
+          </label>
+          <output id="bulkCount" class="text-[var(--color-ink-faint)] tabular-nums" />
+        </div>
+
+        {result.total > result.books.length && (
+          <label class="flex items-center gap-2 text-[14px] text-[var(--color-ink-soft)]">
+            <input type="checkbox" name="scope" value="filter" class="w-4 h-4 accent-[var(--color-navy)]" />
+            all {result.total} matching
+          </label>
+        )}
+
+        <div class="flex flex-wrap items-center gap-1.5 ml-auto">
+          {(['publish', 'draft', 'announced', 'archive'] as const).map((key) => (
+            <button
+              type="submit"
+              name="action"
+              value={key}
+              data-bulk-verb={BULK_ACTIONS[key].label}
+              class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]"
+            >
+              {BULK_ACTIONS[key].label}
+            </button>
+          ))}
+        </div>
+
+        <div class="w-full flex flex-wrap items-center gap-x-3 gap-y-2 pt-3 border-t border-[var(--color-rule-faint)]">
+          <label class="flex items-center gap-1.5 text-[13.5px] text-[var(--color-ink-soft)]">
+            Shelf
+            <select name="categoryId" class="field !py-1.5 !w-auto !text-[13.5px]">
+              <option value="">choose…</option>
+              {shelves.map((s) => (
+                <option value={s.id}>{'— '.repeat(s.path.split('/').length - 1)}{s.name}</option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" name="action" value="shelf-add" data-bulk-verb="Add to shelf" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Add</button>
+          <button type="submit" name="action" value="shelf-remove" data-bulk-verb="Take off shelf" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Remove</button>
+
+          <label class="flex items-center gap-1.5 text-[13.5px] text-[var(--color-ink-soft)] ml-3">
+            Number
+            <input
+              type="number"
+              name="value"
+              value="0"
+              class="field !w-20 !py-1.5 !px-2 tabular-nums text-center !text-[13.5px]"
+            />
+          </label>
+          <button type="submit" name="action" value="stock-set" data-bulk-verb="Set stock to" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Set stock</button>
+          <button type="submit" name="action" value="stock-add" data-bulk-verb="Change stock by" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Add stock</button>
+          <button type="submit" name="action" value="price-percent" data-bulk-verb="Change price by %" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Price %</button>
+          <button type="submit" name="action" value="price-fixed" data-bulk-verb="Change price by pence" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Price pence</button>
+        </div>
+      </form>
+    )
+  }
+
+  {
     result.books.length === 0 ? (
       <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
         Nothing matches that. <a href="/admin/books" class="text-[var(--color-navy)] underline underline-offset-2">Show everything</a>.
@@ -182,6 +396,17 @@ const windowed = () => {
       <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
         {result.books.map((b) => (
           <li class="flex items-center gap-3 p-3">
+            {!inBin && (
+              <input
+                type="checkbox"
+                name="id"
+                value={b.id}
+                form="bulkForm"
+                data-bulk-row
+                aria-label={`Select ${b.title}`}
+                class="shrink-0 w-4 h-4 accent-[var(--color-navy)]"
+              />
+            )}
             <a
               href={`/admin/books/${b.id}`}
               class="shrink-0 w-11 h-14 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden"
@@ -221,21 +446,56 @@ const windowed = () => {
               </p>
             </div>
 
-            <form method="post" action="/api/admin/books/stock" class="flex items-center gap-1.5 shrink-0">
-              <input type="hidden" name="id" value={b.id} />
-              <label for={`s${b.id}`} class="sr-only">Stock for {b.title}</label>
-              <input
-                id={`s${b.id}`}
-                name="stock"
-                type="number"
-                min={b.reserved}
-                value={b.stock}
-                class="field !w-16 !py-1.5 !px-2 tabular-nums text-center"
-              />
-              <button type="submit" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Save</button>
-            </form>
-
             {/*
+              * A listing in the bin has different questions asked of it.
+              *
+              * Editing its stock or deleting it again are both meaningless -
+              * it is not for sale and it is already deleted - so the two
+              * controls become the two things that *are* still open: put it
+              * back, or stop waiting and destroy it now. Without that second
+              * button a two-phase delete reads as the shop refusing to obey.
+              */}
+            {inBin ? (
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-[12.5px] text-[var(--color-ink-faint)] tabular-nums">
+                  goes {b.deleted_at ? DELETION.goesOn(b.deleted_at) : 'soon'}
+                </span>
+                <form method="post" action={`/api/admin/books/${b.id}/restore`}>
+                  <button type="submit" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">
+                    Restore
+                  </button>
+                </form>
+                <button
+                  type="button"
+                  data-purge-book={b.id}
+                  data-title={b.title}
+                  class="p-2 rounded-[3px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] hover:bg-[var(--color-outstock)]/10 cursor-pointer transition-colors"
+                  aria-label={`Destroy ${b.title} now`}
+                  title={`Destroy ${b.title} now`}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+                    <path d="M10 11v5M14 11v5" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <form method="post" action="/api/admin/books/stock" class="flex items-center gap-1.5 shrink-0">
+                <input type="hidden" name="id" value={b.id} />
+                <label for={`s${b.id}`} class="sr-only">Stock for {b.title}</label>
+                <input
+                  id={`s${b.id}`}
+                  name="stock"
+                  type="number"
+                  min={b.reserved}
+                  value={b.stock}
+                  class="field !w-16 !py-1.5 !px-2 tabular-nums text-center"
+                />
+                <button type="submit" class="btn btn-ghost !py-1.5 !px-2.5 !text-[13px]">Save</button>
+              </form>
+            )}
+
+            {!inBin && (<>{/*
               * Deleting used to mean opening the listing, scrolling to the
               * bottom of the editor and coming back - three pages to clear one
               * mistaken import. The row itself is where the owner decides.
@@ -261,7 +521,7 @@ const windowed = () => {
                 <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
                 <path d="M10 11v5M14 11v5" />
               </svg>
-            </button>
+            </button></>)}
           </li>
         ))}
       </ul>
@@ -325,12 +585,19 @@ const windowed = () => {
     * title and points the form at its own listing.
     */}
   <Dialog id="deleteBook" title="Delete this listing?">
+    {/*
+      * The wording comes from `lib/book-deletion.ts`, beside the code that
+      * makes it true. This used to promise that the listing and its photos
+      * went for good, immediately - which is now wrong in three separate ways,
+      * and a confirmation that misdescribes what it confirms is worse than no
+      * confirmation at all.
+      */}
     <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
-      <strong id="deleteBookTitle" class="text-[var(--color-ink)]"></strong> goes for good, with
-      any photos you uploaded and its post in the channel. Past orders keep their record of it.
+      <strong id="deleteBookTitle" class="text-[var(--color-ink)]"></strong> {DELETION.body}
     </p>
     <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-      To hide it without losing it, open the listing and set Visibility to Archived instead.
+      To take it off the shop and keep it to hand, open the listing and set Visibility to
+      Archived instead.
     </p>
     <form id="deleteBookForm" method="post" class="mt-4 flex gap-2 justify-end">
       <button type="button" data-dialog-close class="btn btn-ghost !py-2">Keep it</button>
@@ -343,7 +610,42 @@ const windowed = () => {
     </form>
   </Dialog>
 
+  <Dialog id="bulkConfirm" title="Apply this to the selection?">
+    <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+      <strong id="bulkConfirmWhat" class="text-[var(--color-ink)]"></strong>
+    </p>
+    <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+      You can put this back afterwards - the banner offers an Undo for a day. Listings holding
+      copies for an open order, and listings that are part of a set, are left alone.
+    </p>
+    <div class="mt-4 flex gap-2 justify-end">
+      <button type="button" data-dialog-close class="btn btn-ghost !py-2">Cancel</button>
+      <button type="button" id="bulkConfirmGo" class="btn btn-primary !py-2">Do it</button>
+    </div>
+  </Dialog>
+
+  <Dialog id="purgeNow" title="Destroy this now?">
+    <p class="text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+      <strong id="purgeNowTitle" class="text-[var(--color-ink)]"></strong> and its photographs are
+      destroyed immediately, along with every record of the copies that moved through it. This is
+      the one that cannot be undone. Past orders keep their own record of what was bought.
+    </p>
+    <form id="purgeNowForm" method="post" class="mt-4 flex gap-2 justify-end">
+      <button type="button" data-dialog-close class="btn btn-ghost !py-2">Leave it in the bin</button>
+      <button
+        type="submit"
+        class="btn btn-ghost !py-2 !text-[var(--color-outstock)] !border-[var(--color-outstock)]/40"
+      >
+        Destroy it
+      </button>
+    </form>
+  </Dialog>
+
   <script>
+    // Selection, shift-click ranges and the bulk confirmation. Bundled rather
+    // than `is:inline`, so the CSP covers it without a nonce.
+    import '../../../scripts/bulk-select.ts';
+
     /*
      * The confirmation is the site's own dialog rather than `confirm()`, which
      * cannot show the title in the shop's type, cannot be dismissed by the
@@ -369,6 +671,30 @@ const windowed = () => {
     // same listing twice, and the second one 302s to an empty page.
     form?.addEventListener('submit', () => {
       for (const button of form.querySelectorAll('button')) button.disabled = true;
+    });
+
+    /*
+     * Destroying something in the bin gets its own dialog and its own words.
+     *
+     * The ordinary delete dialog offers thirty days to change your mind; this
+     * one is the moment that offer is given up, so saying the same thing twice
+     * would be worse than saying nothing.
+     */
+    const purge = document.querySelector<HTMLDialogElement>('#purgeNow');
+    const purgeForm = document.querySelector<HTMLFormElement>('#purgeNowForm');
+    const purgeName = document.querySelector<HTMLElement>('#purgeNowTitle');
+
+    for (const bin of document.querySelectorAll<HTMLButtonElement>('[data-purge-book]')) {
+      bin.addEventListener('click', () => {
+        if (!purge || !purgeForm) return;
+        purgeForm.action = `/api/admin/books/${bin.dataset.purgeBook}/purge`;
+        if (purgeName) purgeName.textContent = `\u201C${bin.dataset.title ?? 'This listing'}\u201D`;
+        purge.showModal();
+      });
+    }
+
+    purgeForm?.addEventListener('submit', () => {
+      for (const button of purgeForm.querySelectorAll('button')) button.disabled = true;
     });
   </script>
 </Admin>

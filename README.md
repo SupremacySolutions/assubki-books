@@ -239,6 +239,46 @@ if no message could be delivered: the copies are already back on the shelf and
 somebody else may have taken them, so the owner is told what did not go out
 rather than having the amendment undone underneath them.
 
+**Deleting a listing is two steps a month apart.** It used to be one, and that
+one destroyed the cover objects in R2, the Telegram post, and - by cascade - the
+book's whole `stock_ledger` history, which is the one thing the ledger exists to
+make un-loseable. Deleting now sets `books.deleted_at`, takes the listing off the
+shop immediately and does nothing irreversible; `Recently deleted` in the portal
+restores it, and the cron Worker destroys it for good after thirty days.
+`src/lib/book-deletion.ts` owns all of it. Two consequences worth knowing:
+
+- **Every query that lists books must say `deleted_at IS NULL`.** There is no
+  sentinel status doing this quietly - `books.status` is fenced by a CHECK
+  constraint from 0001 that SQLite cannot alter without rebuilding a table eight
+  others point at - so the clause *is* the defence. A source-level assertion in
+  suite 8 reads every `FROM books` in the tree and fails the build if one neither
+  carries the filter nor sits on its allowlist with a reason. Two queries filter
+  status *negatively* (`!= 'archived'`) and would otherwise have gone on serving
+  deleted books: `bookBySlug` and `partCandidates`.
+- **The channel post comes down at delete time, not at purge time**, and this is
+  forced rather than chosen: a Telegram bot may only delete its own message
+  within 48 hours of posting it, so a deferred delete would fail every time and
+  fill the channel with adverts for books that no longer exist. Restoring cannot
+  bring the post back; the listing page reposts it.
+
+**A bulk edit records its inverse before it runs.** `/admin/books` acts on a
+selection - status, shelf, stock, price - and every action writes a `bulk_edits`
+row first, which is what the banner's Undo spends. Three rules hold across all of
+them: nothing loops (D1 refuses over a hundred bound parameters, so ids travel as
+one bound JSON array, as `releaseOrders` does it); nothing is silently skipped (a
+listing left alone for holding copies, or for being part of a set, or a stock
+figure bent up to the reserved floor, is counted and said out loud); and the
+stock ledger row is written **before** the update, because D1 runs a batch in
+order and an INSERT that reads `books.stock` afterwards records every delta as
+zero - a ledger that looks healthy and says nothing.
+
+**A search that finds nothing can now be answered.** `searches` has always logged
+the terms anonymously; `book_requests` is the half with an address attached, left
+by the customer on the empty catalogue page. It is portal-only - nothing is ever
+sent automatically - which is why there is no `handled_at`: the privacy page
+promises the address goes when the owner is done with it, and the only way to
+keep that is for "Done with this" to be a DELETE.
+
 ## Connections
 
 Email (Resend), the Telegram bot, and portal sign-in are all optional - the
