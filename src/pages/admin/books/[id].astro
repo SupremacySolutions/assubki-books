@@ -1,6 +1,7 @@
 ---
 import { VAGUE, monthOptions, whenText } from '../../../lib/incoming';
 import Admin from '../../../layouts/Admin.astro';
+import PoundInput from '../../../components/PoundInput.astro';
 import CoverReview from '../../../components/CoverReview.astro';
 import { getBookAdmin, partCandidates } from '../../../lib/admin-db';
 import { allCategories, categoryCounts, setOptionsForOwner } from '../../../lib/db';
@@ -577,16 +578,12 @@ const captionStale = Boolean(
         <div class="grid gap-4 sm:grid-cols-3">
           <div>
             <label for="price" class="block text-[14.5px] font-medium mb-1.5">Price (£)</label>
-            <input
+            <PoundInput
               id="price"
               name="price"
-              type="number"
-              step="0.01"
-              inputmode="decimal"
               min="0"
               required
               value={((book?.price_pence ?? 0) / 100).toFixed(2)}
-              class="field tabular-nums"
             />
           </div>
           <div>

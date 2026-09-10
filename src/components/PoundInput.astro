@@ -1,0 +1,121 @@
+---
+/**
+ * A money field in pounds, stepped a pound at a time.
+ *
+ * Buttons rather than the browser's own spinner, which stepped by a penny.
+ * `step` cannot fix that: `step="1"` would make £3.75 invalid and block the
+ * form, and `step="any"` disables the spinner altogether - stepUp() throws on
+ * it. These also work on a phone, where number inputs have no spinner at all.
+ *
+ * Pence stay typeable in the box itself, and a click adds to whatever is
+ * there rather than rounding it off, so 3.75 + £1 gives 4.75.
+ */
+interface Props {
+  name: string;
+  id?: string;
+  /** Pounds, already formatted - `(pence / 100).toFixed(2)`. */
+  value?: string | number;
+  min?: string | number;
+  max?: string | number;
+  required?: boolean;
+  /** For a dense table row, where a full-width pair of buttons will not fit. */
+  compact?: boolean;
+  /** Only where there is no `<label for>` pointing at this. */
+  label?: string;
+  class?: string;
+}
+
+const {
+  name,
+  id,
+  value = '',
+  min = 0,
+  max,
+  required = false,
+  compact = false,
+  label,
+  class: extraClass = '',
+} = Astro.props;
+
+const button = compact
+  ? 'w-7 text-[15px]'
+  : 'w-9 text-[18px]';
+---
+
+<div class="flex items-stretch gap-1.5" data-pound>
+  <button
+    type="button"
+    data-pound-step="-1"
+    aria-label="A pound less"
+    class:list={[
+      'shrink-0 border border-[var(--color-rule)] rounded-[3px] bg-white leading-none text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-40',
+      button,
+    ]}
+  >−</button>
+  <input
+    id={id}
+    name={name}
+    type="number"
+    step="0.01"
+    inputmode="decimal"
+    min={min}
+    max={max}
+    required={required}
+    value={value}
+    aria-label={label}
+    class:list={[
+      'field tabular-nums text-center',
+      compact && '!text-[14px] !py-1.5 !px-1',
+      extraClass,
+    ]}
+  />
+  <button
+    type="button"
+    data-pound-step="1"
+    aria-label="A pound more"
+    class:list={[
+      'shrink-0 border border-[var(--color-rule)] rounded-[3px] bg-white leading-none text-[var(--color-navy)] hover:border-[var(--color-navy)] disabled:opacity-40',
+      button,
+    ]}
+  >+</button>
+</div>
+
+<script>
+  /*
+   * One listener set for every pound field on the page - a shipment lists one
+   * per row, and a `querySelector` written for a single field would only ever
+   * find the first.
+   */
+  for (const group of document.querySelectorAll<HTMLElement>('[data-pound]')) {
+    const input = group.querySelector<HTMLInputElement>('input');
+    if (!input) continue;
+
+    const floor = input.min === '' ? -Infinity : Number(input.min);
+    const ceiling = input.max === '' ? Infinity : Number(input.max);
+    const down = group.querySelector<HTMLButtonElement>('[data-pound-step="-1"]');
+    const up = group.querySelector<HTMLButtonElement>('[data-pound-step="1"]');
+
+    // A button that would only ever refuse the click says so before it is
+    // pressed, rather than quietly doing nothing.
+    const paint = () => {
+      const now = Number(input.value) || 0;
+      if (down) down.disabled = now - 1 < floor;
+      if (up) up.disabled = now + 1 > ceiling;
+    };
+
+    for (const button of group.querySelectorAll<HTMLButtonElement>('[data-pound-step]')) {
+      button.addEventListener('click', () => {
+        const now = Number(input.value) || 0;
+        const next = Math.min(ceiling, Math.max(floor, now + Number(button.dataset.poundStep)));
+        input.value = next.toFixed(2);
+        paint();
+        // Totals elsewhere on the page are painted from the field's own input
+        // event; a value set in script does not fire one on its own.
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+
+    input.addEventListener('input', paint);
+    paint();
+  }
+</script>

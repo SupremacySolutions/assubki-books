@@ -1,5 +1,6 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
+import PoundInput from '../../../components/PoundInput.astro';
 import { env } from 'cloudflare:workers';
 import {
   ADMIN_SHIPMENT_PAGE,
@@ -167,7 +168,7 @@ const canPromote = ['arrived', 'closed'].includes(shipment.status) && spareOnPag
 /* The grid is written once and used by the header row and every row under it,
    so a column cannot drift out of line with its own heading. */
 const COLS =
-  'grid grid-cols-[2.5rem_minmax(0,1fr)_5rem] md:grid-cols-[2.5rem_minmax(0,1fr)_4.5rem_5.5rem_5rem_8.5rem_6.5rem] gap-x-3 items-center';
+  'grid grid-cols-[2.5rem_minmax(0,1fr)_5rem] md:grid-cols-[2.5rem_minmax(0,1fr)_4.5rem_8.25rem_5rem_8.5rem_6.5rem] gap-x-3 items-center';
 ---
 
 <Admin
@@ -517,7 +518,7 @@ const COLS =
       <form
         method="post"
         action={`/api/admin/shipments/${id}/add`}
-        class="px-5 sm:px-7 py-4 bg-white border-b border-[var(--color-rule-soft)] grid gap-3 sm:grid-cols-[minmax(0,1fr)_6rem_6rem_6rem_7rem] sm:items-end"
+        class="px-5 sm:px-7 py-4 bg-white border-b border-[var(--color-rule-soft)] grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem_6rem_6rem_7rem] sm:items-end"
       >
         <div class="sm:col-span-5 -mb-1">
           <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
@@ -531,7 +532,7 @@ const COLS =
         </div>
         <div>
           <label for="add_price" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Price £</label>
-          <input id="add_price" name="price" type="number" step="0.01" min="0.01" required class="field !text-[14px]" />
+          <PoundInput id="add_price" name="price" min="0.01" required class="!text-[14px]" />
         </div>
         <div>
           <label for="add_volumes" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Volumes</label>
@@ -676,14 +677,12 @@ const COLS =
                       class="field !text-[14px] !py-1.5 !px-2"
                       aria-label="Volumes"
                     />
-                    <input
+                    <PoundInput
                       name={`price_${i.id}`}
-                      type="number"
-                      step="0.01"
                       min="0"
                       value={money(i.price_pence)}
-                      class="field !text-[14px] !py-1.5 !px-2"
-                      aria-label="Price in pounds"
+                      compact
+                      label="Price in pounds"
                     />
                     <input
                       name={`incoming_${i.id}`}

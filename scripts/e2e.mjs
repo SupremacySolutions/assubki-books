@@ -1056,7 +1056,27 @@ async function listings() {
   const held = await admin(`/api/admin/books/${book.id}/delete`);
   t.ok(held.location.includes('e=held'), 'delete is refused while a copy is held');
 
+  /*
+   * The bin on the row itself. Deleting used to mean opening the listing and
+   * scrolling to the bottom of the editor, so a mistaken import cost three
+   * pages to clear.
+   */
+  const listRows = await html(`/admin/books?q=${encodeURIComponent(book.title)}`);
+  t.ok(listRows.includes(`data-delete-book="${book.id}"`),
+    'a row offers a bin without opening the listing');
+  // `\sdisabled(?=[\s>])` rather than `disabled`: the enabled bin's class list
+  // carries `disabled:opacity-30`, which the looser pattern matched happily.
+  const binDead = (page) =>
+    new RegExp(`data-delete-book="${book.id}"[^>]*\\sdisabled(?=[\\s>])`).test(page);
+  t.ok(binDead(listRows),
+    'and the bin is dead while a copy is held, rather than 302ing to a refusal');
+  t.ok(listRows.includes('id="deleteBook"') && listRows.includes('id="deleteBookForm"') &&
+       !/onclick=|onsubmit=/.test(listRows),
+  'the confirmation is the site\'s own dialog, wired without inline handlers');
+
   await admin(`/api/admin/orders/${o.ref}/status`, { status: 'cancelled' });
+  const freeRow = await html(`/admin/books?q=${encodeURIComponent(book.title)}`);
+  t.ok(!binDead(freeRow), 'and it comes back to life once nothing is held');
   const gone = await admin(`/api/admin/books/${book.id}/delete`);
   t.ok(gone.location.includes('deleted'), 'delete succeeds once nothing is held');
   created.books = created.books.filter((id) => id !== book.id);
@@ -1187,6 +1207,20 @@ async function listings() {
   const editorSource = readFileSync('src/pages/admin/books/[id].astro', 'utf8');
   t.ok(!/coverClean\?\.review\([^)]*\)\s*\)\s*\?\?/.test(editorSource),
     'refusing a photo in the review panel does not upload it anyway');
+
+  /*
+   * Money is stepped a pound at a time.
+   *
+   * The browser's own spinner steps by a penny, which is useless on a price:
+   * £14 out of £13.99 was fourteen clicks. `step` cannot fix it - `step="1"`
+   * makes £3.75 invalid and blocks the form - so every money field carries
+   * its own pair of buttons instead.
+   */
+  const priced = await html(`/admin/books/${noPhoto.id}`);
+  t.ok(priced.includes('data-pound-step="1"') && priced.includes('data-pound-step="-1"'),
+    'the price field is stepped a pound at a time');
+  t.ok(!/name="price"[^>]*step="1"/.test(priced) && /name="price"[^>]*step="0.01"/.test(priced),
+    'and pence stay typeable in the box, so £3.75 is still a valid price');
 }
 
 // ---------------------------------------------------------------------------
