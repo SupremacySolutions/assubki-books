@@ -4,6 +4,7 @@ import { getOrderByRef, getOrderItems } from '../../../../../lib/admin-db';
 import { canAmend, planAmendment, NOTE_MAX, type AmendableLine } from '../../../../../lib/amend';
 import { notifyOrderAmended } from '../../../../../lib/notify';
 import { forgetDashboard } from '../../../../../lib/dashboard';
+import { postMessage } from '../../../../../lib/messages';
 import { readForm } from '../../../../../lib/request-body';
 import { HOLD_HOURS } from '../../../../../lib/orders';
 
@@ -267,6 +268,35 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   if (!done[done.length - 1].meta.changes) return back('?e=state');
 
   forgetDashboard();
+
+  /*
+   * The note goes into the thread as well as into the email.
+   *
+   * It used to go only to the customer's inbox and into `order_amendments`,
+   * which meant the order's own conversation did not contain the thing the
+   * owner had just said. ASB-BWS8 is what that looks like from the portal: two
+   * messages from the 11th, and no sign anywhere in the thread that the owner
+   * had asked "would you like to add anything else" on the 13th. The customer
+   * had been asked a question the order had no record of.
+   *
+   * Verbatim and unprefixed. It is the owner's own sentence, written to the
+   * customer, and dressing it up as a system notice would put words in their
+   * mouth and read differently from every other line in the thread.
+   *
+   * `postMessage` writes the row and moves the unread counter; it sends
+   * nothing. The note is already in the amendment email going out below, and a
+   * second message notification would deliver the same sentence twice.
+   */
+  if (note) {
+    await postMessage({ orderId: order.id, sender: 'owner', via: 'web', body: note }).catch(
+      (err) => {
+        // The amendment itself stands. A thread that is missing a line is the
+        // problem this solves, not a reason to undo the change that caused it.
+        console.error('[admin] amendment note could not be threaded', ref, err);
+        return null;
+      },
+    );
+  }
 
   /*
    * Read back rather than assumed. The figures the customer is sent have to be
