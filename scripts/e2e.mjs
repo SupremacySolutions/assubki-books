@@ -5503,6 +5503,50 @@ async function amendingOrders() {
   t.ok(after.at !== null, 'the order records that it was amended');
 
   /*
+   * The note reaches the thread, not only the customer's inbox.
+   *
+   * ASB-BWS8 is why. Its amendment note asked the customer a question and went
+   * out by email, and the order's own conversation had no record of it - two
+   * messages from two days earlier and nothing since - so the portal showed a
+   * thread that had apparently gone quiet while the customer was waiting on an
+   * answer they had never been shown asking for.
+   */
+  const threaded = await db(
+    `SELECT m.sender, m.body FROM messages m
+       JOIN orders o ON o.id = m.order_id
+      WHERE o.ref='${o.ref}' ORDER BY m.id DESC LIMIT 1`,
+  );
+  t.ok(threaded[0]?.body === 'Taken off at your request.',
+    'the amendment note is posted into the thread as well as emailed');
+  t.ok(threaded[0]?.sender === 'owner',
+    'in the owner\'s own words, not dressed up as a system notice');
+  const badged = await one(
+    `SELECT unread_for_customer AS n FROM orders WHERE ref='${o.ref}'`,
+  );
+  t.ok(badged.n > 0, 'and the customer is shown there is something new to read');
+
+  /*
+   * An amendment with nothing typed leaves the thread alone rather than posting
+   * an empty line into it. On its own order, because the one above now has a
+   * single line left and taking that off is a cancellation rather than an
+   * amendment - which would test the refusal, not the silence.
+   */
+  const quietBook = await makeBook({ stock: '5', price: '8.00' });
+  const quiet = await placeOrder(quietBook.id, 'delivery', {
+    items: [{ bookId: quietBook.id, qty: 2 }],
+  });
+  const quietLines = await lines(quiet.ref);
+  const noNote = await admin(`/api/admin/orders/${quiet.ref}/amend`, {
+    [`qty_${quietLines[0].id}`]: '1',
+  });
+  t.ok(noNote.location.includes('amended=1'), 'an amendment with no note still goes through');
+  const silent = await db(
+    `SELECT COUNT(*) AS n FROM messages m JOIN orders o ON o.id = m.order_id
+      WHERE o.ref='${quiet.ref}'`,
+  );
+  t.ok(silent[0].n === 0, 'and adds no message of its own');
+
+  /*
    * The invariant the integrity suite checks for every book: `reserved` is the
    * sum of that book's ledger deltas. A release that moved stock without
    * writing it down would pass every visible assertion above and break that.

@@ -261,6 +261,14 @@ restores it, and the cron Worker destroys it for good after thirty days.
   fill the channel with adverts for books that no longer exist. Restoring cannot
   bring the post back; the listing page reposts it.
 
+**An amendment's note goes into the thread as well as the email.** It used to go
+only to the customer's inbox and into `order_amendments`, so the order's own
+conversation had no record of what the owner had just said - ASB-BWS8 was
+amended with a question in it and the thread showed nothing after the 11th.
+`postMessage` writes it verbatim as an owner message and moves the unread
+counter; it sends nothing, because the note is already in the amendment email
+and a second notification would deliver the same sentence twice.
+
 **A hold that runs out asks the owner rather than cancelling the order.** The
 48 hours still pass and the cron Worker still notices, but all it does is stamp
 `orders.lapsed_at` (migration 0044). The order keeps its status, its lines, its
