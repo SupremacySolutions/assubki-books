@@ -5,6 +5,7 @@ import { canAmend, planAmendment, NOTE_MAX, type AmendableLine } from '../../../
 import { notifyOrderAmended } from '../../../../../lib/notify';
 import { forgetDashboard } from '../../../../../lib/dashboard';
 import { readForm } from '../../../../../lib/request-body';
+import { HOLD_HOURS } from '../../../../../lib/orders';
 
 export const prerender = false;
 
@@ -245,6 +246,18 @@ export const POST: APIRoute = async ({ params, request, url }) => {
               total_pence = CASE WHEN total_pence IS NULL THEN NULL
                                  ELSE ${GROSS} - MIN(?2, ${GROSS}) + ?3 END,
               amended_at = unixepoch(),
+              -- Amending restarts the hold and clears any lapse with it. The
+              -- owner editing an order is the clearest signal it is still live,
+              -- and the clock used to carry on regardless: ASB-BWS8 was amended
+              -- with thirty-two minutes left and swept away before anyone could
+              -- act on the amendment.
+              --
+              -- Only while it is still a shelf hold. The expiry column is stale
+              -- on a confirmed order by design, so writing a fresh one there
+              -- would invent a deadline that order does not have.
+              expires_at = CASE WHEN status = 'requested' AND expires_at IS NOT NULL
+                                THEN unixepoch() + ${HOLD_HOURS * 3600} ELSE expires_at END,
+              lapsed_at = CASE WHEN status = 'requested' THEN NULL ELSE lapsed_at END,
               updated_at = unixepoch()
         WHERE id = ?1 AND ${allowed}`,
     ).bind(order.id, plan.discountAfter, postagePence),

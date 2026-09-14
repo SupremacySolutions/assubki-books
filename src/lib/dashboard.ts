@@ -20,6 +20,8 @@ const DAY = 86_400;
 export interface Dashboard {
   /** Waiting on the owner right now. */
   toConfirm: number;
+  /** Of those, the ones whose 48-hour hold has already run out. */
+  lapsed: number;
   oldestWaitingHours: number | null;
   awaitingPayment: number;
   awaitingPence: number;
@@ -77,6 +79,8 @@ async function read(days: number): Promise<Dashboard> {
     env.DB.prepare(
       `SELECT
          SUM(CASE WHEN status = 'requested' THEN 1 ELSE 0 END) AS toConfirm,
+         SUM(CASE WHEN status = 'requested' AND lapsed_at IS NOT NULL
+                  THEN 1 ELSE 0 END) AS lapsed,
          MIN(CASE WHEN status = 'requested' THEN created_at END) AS oldest,
          SUM(CASE WHEN status = 'awaiting_payment' THEN 1 ELSE 0 END) AS awaiting,
          SUM(CASE WHEN status = 'awaiting_payment'
@@ -197,6 +201,7 @@ async function read(days: number): Promise<Dashboard> {
 
   return {
     toConfirm: Number(w.toConfirm ?? 0),
+    lapsed: Number(w.lapsed ?? 0),
     oldestWaitingHours: w.oldest ? Math.floor((now - Number(w.oldest)) / 3600) : null,
     awaitingPayment: Number(w.awaiting ?? 0),
     awaitingPence: Number(w.awaitingPence ?? 0),

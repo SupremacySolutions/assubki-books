@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getOrderByRef } from '../../../../../lib/admin-db';
+import { HOLD_HOURS } from '../../../../../lib/orders';
 
 export const prerender = false;
 
@@ -33,7 +34,21 @@ export const POST: APIRoute = async ({ params }) => {
       headers: { Location: `/admin/orders/${encodeURIComponent(ref)}${query}` },
     });
 
-  if (!order.pay_by) {
+  /*
+   * Two deadlines, and which one this moves depends on which the order has.
+   *
+   * `pay_by` is the reservation's: set when a delivery lands, answerable to the
+   * next person in the queue, and a week is what the arrival gave them in the
+   * first place. `expires_at` is the shelf hold's - the forty-eight hours the
+   * owner has to deal with a new order - and until now nothing could move it at
+   * all, so an owner whose hold had run out had no answer to give except cancel
+   * and ask the customer to start again.
+   *
+   * A reservation's deadline wins when an order somehow carries both, because
+   * it is the one with somebody else waiting behind it.
+   */
+  const reservation = Boolean(order.pay_by);
+  if (!reservation && !order.expires_at) {
     return back('?e=' + encodeURIComponent('that order has no deadline to extend'));
   }
 
@@ -41,10 +56,20 @@ export const POST: APIRoute = async ({ params }) => {
    * Only while it is still live. An order that has been paid, cancelled or
    * already released has nothing to wait for, and moving its date would be a
    * change with no meaning that the sweep might later act on.
+   *
+   * Extending clears `lapsed_at` in the same statement: the whole point of the
+   * press is that the owner has now dealt with it, and a flag left standing
+   * would keep the order in the portal's "waiting on you" list for a deadline
+   * that is no longer passed.
    */
   const done = await env.DB.prepare(
-    `UPDATE orders SET pay_by = unixepoch() + ? * 86400, updated_at = unixepoch()
-      WHERE id = ? AND status IN ('requested', 'awaiting_payment')`,
+    reservation
+      ? `UPDATE orders SET pay_by = unixepoch() + ?1 * 86400, lapsed_at = NULL,
+                           updated_at = unixepoch()
+          WHERE id = ?2 AND status IN ('requested', 'awaiting_payment')`
+      : `UPDATE orders SET expires_at = unixepoch() + ${HOLD_HOURS * 3600}, lapsed_at = NULL,
+                           updated_at = unixepoch()
+          WHERE id = ?2 AND status = 'requested'`,
   )
     .bind(MORE_DAYS, order.id)
     .run();

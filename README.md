@@ -261,6 +261,35 @@ restores it, and the cron Worker destroys it for good after thirty days.
   fill the channel with adverts for books that no longer exist. Restoring cannot
   bring the post back; the listing page reposts it.
 
+**A hold that runs out asks the owner rather than cancelling the order.** The
+48 hours still pass and the cron Worker still notices, but all it does is stamp
+`orders.lapsed_at` (migration 0044). The order keeps its status, its lines, its
+messages **and its held copies** until a person confirms it, extends it or
+cancels it. `orders.status` could not carry this - its CHECK constraint is fixed
+and `orders` is referenced by eight tables - and a lapsed order is not in a
+different state anyway, it is in the same state and late.
+
+What that replaced: the sweep used to release the copies and set
+`status='expired'`. It did that to ASB-BWS8 at 16:00 on 13 September, thirty-two
+minutes after the owner had amended it, with an open message thread on it.
+Nothing malfunctioned; the rule could not see that somebody was working on it.
+`expired` now means only a reservation that went unpaid after its books landed -
+a deadline owed to the next person in the queue rather than a guess at how long
+the owner needs.
+
+**The cost is deliberate and has to stay visible.** Copies on a lapsed order
+stay off the shelf, so an ignored order can block a sale. That is why the flag
+is raised at the top of checkout as well as quarter-hourly, why the dashboard
+counts lapsed orders separately from "to confirm", why they sort to the top of
+the queue, and why the banner on the order page says how many copies are being
+held.
+
+**Amending an order restarts its 48 hours** and clears any lapse. The owner
+editing an order is the clearest evidence it is still live. `extend.ts` now moves
+whichever deadline the order actually has - `pay_by` for a reservation, else
+`expires_at` - so "give it another 48 hours" is an answer the owner has for a
+shelf hold, which it was not before.
+
 **A selection can be binned in one press.** `/admin/books` ticks rows and
 `softDeleteMany` puts them in the bin together, writing one `bulk_edits` row
 first - which is what the banner's Undo spends, and what puts the whole

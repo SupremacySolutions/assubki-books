@@ -336,14 +336,54 @@ async function stockAndHolds() {
   for (const r of racers) if (r.body.ref) created.orders.push(r.body.ref);
   t.ok(racers.filter((r) => r.body.ok).length === 0, 'no second customer can take the last copy');
 
-  // The hold lapses and the copy comes back.
+  /*
+   * The hold lapses, and the order survives it.
+   *
+   * This used to assert the opposite - copy released, status `expired` - and
+   * the change is the point. The sweep cancelled an order that the owner had
+   * been editing thirty-two minutes earlier, with an open thread on it. It now
+   * raises a flag and leaves everything else alone.
+   */
   await db(`UPDATE orders SET expires_at = unixepoch() - 60 WHERE ref = '${order.ref}'`);
   const spare = await makeBook({ stock: '1' });
   await placeOrder(spare.id, 'collection'); // any order runs the sweep first
+  const lapsed = await one(
+    `SELECT status, lapsed_at, expires_at FROM orders WHERE ref='${order.ref}'`,
+  );
+  t.ok(lapsed.lapsed_at !== null, 'a hold that runs out is flagged for the owner');
+  t.ok(lapsed.status === 'requested', 'and the order is left alive rather than cancelled');
+  const stillHeld = await one(`SELECT reserved FROM books WHERE id=${book.id}`);
+  t.ok(stillHeld.reserved === 1, 'its copy stays held until a person decides otherwise');
+
+  /* Idempotent: the sweep runs every quarter hour, and a second pass must not
+     re-stamp an order the owner is already looking at. */
+  const firstFlag = lapsed.lapsed_at;
+  await db(`UPDATE orders SET lapsed_at = lapsed_at - 3600 WHERE ref='${order.ref}'`);
+  const moved = await one(`SELECT lapsed_at FROM orders WHERE ref='${order.ref}'`);
+  /* A fresh book to buy, rather than a second attempt at `spare` that is meant
+     to fail: the sweep runs at the top of checkout either way, but a test that
+     depends on an order being refused is one bad stock count away from testing
+     nothing at all. */
+  const trigger = await makeBook({ stock: '1' });
+  await placeOrder(trigger.id, 'collection');
+  const again = await one(`SELECT lapsed_at FROM orders WHERE ref='${order.ref}'`);
+  t.ok(again.lapsed_at === moved.lapsed_at, 'and a second sweep leaves the flag where it was');
+  t.ok(firstFlag !== null, 'the first sweep is what set it');
+
+  /* Extending clears the flag and gives the full window back, which is the
+     owner's answer to "I need longer" that did not exist before. */
+  await admin(`/api/admin/orders/${order.ref}/extend`);
+  const extended = await one(
+    `SELECT lapsed_at, expires_at FROM orders WHERE ref='${order.ref}'`,
+  );
+  t.ok(extended.lapsed_at === null, 'extending takes the order off the waiting list');
+  t.ok(extended.expires_at > Math.floor(Date.now() / 1000) + 47 * 3600,
+    'and puts a full forty-eight hours back on the clock');
+
+  // Cancelling is still what actually returns the copy, and still balances.
+  await admin(`/api/admin/orders/${order.ref}/status`, { status: 'cancelled' });
   const released = await one(`SELECT reserved FROM books WHERE id=${book.id}`);
-  t.ok(released.reserved === 0, 'a lapsed hold releases its copy');
-  const expired = await one(`SELECT status FROM orders WHERE ref='${order.ref}'`);
-  t.ok(expired.status === 'expired', 'and the order is marked expired');
+  t.ok(released.reserved === 0, 'cancelling a lapsed order is what puts the copy back');
 
   const ledger = await one(
     `SELECT COALESCE(SUM(delta),0) AS net FROM stock_ledger
@@ -5396,6 +5436,35 @@ async function amendingOrders() {
 
   const start = await held(o.ref, [stays.id, goes.id]);
   t.ok(start.b0 === 2 && start.b1 === 2, 'the order holds every copy it asked for');
+
+  /*
+   * Amending restarts the forty-eight hours.
+   *
+   * ASB-BWS8 is the reason. The owner amended it with thirty-two minutes left
+   * on the clock and the sweep took it half an hour later, because editing an
+   * order did not count as touching it. Editing is now the clearest possible
+   * evidence that somebody is dealing with the order, so the window starts
+   * again - and any lapse already flagged is cleared with it.
+   *
+   * On an order of its own: an amendment only ever reduces, so it cannot be
+   * undone afterwards, and spending the shared fixture's quantities here would
+   * leave every later assertion measuring a different order.
+   */
+  const clockBook = await makeBook({ stock: '5', price: '9.00' });
+  const clock = await placeOrder(clockBook.id, 'delivery', {
+    items: [{ bookId: clockBook.id, qty: 2 }],
+  });
+  await db(`UPDATE orders SET expires_at = unixepoch() + 600, lapsed_at = unixepoch()
+             WHERE ref='${clock.ref}'`);
+  const clockLines = await lines(clock.ref);
+  await admin(`/api/admin/orders/${clock.ref}/amend`, { [`qty_${clockLines[0].id}`]: '1' });
+  const refreshed = await one(
+    `SELECT expires_at, lapsed_at FROM orders WHERE ref='${clock.ref}'`,
+  );
+  t.ok(refreshed.expires_at > Math.floor(Date.now() / 1000) + 47 * 3600,
+    'amending puts a full forty-eight hours back on the hold');
+  t.ok(refreshed.lapsed_at === null,
+    'and clears the lapse, because somebody is plainly dealing with it');
 
   const row = await lines(o.ref);
   const lineOf = (bookId) => row.find((l) => l.book_id === bookId).id;

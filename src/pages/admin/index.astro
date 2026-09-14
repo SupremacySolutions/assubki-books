@@ -150,6 +150,13 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     >
       <p class="eyebrow">To confirm</p>
       <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toConfirm}</p>
+      {/* A lapsed hold is not "waiting", it is overdue and holding stock, so it
+          gets its own line rather than being folded into the count above. */}
+      {d.lapsed > 0 && (
+        <p class="mt-1.5 text-[12.5px] font-medium text-[var(--color-outstock)]">
+          {d.lapsed} past the 48 hours
+        </p>
+      )}
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
         {d.oldestWaitingHours === null
           ? 'nothing waiting'
@@ -420,7 +427,8 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       ) : (
         <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
           {pending.map((o) => {
-            const hoursLeft = o.expires_at
+            const isLapsed = o.lapsed_at !== null;
+            const hoursLeft = !isLapsed && o.expires_at
               ? Math.max(0, Math.round((o.expires_at * 1000 - Date.now()) / 3_600_000))
               : null;
             return (
@@ -446,6 +454,11 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
                         ]}
                       >
                         {hoursLeft}h left
+                      </p>
+                    )}
+                    {isLapsed && (
+                      <p class="text-[12.5px] font-medium text-[var(--color-outstock)]">
+                        hold ran out
                       </p>
                     )}
                   </div>

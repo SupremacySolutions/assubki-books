@@ -15,7 +15,7 @@
  * catalogue's *displayed* availability honest between orders.
  */
 
-import { expireOrders } from '../../src/lib/stock-release';
+import { expireOrders, flagLapsedHolds } from '../../src/lib/stock-release';
 import { pruneSearches } from '../../src/lib/searches';
 import { pruneAlerts, drainStockAlerts } from '../../src/lib/stock-alerts';
 import { purgeDeletedBooks } from '../../src/lib/book-deletion';
@@ -32,8 +32,16 @@ interface Env {
   UPLOADS?: R2Bucket;
 }
 
-export async function expireHolds(db: D1Database): Promise<{ orders: number; copies: number }> {
-  return expireOrders(db);
+/**
+ * Shelf holds that have run out, marked rather than cancelled.
+ *
+ * The Worker is still named for expiring holds and no longer does: renaming it
+ * would mean a new Worker, a new cron and a gap while the old one is deleted,
+ * for a change of vocabulary. What it releases now is reservations; what it
+ * does to a lapsed hold is point at it.
+ */
+export async function markLapsedHolds(db: D1Database): Promise<number> {
+  return flagLapsedHolds(db);
 }
 
 /**
@@ -60,7 +68,7 @@ export async function expireHolds(db: D1Database): Promise<{ orders: number; cop
 export async function expireUnpaidReservations(
   db: D1Database,
 ): Promise<{ orders: number; copies: number }> {
-  return expireOrders(db, true);
+  return expireOrders(db);
 }
 
 /**
@@ -109,9 +117,10 @@ export async function expireGroupBaskets(db: D1Database): Promise<number> {
  * still reads as a conversation - "they sent a photo here, and it has since
  * been removed" - rather than developing a hole.
  *
- * `expired` is swept alongside `completed` and `cancelled`: a lapsed hold is
- * just as over as a cancelled order, and it would be an odd rule that kept
- * somebody's bank details longer because nobody got round to answering them.
+ * `expired` is swept alongside `completed` and `cancelled`. It now means only
+ * a reservation that went unpaid after its books landed - a shelf hold that
+ * runs out is flagged and left alive - and that is just as over as a cancelled
+ * order, so the same rule applies.
  */
 const KEEP_AFTER_CLOSE = 183 * 24 * 60 * 60;
 
@@ -204,8 +213,8 @@ async function stage<T>(name: string, run: () => Promise<T>): Promise<T | null> 
 
 export default {
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    const held = await stage('expire holds', () => expireHolds(env.DB));
-    if (held?.orders) console.log(`expired ${held.orders} hold(s), released ${held.copies} cop(ies)`);
+    const lapsed = await stage('flag lapsed holds', () => markLapsedHolds(env.DB));
+    if (lapsed) console.log(`${lapsed} hold(s) ran out and are waiting on the owner`);
 
     const unpaid = await stage('expire unpaid reservations', () =>
       expireUnpaidReservations(env.DB),
@@ -347,7 +356,7 @@ export default {
      * worth being able to run on demand, because one releases stock and the
      * other writes to customers.
      */
-    const result = await expireHolds(env.DB);
+    const lapsed = await markLapsedHolds(env.DB);
     const unpaid = await expireUnpaidReservations(env.DB);
     const told = await drainArrivalNotices(env.DB, SITE.url);
     const alerts = await drainStockAlerts(env.DB, SITE.url);
@@ -361,7 +370,7 @@ export default {
     const edits = await pruneBulkEdits(env.DB);
     const asked = await pruneRequests(env.DB);
     return Response.json({
-      ...result, unpaid, told, alerts, groups, proofs, searches, destroyed, edits, asked,
+      lapsed, unpaid, told, alerts, groups, proofs, searches, destroyed, edits, asked,
     });
   },
 } satisfies ExportedHandler<Env>;
