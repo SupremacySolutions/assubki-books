@@ -9,7 +9,7 @@
 import { env } from 'cloudflare:workers';
 import { whenText } from './incoming';
 import { salePrice, orderDiscount, totals } from './sales';
-import { expireOrders } from './stock-release';
+import { expireOrders, flagLapsedHolds } from './stock-release';
 import type { AddressParts } from './address';
 
 export const HOLD_HOURS = 48;
@@ -81,13 +81,26 @@ function randomToken(): string {
 }
 
 /**
- * Releases holds that were never confirmed.
+ * Brings the deadlines up to date before stock is counted.
  *
- * A dedicated cron Worker runs this on a schedule, but it also runs at the top
- * of order creation: whether a customer can buy the last copy must not depend
- * on when a scheduled job last fired.
+ * A dedicated cron Worker runs both of these on a schedule, but they run at the
+ * top of order creation too: whether a customer can buy the last copy must not
+ * depend on when a scheduled job last fired.
+ *
+ * What that guarantee now covers is narrower than it was, and the narrowing is
+ * deliberate rather than an oversight. Reservations still release here - their
+ * deadline is a promise to the next person in the queue. A shelf hold that has
+ * run out is only *flagged*: its copies stay off the shelf until the owner says
+ * otherwise, because the alternative was cancelling orders out from under a
+ * conversation.
+ *
+ * So an ignored order can block a sale, and that is the trade. It is why the
+ * flag is raised here rather than only quarter-hourly - the owner should learn
+ * about it at the first possible moment - and why the portal shows lapsed
+ * orders first, on the dashboard and at the top of the queue.
  */
 export async function expireStaleHolds(): Promise<number> {
+  await flagLapsedHolds(env.DB);
   return (await expireOrders(env.DB)).orders;
 }
 

@@ -205,6 +205,21 @@ const totalCopies = items.reduce((n, item) => n + item.qty, 0);
 const hoursLeft = order.expires_at
   ? Math.max(0, Math.round((order.expires_at * 1000 - Date.now()) / 3_600_000))
   : null;
+/*
+ * A hold that ran out. The order is still `requested` and still holds its
+ * copies - the sweep flags it and leaves it alone - so this is the one thing on
+ * the page that has to be impossible to miss.
+ */
+const lapsed = order.status === 'requested' && order.lapsed_at !== null;
+const lapsedDays = order.lapsed_at
+  ? Math.floor((Date.now() - order.lapsed_at * 1000) / 86_400_000)
+  : 0;
+const lapsedWhen = order.lapsed_at
+  ? new Date(order.lapsed_at * 1000).toLocaleString('en-GB', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+  : '';
 
 const sentVia = Astro.url.searchParams.get('sent');
 const saved = Astro.url.searchParams.get('saved');
@@ -229,6 +244,42 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
     * instead, and this is what it notices the move against.
     */}
   <div data-order-status={order.status} data-order-ref={order.ref}></div>
+  {
+    /*
+     * The hold ran out, and nothing was done about it.
+     *
+     * This sits above everything because of what it replaced. The sweep used to
+     * cancel the order outright at this moment - copies back on the shelf,
+     * status `expired`, conversation over - and it did that to an order the
+     * owner had been editing thirty-two minutes earlier. Now the deadline only
+     * ever produces this banner, and the order waits.
+     *
+     * It says the copies are still held on purpose. That is the cost of not
+     * cancelling: an order left here keeps books off the shelf, so the owner
+     * has to be told what ignoring it costs rather than left to find out.
+     */
+    lapsed && (
+      <div class="mb-5 p-4 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/40 rounded-[3px]">
+        <p class="text-[15px] font-medium text-[var(--color-outstock)]">
+          The 48-hour hold ran out
+          {lapsedDays >= 1 && ` ${lapsedDays} day${lapsedDays === 1 ? '' : 's'} ago`}, and this is
+          waiting on you.
+        </p>
+        <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+          Nothing was cancelled and nothing was sent. {totalCopies} cop{totalCopies === 1 ? 'y is' : 'ies are'}
+          {' '}still held off the shelf for this order, so it is worth an answer either way — confirm
+          it, give it longer, or cancel it to put the books back.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <form method="post" action={`/api/admin/orders/${order.ref}/extend`}>
+            <button type="submit" class="btn btn-ghost !py-1.5 !px-3 !text-[13px]">
+              Another 48 hours
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
   {
     saved === 'tracking' && (
       <p class="mb-5 p-3.5 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
@@ -1061,12 +1112,20 @@ const steps = nextActions(order.status, order.fulfilment, isCash)
           <span>{new Date(order.created_at * 1000).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</span>
         </div>
         {
-          order.status === 'requested' && hoursLeft !== null && (
+          order.status === 'requested' && hoursLeft !== null && !lapsed && (
             <div class="flex justify-between gap-3">
               <span class="text-[var(--color-ink-faint)]">Hold expires</span>
               <span class={hoursLeft <= 6 ? 'text-[var(--color-outstock)] font-medium' : ''}>
                 in {hoursLeft}h
               </span>
+            </div>
+          )
+        }
+        {
+          lapsed && (
+            <div class="flex justify-between gap-3">
+              <span class="text-[var(--color-ink-faint)]">Hold ran out</span>
+              <span class="text-[var(--color-outstock)] font-medium">{lapsedWhen}</span>
             </div>
           )
         }

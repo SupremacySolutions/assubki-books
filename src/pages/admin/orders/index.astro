@@ -61,7 +61,11 @@ const TONE: Record<string, string> = {
  * is; everything settled drops to a compact row below.
  */
 const OPEN = ['requested', 'awaiting_payment', 'paid', 'dispatched'];
-const queue = orders.filter((o) => OPEN.includes(o.status));
+/* Lapsed holds first. They are the only rows where nothing happens until the
+   owner acts, and they are holding stock while they wait. */
+const queue = orders
+  .filter((o) => OPEN.includes(o.status))
+  .sort((a, b) => Number(b.lapsed_at !== null) - Number(a.lapsed_at !== null));
 const settled = orders.filter((o) => !OPEN.includes(o.status));
 
 /** Waiting on the owner is the urgent one; the rest are waiting on someone else. */
@@ -184,7 +188,8 @@ function facts(o: (typeof orders)[number]): string[] {
         <ul class="space-y-2.5">
           {queue.map((o) => {
             const waited = hours(o.created_at);
-            const left = o.status === 'requested' ? until(o.expires_at) : null;
+            const isLapsed = o.status === 'requested' && o.lapsed_at !== null;
+            const left = o.status === 'requested' && !isLapsed ? until(o.expires_at) : null;
             return (
               <li class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden hover:border-[var(--color-navy)] transition-colors">
                 {/* The whole bar is the link. It used to be a card with one
@@ -226,6 +231,13 @@ function facts(o: (typeof orders)[number]): string[] {
                           left <= 6 ? 'text-[var(--color-outstock)] font-medium' : 'text-[var(--color-ink-faint)]',
                         ]}>
                           hold expires in {left}h
+                        </p>
+                      )}
+                      {/* The hold is gone rather than going, and the order is
+                          still holding its copies until somebody says otherwise. */}
+                      {isLapsed && (
+                        <p class="text-[13px] font-medium text-[var(--color-outstock)]">
+                          hold ran out
                         </p>
                       )}
                     </div>
