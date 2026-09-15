@@ -18,7 +18,7 @@ import { price } from '../../lib/format';
 import { statusLabel, isSettled, moneyReceived, trackingUrl, cashMoment, portalLabel } from '../../lib/order-status';
 import { collectionAddress } from '../../lib/settings';
 import { cancelRight, REASON_MAX } from '../../lib/cancellation';
-import { amendments, removedSummary } from '../../lib/amend';
+import { amendments, lineSummary } from '../../lib/amend';
 import { whenText } from '../../lib/incoming';
 import { getShipment } from '../../lib/shipments';
 import Thread from '../../components/Thread.astro';
@@ -137,12 +137,15 @@ const sendError = order
   : null;
 
 /*
- * Books that have come off this order since it was placed.
+ * Books that have come off this order since it was placed, and books that have
+ * gone on to it.
  *
  * Read only when the order says there are any. A customer comparing this page
  * against the confirmation in their inbox has to be able to see why the two
  * lists differ - without it the shop looks as though it quietly changed the
- * order, which is the opposite of what an amendment is for.
+ * order, which is the opposite of what an amendment is for. That cuts both
+ * ways: a line that appeared without explanation reads worse than one that
+ * vanished, because it is a line they are being asked to pay for.
  */
 const changes = order?.amended_at ? await amendments(order.id) : [];
 
@@ -608,7 +611,7 @@ if (offerTelegram && telegramLink) {
               why the list below does not match the message in their inbox. */}
           {changes.length > 0 && (
             <div class="mb-4 p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-left">
-              <p class="eyebrow mb-1.5">This order was amended</p>
+              <p class="eyebrow mb-1.5">This order was changed</p>
               <ul class="space-y-2.5">
                 {changes.map((change) => (
                   <li class="text-[14px] leading-relaxed">
@@ -619,8 +622,18 @@ if (offerTelegram && telegramLink) {
                       })}
                       {' · '}
                     </span>
-                    {removedSummary(change.removed)}{' '}
-                    {change.removed.length === 1 ? 'was' : 'were'} taken off.
+                    {change.removed.length > 0 && (
+                      <>
+                        {lineSummary(change.removed)}{' '}
+                        {change.removed.length === 1 ? 'was' : 'were'} taken off.{' '}
+                      </>
+                    )}
+                    {change.added.length > 0 && (
+                      <>
+                        {lineSummary(change.added)}{' '}
+                        {change.added.length === 1 ? 'was' : 'were'} added.{' '}
+                      </>
+                    )}
                     {change.totalBefore !== null && change.totalAfter !== null && (
                       <span class="text-[var(--color-ink-soft)]">
                         {' '}The total went from {price(change.totalBefore)} to{' '}

@@ -1,0 +1,35 @@
+-- Books going *on* to an order that has already been placed.
+--
+-- Taking them off arrived first, in `0041`, and was deliberately one-way: the
+-- note in lib/amend said adding was a different act needing an availability
+-- check, a fresh hold, the set pool and today's sale price, and that somebody
+-- who wants more books places another order.
+--
+-- That is what the shop had been asking people to do, and it is the wrong
+-- answer for the case that actually turns up - "could you put the second volume
+-- in as well" in the middle of a conversation about an order that is not paid
+-- for yet. A second order means a second reference, a second hold with its own
+-- clock, a second postage quote on the same parcel, and two rows in the portal
+-- for one box. The owner was doing the arithmetic by hand and telling the
+-- customer the figure, which is exactly the gap amending closed from the other
+-- direction.
+--
+-- So an addition is the same kind of event as a removal, recorded in the same
+-- table: a change to what was agreed, with both sets of figures, kept for the
+-- day the customer compares their page against a message in their inbox.
+
+-- What went on, in the same shape `removed` uses: JSON,
+-- [{ "title": …, "qty": …, "pricePence": … }], snapshotted at the moment it
+-- happened rather than joined to `books`, so a title later deleted from the
+-- catalogue still names itself here.
+--
+-- Nullable, and null on every row written before this migration. A row is one
+-- or the other in practice - the portal offers two panels and each posts its
+-- own - but nothing here forbids both being present, and the pages that read
+-- this table render whichever sides are there.
+ALTER TABLE order_amendments ADD COLUMN added TEXT;
+
+-- `orders.amended_at` keeps its meaning and its job: the marker that says this
+-- table is worth reading for this order. It now means "what was agreed changed"
+-- rather than "books came off", which is what every page using it already needs
+-- it to mean.

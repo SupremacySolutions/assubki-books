@@ -22,8 +22,14 @@ import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
 import { deliver, ownerAddress, shell, button, itemRows, escapeHtml, noReply, noReplyText } from './email';
 import { sendMessage, sendMessageId, optInLink, esc, botConfigured, mdLink } from './telegram';
-import { statusMessage, amendmentMessage, cashMoment, BACK_IN_STOCK } from './order-status';
-import { removedSummary } from './amend';
+import {
+  statusMessage,
+  amendmentMessage,
+  additionMessage,
+  cashMoment,
+  BACK_IN_STOCK,
+} from './order-status';
+import { lineSummary } from './amend';
 import { getSetting } from './settings';
 
 export interface PlacedInput {
@@ -475,7 +481,7 @@ export async function notifyOrderAmended(
   const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
   const copy = amendmentMessage({
     ref: input.ref,
-    removed: removedSummary(input.removed),
+    removed: lineSummary(input.removed),
     count: input.removed.length,
     fulfilment: input.fulfilment,
     totalPence: input.totalPence,
@@ -566,6 +572,147 @@ export async function notifyOrderAmended(
   // rather than only in a Worker log.
   if (!sent.email && !sent.telegram) {
     await recordNotifyFailure(`amendment for ${input.ref} - nothing could be delivered`);
+  } else {
+    await clearNotifyFailure();
+  }
+  return sent;
+}
+
+// ---------------------------------------------------------------------------
+// 2c. Books went on to an order
+// ---------------------------------------------------------------------------
+
+export interface AddedInput {
+  ref: string;
+  token: string;
+  name: string;
+  email: string;
+  telegramChatId?: string | null;
+  /** What went on, as the new lines read. */
+  added: { title: string; qty: number; pricePence: number }[];
+  /** Everything the order holds now, which is the list that describes it. */
+  items: { title: string; qty: number; pricePence: number }[];
+  /** The additions are claims on a delivery rather than copies off the shelf. */
+  fromIncoming?: boolean;
+  subtotalPence: number;
+  postagePence: number | null;
+  /** Null on an order that has not been quoted a total yet. */
+  totalPence: number | null;
+  fulfilment: string;
+  cashPayment?: boolean;
+  /** The owner's own words about the change, if they wrote any. */
+  note?: string | null;
+  origin: string;
+}
+
+/**
+ * Tells a customer their order is bigger than it was.
+ *
+ * The same shape as the removal message and, where it matters, the same
+ * promises: both channels, because this changes what they owe; and it never
+ * fails loudly, because by the time it runs the copies are already held against
+ * this order and the order already says so. A Telegram outage must not be able
+ * to undo a hold - the owner is told what did not go out and can say it in the
+ * thread instead.
+ *
+ * One asymmetry is worth naming. A customer who is told nothing about a
+ * *removal* ends up owing less than they think; one told nothing about an
+ * addition pays too little and the shop chases them. So a failed send here is
+ * reported exactly as loudly, and lands in the same place the portal already
+ * looks.
+ */
+export async function notifyBooksAdded(
+  input: AddedInput,
+): Promise<{ email: boolean; telegram: boolean }> {
+  const link = `${input.origin}/order?ref=${input.ref}&t=${input.token}`;
+  const copy = additionMessage({
+    ref: input.ref,
+    added: lineSummary(input.added),
+    count: input.added.length,
+    fulfilment: input.fulfilment,
+    fromIncoming: input.fromIncoming,
+    totalPence: input.totalPence,
+    cashPayment: input.cashPayment,
+  });
+  const note = (input.note ?? '').trim();
+  const totals: { label: string; pence: number }[] =
+    input.fulfilment === 'collection' || input.totalPence === null
+      ? []
+      : [{ label: 'Postage', pence: input.postagePence ?? 0 }];
+
+  const html = shell(
+    'Books added to your order',
+    `Reference ${input.ref}`,
+    `<p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(input.name)},</p>
+     <p style="margin:0 0 18px;font-size:15px;line-height:1.6">${escapeHtml(copy.line)}</p>
+     ${
+       note
+         ? `<p style="margin:0 0 18px;font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(note)}</p>`
+         : ''
+     }
+     <p style="margin:0 0 10px;font-size:13px;color:#8b93a1;text-transform:uppercase;letter-spacing:.06em">What is on your order now</p>
+     ${itemRows(
+       input.items,
+       input.subtotalPence,
+       totals,
+       input.totalPence === null ? undefined : input.cashPayment ? 'Total, payable in cash' : 'Total to pay',
+       input.totalPence === null ? undefined : input.totalPence,
+     )}
+     ${
+       copy.totalLine
+         ? `<p style="margin:18px 0 0;font-size:15px;line-height:1.6">${escapeHtml(copy.totalLine)}</p>`
+         : `<p style="margin:18px 0 0;font-size:15px;line-height:1.6">We will send you the total and how to pay as usual.</p>`
+     }
+     ${button(link, 'View your order')}
+     ${noReply(link)}`,
+  );
+
+  const text =
+    `${copy.subject}\n\nالسلام عليكم ${input.name},\n\n${copy.line}\n\n` +
+    (note ? `${note}\n\n` : '') +
+    'What is on your order now:\n' +
+    input.items
+      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
+      .join('\n') +
+    `\n  Subtotal: ${price(input.subtotalPence)}\n` +
+    (copy.totalLine ? `\n${copy.totalLine}\n` : '\nWe will send you the total and how to pay as usual.\n') +
+    `\n${link}\n` +
+    noReplyText(link);
+
+  const first = input.name.trim().split(/\s+/)[0];
+  const telegram = [
+    ...(first ? [esc(`السلام عليكم ${first}`), ''] : []),
+    `*${esc(copy.subject)}*`,
+    '',
+    esc(copy.line),
+    ...(note ? ['', esc(note)] : []),
+    '',
+    `*${esc('What is on your order now')}*`,
+    // Every literal goes through esc(), for the reason spelled out in the
+    // removal message above: one bare "-" rejects the whole message.
+    ...input.items.map(
+      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(i.pricePence * i.qty))}`,
+    ),
+    '',
+    `${esc('Subtotal')} ${esc(price(input.subtotalPence))}`,
+    ...(copy.totalLine ? ['', `*${esc(copy.totalLine)}*`] : []),
+    '',
+    mdLink('Your order', link),
+  ].join('\n');
+
+  const [emailResult, telegramResult] = await Promise.allSettled([
+    deliver({ to: input.email, subject: copy.subject, html, text }),
+    input.telegramChatId && botConfigured()
+      ? sendMessage(input.telegramChatId, telegram)
+      : Promise.resolve(false),
+  ]);
+
+  const sent = {
+    email: emailResult.status === 'fulfilled' && emailResult.value,
+    telegram: telegramResult.status === 'fulfilled' && telegramResult.value,
+  };
+  if (!sent.email && !sent.telegram) {
+    await recordNotifyFailure(`books added to ${input.ref} - nothing could be delivered`);
   } else {
     await clearNotifyFailure();
   }

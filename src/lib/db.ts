@@ -290,8 +290,12 @@ export async function categoryByPath(path: string): Promise<Category | null> {
  * a syntax error, and FTS operators would let a visitor write their own query.
  * Each word is stripped to letters/digits (Arabic included), quoted, and the
  * last one gets a prefix wildcard so results narrow as you type.
+ *
+ * Exported for the portal's book picker, which searches a narrower set of books
+ * than the catalogue does but must match them the same way - a title that can
+ * be found in the shop and not in the portal is a bug report waiting to happen.
  */
-function ftsQuery(raw: string): string | null {
+export function ftsQuery(raw: string): string | null {
   const words = raw
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)

@@ -5562,7 +5562,7 @@ async function amendingOrders() {
   t.ok(ledger.named === 2, 'and named as an amendment rather than a cancellation');
 
   const page = visibleText(await html(`/order?ref=${o.ref}&t=${o.token}`));
-  t.ok(page.includes('This order was amended'),
+  t.ok(page.includes('This order was changed'),
     'the customer page explains why the list no longer matches their email');
   t.ok(page.includes('Taken off at your request.'), "and carries the shop's own note");
   const portal = visibleText(await html(`/admin/orders/${o.ref}`));
@@ -5626,6 +5626,259 @@ async function amendingOrders() {
   const paidPortal = await html(`/admin/orders/${c.ref}`);
   t.ok(!paidPortal.includes('Take books off this order'),
     'the portal stops offering it once the money is in');
+}
+
+// ---------------------------------------------------------------------------
+async function addingToOrders() {
+  const t = suite('26. Adding books to an order');
+
+  const figures = (ref) =>
+    one(
+      `SELECT (SELECT subtotal_pence FROM orders WHERE ref='${ref}') AS sub,
+              (SELECT discount_pence FROM orders WHERE ref='${ref}') AS off,
+              (SELECT total_pence FROM orders WHERE ref='${ref}') AS total,
+              (SELECT amended_at FROM orders WHERE ref='${ref}') AS at,
+              (SELECT COUNT(*) FROM order_items
+                WHERE order_id=(SELECT id FROM orders WHERE ref='${ref}')) AS lines,
+              (SELECT COALESCE(SUM(qty),0) FROM order_items
+                WHERE order_id=(SELECT id FROM orders WHERE ref='${ref}')) AS copies`,
+    );
+
+  /** The picker, asked the way the panel asks it. */
+  const addable = async (ref, q) => {
+    const res = await get(`/api/admin/orders/${ref}/addable?q=${encodeURIComponent(q)}`);
+    const body = await res.json().catch(() => ({ results: [] }));
+    return body.results ?? [];
+  };
+
+  /** The distinctive half of a fixture's title, so a search finds one book. */
+  const nameOf = (book) => book.title.split(' ')[1];
+
+  const onOrder = await makeBook({ stock: '5', price: '10.00' });
+  const joining = await makeBook({ stock: '3', price: '7.50' });
+  const o = await placeOrder(onOrder.id, 'delivery', {
+    items: [{ bookId: onOrder.id, qty: 1 }],
+  });
+
+  // --- the picker only offers what this order can actually take -------------
+  const offered = await addable(o.ref, nameOf(joining));
+  t.ok(offered.length === 1 && offered[0].id === joining.id,
+    'the picker finds a title by name');
+  t.ok(offered[0].free === 3 && offered[0].price === '£7.50',
+    "and says what it costs today and how many are free");
+
+  await db(`UPDATE books SET stock=0 WHERE id=${joining.id}`);
+  t.ok((await addable(o.ref, nameOf(joining))).length === 0,
+    'a title with no copies free is not offered at all');
+  await db(`UPDATE books SET stock=3 WHERE id=${joining.id}`);
+
+  // --- nothing chosen changes nothing --------------------------------------
+  const nothing = await admin(`/api/admin/orders/${o.ref}/add`, { note: 'Anything?' });
+  t.ok(nothing.location.includes('e=noadd'), 'an addition with nothing chosen is refused');
+
+  /*
+   * A title that sold out between the picker and the button.
+   *
+   * The refusal the endpoint exists to get right: the copies are gone, so the
+   * order must come back untouched rather than holding a copy the shelf does
+   * not have.
+   */
+  const raced = await makeBook({ stock: '1', price: '5.00' });
+  await db(`UPDATE books SET stock=0 WHERE id=${raced.id}`);
+  const gone = await admin(`/api/admin/orders/${o.ref}/add`, { [`add_${raced.id}`]: '1' });
+  t.ok(gone.location.includes('e=gone'), 'a title that has sold out is refused');
+  const untouched = await figures(o.ref);
+  t.ok(untouched.lines === 1 && untouched.sub === 1000 && untouched.at === null,
+    'and the refusal leaves the order exactly as it was');
+
+  // --- the ordinary case ---------------------------------------------------
+  const added = await admin(`/api/admin/orders/${o.ref}/add`, {
+    [`add_${joining.id}`]: '2',
+    note: 'Added as you asked.',
+  });
+  t.ok(added.location.includes('added=2'), 'two copies go on in one action');
+
+  const after = await figures(o.ref);
+  t.ok(after.lines === 2 && after.copies === 3, 'the order has a new line for them');
+  t.ok(after.sub === 2500, `and is repriced to what it now holds (got ${after.sub})`);
+  t.ok(after.at !== null, 'the order records that it was changed');
+
+  const held = await one(`SELECT stock, reserved, reserved_incoming AS ri FROM books WHERE id=${joining.id}`);
+  t.ok(held.reserved === 2 && held.ri === 0,
+    'the copies are held off the shelf, not claimed against a delivery');
+
+  /*
+   * The invariant the integrity suite checks for every book: `reserved` is the
+   * sum of that book's ledger deltas. A hold taken without writing it down
+   * would pass every visible assertion above and break that.
+   */
+  const ledger = await one(
+    `SELECT (SELECT COALESCE(SUM(delta),0) FROM stock_ledger
+              WHERE book_id=${joining.id} AND field='reserved') AS balance,
+            (SELECT COUNT(*) FROM stock_ledger
+              WHERE order_id=(SELECT id FROM orders WHERE ref='${o.ref}')
+                AND reason='books added') AS named`,
+  );
+  t.ok(ledger.balance === 2, 'every copy held is written to the ledger');
+  t.ok(ledger.named === 1, 'and named as an addition rather than a fresh order');
+
+  // --- the same title again joins the line it is already on ----------------
+  const again = await admin(`/api/admin/orders/${o.ref}/add`, { [`add_${joining.id}`]: '1' });
+  t.ok(again.location.includes('added=1'), 'the same title can go on again');
+  const merged = await figures(o.ref);
+  t.ok(merged.lines === 2 && merged.copies === 4,
+    'and joins the line it is already on rather than making a second');
+  t.ok(merged.sub === 3250, `with the money following (got ${merged.sub})`);
+
+  // --- what the two sides are told -----------------------------------------
+  const threaded = await db(
+    `SELECT m.sender, m.body FROM messages m JOIN orders o ON o.id = m.order_id
+      WHERE o.ref='${o.ref}' ORDER BY m.id DESC LIMIT 1`,
+  );
+  t.ok(threaded[0]?.body === 'Added as you asked.' && threaded[0]?.sender === 'owner',
+    'the note is posted into the thread as well as emailed, in the owner\'s own words');
+
+  const page = visibleText(await html(`/order?ref=${o.ref}&t=${o.token}`));
+  t.ok(page.includes('This order was changed'),
+    'the customer page explains why the list no longer matches their email');
+  t.ok(/was added|were added/.test(page), 'and says the books went on rather than came off');
+  const portal = visibleText(await html(`/admin/orders/${o.ref}`));
+  t.ok(/books added|A book added/i.test(portal),
+    'the portal keeps the addition in the record of what was sent');
+
+  /*
+   * The discount the order was given, kept at the same rate.
+   *
+   * Set on the row directly rather than by turning the shop's rule on: what is
+   * being checked is that a quoted deal is scaled, not recalculated, which has
+   * to hold whatever the rule says today - including when it is switched off.
+   */
+  const dBook = await makeBook({ stock: '5', price: '10.00' });
+  const dJoin = await makeBook({ stock: '5', price: '10.00' });
+  const d = await placeOrder(dBook.id, 'delivery', { items: [{ bookId: dBook.id, qty: 2 }] });
+  await db(`UPDATE orders SET discount_pence=200, subtotal_pence=1800 WHERE ref='${d.ref}'`);
+  await admin(`/api/admin/orders/${d.ref}/add`, { [`add_${dJoin.id}`]: '1' });
+  const scaled = await figures(d.ref);
+  t.ok(scaled.off === 300 && scaled.sub === 2700,
+    `a discount is kept at the rate it was given (got ${scaled.off}/${scaled.sub})`);
+
+  /*
+   * And the round trip that rate buys: take the same book off again and the
+   * order is penny for penny where it started. This is the whole argument for
+   * scaling in both directions rather than holding the cash amount still.
+   */
+  const backLine = await db(
+    `SELECT oi.id, oi.book_id FROM order_items oi JOIN orders o ON o.id=oi.order_id
+      WHERE o.ref='${d.ref}' AND oi.book_id=${dJoin.id}`,
+  );
+  await admin(`/api/admin/orders/${d.ref}/amend`, { [`qty_${backLine[0].id}`]: '0' });
+  const restored = await figures(d.ref);
+  t.ok(restored.off === 200 && restored.sub === 1800,
+    `putting it back leaves the order where it started (got ${restored.off}/${restored.sub})`);
+
+  // --- a confirmed order keeps its total in step ---------------------------
+  const cBook = await makeBook({ stock: '5', price: '10.00' });
+  const cJoin = await makeBook({ stock: '5', price: '4.00' });
+  const c = await placeOrder(cBook.id, 'delivery', { items: [{ bookId: cBook.id, qty: 1 }] });
+  await admin(`/api/admin/orders/${c.ref}/confirm`, { postage: '2.95', payment_message: 'Pay here.' });
+  t.ok((await figures(c.ref)).total === 1295, 'a confirmed order is quoted books plus postage');
+
+  await admin(`/api/admin/orders/${c.ref}/add`, { [`add_${cJoin.id}`]: '1', postage: '3.95' });
+  const requoted = await figures(c.ref);
+  t.ok(requoted.sub === 1400 && requoted.total === 1795,
+    `the quoted total follows the books and the new postage (got ${requoted.total})`);
+  const requotedPage = visibleText(await html(`/order?ref=${c.ref}&t=${c.token}`));
+  t.ok(requotedPage.includes('The total went from £12.95 to £17.95'),
+    'and the customer is shown both figures, not just the new one');
+
+  /*
+   * Adding restarts the hold and clears any lapse, for the same reason amending
+   * does: the owner working on an order is the clearest evidence it is live,
+   * and the sweep had taken one out from under exactly that.
+   */
+  const clockBook = await makeBook({ stock: '5', price: '9.00' });
+  const clockJoin = await makeBook({ stock: '5', price: '9.00' });
+  const clock = await placeOrder(clockBook.id, 'delivery', {
+    items: [{ bookId: clockBook.id, qty: 1 }],
+  });
+  await db(`UPDATE orders SET expires_at = unixepoch() + 600, lapsed_at = unixepoch()
+             WHERE ref='${clock.ref}'`);
+  await admin(`/api/admin/orders/${clock.ref}/add`, { [`add_${clockJoin.id}`]: '1' });
+  const refreshed = await one(`SELECT expires_at, lapsed_at FROM orders WHERE ref='${clock.ref}'`);
+  t.ok(refreshed.expires_at > Math.floor(Date.now() / 1000) + 47 * 3600,
+    'adding puts a full forty-eight hours back on the hold');
+  t.ok(refreshed.lapsed_at === null, 'and clears the lapse with it');
+
+  // --- past payment there is nothing left to add ---------------------------
+  await admin(`/api/admin/orders/${c.ref}/status`, { status: 'paid' });
+  const tooLate = await admin(`/api/admin/orders/${c.ref}/add`, { [`add_${cJoin.id}`]: '1' });
+  t.ok(tooLate.location.includes('e=state'), 'a paid order cannot be added to');
+  const paidPortal = await html(`/admin/orders/${c.ref}`);
+  t.ok(!paidPortal.includes('Add books to this order'),
+    'and the portal stops offering it once the money is in');
+
+  /*
+   * A reservation takes more of its own delivery, and nothing else.
+   *
+   * The two kinds of order are held in different columns and carry different
+   * promises - a clock on one and none on the other - so a shelf copy on a
+   * reservation would be held for a month waiting for a box.
+   */
+  const shipmentTitle = `E2E Adding ${Math.random().toString(36).slice(2, 7)}`;
+  const made = await admin('/api/admin/shipments', {
+    title: shipmentTitle,
+    incoming_vague: 'mid', incoming_month: '2026-12',
+    list: '1. كتاب الإضافة الأول — 10£ — 2\n2. كتاب الإضافة الثاني — 20£ — 2',
+  });
+  const sid = Number(made.location.match(/shipments\/(\d+)/)?.[1]);
+  await admin(`/api/admin/shipments/${sid}/open`);
+  const shipped = await db(
+    `SELECT id, title FROM books WHERE shipment_id=${sid} ORDER BY shipment_sort`,
+  );
+  for (const row of shipped) created.books.push(row.id);
+
+  const { body: reserved } = await json('/api/orders', {
+    name: 'E2E Reserver', email: CUSTOMER_EMAIL, phone: '07700 900123',
+    fulfilment: 'collection',
+    items: [{ bookId: shipped[0].id, qty: 1 }],
+  });
+  if (reserved.ref) created.orders.push(reserved.ref);
+
+  const shelfOffer = await addable(reserved.ref, nameOf(joining));
+  t.ok(shelfOffer.length === 0, 'a reservation is not offered books off the shelf');
+
+  const onward = await admin(`/api/admin/orders/${reserved.ref}/add`, {
+    [`add_${shipped[1].id}`]: '1',
+  });
+  t.ok(onward.location.includes('added=1'), 'but it can take more of its own delivery');
+  const claimed = await one(
+    `SELECT reserved, reserved_incoming AS ri FROM books WHERE id=${shipped[1].id}`,
+  );
+  t.ok(claimed.reserved === 0 && claimed.ri === 1,
+    'counted against the delivery, with shelf stock untouched');
+  const claimedLine = await db(
+    `SELECT from_incoming AS fi FROM order_items oi JOIN orders o ON o.id=oi.order_id
+      WHERE o.ref='${reserved.ref}' AND oi.book_id=${shipped[1].id}`,
+  );
+  t.ok(claimedLine[0]?.fi === 1, 'and the line says it is a claim, not a copy');
+  const noLedger = await one(
+    `SELECT COUNT(*) AS n FROM stock_ledger WHERE book_id=${shipped[1].id}`,
+  );
+  t.ok(noLedger.n === 0,
+    'with nothing in the ledger, which only ever records copies that were on a shelf');
+
+  // A shelf order refuses the same delivery's books, from the other side.
+  const crossed = await admin(`/api/admin/orders/${o.ref}/add`, {
+    [`add_${shipped[1].id}`]: '1',
+  });
+  t.ok(crossed.location.includes('e=gone'),
+    'and an ordinary order cannot claim against a delivery');
+
+  await db(`DELETE FROM orders WHERE ref='${reserved.ref}'`);
+  created.orders = created.orders.filter((ref) => ref !== reserved.ref);
+  await db(`DELETE FROM books WHERE shipment_id=${sid}`);
+  created.books = created.books.filter((id) => !shipped.some((r) => r.id === id));
+  await db(`DELETE FROM shipments WHERE id=${sid}`);
 }
 
 async function bulkEdits() {
@@ -5930,6 +6183,7 @@ const SUITES = [
   ['channel', channelPost, true],
   ['shipments', shipments, true],
   ['amend', amendingOrders, true],
+  ['add', addingToOrders, true],
   ['bulk', bulkEdits, true],
   ['requests', bookRequests, true],
   ['integrity', integrity, true],
