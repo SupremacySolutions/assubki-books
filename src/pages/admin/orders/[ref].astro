@@ -11,6 +11,7 @@ import {
   CASH_SLOT,
 } from '../../../lib/settings';
 import {
+  moneyReceived,
   nextActions,
   portalLabel,
   POSTAGE_PROVIDERS,
@@ -255,13 +256,16 @@ const answeringCancel = Boolean(order.cancel_requested_at) && openOrder;
  */
 const promoted = steps.filter((step) => !step.danger).slice(0, 2);
 /*
- * A cancellation being asked for takes the second seat.
+ * A cancellation being asked for takes the bar outright.
  *
  * The pressing question on that order is not "post it" but "are they having
- * it", and the strip only states the question - this is what answers it. The
- * other half of the answer, agreeing, is the ordinary cancel in the ⋯.
+ * it", and offering "Payment received and posted" as the primary press to
+ * somebody who has just asked to cancel is the page arguing with itself. The
+ * strip states the question, this answers it, and the ordinary status moves
+ * wait in the ⋯ until it has been answered. Agreeing is the cancel, also in
+ * the ⋯, where the note it sends lives.
  */
-const barActions = answeringCancel ? promoted.slice(0, 1) : promoted;
+const barActions = answeringCancel ? [] : promoted;
 /** Everything else, which is what the ⋯ is for. */
 const menuSteps = steps.filter((step) => !step.danger && !barActions.includes(step));
 const cancelStep = steps.find((step) => step.action === 'cancelled') ?? null;
@@ -272,18 +276,70 @@ const postageStep = barActions.find((step) => step.needsPostage) ?? null;
    track, and the word must not appear on one. */
 const correctable = !isCollection && ['dispatched', 'completed'].includes(order.status);
 
-/** The one line under the name: what this order is, in the fewest words. */
-const summary = [
-  `${items.length} ${items.length === 1 ? 'title' : 'titles'}`,
-  totalCopies === items.length ? null : `${totalCopies} copies`,
-  isCollection ? 'collecting in person' : 'for delivery',
-  `requested ${new Date(order.created_at * 1000).toLocaleDateString('en-GB', {
+const shortWhen = (at: number) =>
+  new Date(at * 1000).toLocaleString('en-GB', {
     day: 'numeric',
     month: 'short',
-  })}`,
-]
-  .filter(Boolean)
-  .join(' · ');
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+/*
+ * The one line under the name, and it is a clock rather than a description.
+ *
+ * What the order holds is said by the packing list, which is directly below
+ * and counts itself. What is not said anywhere else is where this order has
+ * got to in time - how long the hold has left, when the details went, when
+ * the money arrived - which is the thing that decides whether it is late.
+ */
+const summary = lapsed
+  ? `Hold ran out ${lapsedWhen}`
+  : answeringCancel
+    ? 'They asked to cancel'
+    : order.completed_at
+      ? `Closed ${shortWhen(order.completed_at)}`
+      : order.dispatched_at
+        ? `Posted ${shortWhen(order.dispatched_at)}`
+        : order.paid_at
+          ? `Paid ${shortWhen(order.paid_at)}`
+          : order.confirmed_at
+            ? `Details sent ${shortWhen(order.confirmed_at)}`
+            : hoursLeft !== null
+              ? `Hold expires in ${hoursLeft}h`
+              : `Requested ${shortWhen(order.created_at)}`;
+
+/*
+ * The status chip, tinted by where the order stands.
+ *
+ * One navy pill for every state made the chip decorative - it told the owner
+ * the same thing on an order that had lapsed and one that was delivered. The
+ * tints are the shop's own: brass for waiting on somebody, red for something
+ * that has gone wrong, green for money in, and quiet grey once it is closed.
+ */
+const CHIP = {
+  wait: 'bg-[var(--color-brass)]/10 text-[var(--color-brass)]',
+  bad: 'bg-[var(--color-outstock)]/10 text-[var(--color-outstock)]',
+  good: 'bg-[var(--color-instock)]/10 text-[var(--color-instock)]',
+  done: 'bg-[var(--color-rule-soft)] text-[var(--color-ink-soft)]',
+} as const;
+const chipTone = lapsed || ['cancelled', 'expired'].includes(order.status)
+  ? CHIP.bad
+  : order.status === 'completed'
+    ? CHIP.done
+    : ['paid', 'dispatched'].includes(order.status)
+      ? CHIP.good
+      : CHIP.wait;
+
+/*
+ * What the figure beside it is. Quoted and paid are not the same claim, and
+ * on a cash order the money is not in until the books have changed hands -
+ * `moneyReceived` is what already knows that, so it decides the word.
+ */
+const moneyLabel = !quoted
+  ? 'Subtotal'
+  : moneyReceived(order.status, isCash)
+    ? 'Total paid'
+    : 'Total quoted';
 
 /*
  * Whether the customer has read what we last said.
@@ -368,7 +424,13 @@ const [strip, ...demotedFlags] = flags;
           </span>
           {/* The customer's own word for where this has got to, so the portal
               and their page cannot disagree about it. */}
-          <span class="shrink-0 px-2.5 py-0.5 rounded-full bg-[var(--color-navy)] text-white text-[12.5px]">
+          <span
+            class:list={[
+              'shrink-0 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[12.5px] font-medium',
+              chipTone,
+            ]}
+          >
+            <span class="w-[6px] h-[6px] rounded-full bg-current" aria-hidden="true"></span>
             {portalLabel(order.status, order.fulfilment, isCash)}
           </span>
         </div>
@@ -378,7 +440,7 @@ const [strip, ...demotedFlags] = flags;
       <div class="flex items-center gap-3 shrink-0">
         <p class="text-right leading-tight">
           <span class="block text-[11.5px] uppercase tracking-[0.08em] text-[var(--color-ink-faint)]">
-            {quoted ? 'Total' : 'Subtotal'}
+            {moneyLabel}
           </span>
           <span class="price text-[19px]">{price(order.total_pence ?? order.subtotal_pence)}</span>
         </p>
@@ -405,7 +467,7 @@ const [strip, ...demotedFlags] = flags;
 
         {answeringCancel && (
           <form method="post" action={`/api/admin/orders/${order.ref}/cancel-request`}>
-            <button type="submit" class="btn btn-ghost !py-2 !text-[14px]">Keep the order</button>
+            <button type="submit" class="btn btn-primary !py-2 !text-[14px]">Keep the order</button>
           </form>
         )}
 
@@ -431,17 +493,23 @@ const [strip, ...demotedFlags] = flags;
           <div
             class="absolute right-0 top-[calc(100%+8px)] z-40 w-[20.5rem] max-w-[85vw] p-1.5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] shadow-[0_12px_30px_-12px_rgba(14,42,85,0.35)]"
           >
-            {/* Demoted status moves - single presses the bar had no room for. */}
+            {/* Demoted status moves - single presses the bar had no room for.
+                Each keeps the sentence lib/order-status gives it: out of the
+                bar, the label alone no longer says what pressing it does. */}
             {menuSteps.map((step) => (
               <form method="post" action={`/api/admin/orders/${order.ref}/status`}>
                 <input type="hidden" name="status" value={step.action} />
-                <button type="submit" class="menu-item block">{step.label}</button>
+                <button type="submit" class="menu-item block">
+                  {step.label}
+                  {step.hint && <span class="menu-hint">{step.hint}</span>}
+                </button>
               </form>
             ))}
 
             {correctable && (
               <a href="#posting" class="menu-item block">
                 {order.tracking_number ? 'Correct the tracking' : 'Add a tracking number'}
+                <span class="menu-hint">Updates their order page. No email is sent.</span>
               </a>
             )}
 
@@ -463,7 +531,7 @@ const [strip, ...demotedFlags] = flags;
                 />
                 <span>
                   <span class="block">They are paying in cash after all</span>
-                  <span class="block mt-0.5 text-[12.5px] text-[var(--color-ink-faint)]">
+                  <span class="menu-hint">
                     Changes their order page only - nothing is owed until
                     {isCollection ? ' they collect' : ' you hand them over'}.
                   </span>
@@ -474,7 +542,10 @@ const [strip, ...demotedFlags] = flags;
             <a
               href={`/order?ref=${order.ref}&t=${order.access_token}`}
               class="menu-item block"
-            >See what the customer sees</a>
+            >
+              See what the customer sees
+              <span class="menu-hint">Opens their order page, as they have it.</span>
+            </a>
 
             {cancelStep && (
               /*
@@ -530,7 +601,7 @@ const [strip, ...demotedFlags] = flags;
               <button type="submit" class="menu-item block !text-[var(--color-outstock)]">
                 Delete this order
               </button>
-              <p class="px-3 pb-1 text-[12px] text-[var(--color-ink-faint)] leading-relaxed">
+              <p class="px-3 pb-1 -mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
                 Removes it for good. Stock movements stay in the record.
                 {['requested', 'awaiting_payment'].includes(order.status)
                   ? ' Any copies it is holding are released.'
@@ -552,9 +623,22 @@ const [strip, ...demotedFlags] = flags;
 
   <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px] items-start">
     <div class="space-y-6 min-w-0">
-      <!-- Everything needed to pack and post, in one block. -->
+      {/*
+        * The order itself, and the one control that changes it.
+        *
+        * The editor used to be a card of its own below this one, which put a
+        * panel between the list and the totals it rewrites. It belongs to
+        * this list, so it lives in this card: the lines, then what may come
+        * off them, then what the order comes to.
+        */}
       <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
-        <h2 class="eyebrow mb-3">Books to pack</h2>
+        <div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h2 class="eyebrow">Packing list</h2>
+          <p class="text-[13px] text-[var(--color-ink-faint)]">
+            {totalCopies} {totalCopies === 1 ? 'copy' : 'copies'} ·{' '}
+            {items.length} {items.length === 1 ? 'title' : 'titles'}
+          </p>
+        </div>
         <ul class="divide-y divide-[var(--color-rule-faint)]">
           {
             items.map((item) => (
@@ -575,6 +659,13 @@ const [strip, ...demotedFlags] = flags;
                   {item.qty > 1 && (
                     <strong class="ml-2 text-[var(--color-navy)]">× {item.qty}</strong>
                   )}
+                  {/* What one costs, and where it is coming from. On a line of
+                      two the price shown on the right is the pair, and the
+                      owner was left to divide it themselves. */}
+                  <span class="block text-[13px] text-[var(--color-ink-faint)]">
+                    {price(item.price_pence_snapshot)} each
+                    {item.from_incoming ? ' · reserved from a delivery' : ''}
+                  </span>
                 </span>
                 <span class="shrink-0 tabular-nums">
                   {price(item.price_pence_snapshot * item.qty)}
@@ -583,6 +674,162 @@ const [strip, ...demotedFlags] = flags;
             ))
           }
         </ul>
+      {/*
+        * Editing the lines, as one control rather than a panel per direction.
+        *
+        * Taking books off is something the shop could not do at all: a customer
+        * wrote asking for three titles to be removed and the only buttons on
+        * this page were cancel the whole order and delete it. The removal
+        * happened in the messages instead, so the order went on holding copies
+        * of books nobody wanted and quoting a total for them.
+        *
+        * Directly under the packing list, because that is the list it changes,
+        * and folded away, because the ordinary afternoon is packing what was
+        * ordered rather than editing it.
+        */}
+      {amendable && totalCopies > 1 && (
+        <details
+          class="mt-4 pt-4 border-t border-[var(--color-rule-faint)]"
+          open={problem === 'nochange' || problem === 'empty'}
+        >
+          {/* One tab today. Adding books is the other, and it belongs in this
+              strip beside this one rather than in a panel of its own - both
+              edit the same list, through the same ledgered path, and both
+              tell the customer. */}
+          <summary class="w-fit px-3.5 py-1.5 rounded-full border border-[var(--color-rule)] text-[13.5px] font-medium text-[var(--color-navy)] cursor-pointer hover:border-[var(--color-navy)]">
+            Take books off
+          </summary>
+
+          <p class="mt-3 text-[14px] text-[var(--color-ink-soft)] leading-relaxed max-w-[38rem]">
+            Set how many of each to keep. The copies you take off go straight back on the shelf,
+            the order's figures follow them, and {order.customer_name.split(' ')[0]} is sent the
+            revised list{quoted ? ' and the new total' : ''}.
+          </p>
+
+          <form
+            method="post"
+            action={`/api/admin/orders/${order.ref}/amend`}
+            id="amendForm"
+            class="mt-4"
+          >
+            <ul class="divide-y divide-[var(--color-rule-faint)] border-y border-[var(--color-rule-faint)]">
+              {items.map((item) => (
+                <li class="py-2.5 flex items-center justify-between gap-4 text-[14.5px]">
+                  <span class="min-w-0" data-amend-title>
+                    {item.title_snapshot}
+                    <span class="block text-[13px] text-[var(--color-ink-faint)]">
+                      {price(item.price_pence_snapshot)} each
+                      {item.from_incoming ? ' · reserved from a delivery' : ''}
+                    </span>
+                  </span>
+                  <span class="shrink-0 flex items-center gap-2">
+                    <label class="text-[13px] text-[var(--color-ink-faint)]" for={`qty_${item.id}`}>
+                      Keep
+                    </label>
+                    <input
+                      id={`qty_${item.id}`}
+                      name={`qty_${item.id}`}
+                      type="number"
+                      inputmode="numeric"
+                      min="0"
+                      max={item.qty}
+                      value={item.qty}
+                      data-amend-qty
+                      data-was={item.qty}
+                      data-price={item.price_pence_snapshot}
+                      data-title={item.title_snapshot}
+                      class="field !w-16 !py-1.5 !text-[14px] tabular-nums text-center"
+                    />
+                    <span class="text-[13px] text-[var(--color-ink-faint)] tabular-nums">
+                      of {item.qty}
+                    </span>
+                    {/* One press for the ordinary case, which is a whole title
+                        coming off rather than a quantity being trimmed. */}
+                    <button
+                      type="button"
+                      data-amend-none={`qty_${item.id}`}
+                      class="px-2 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-outstock)] hover:text-[var(--color-outstock)]"
+                    >
+                      Remove
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div class="mt-3 flex justify-between text-[15px]">
+              <span>Order becomes</span>
+              <span class="price" id="amendSubtotal">{price(order.subtotal_pence)}</span>
+            </div>
+            {order.discount_pence > 0 && (
+              <p class="mt-1 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                The {price(order.discount_pence)} discount is kept in proportion to what is left,
+                so a customer cannot lose a deal because the shop changed its threshold afterwards.
+              </p>
+            )}
+
+            {/* Only once a total has been quoted. Before that the confirm step
+                still decides postage, and inventing one here would put a figure
+                on an order nobody has priced. */}
+            {quoted && !isCollection && (
+              <div class="mt-4">
+                <label for="amendPostage" class="block text-[13px] font-medium mb-1.5">
+                  Postage (£)
+                </label>
+                <div class="flex items-center gap-3">
+                  <PoundInput
+                    id="amendPostage"
+                    name="postage"
+                    min="0"
+                    value={((order.postage_pence ?? 0) / 100).toFixed(2)}
+                    class="!w-24 !py-1.5 !text-[14px]"
+                  />
+                  <p class="text-[13.5px] text-[var(--color-ink-soft)]">
+                    New total{' '}
+                    <strong id="amendTotal" class="price text-[16px]">
+                      {price(order.total_pence ?? 0)}
+                    </strong>
+                  </p>
+                </div>
+                <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">
+                  A smaller parcel often costs less, and they hold a message quoting the old figure.
+                </p>
+              </div>
+            )}
+
+            <div class="mt-4">
+              <label for="amend_note" class="block text-[13px] font-medium mb-1.5">
+                Why, in your own words (optional)
+              </label>
+              <textarea
+                id="amend_note"
+                name="note"
+                rows="2"
+                maxlength={NOTE_MAX}
+                placeholder="e.g. Taken off at your request - the rest is unchanged."
+                class="field font-[family-name:var(--font-body)] !text-[14px]"
+              />
+              <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">
+                Goes with the email, their order page and Telegram.
+              </p>
+            </div>
+
+            <button type="submit" class="btn btn-ghost mt-4">
+              Take them off and tell them
+            </button>
+          </form>
+        </details>
+      )}
+
+        {/* One book on the order and nothing to trim it to. Said rather than
+            left as a missing control, because the owner would go looking. */}
+        {amendable && totalCopies === 1 && (
+          <p class="mt-4 pt-4 border-t border-[var(--color-rule-faint)] text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+            One book on this order, so there is nothing to take off it -
+            removing it is a cancellation, in the ⋯ menu above.
+          </p>
+        )}
+
         <div class="mt-3 pt-3 border-t border-[var(--color-rule)] flex justify-between text-[15px]">
           <span>Subtotal</span>
           <span class="price">{price(order.subtotal_pence)}</span>
@@ -777,173 +1024,6 @@ const [strip, ...demotedFlags] = flags;
         )
       }
 
-      {/*
-        * Editing the lines, as one control rather than a panel per direction.
-        *
-        * Taking books off is something the shop could not do at all: a customer
-        * wrote asking for three titles to be removed and the only buttons on
-        * this page were cancel the whole order and delete it. The removal
-        * happened in the messages instead, so the order went on holding copies
-        * of books nobody wanted and quoting a total for them.
-        *
-        * Directly under the packing list, because that is the list it changes,
-        * and folded away, because the ordinary afternoon is packing what was
-        * ordered rather than editing it.
-        */}
-      {amendable && totalCopies > 1 && (
-        <details
-          class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5"
-          open={problem === 'nochange' || problem === 'empty'}
-        >
-          <summary class="text-[14.5px] text-[var(--color-navy)] cursor-pointer">
-            Change what is on this order
-          </summary>
-
-          {/* One tab today. Adding books is the other, and it belongs in this
-              strip beside this one rather than in a panel of its own - both
-              edit the same list, through the same ledgered path, and both
-              tell the customer. */}
-          <div
-            class="mt-4 flex gap-1 p-1 rounded-full bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] w-fit"
-            role="tablist"
-          >
-            <span
-              role="tab"
-              aria-selected="true"
-              class="px-3.5 py-1.5 rounded-full bg-white border border-[var(--color-rule-soft)] text-[13.5px] font-medium"
-            >Take books off</span>
-          </div>
-
-          <p class="mt-3 text-[14px] text-[var(--color-ink-soft)] leading-relaxed max-w-[38rem]">
-            Set how many of each to keep. The copies you take off go straight back on the shelf,
-            the order's figures follow them, and {order.customer_name.split(' ')[0]} is sent the
-            revised list{quoted ? ' and the new total' : ''}.
-          </p>
-
-          <form
-            method="post"
-            action={`/api/admin/orders/${order.ref}/amend`}
-            id="amendForm"
-            class="mt-4"
-          >
-            <ul class="divide-y divide-[var(--color-rule-faint)] border-y border-[var(--color-rule-faint)]">
-              {items.map((item) => (
-                <li class="py-2.5 flex items-center justify-between gap-4 text-[14.5px]">
-                  <span class="min-w-0" data-amend-title>
-                    {item.title_snapshot}
-                    <span class="block text-[13px] text-[var(--color-ink-faint)]">
-                      {price(item.price_pence_snapshot)} each
-                      {item.from_incoming ? ' · reserved from a delivery' : ''}
-                    </span>
-                  </span>
-                  <span class="shrink-0 flex items-center gap-2">
-                    <label class="text-[13px] text-[var(--color-ink-faint)]" for={`qty_${item.id}`}>
-                      Keep
-                    </label>
-                    <input
-                      id={`qty_${item.id}`}
-                      name={`qty_${item.id}`}
-                      type="number"
-                      inputmode="numeric"
-                      min="0"
-                      max={item.qty}
-                      value={item.qty}
-                      data-amend-qty
-                      data-was={item.qty}
-                      data-price={item.price_pence_snapshot}
-                      data-title={item.title_snapshot}
-                      class="field !w-16 !py-1.5 !text-[14px] tabular-nums text-center"
-                    />
-                    <span class="text-[13px] text-[var(--color-ink-faint)] tabular-nums">
-                      of {item.qty}
-                    </span>
-                    {/* One press for the ordinary case, which is a whole title
-                        coming off rather than a quantity being trimmed. */}
-                    <button
-                      type="button"
-                      data-amend-none={`qty_${item.id}`}
-                      class="px-2 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-outstock)] hover:text-[var(--color-outstock)]"
-                    >
-                      Remove
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            <div class="mt-3 flex justify-between text-[15px]">
-              <span>Order becomes</span>
-              <span class="price" id="amendSubtotal">{price(order.subtotal_pence)}</span>
-            </div>
-            {order.discount_pence > 0 && (
-              <p class="mt-1 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-                The {price(order.discount_pence)} discount is kept in proportion to what is left,
-                so a customer cannot lose a deal because the shop changed its threshold afterwards.
-              </p>
-            )}
-
-            {/* Only once a total has been quoted. Before that the confirm step
-                still decides postage, and inventing one here would put a figure
-                on an order nobody has priced. */}
-            {quoted && !isCollection && (
-              <div class="mt-4">
-                <label for="amendPostage" class="block text-[13px] font-medium mb-1.5">
-                  Postage (£)
-                </label>
-                <div class="flex items-center gap-3">
-                  <PoundInput
-                    id="amendPostage"
-                    name="postage"
-                    min="0"
-                    value={((order.postage_pence ?? 0) / 100).toFixed(2)}
-                    class="!w-24 !py-1.5 !text-[14px]"
-                  />
-                  <p class="text-[13.5px] text-[var(--color-ink-soft)]">
-                    New total{' '}
-                    <strong id="amendTotal" class="price text-[16px]">
-                      {price(order.total_pence ?? 0)}
-                    </strong>
-                  </p>
-                </div>
-                <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">
-                  A smaller parcel often costs less, and they hold a message quoting the old figure.
-                </p>
-              </div>
-            )}
-
-            <div class="mt-4">
-              <label for="amend_note" class="block text-[13px] font-medium mb-1.5">
-                Why, in your own words (optional)
-              </label>
-              <textarea
-                id="amend_note"
-                name="note"
-                rows="2"
-                maxlength={NOTE_MAX}
-                placeholder="e.g. Taken off at your request - the rest is unchanged."
-                class="field font-[family-name:var(--font-body)] !text-[14px]"
-              />
-              <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">
-                Goes with the email, their order page and Telegram.
-              </p>
-            </div>
-
-            <button type="submit" class="btn btn-ghost mt-4">
-              Take them off and tell them
-            </button>
-          </form>
-        </details>
-      )}
-
-      {/* One book on the order and nothing to trim it to. Said rather than
-          left as a missing panel, because the owner would go looking for it. */}
-      {amendable && totalCopies === 1 && (
-        <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">
-          There is one book on this order, so there is nothing to take off it -
-          removing it is a cancellation, in the ⋯ menu above.
-        </p>
-      )}
-
       {waitingForBooks && (
         <p class="p-4 bg-[var(--color-brass)]/10 rounded-[var(--radius-panel)] text-[14px]">
           Waiting for reserved books to arrive. Payment and dispatch become available once every
@@ -1087,7 +1167,12 @@ const [strip, ...demotedFlags] = flags;
       {
         history.length > 0 && (
           <details class="bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[var(--radius-panel)] p-5">
-            <summary class="eyebrow cursor-pointer">Already sent</summary>
+            <summary class="eyebrow cursor-pointer">
+              Already sent
+              <span class="ml-1.5 !normal-case !tracking-normal text-[var(--color-ink-faint)]">
+                · {history.length} {history.length === 1 ? 'entry' : 'entries'}
+              </span>
+            </summary>
             <ol class="mt-4 space-y-4">
               {history.map((h) => (
                 <li class="grid grid-cols-[7.5rem_1fr] gap-x-4 gap-y-1 text-[14px]">
@@ -1517,5 +1602,15 @@ const [strip, ...demotedFlags] = flags;
   }
   .menu-item:hover {
     background: var(--color-paper-raised);
+  }
+
+  /* The sentence under a menu row. Out of the bar a label stops explaining
+     itself, so every row in here carries what pressing it does. */
+  .menu-hint {
+    display: block;
+    margin-top: 0.125rem;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--color-ink-faint);
   }
 </style>
