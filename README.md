@@ -66,7 +66,8 @@ scripts/upload-covers.mjs    Pushes those covers into R2 under their image_key
 scripts/resize-covers.mjs    Stores each cover at the sizes the site shows it at
 src/lib/db.ts                Every catalogue read
 src/lib/orders.ts            Hold, expire, and read orders
-src/lib/amend.ts             Taking books off an order already placed
+src/lib/amend.ts             Changing an order already placed: books off, books on
+src/lib/availability.ts      What may be sold right now, and for how much
 src/lib/notify.ts            Customer + owner email, owner Telegram
 src/middleware.ts            301s from the old WooCommerce URLs
 workers/expire-holds/        Cron Worker that releases lapsed holds
@@ -232,12 +233,22 @@ messages and nowhere else - the order went on holding copies of books nobody
 wanted and quoting a total for them. "Take books off this order", under the
 packing list, sets a new quantity per line; the copies go back on the shelf
 through the same ledgered release cancelling uses, the figures follow, and the
-customer is sent the revised list. Unpaid orders only, never down to nothing -
-that is a cancellation - and nothing can be added, which would need an
-availability check and a fresh hold. Unlike confirming, the change stands even
+customer is sent the revised list. Unpaid orders only, and never down to
+nothing - that is a cancellation. Unlike confirming, the change stands even
 if no message could be delivered: the copies are already back on the shelf and
 somebody else may have taken them, so the owner is told what did not go out
 rather than having the amendment undone underneath them.
+
+**And books can go on to one.** "Could you add the second volume as well"
+arrives mid-conversation about an order that is not paid for yet, and the shop's
+only answer used to be another order - another reference, another hold with its
+own clock, another postage quote for the same parcel. "Add books to this order"
+searches only what that order can actually take, holds the copies at today's
+price the moment the button is pressed, and sends the revised list. The
+availability read behind it is the one checkout uses, so the portal cannot
+accept a title the shop would refuse a customer; a shelf order takes shelf
+copies and a reservation takes more of its own delivery, never the other way
+round.
 
 **Deleting a listing is two steps a month apart.** It used to be one, and that
 one destroyed the cover objects in R2, the Telegram post, and - by cascade - the

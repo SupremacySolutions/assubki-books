@@ -32,6 +32,7 @@ export type OrderFlagKind =
   | 'state'
   | 'refused'
   | 'amended'
+  | 'added'
   | 'extended';
 
 export interface OrderFlag {
@@ -61,6 +62,10 @@ export interface FlagInput {
   sentVia: string | null;
   problem: string | null;
   amendedCount: number;
+  /** Copies put on to the order by the last press. */
+  addedCount: number;
+  /** A reservation claims against its delivery rather than the shelf. */
+  againstDelivery: boolean;
   told: string;
   extended: string | null;
 }
@@ -124,6 +129,28 @@ function resultFlag(input: FlagInput): OrderFlag | null {
       kind: 'refused',
       tone: 'ask',
       text: problem === 'empty' ? AMEND_REFUSAL.empty : AMEND_REFUSAL.none,
+    };
+  }
+
+  /*
+   * Books going on, said the way books coming off are said.
+   *
+   * The emphasis is the same and deliberately so: not that it worked, but
+   * whether the customer actually heard. This is the worse half of the two to
+   * get wrong - somebody not told about books going *on* can pay the old,
+   * smaller figure in good faith and be short.
+   */
+  if (input.addedCount > 0) {
+    const n = input.addedCount;
+    return {
+      kind: 'added',
+      tone: told ? 'good' : 'warn',
+      text:
+        `${n === 1 ? 'One copy' : `${n} copies`} added, and ${n === 1 ? 'it is' : 'they are'} ` +
+        `${input.againstDelivery ? 'claimed against the delivery' : 'held off the shelf'} for this order.`,
+      sub: told
+        ? `They were told by ${told.replace('+', ' and ')}.`
+        : 'Nothing could be delivered to them - tell them yourself in the messages.',
     };
   }
 

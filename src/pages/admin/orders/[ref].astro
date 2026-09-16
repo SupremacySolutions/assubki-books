@@ -26,9 +26,11 @@ import { markRead, thread, threadOpen } from '../../../lib/messages';
 import {
   canAmend,
   amendments,
-  removedSummary,
+  lineSummary,
   AMEND_REFUSAL,
+  ADD_REFUSAL,
   NOTE_MAX,
+  shipmentTakingClaims,
 } from '../../../lib/amend';
 
 const { ref } = Astro.params;
@@ -169,16 +171,26 @@ if (order.completed_at) {
  * question that arrives when a customer compares two messages from us.
  */
 for (const change of changes) {
-  history.push({
-    at: change.at,
-    what: `${change.removed.length === 1 ? 'A book' : `${change.removed.length} books`} taken off`,
-    detail:
-      `${removedSummary(change.removed)} · ` +
-      (change.totalBefore !== null && change.totalAfter !== null
-        ? `total ${price(change.totalBefore)} → ${price(change.totalAfter)}`
-        : `subtotal ${price(change.subtotalBefore)} → ${price(change.subtotalAfter)}`),
-    body: change.note ?? undefined,
-  });
+  /* The figures read the same way whichever direction the books went. */
+  const moved =
+    change.totalBefore !== null && change.totalAfter !== null
+      ? `total ${price(change.totalBefore)} → ${price(change.totalAfter)}`
+      : `subtotal ${price(change.subtotalBefore)} → ${price(change.subtotalAfter)}`;
+
+  /* A row carries one side or the other. Both are read anyway, so a row that
+     somehow carried both still shows both rather than half of itself. */
+  for (const side of [
+    { lines: change.removed, verb: 'taken off' },
+    { lines: change.added, verb: 'added' },
+  ]) {
+    if (!side.lines.length) continue;
+    history.push({
+      at: change.at,
+      what: `${side.lines.length === 1 ? 'A book' : `${side.lines.length} books`} ${side.verb}`,
+      detail: `${lineSummary(side.lines)} · ${moved}`,
+      body: change.note ?? undefined,
+    });
+  }
 }
 
 if (order.status === 'cancelled') {
@@ -201,6 +213,17 @@ const canConfirm = order.status === 'requested' && !waitingForBooks;
  */
 const amendable = canAmend(order.status);
 const amendedCount = Number(Astro.url.searchParams.get('amended') ?? 0);
+const addedCount = Number(Astro.url.searchParams.get('added') ?? 0);
+/*
+ * Whether books may still go on, which is very nearly the same question.
+ *
+ * Nearly, because a reservation can only take more of its own shipment, and a
+ * shipment that has landed is closed to new claims - the same rule that shuts
+ * reservations off at arrival, read here rather than kept in step with a second
+ * flag. One small read, and only ever on a reservation.
+ */
+const openShipment = order.shipment_id ? await shipmentTakingClaims(order.shipment_id) : true;
+const addable = amendable && openShipment;
 const told = Astro.url.searchParams.get('told') ?? '';
 /** Whether a total has been quoted yet, which is what postage hangs off. */
 const quoted = order.total_pence !== null;
@@ -381,6 +404,8 @@ const flags = orderFlags({
   sentVia,
   problem,
   amendedCount,
+  addedCount,
+  againstDelivery: order.shipment_id !== null,
   told,
   extended,
 });
@@ -816,6 +841,147 @@ const [strip, ...demotedFlags] = flags;
 
             <button type="submit" class="btn btn-ghost mt-4">
               Take them off and tell them
+            </button>
+          </form>
+        </details>
+      )}
+
+      {/*
+        * Putting books on, which used to mean placing a second order.
+        *
+        * "Could you add the second volume as well" arrives in the middle of a
+        * conversation about an order that is not paid for yet, and the shop's
+        * answer was another order - another reference, another hold with its
+        * own clock, another postage quote for the same parcel. The owner was
+        * doing the arithmetic by hand and telling the customer the figure.
+        *
+        * Folded away and directly under taking books off, because they are one
+        * job seen from two directions and the owner should not have to look in
+        * two different parts of the page for them.
+        */}
+      {addable && (
+        <details
+          class="mt-4 pt-4 border-t border-[var(--color-rule-faint)]"
+          open={problem === 'noadd' || problem === 'gone'}
+        >
+          {/* The sibling tab the strip above was built to take. Both edit one
+              list, through the same ledgered path, and both tell the customer -
+              so they read as one control rather than two panels. */}
+          <summary class="w-fit px-3.5 py-1.5 rounded-full border border-[var(--color-rule)] text-[13.5px] font-medium text-[var(--color-navy)] cursor-pointer hover:border-[var(--color-navy)]">
+            Add books
+          </summary>
+          <p class="mt-3 text-[14px] text-[var(--color-ink-soft)] leading-relaxed max-w-[38rem]">
+            Search for a title and choose how many.{' '}
+            {order.shipment_id
+              ? 'This is a reservation, so it can take more of this delivery - the copies are claimed against it along with the rest.'
+              : 'The copies come off the shelf the moment you press the button, at today\'s price.'}{' '}
+            {order.customer_name.split(' ')[0]} is sent the revised list
+            {quoted ? ' and the new total' : ''}.
+          </p>
+
+          <form
+            method="post"
+            action={`/api/admin/orders/${order.ref}/add`}
+            id="addForm"
+            class="mt-4"
+          >
+            {/*
+              * An ordinary text box, not a combobox: what it opens is a list of
+              * buttons that put a book on the form, and nothing here is typed
+              * into. With the script absent it stays an inert box and the panel
+              * simply adds nothing - which is why this form has no other way to
+              * name a book, and cannot be half-submitted by a page that failed
+              * to load.
+              */}
+            <label for="addSearch" class="block text-[13px] font-medium mb-1.5">
+              Find a title
+            </label>
+            <input
+              id="addSearch"
+              type="search"
+              autocomplete="off"
+              placeholder="Title, in English or Arabic"
+              class="field !py-2 !text-[14px]"
+              data-add-search
+            />
+            <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]" id="addSearchNote">
+              {order.shipment_id
+                ? 'Only books on this delivery, and only while copies are unclaimed.'
+                : 'Only what is on the shelf now. A title with no copies free is not offered.'}
+            </p>
+
+            <ul id="addResults" class="mt-2 empty:hidden divide-y divide-[var(--color-rule-faint)] border border-[var(--color-rule-faint)] rounded-[3px]"></ul>
+
+            <ul
+              id="addChosen"
+              class="mt-3 empty:hidden divide-y divide-[var(--color-rule-faint)] border-y border-[var(--color-rule-faint)]"
+            ></ul>
+            <p id="addNothing" class="mt-3 text-[13.5px] text-[var(--color-ink-faint)]">
+              Nothing chosen yet.
+            </p>
+
+            <div class="mt-3 flex justify-between text-[15px]">
+              <span>Order becomes</span>
+              <span class="price" id="addSubtotal">{price(order.subtotal_pence)}</span>
+            </div>
+            {order.discount_pence > 0 && (
+              <p class="mt-1 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                The {price(order.discount_pence)} discount this order was given is kept at the
+                same rate, so books added now share it - the same rule that scales it down when
+                books come off, so that taking one off and putting it back leaves the order
+                exactly where it started.
+              </p>
+            )}
+
+            {/* Only once a total has been quoted, as when books come off: before
+                that the confirm step still decides postage, and inventing one
+                here would put a figure on an order nobody has priced. */}
+            {quoted && !isCollection && (
+              <div class="mt-4">
+                <label for="addPostage" class="block text-[13px] font-medium mb-1.5">
+                  Postage (£)
+                </label>
+                <div class="flex items-center gap-3">
+                  <PoundInput
+                    id="addPostage"
+                    name="postage"
+                    min="0"
+                    value={((order.postage_pence ?? 0) / 100).toFixed(2)}
+                    class="!w-24 !py-1.5 !text-[14px]"
+                  />
+                  <p class="text-[13.5px] text-[var(--color-ink-soft)]">
+                    New total{' '}
+                    <strong id="addTotal" class="price text-[16px]">
+                      {price(order.total_pence ?? 0)}
+                    </strong>
+                  </p>
+                </div>
+                <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">
+                  A bigger parcel often costs more to send, and they are holding a message
+                  quoting the old figure.
+                </p>
+              </div>
+            )}
+
+            <div class="mt-4">
+              <label for="add_note" class="block text-[13px] font-medium mb-1.5">
+                Why, in your own words (optional)
+              </label>
+              <textarea
+                id="add_note"
+                name="note"
+                rows="2"
+                maxlength={NOTE_MAX}
+                placeholder="e.g. Added as you asked - the second volume was back in this morning."
+                class="field font-[family-name:var(--font-body)] !text-[14px]"
+              />
+              <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">
+                Goes with the email, their order page, and Telegram if they connected it.
+              </p>
+            </div>
+
+            <button type="submit" class="btn btn-ghost mt-4">
+              Add them and tell them
             </button>
           </form>
         </details>
@@ -1315,7 +1481,7 @@ const [strip, ...demotedFlags] = flags;
     </div>
   </div>
 
-  <script is:inline nonce={Astro.locals.cspNonce} define:vars={{ subtotal: order.subtotal_pence, orderRef: order.ref, amendDiscount: order.discount_pence ?? 0, amendEmpty: AMEND_REFUSAL.empty, amendNone: AMEND_REFUSAL.none }}>
+  <script is:inline nonce={Astro.locals.cspNonce} define:vars={{ subtotal: order.subtotal_pence, orderRef: order.ref, amendDiscount: order.discount_pence ?? 0, amendEmpty: AMEND_REFUSAL.empty, amendNone: AMEND_REFUSAL.none, addNone: ADD_REFUSAL.none, addGrossBefore: order.subtotal_pence + (order.discount_pence ?? 0) }}>
     document.querySelector('#deleteOrderForm')?.addEventListener('submit', (event) => {
       if (!confirm(`Delete order ${orderRef} for good?\n\nThis cannot be undone.`)) {
         event.preventDefault();
@@ -1557,6 +1723,214 @@ const [strip, ...demotedFlags] = flags;
           cashCheckbox.disabled = false;
         }
       });
+    }
+
+    /*
+<<<<<<< ours
+     * Choosing books to put on the order.
+     *
+     * The search is an enhancement over a form that has no other way to name a
+     * book: every row it offers comes from /addable, which is the order's own
+     * view of what may go on it, so the panel never shows a title the endpoint
+     * would refuse. Quantities are capped at what that read said was free -
+     * a courtesy, not a guarantee. The endpoint re-reads availability and the
+     * database constraints have the last word.
+     */
+    const addForm = document.querySelector('#addForm');
+    if (addForm) {
+      const search = addForm.querySelector('#addSearch');
+      const results = addForm.querySelector('#addResults');
+      const chosenList = addForm.querySelector('#addChosen');
+      const nothing = addForm.querySelector('#addNothing');
+      const addPostage = addForm.querySelector('#addPostage');
+      const outSubtotal = addForm.querySelector('#addSubtotal');
+      const outTotal = addForm.querySelector('#addTotal');
+      const money = (pence) => `£${(pence / 100).toFixed(2)}`;
+      /** What has been chosen, by book id, so the same title cannot go on twice. */
+      const chosen = new Map();
+
+      /*
+       * The same arithmetic the endpoint runs, in the same order - the discount
+       * scaled by the new gross, floored, then taken off - so the figure on
+       * screen is the figure that gets written. This is the number the owner
+       * decides from, and a preview that disagreed with the result would be
+       * worse than no preview at all.
+       */
+      const paintAdd = () => {
+        let grossAfter = addGrossBefore;
+        for (const line of chosen.values()) grossAfter += line.pricePence * line.qty;
+        const discount =
+          addGrossBefore > 0
+            ? Math.min(grossAfter, Math.floor((amendDiscount * grossAfter) / addGrossBefore))
+            : 0;
+        const subtotalAfter = grossAfter - discount;
+        outSubtotal.textContent = money(subtotalAfter);
+        if (outTotal) {
+          outTotal.textContent = money(
+            subtotalAfter + Math.round((Number(addPostage?.value) || 0) * 100),
+          );
+        }
+        nothing.hidden = chosen.size > 0;
+      };
+
+      const drawChosen = () => {
+        chosenList.replaceChildren();
+        for (const line of chosen.values()) {
+          const row = document.createElement('li');
+          row.className = 'py-2.5 flex items-center justify-between gap-4 text-[14.5px]';
+
+          const name = document.createElement('span');
+          name.className = 'min-w-0';
+          name.textContent = line.title;
+          const each = document.createElement('span');
+          each.className = 'block text-[13px] text-[var(--color-ink-faint)]';
+          each.textContent =
+            `${line.price} each · ${line.free} free` +
+            (line.fromIncoming ? ' · claimed from the delivery' : '');
+          name.appendChild(each);
+
+          const controls = document.createElement('span');
+          controls.className = 'shrink-0 flex items-center gap-2';
+
+          const qty = document.createElement('input');
+          // The quantity box *is* the field the endpoint reads. No hidden twin
+          // to fall out of step with what is on screen.
+          qty.type = 'number';
+          qty.name = `add_${line.id}`;
+          qty.value = String(line.qty);
+          qty.min = '1';
+          qty.max = String(line.free);
+          qty.inputMode = 'numeric';
+          qty.className = 'field !w-16 !py-1.5 !text-[14px] tabular-nums text-center';
+          qty.setAttribute('aria-label', `How many of ${line.title}`);
+          qty.addEventListener('input', () => {
+            const asked = Math.trunc(Number(qty.value) || 0);
+            line.qty = Math.min(line.free, Math.max(1, asked));
+            paintAdd();
+          });
+          // Typing is left alone until focus leaves, so a box being cleared to
+          // retype does not snap back to 1 under the owner's fingers.
+          qty.addEventListener('blur', () => {
+            qty.value = String(line.qty);
+          });
+
+          const drop = document.createElement('button');
+          drop.type = 'button';
+          drop.className =
+            'px-2 py-1 text-[13px] rounded-[3px] border border-[var(--color-rule)] cursor-pointer hover:border-[var(--color-outstock)] hover:text-[var(--color-outstock)]';
+          drop.textContent = 'Remove';
+          drop.addEventListener('click', () => {
+            chosen.delete(line.id);
+            drawChosen();
+            paintAdd();
+          });
+
+          controls.append(qty, drop);
+          row.append(name, controls);
+          chosenList.appendChild(row);
+        }
+      };
+
+      const choose = (book) => {
+        if (!chosen.has(book.id)) {
+          chosen.set(book.id, { ...book, qty: 1 });
+          drawChosen();
+          paintAdd();
+        }
+        results.replaceChildren();
+        search.value = '';
+        search.focus();
+      };
+
+      const drawResults = (books) => {
+        results.replaceChildren();
+        for (const book of books) {
+          // Already on the form. Shown as chosen rather than hidden, so the
+          // owner searching for it again is answered rather than left
+          // wondering whether the shop has it.
+          const taken = chosen.has(book.id);
+          const row = document.createElement('li');
+          row.className = 'p-2.5 flex items-center justify-between gap-3 text-[14px]';
+
+          const name = document.createElement('span');
+          name.className = 'min-w-0';
+          name.textContent = book.title;
+          const detail = document.createElement('span');
+          detail.className = 'block text-[12.5px] text-[var(--color-ink-faint)]';
+          detail.textContent =
+            `${book.price}${book.wasPrice ? ` (was ${book.wasPrice})` : ''} · ${book.free} free`;
+          name.appendChild(detail);
+
+          const pick = document.createElement('button');
+          pick.type = 'button';
+          pick.className = 'btn btn-ghost !py-1 !px-3 !text-[13px] shrink-0';
+          pick.textContent = taken ? 'Chosen' : 'Add';
+          pick.disabled = taken;
+          pick.addEventListener('click', () => choose(book));
+
+          row.append(name, pick);
+          results.appendChild(row);
+        }
+      };
+
+      /* Long enough that a fast typist makes one request per word, not per
+         letter - the same debounce the shop's own search box uses. */
+      let typing;
+      let latest = 0;
+      search.addEventListener('input', () => {
+        clearTimeout(typing);
+        const q = search.value.trim();
+        if (q.length < 2) {
+          results.replaceChildren();
+          return;
+        }
+        typing = setTimeout(async () => {
+          const mine = ++latest;
+          try {
+            const res = await fetch(
+              `/api/admin/orders/${orderRef}/addable?q=${encodeURIComponent(q)}`,
+            );
+            if (!res.ok) throw new Error(`search failed: ${res.status}`);
+            const body = await res.json();
+            // A slow answer to an older keystroke must not overwrite a newer
+            // one's results.
+            if (mine !== latest) return;
+            drawResults(body.results ?? []);
+          } catch (err) {
+            console.error('[admin] could not search for titles to add', err);
+            results.replaceChildren();
+          }
+        }, 160);
+      });
+
+      // Enter in a search box submits the form it is in. Here that would post
+      // the order before anything had been chosen.
+      search.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') event.preventDefault();
+      });
+
+      addPostage?.addEventListener('input', paintAdd);
+
+      /*
+       * Named, not counted, exactly as taking books off is: "Add 2 books?" is
+       * not a question anybody can answer, and this puts copies on hold and
+       * sends a message out under the shop's name.
+       */
+      addForm.addEventListener('submit', (event) => {
+        if (!chosen.size) {
+          event.preventDefault();
+          alert(addNone);
+          return;
+        }
+        const going = [...chosen.values()].map((line) =>
+          line.qty > 1 ? `${line.title} × ${line.qty}` : line.title,
+        );
+        if (!confirm(`Add these to ${orderRef}?\n\n${going.join('\n')}\n\nThe copies are held for this order and the customer is told.`)) {
+          event.preventDefault();
+        }
+      });
+
+      paintAdd();
     }
   </script>
   {/*

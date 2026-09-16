@@ -83,12 +83,12 @@ hand-written copies it used to be.
 16-byte random hex string; it is the customer's entire authority over their own
 order, compared in constant time. There is no customer login anywhere.
 
-**`order_amendments`** — what was taken off an order after it was placed, and
-what the figures went from and to. The lines themselves are gone by then, so
+**`order_amendments`** — what was taken off an order after it was placed, or
+put on it, and what the figures went from and to. The lines themselves are gone by then, so
 this is the only thing that can still answer "what did this order say before?"
 — the question a customer asks when the page and the email in their inbox
 disagree. `orders.amended_at` is a marker beside it, so the two order pages can
-skip this table entirely for the orders that were never amended, which is
+skip this table entirely for the orders that were never changed, which is
 nearly all of them.
 
 **`categories`** — shelves, nested by a `path` string (`hadith/hadith-works`).
@@ -184,14 +184,39 @@ Three rules make it safe:
   any money is settled off the site; the same two statuses `UNPAID` names.
 - **It never empties an order.** That is a cancellation, which has its own
   button, releases everything and tells the customer it is over.
-- **Nothing is added.** A new line would need an availability check, the set
-  pool and a fresh hold; somebody who wants more books places another order.
+- **It never empties the shop's record of it.** What came off is snapshotted
+  into `order_amendments`, because the lines it names are gone.
 
 The order discount is *scaled* by what is left rather than worked out again
 from today's rule — a customer must not lose a deal because the shop moved its
 threshold afterwards, or gain one it never offered. The subtotal is written by
 SQL from the lines themselves, after the same batch's own deletes, so the
 figures cannot disagree with the order they describe.
+
+**Adding** is the same event in the other direction, and for a while it was
+refused: a new line needs an availability check, the set pool, a fresh hold and
+today's sale price, and the answer was that somebody who wants more books places
+another order. That answer costs one customer two references, two holds with
+different clocks and two postage quotes for one parcel, with the owner doing the
+arithmetic by hand in the conversation. `POST /api/admin/orders/<ref>/add` takes
+a quantity per book id, holds the copies exactly as checkout does — `reserved`,
+or `reserved_incoming` on a reservation, every shelf copy ledgered under
+`'books added'` — reprices the order and tells the customer.
+
+Nothing about what may be sold is decided there. `lib/availability.ts` is the
+single read behind both checkout and adding, so the portal cannot accept a title
+the shop would refuse a customer, and `howToAdd` in `lib/amend.ts` decides
+whether this order is the right kind to take it: a shelf order takes shelf
+copies, a reservation takes claims on its own shipment, and never the other way
+round — the two are held in different columns and carry different promises about
+when they can be packed. Between the picker's read and the button, a customer
+can take the last copy; the CHECK constraints and the set-pool trigger abort the
+batch and the owner is told the copies have gone.
+
+The discount is scaled in this direction too, by the same function. That means
+an addition grows it in cash terms, which is the price of the rule: the customer
+keeps the *rate* they were quoted, and taking a book off and putting it back
+leaves the order penny for penny where it started.
 
 ---
 

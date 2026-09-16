@@ -697,6 +697,56 @@ export function amendmentMessage(opts: {
   };
 }
 
+/**
+ * And what a customer is told when books go on to their order.
+ *
+ * Beside `amendmentMessage` and shaped like it, because they are the same event
+ * seen from two sides and a customer who has had both should not feel they were
+ * written by two different shops.
+ *
+ * The one thing it says that the other does not is *held*. A book added to an
+ * order is off the shelf from that moment, and saying so is what stops the
+ * question "is it definitely put aside for me" coming back down the thread.
+ */
+export function additionMessage(opts: {
+  ref: string;
+  /** What went on, already read as a sentence: "Title A, Title B x 2". */
+  added: string;
+  /** How many titles that was, which is the only thing the grammar needs. */
+  count: number;
+  fulfilment: string;
+  /** Claims on a delivery rather than copies off the shelf. */
+  fromIncoming?: boolean;
+  /** What is now owed, when the order had already been quoted a total. */
+  totalPence?: number | null;
+  /** Nothing is owed until the books change hands. */
+  cashPayment?: boolean;
+}): { subject: string; line: string; totalLine: string | null } {
+  const { ref, added, count, fulfilment, fromIncoming, totalPence, cashPayment } = opts;
+  const money = (pence: number) => `£${(pence / 100).toFixed(2)}`;
+
+  return {
+    subject: `Books added to your order - ${ref}`,
+    line:
+      `${added} ${count === 1 ? 'has' : 'have'} been added to your order. ` +
+      (fromIncoming
+        ? 'They are claimed against the delivery along with the rest of it, and the rest of your order is unchanged.'
+        : 'The rest of it is unchanged, and the copies are held for you with the others.'),
+    /*
+     * The new figure, and only when there is one - the same rule as a removal,
+     * and more pressing in this direction: a customer holding a message asking
+     * for an amount that is now too small could pay it in good faith and be
+     * short, which is a worse conversation than being owed a refund.
+     */
+    totalLine:
+      totalPence === null || totalPence === undefined
+        ? null
+        : cashPayment
+          ? `Your order now comes to ${money(totalPence)}, payable ${cashMoment(fulfilment)}.`
+          : `Your order now comes to ${money(totalPence)}. Please pay that rather than the amount in our earlier message.`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Postage
 // ---------------------------------------------------------------------------
