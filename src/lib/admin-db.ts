@@ -16,6 +16,17 @@ export interface AdminOrderRow {
    */
   last_message_id: number | null;
   last_message_at: number | null;
+  /*
+   * How far the customer has read.
+   *
+   * Selected already by `o.*`, and declared here because the portal's order
+   * page is the first caller to want it: it is what lets the owner's own
+   * messages say whether they have been seen, which is the question behind
+   * "should I chase this". It is the order page's own cursor and nothing
+   * else - a Telegram message or an email is delivered the moment it goes,
+   * which is not the same fact.
+   */
+  read_cursor_customer: number;
   id: number;
   ref: string;
   /**

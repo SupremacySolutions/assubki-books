@@ -1,0 +1,127 @@
+---
+/**
+ * One live condition on an order, drawn as a strip or as a panel.
+ *
+ * The portal's order page used to stack these: a lapse banner, a
+ * sibling-orders notice, an amendment result and a cancellation request could
+ * all be full-width cards at once, and the owner scrolled past four of them to
+ * reach the order. Only the most pressing one is a strip now; the rest are
+ * ordinary panels further down the left pane.
+ *
+ * Both readings come from here so the two cannot describe the same condition
+ * differently - which is the whole reason the page had a banner problem in the
+ * first place.
+ */
+import type { OrderFlagKind, OrderFlag } from '../lib/order-flags';
+
+interface Props {
+  flag: OrderFlag;
+  /** The one at the top, between the action bar and the panes. */
+  strip?: boolean;
+  /** For the sibling notice, which is a list of other orders. */
+  siblings?: { ref: string; shipment_id: number | null; status: string }[];
+  /** Postage is quoted per order, which is the point of that notice. */
+  isCollection?: boolean;
+  /** Where "Another 48 hours" posts. */
+  ref?: string;
+}
+
+const { flag, strip = false, siblings = [], isCollection = false, ref = '' } = Astro.props as Props;
+
+/*
+ * Four tints and no more. Red is a thing that has gone wrong or is about to,
+ * brass is a question waiting on the owner, green is something that worked,
+ * and everything else is quiet.
+ */
+const TONE: Record<OrderFlag['tone'], { box: string; text: string }> = {
+  warn: {
+    box: 'bg-[var(--color-outstock)]/10 border-[var(--color-outstock)]/40',
+    text: 'text-[var(--color-outstock)]',
+  },
+  ask: {
+    box: 'bg-[var(--color-brass)]/10 border-[var(--color-brass)]/30',
+    text: 'text-[var(--color-brass)]',
+  },
+  good: {
+    box: 'bg-[var(--color-instock)]/10 border-[var(--color-instock)]/30',
+    text: 'text-[var(--color-instock)]',
+  },
+  note: {
+    box: 'bg-[var(--color-paper-raised)] border-[var(--color-rule-soft)]',
+    text: 'text-[var(--color-ink)]',
+  },
+};
+
+const tone = TONE[flag.tone];
+const kind: OrderFlagKind = flag.kind;
+---
+
+<div
+  class:list={[
+    'border rounded-[var(--radius-panel)]',
+    tone.box,
+    /* One row when it is the strip: text, sub-text and an action only where
+       this is the action's home. A panel when it is not. */
+    strip ? 'flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5' : 'p-4',
+  ]}
+  data-order-flag={kind}
+>
+  <div class="min-w-0">
+    <p class:list={['text-[14px] font-medium', tone.text]}>{flag.text}</p>
+    {flag.sub && (
+      <p
+        class:list={[
+          'text-[13px] text-[var(--color-ink-soft)] leading-relaxed',
+          strip ? 'sm:inline' : 'mt-1',
+        ]}
+      >{flag.sub}</p>
+    )}
+
+    {/* The other orders one checkout produced. Their references are the
+        useful part, so they travel with the text into the strip rather than
+        being a list only the panel gets. */}
+    {kind === 'siblings' && siblings.length > 0 && (
+      <p class:list={['text-[13px] leading-relaxed', strip ? 'mt-0.5' : 'mt-1.5']}>
+        {siblings.map((other, i) => (
+          <>
+            {i > 0 && <span class="text-[var(--color-ink-faint)]"> · </span>}
+            <a
+              href={`/admin/orders/${other.ref}`}
+              class="text-[var(--color-navy)] underline underline-offset-2"
+            >{other.ref}</a>
+            <span class="text-[var(--color-ink-faint)]">
+              {' '}{other.shipment_id ? 'the reserved half' : 'the shelf half'}
+              {other.status === 'cancelled' || other.status === 'expired'
+                ? `, ${other.status}`
+                : ''}
+            </span>
+          </>
+        ))}
+        {!isCollection && (
+          <span class="text-[var(--color-ink-faint)]">
+            {' '}· Postage is quoted per order. Charge it once across the two.
+          </span>
+        )}
+      </p>
+    )}
+  </div>
+
+  {/*
+    * The hold's own action, and the only one a flag carries.
+    *
+    * "Another 48 hours" belongs to the lapse and appears nowhere else - not in
+    * the action bar, not in the ⋯ menu - so there is exactly one button in the
+    * portal that gives an order longer.
+    */}
+  {kind === 'lapsed' && (
+    <form
+      method="post"
+      action={`/api/admin/orders/${ref}/extend`}
+      class:list={[strip ? 'ml-auto shrink-0' : 'mt-3']}
+    >
+      <button type="submit" class="btn btn-ghost !py-1.5 !px-3 !text-[13px]">
+        Another 48 hours
+      </button>
+    </form>
+  )}
+</div>
