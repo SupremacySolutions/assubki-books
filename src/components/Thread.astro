@@ -49,6 +49,30 @@ interface Props {
   channelNote?: string | null;
   /** A refusal from the last post, already turned into a sentence. */
   error?: string | null;
+  /**
+   * How far the other side has read, when this side is allowed to know.
+   *
+   * Owner only, and null everywhere else. The shop may tell its owner whether
+   * a reply has been looked at; it must not start reporting the owner's own
+   * reading back to the customer, so the customer's thread never receives
+   * this and draws no receipts at all.
+   *
+   * It is the order page's cursor, not a delivery receipt. A Telegram message
+   * and an email are both delivered the instant they go - only this proves
+   * somebody opened the order and read it.
+   */
+  readCursor?: number | null;
+  /** One line above the thread: whether they are up to date. */
+  note?: string | null;
+  /**
+   * Fill the column rather than capping at a fixed height.
+   *
+   * The portal now gives the conversation a pane of its own, which wants the
+   * thread to be as tall as the pane and scroll inside it. Everywhere else it
+   * sits in a column of panels, where growing without limit would push the
+   * order off the screen.
+   */
+  fill?: boolean;
 }
 
 const {
@@ -64,7 +88,21 @@ const {
   proofBase = null,
   channelNote = null,
   error = null,
+  readCursor = null,
+  note = null,
+  fill = false,
 } = Astro.props as Props;
+
+/*
+ * The list's classes, in one place.
+ *
+ * `src/scripts/thread.ts` builds this same list when the first message lands
+ * in a thread that started empty, so it reads the string off the section
+ * rather than carrying a second copy that can drift from this one.
+ */
+const listClass = fill
+  ? 'flex-1 min-h-0 overflow-y-auto p-4 space-y-3'
+  : 'max-h-[26rem] overflow-y-auto p-4 space-y-3';
 
 const atImageLimit = imagesUsed >= IMAGES_PER_ORDER;
 
@@ -89,18 +127,38 @@ const ours = (m: Message) => m.sender === side;
 
 <section
   id="thread"
-  class="scroll-mt-24"
+  class:list={['scroll-mt-24', fill && 'h-full flex flex-col min-h-0']}
   data-thread
   data-side={side}
   data-poll-url={pollUrl ?? undefined}
   data-proof-url={proofBase ?? undefined}
+  data-list-class={listClass}
+  data-read-state={readCursor === null ? undefined : 'on'}
 >
-  <h2 class="eyebrow mb-3">{THREAD.heading}</h2>
+  <div class="mb-3 flex items-baseline justify-between gap-3">
+    <h2 class="eyebrow">{THREAD.heading}</h2>
+    {/* Owner only. Brass, because it is a state of play rather than a warning
+        or a success - and left out entirely on a thread with nothing in it,
+        which has no last message to be up to date with. */}
+    <p
+      class:list={[
+        'text-[12.5px] text-[var(--color-brass)]',
+        !note && 'hidden',
+      ]}
+      data-thread-note
+    >{note}</p>
+  </div>
 
-  <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden">
+  <div
+    data-thread-panel
+    class:list={[
+      'bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden',
+      fill && 'flex-1 min-h-0 flex flex-col',
+    ]}
+  >
     {
       messages.length === 0 ? (
-        <p class="p-5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+        <p class:list={['p-5 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed', fill && 'flex-1']}>
           {/* Both invitations assume there is somebody to answer. On a closed
               thread that put "start the conversation" directly above "the
               conversation is closed". */}
@@ -114,7 +172,7 @@ const ours = (m: Message) => m.sender === side;
         /* Capped and scrolling rather than growing without limit: this panel
            sits on a page that already has an order on it, and a long thread
            must not push the rest of it out of reach. */
-        <ol class="max-h-[26rem] overflow-y-auto p-4 space-y-3" data-thread-list>
+        <ol class={listClass} data-thread-list>
           {messages.map((m) => (
             <li
               class:list={['flex', ours(m) ? 'justify-end' : 'justify-start']}
@@ -169,6 +227,15 @@ const ours = (m: Message) => m.sender === side;
                   {when(m.created_at)}
                   {/* Which door they came through. The shop wants to know. */}
                   {m.via === 'telegram' && <span> · via Telegram</span>}
+                  {/*
+                    * Whether they have read it, and deliberately without a
+                    * time. The cursor records how far they have got, not the
+                    * moment they got there, and a clock invented here would
+                    * be a guess printed beside a fact.
+                    */}
+                  {readCursor !== null && ours(m) && (
+                    <span> · {m.id <= readCursor ? 'Read' : 'Sent, not read yet'}</span>
+                  )}
                 </p>
               </div>
             </li>
