@@ -234,7 +234,15 @@ if (root) {
     stamp.className = `mt-1.5 text-[11.5px] tabular-nums ${
       ours ? 'text-white/65' : 'text-[var(--color-ink-faint)]'
     }`;
-    stamp.textContent = when(message.created_at) + (message.via === 'telegram' ? ' · via Telegram' : '');
+    /*
+     * A message that has only just landed on this page cannot have been read
+     * yet, whichever way it got here - the cursor is behind it by definition -
+     * so this is the one receipt the browser can state without asking.
+     */
+    stamp.textContent =
+      when(message.created_at) +
+      (message.via === 'telegram' ? ' · via Telegram' : '') +
+      (ours && section?.dataset.readState ? ' · Sent, not read yet' : '');
     box.appendChild(stamp);
 
     item.appendChild(box);
@@ -248,6 +256,30 @@ if (root) {
     if (target.querySelector(`[data-message-id="${message.id}"]`)) return;
     target.appendChild(bubble(message));
     target.scrollTop = target.scrollHeight;
+    paintReadNote(message);
+  }
+
+  /*
+   * The line above the thread, moved by what just arrived.
+   *
+   * Owner side only, and it only ever moves on something it can prove. We have
+   * just said something they cannot have seen yet; or they have written from
+   * the order page, which is the page whose cursor this reports, so they have
+   * read it. A message that came in through Telegram proves neither - they may
+   * not have opened the order at all - so the line is left exactly as the
+   * server drew it rather than being guessed at.
+   */
+  function paintReadNote(message: Incoming): void {
+    const note = section?.querySelector<HTMLElement>('[data-thread-note]');
+    if (!note || !section?.dataset.readState) return;
+    if (message.sender === side) {
+      note.textContent = 'Last message unread';
+    } else if (message.via === 'web') {
+      note.textContent = 'They are up to date';
+    } else {
+      return;
+    }
+    note.classList.remove('hidden');
   }
 
   /**
@@ -259,11 +291,22 @@ if (root) {
   function ensureList(): HTMLOListElement | null {
     const existing = listNow();
     if (existing) return existing;
-    const panel = section?.querySelector('div');
+    /*
+     * Named, not "the first div in the section".
+     *
+     * The thread grew a header row above the panel - the line saying whether
+     * the customer is up to date - and a positional lookup quietly started
+     * building the list inside that instead, where no message would ever be
+     * seen.
+     */
+    const panel = section?.querySelector<HTMLElement>('[data-thread-panel]');
     if (!panel) return null;
     panel.querySelector('p')?.remove();
     const made = document.createElement('ol');
-    made.className = 'max-h-[26rem] overflow-y-auto p-4 space-y-3';
+    // Written by Thread.astro, so the pane the portal gives the conversation
+    // and the panel everywhere else cannot fall out of step with this.
+    made.className =
+      section?.dataset.listClass ?? 'max-h-[26rem] overflow-y-auto p-4 space-y-3';
     made.setAttribute('data-thread-list', '');
     panel.insertBefore(made,panel.firstChild);
     return made;
