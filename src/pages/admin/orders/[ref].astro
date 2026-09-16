@@ -430,12 +430,12 @@ const [strip, ...demotedFlags] = flags;
             {menuSteps.map((step) => (
               <form method="post" action={`/api/admin/orders/${order.ref}/status`}>
                 <input type="hidden" name="status" value={step.action} />
-                <button type="submit" class="menu-item">{step.label}</button>
+                <button type="submit" class="menu-item block">{step.label}</button>
               </form>
             ))}
 
             {correctable && (
-              <a href="#posting" class="menu-item">
+              <a href="#posting" class="menu-item block">
                 {order.tracking_number ? 'Correct the tracking' : 'Add a tracking number'}
               </a>
             )}
@@ -468,7 +468,7 @@ const [strip, ...demotedFlags] = flags;
 
             <a
               href={`/order?ref=${order.ref}&t=${order.access_token}`}
-              class="menu-item"
+              class="menu-item block"
             >See what the customer sees</a>
 
             {cancelStep && (
@@ -481,7 +481,7 @@ const [strip, ...demotedFlags] = flags;
                 * somewhere else that this would have to be kept in step with.
                 */
               <details class="mt-1 pt-1 border-t border-[var(--color-rule-faint)]">
-                <summary class="menu-item !text-[var(--color-outstock)] cursor-pointer">
+                <summary class="menu-item block !text-[var(--color-outstock)] cursor-pointer">
                   {cancelStep.label}
                 </summary>
                 <form
@@ -522,7 +522,7 @@ const [strip, ...demotedFlags] = flags;
               data-ref={order.ref}
               class="mt-1 pt-1 border-t border-[var(--color-rule-faint)]"
             >
-              <button type="submit" class="menu-item !text-[var(--color-outstock)]">
+              <button type="submit" class="menu-item block !text-[var(--color-outstock)]">
                 Delete this order
               </button>
               <p class="px-3 pb-1 text-[12px] text-[var(--color-ink-faint)] leading-relaxed">
@@ -1496,9 +1496,12 @@ const [strip, ...demotedFlags] = flags;
   }
 
   /* One row in the menu, whether it is a link, a submit or a tick. Written
-     here rather than repeated on nine elements. */
+     here rather than repeated on nine elements.
+
+     Deliberately no `display`: the tick is a flex row of box and label, and
+     setting `display: block` here beat the utility class that made it one -
+     which put the checkbox on a line of its own above its own wording. */
   .menu-item {
-    display: block;
     width: 100%;
     padding: 0.5rem 0.75rem;
     border-radius: 8px;
