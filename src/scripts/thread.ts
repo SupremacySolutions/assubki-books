@@ -256,20 +256,29 @@ if (root) {
     if (target.querySelector(`[data-message-id="${message.id}"]`)) return;
     target.appendChild(bubble(message));
     target.scrollTop = target.scrollHeight;
-    paintReadNote(message.sender === side);
+    paintReadNote(message);
   }
 
   /*
    * The line above the thread, moved by what just arrived.
    *
-   * Owner side only, and only two things can have happened: we have just said
-   * something they cannot have seen, or they have written, which is proof they
-   * had the page open. Neither is a guess.
+   * Owner side only, and it only ever moves on something it can prove. We have
+   * just said something they cannot have seen yet; or they have written from
+   * the order page, which is the page whose cursor this reports, so they have
+   * read it. A message that came in through Telegram proves neither - they may
+   * not have opened the order at all - so the line is left exactly as the
+   * server drew it rather than being guessed at.
    */
-  function paintReadNote(mine: boolean): void {
+  function paintReadNote(message: Incoming): void {
     const note = section?.querySelector<HTMLElement>('[data-thread-note]');
     if (!note || !section?.dataset.readState) return;
-    note.textContent = mine ? 'Last message unread' : 'They are up to date';
+    if (message.sender === side) {
+      note.textContent = 'Last message unread';
+    } else if (message.via === 'web') {
+      note.textContent = 'They are up to date';
+    } else {
+      return;
+    }
     note.classList.remove('hidden');
   }
 

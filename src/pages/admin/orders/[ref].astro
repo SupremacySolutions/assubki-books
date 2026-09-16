@@ -288,15 +288,20 @@ const summary = [
 /*
  * Whether the customer has read what we last said.
  *
- * Read from their own cursor on this order - the one their page moves when
- * they open it - and never from Telegram or email, both of which are
- * "delivered" the instant they go. There is no cursor to consult on a thread
- * with nothing in it, so nothing is said.
+ * Measured against our own newest message rather than the newest message of
+ * either side. Who spoke last is not the question: a customer can write from
+ * Telegram without ever opening the order, which would leave something of ours
+ * unread underneath their reply - and "they are up to date" would be the shop
+ * telling its owner not to chase a message nobody has seen.
+ *
+ * Read from their cursor on this order - the one their page moves when they
+ * open it - and never from Telegram or email, both of which are "delivered"
+ * the instant they go. We have said nothing, there is nothing to report.
  */
-const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-const conversationNote = !lastMessage
+const lastOurs = messages.filter((m) => m.sender === 'owner').at(-1) ?? null;
+const conversationNote = !lastOurs
   ? null
-  : lastMessage.sender === 'owner' && lastMessage.id > (order.read_cursor_customer ?? 0)
+  : lastOurs.id > (order.read_cursor_customer ?? 0)
     ? 'Last message unread'
     : 'They are up to date';
 
