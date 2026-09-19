@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { setStock } from '../../../../lib/admin-db';
-import { forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
+import { canonicalPublisher, forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
 import { tellWaiting } from '../../../../lib/stock-alerts';
 import { validIsbn, normaliseIsbn } from '../../../../lib/isbn-search';
 import { captionToStore } from '../../../../lib/channel-caption';
@@ -86,7 +86,9 @@ export const POST: APIRoute = async ({ request }) => {
   const captionOffered = form.has('telegram_caption');
   const telegramCaption = captionOffered ? captionToStore(form) : null;
   const author = String(form.get('author') ?? '').trim() || null;
-  const publisher = String(form.get('publisher') ?? '').trim() || null;
+  /* Joins an existing spelling that differs only in capitals or spaces, so the
+     catalogue's publisher list does not grow a second "Zam Zam". */
+  const publisher = await canonicalPublisher(String(form.get('publisher') ?? ''), id);
   /*
    * Refused rather than corrected if it is not a real ISBN.
    *

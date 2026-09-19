@@ -4,7 +4,7 @@ import Admin from '../../../layouts/Admin.astro';
 import PoundInput from '../../../components/PoundInput.astro';
 import CoverReview from '../../../components/CoverReview.astro';
 import { getBookAdmin, partCandidates } from '../../../lib/admin-db';
-import { allCategories, categoryCounts, setOptionsForOwner } from '../../../lib/db';
+import { allCategories, categoryCounts, publisherSpellings, setOptionsForOwner } from '../../../lib/db';
 import { imageUrl, price, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
 import { botConfigured, plainCaption } from '../../../lib/telegram';
 
@@ -29,6 +29,9 @@ const candidates =
 if (!isNew && !book) return Astro.rewrite('/404');
 
 const categories = await allCategories();
+/* The names already in use, offered as the owner types a publisher so the
+   catalogue's publisher list does not split one imprint into three. */
+const publishers = await publisherSpellings();
 /* How many listings each shelf already holds - the quickest way to recognise
    the shelf you meant among twenty-six similar names. Cached for a minute and
    read as 441 links rather than the rollup that once ate the read budget; see
@@ -466,7 +469,28 @@ const captionStale = Boolean(
             <label for="publisher" class="block text-[14.5px] font-medium mb-1.5">
               Publisher <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
             </label>
-            <input id="publisher" name="publisher" maxlength="160" value={book?.publisher ?? ''} class="field" />
+            <input
+              id="publisher"
+              name="publisher"
+              maxlength="160"
+              value={book?.publisher ?? ''}
+              list="publisherNames"
+              autocomplete="off"
+              class="field"
+            />
+            <datalist id="publisherNames">
+              {publishers.map((p) => (
+                <option value={p.name} data-count={p.count}>
+                  {p.count === 1 ? '1 listing' : `${p.count} listings`}
+                </option>
+              ))}
+            </datalist>
+            {/* Filled by the script below when the name looks like one already
+                in use under another spelling. Empty, it takes no room. */}
+            <p id="publisherHint" class="mt-1.5 text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]" aria-live="polite" hidden>
+              Did you mean <button type="button" id="publisherUse" class="font-medium text-[var(--color-navy)] underline underline-offset-2"></button>?
+              <span id="publisherUsed" class="text-[var(--color-ink-faint)]"></span>
+            </p>
           </div>
           <div>
             <label for="volumes" class="block text-[13px] text-[var(--color-ink-faint)] mb-1">
@@ -2126,6 +2150,49 @@ const captionStale = Boolean(
         note.textContent = said;
         note.style.color = '';
       });
+    }
+  </script>
+
+  {/*
+    * "Did you mean...?" for a publisher.
+    *
+    * The suggestions list catches a name the owner starts typing the same way;
+    * this catches the one typed differently - "Zamzam" for "Zam Zam", or with
+    * "Publications" on the end. It only offers: two real publishers can look
+    * alike, and the owner is the one holding the book. Capitals and spacing
+    * alone are folded on save without asking.
+    */}
+  <script>
+    import { publisherKey, tidyPublisher } from '../../../lib/publishers';
+
+    const field = document.querySelector<HTMLInputElement>('#publisher');
+    const hint = document.querySelector<HTMLElement>('#publisherHint');
+    const use = document.querySelector<HTMLButtonElement>('#publisherUse');
+    const used = document.querySelector<HTMLElement>('#publisherUsed');
+    const known = [...document.querySelectorAll<HTMLOptionElement>('#publisherNames option')].map((o) => ({
+      name: o.value,
+      count: Number(o.dataset.count) || 0,
+      key: publisherKey(o.value),
+    }));
+
+    if (field && hint && use && used) {
+      const check = () => {
+        const typed = tidyPublisher(field.value);
+        const key = publisherKey(typed);
+        // Most used first, so the spelling offered is the one to settle on.
+        const match = key ? known.find((k) => k.key === key && k.name !== typed) : undefined;
+        hint.hidden = !match;
+        if (!match) return;
+        use.textContent = match.name;
+        used.textContent = `Used on ${match.count === 1 ? '1 listing' : `${match.count} listings`}.`;
+      };
+      use.addEventListener('click', () => {
+        field.value = use.textContent ?? field.value;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.focus();
+      });
+      field.addEventListener('input', check);
+      check();
     }
   </script>
 
