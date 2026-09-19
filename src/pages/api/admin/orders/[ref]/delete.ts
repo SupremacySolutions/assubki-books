@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../../lib/publish';
 import { env } from 'cloudflare:workers';
 import { releaseHold } from '../../../../../lib/stock-release';
 import { getOrderByRef } from '../../../../../lib/admin-db';
@@ -21,7 +22,7 @@ export const prerender = false;
  */
 const STILL_HOLDING = new Set(['requested', 'awaiting_payment']);
 
-export const POST: APIRoute = async ({ params }) => {
+export const POST: APIRoute = async ({ params, url, locals }) => {
   const ref = params.ref!;
   const order = await getOrderByRef(ref);
   if (!order) return new Response(null, { status: 302, headers: { Location: '/admin/orders' } });
@@ -54,6 +55,7 @@ export const POST: APIRoute = async ({ params }) => {
   statements.push(env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(order.id));
   await env.DB.batch(statements);
   forgetDashboard();
+  await syncChannelSoon(locals, url.origin);
 
   // After the row is gone, so a failure here leaves a collectable object rather
   // than a message pointing at one that has been removed.

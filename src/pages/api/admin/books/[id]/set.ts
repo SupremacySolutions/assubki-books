@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../../lib/publish';
 import { env } from 'cloudflare:workers';
 import { forgetCategoryCounts, forgetHomeRows } from '../../../../../lib/db';
 import { partCandidates } from '../../../../../lib/admin-db';
@@ -58,7 +59,7 @@ function readPart(form: FormData, i: number, volumes: number) {
 const slugify = (text: string) =>
   text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
 
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = async ({ params, request, locals }) => {
   const id = Number.parseInt(params.id ?? '', 10);
   if (!Number.isInteger(id)) return new Response('Bad request', { status: 400 });
 
@@ -169,6 +170,7 @@ export const POST: APIRoute = async ({ params, request }) => {
 
     forgetCategoryCounts();
     forgetHomeRows();
+    await syncChannelSoon(locals, new URL(request.url).origin, [id]);
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
@@ -268,6 +270,7 @@ export const POST: APIRoute = async ({ params, request }) => {
     await env.DB.batch(statements);
     forgetCategoryCounts();
   forgetHomeRows();
+  await syncChannelSoon(locals, new URL(request.url).origin, [id]);
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
@@ -309,6 +312,7 @@ export const POST: APIRoute = async ({ params, request }) => {
 
     forgetCategoryCounts();
   forgetHomeRows();
+  await syncChannelSoon(locals, new URL(request.url).origin, [id]);
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
@@ -385,5 +389,6 @@ export const POST: APIRoute = async ({ params, request }) => {
   await env.DB.batch(statements);
   forgetCategoryCounts();
   forgetHomeRows();
+  await syncChannelSoon(locals, new URL(request.url).origin, [id]);
   return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
 };

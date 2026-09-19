@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../lib/publish';
 import { setStock } from '../../../../lib/admin-db';
 import { forgetHomeRows } from '../../../../lib/db';
 import { tellWaiting } from '../../../../lib/stock-alerts';
@@ -7,7 +8,7 @@ import { readForm } from '../../../../lib/request-body';
 export const prerender = false;
 
 /** The inline stock field on the listings page. */
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
   const form = await readForm(request);
   if (!form) return new Response('Bad request', { status: 400 });
   const id = Number.parseInt(String(form.get('id') ?? ''), 10);
@@ -27,6 +28,7 @@ export const POST: APIRoute = async ({ request }) => {
    * were already spoken for.
    */
   await tellWaiting(id, new URL(request.url).origin);
+  await syncChannelSoon(locals, new URL(request.url).origin, [id]);
 
   const referer = request.headers.get('Referer');
   const back = referer && referer.includes('/admin/books') ? referer : '/admin/books';

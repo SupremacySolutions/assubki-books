@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../../lib/publish';
 import { env } from 'cloudflare:workers';
 import { releaseHold } from '../../../../../lib/stock-release';
 import { getOrderByRef } from '../../../../../lib/admin-db';
@@ -13,7 +14,7 @@ export const prerender = false;
 /** Statuses where the customer no longer gets the goods, so the hold must go. */
 const RELEASES_STOCK = new Set(['cancelled']);
 
-export const POST: APIRoute = async ({ params, request, url }) => {
+export const POST: APIRoute = async ({ params, request, url, locals }) => {
   const ref = params.ref!;
   const order = await getOrderByRef(ref);
   if (!order) return new Response('No such order', { status: 404 });
@@ -198,6 +199,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     collectionAddress: whereToCollect,
     cashPayment: Boolean(order.cash_payment),
   }).catch((err) => console.error('[admin] status notification failed', ref, err));
+  await syncChannelSoon(locals, url.origin);
 
   return new Response(null, { status: 302, headers: { Location: `/admin/orders/${ref}` } });
 };

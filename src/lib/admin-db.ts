@@ -5,6 +5,7 @@
 
 import { env } from 'cloudflare:workers';
 import { clipToBytes, LIKE_BYTES } from './like';
+import { REPOST_AFTER_SECONDS } from './telegram';
 import type { BookLanguage } from './db';
 
 export interface AdminOrderRow {
@@ -247,6 +248,8 @@ export type BookFilter =
   | 'no-description'
   | 'no-subject'
   | 'not-announced'
+  /* Back in stock while the channel post, far up by now, still says it is not. */
+  | 'repost'
   | 'out-of-stock'
   | 'low-stock'
   | 'draft'
@@ -285,6 +288,9 @@ const FILTER_SQL: Record<BookFilter, string> = {
   'no-description': "(b.description_html IS NULL OR b.description_html = '')",
   'no-subject': 'NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)',
   'not-announced': 'b.telegram_message_id IS NULL',
+  repost: `b.telegram_message_id IS NOT NULL AND b.telegram_shown_available = 0
+     AND (b.stock - b.reserved) > 0
+     AND b.telegram_sold_out_at <= unixepoch() - ${REPOST_AFTER_SECONDS}`,
   'out-of-stock': '(b.stock - b.reserved) <= 0',
   'low-stock': '(b.stock - b.reserved) > 0 AND (b.stock - b.reserved) <= 2',
   draft: "b.status = 'draft'",
@@ -531,6 +537,10 @@ export interface AdminBookDetail extends AdminBookRow {
   telegram_caption: string | null;
   /** Every message the channel post occupies, so a delete can clear all of it. */
   telegram_album_ids: string | null;
+  /** The count the channel post last showed; null when never recorded. */
+  telegram_shown_available: number | null;
+  /** When the channel post first showed nought; null while it shows copies. */
+  telegram_sold_out_at: number | null;
   images: { id: number; image_key: string; alt: string | null; sort: number }[];
   categoryIds: number[];
 }

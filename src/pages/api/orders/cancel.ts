@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../lib/publish';
 import { env } from 'cloudflare:workers';
 import { getOrder } from '../../../lib/orders';
 import { releaseHold } from '../../../lib/stock-release';
@@ -20,7 +21,7 @@ export const prerender = false;
  *
  * A plain form post, because the whole flow has to work with JavaScript off.
  */
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, url, locals }) => {
   const form = await readForm(request);
   if (!form) return new Response('Bad request', { status: 400 });
   const ref = String(form.get('ref') ?? '').trim();
@@ -80,5 +81,6 @@ export const POST: APIRoute = async ({ request }) => {
   if (!done[3].meta.changes) return back('&e=cancel');
 
   forgetDashboard();
+  await syncChannelSoon(locals, url.origin);
   return back('&cancelled=1');
 };

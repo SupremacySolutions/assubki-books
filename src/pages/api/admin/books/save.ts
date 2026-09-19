@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../lib/publish';
 import { env } from 'cloudflare:workers';
 import { setStock } from '../../../../lib/admin-db';
 import { forgetCategoryCounts, forgetHomeRows } from '../../../../lib/db';
@@ -48,7 +49,7 @@ async function uniqueSlug(base: string, excludeId: number | null): Promise<strin
   return `${base}-${Date.now()}`;
 }
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
   const form = await readForm(request);
   if (!form) return new Response('Bad request', { status: 400 });
 
@@ -160,6 +161,7 @@ export const POST: APIRoute = async ({ request }) => {
     await setStock(bookId, stock, 'edited in portal');
     /* Anybody waiting is told once availability has settled - see stock-alerts. */
     await tellWaiting(bookId, new URL(request.url).origin);
+    await syncChannelSoon(locals, new URL(request.url).origin, [bookId]);
 
   /*
    * The delivery. Floored at what customers have already claimed, the same way

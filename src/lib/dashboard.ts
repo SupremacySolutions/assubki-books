@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { missesQuery, type Miss } from './searches';
 import { requestCountQuery } from './book-requests';
+import { REPOST_AFTER_SECONDS } from './telegram';
 
 /**
  * The numbers behind the dashboard.
@@ -61,7 +62,7 @@ export interface Dashboard {
   /** The catalogue worklist - listings missing something. */
   backlog: {
     noImage: number; thinImage: number; noDescription: number; noCategory: number;
-    unposted: number; outOfStock: number; lowStock: number;
+    unposted: number; repost: number; outOfStock: number; lowStock: number;
   };
 }
 
@@ -182,6 +183,10 @@ async function read(days: number): Promise<Dashboard> {
          (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
             AND telegram_message_id IS NULL) AS unposted,
          (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
+            AND telegram_message_id IS NOT NULL AND telegram_shown_available = 0
+            AND (stock - reserved) > 0
+            AND telegram_sold_out_at <= unixepoch() - ${REPOST_AFTER_SECONDS}) AS repost,
+         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
             AND (stock - reserved) <= 0) AS outOfStock,
          (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
             AND (stock - reserved) > 0 AND (stock - reserved) <= 2) AS lowStock`,
@@ -236,7 +241,7 @@ async function read(days: number): Promise<Dashboard> {
       return {
         noImage: Number(b.noImage ?? 0), thinImage: Number(b.thinImage ?? 0),
         noDescription: Number(b.noDescription ?? 0),
-        noCategory: Number(b.noCategory ?? 0), unposted: Number(b.unposted ?? 0),
+        noCategory: Number(b.noCategory ?? 0), unposted: Number(b.unposted ?? 0), repost: Number(b.repost ?? 0),
         outOfStock: Number(b.outOfStock ?? 0), lowStock: Number(b.lowStock ?? 0),
       };
     })(),

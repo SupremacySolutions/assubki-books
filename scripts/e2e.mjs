@@ -5011,6 +5011,80 @@ async function channelPost() {
     'and is remembered as the single message it is');
 
   /*
+   * The count keeps itself.
+   *
+   * A checkout holds a copy, and the post has to say so without the owner
+   * pressing anything - the sync runs after the response, so these wait on
+   * the row rather than reading it once.
+   */
+  const until = async (sql, done) => {
+    for (let i = 0; i < 40; i++) {
+      const row = await one(sql);
+      if (done(row)) return row;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return one(sql);
+  };
+  const stocked = await makeBook({ stock: '2' });
+  const shown = `SELECT telegram_shown_available AS n, telegram_sold_out_at AS gone,
+                        telegram_message_id AS m FROM books WHERE id=${stocked.id}`;
+  await admin(`/api/admin/books/${stocked.id}/telegram`);
+  t.ok((await one(shown)).n === 2, 'a post remembers the count it went out with');
+
+  await placeOrder(stocked.id);
+  t.ok((await until(shown, (r) => r.n === 1)).n === 1, 'a checkout takes the copy off the channel post');
+
+  const lastCopy = await placeOrder(stocked.id);
+  const soldOut = await until(shown, (r) => r.n === 0);
+  t.ok(soldOut.n === 0 && soldOut.gone, 'the last copy leaves it at nought, and notes when');
+  const soldOutForm = await html(`/admin/books/${stocked.id}`);
+  t.ok(soldOutForm.includes('View listing</textarea>') && !soldOutForm.includes('Order here</textarea>'),
+    'with nothing to order, the link says what it does instead');
+
+  // A hold given back inside the window is a post brought back where it is.
+  await admin(`/api/admin/orders/${lastCopy.ref}/status`, { status: 'cancelled' });
+  const returned = await until(shown, (r) => r.n === 1);
+  t.ok(returned.n === 1 && returned.gone === null && returned.m === soldOut.m,
+    'a copy given back within days puts the same post back in place');
+  t.ok(!(await html(`/admin/books/${stocked.id}`)).includes('Repost to channel'),
+    'and nobody is asked to repost a book that was only gone a moment');
+
+  /*
+   * Sold out for a month, then restocked.
+   *
+   * That post is far up the channel. The sync must leave it saying out of
+   * stock rather than quietly bring it back where nobody will scroll, and the
+   * owner is offered a fresh post instead.
+   */
+  await db(`UPDATE books SET stock = reserved WHERE id = ${stocked.id}`);
+  await admin('/api/admin/books/stock', { id: String(stocked.id), stock: '1' });
+  await until(shown, (r) => r.n === 0);
+  await db(`UPDATE books SET telegram_sold_out_at = unixepoch() - 40 * 86400 WHERE id = ${stocked.id}`);
+  await admin('/api/admin/books/stock', { id: String(stocked.id), stock: '6' });
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  t.ok((await one(shown)).n === 0, 'a long-sold-out post is not edited back to life up the channel');
+  const restocked = await html(`/admin/books/${stocked.id}`);
+  t.ok(restocked.includes('Repost to channel') && restocked.includes('Just update the old post instead'),
+    'the owner is offered a fresh post, with the in-place edit still there');
+  t.ok((await html('/admin/books?filter=repost')).includes(stocked.title),
+    'and the listing turns up under the filter for exactly this');
+
+  const reposted = await admin(`/api/admin/books/${stocked.id}/telegram`);
+  const fresh = await one(shown);
+  t.ok(reposted.location.includes('posted=repost') || reposted.location.includes('posted=orphan'),
+    `reposting says what happened (${reposted.location})`);
+  t.ok(fresh.n === 5 && fresh.gone === null, 'the fresh post carries the count as it is now');
+
+  // Choosing the in-place edit keeps the post it has.
+  await db(`UPDATE books SET telegram_shown_available = 0, telegram_message_id = 4242,
+              telegram_album_ids = '[4242]', telegram_sold_out_at = unixepoch() - 40 * 86400
+            WHERE id = ${stocked.id}`);
+  const kept = await admin(`/api/admin/books/${stocked.id}/telegram?mode=edit`);
+  const keptRow = await one(shown);
+  t.ok(kept.location.includes('posted=1') && keptRow.m === 4242 && keptRow.n === 5,
+    'and "just update the old post" edits the old post rather than posting again');
+
+  /*
    * Deleting has to clear the whole album. Clearing only the captioned message
    * would leave the other photographs in the channel with nothing to click.
    */

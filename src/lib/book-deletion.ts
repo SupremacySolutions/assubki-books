@@ -175,7 +175,7 @@ export async function softDelete(
 const CHANNEL_BUDGET = 300;
 
 /** The message ids one listing occupies in the channel, album included. */
-function channelMessages(book: {
+export function channelMessages(book: {
   telegram_message_id: number | null;
   telegram_album_ids: string | null;
 }): number[] {
