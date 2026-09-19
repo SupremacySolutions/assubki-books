@@ -148,7 +148,7 @@ async function read(days: number): Promise<Dashboard> {
        * ordering, so the figure is deterministic and the rows never exceed the
        * takings.
        */
-      `SELECT c.name AS name, SUM(oi.price_pence_snapshot * oi.qty) AS pence
+      `SELECT c.name AS name, SUM(oi.price_pence_snapshot * oi.qty - oi.multibuy_pence) AS pence
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
          JOIN categories c ON c.id = (

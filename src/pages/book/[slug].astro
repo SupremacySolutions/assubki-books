@@ -11,6 +11,7 @@ import { IMAGE_PRESETS } from '../../lib/image-presets';
 import { fillsTheBox } from '../../lib/cover-fit';
 import MessageUs from '../../components/MessageUs.astro';
 import { BACK_IN_STOCK } from '../../lib/order-status';
+import { parseOffers, sortOffers, lineCost, offerHeading, offerPrice, offerWas } from '../../lib/multibuy';
 
 const { slug } = Astro.params;
 const book = slug ? await bookBySlug(slug) : null;
@@ -54,6 +55,20 @@ const off = book.sale_percent ?? 0;
 const nowPence = off > 0 ? Math.round((book.price_pence * (100 - off)) / 100) : book.price_pence;
 const savedPence = book.price_pence - nowPence;
 const sale = off > 0 ? await liveSale() : null;
+
+/*
+ * Multi-buy offers, against the price this customer would otherwise pay - the
+ * sale price when there is one. An offer the sale already beats is left off:
+ * it would be a chip promising a saving the basket then does not give.
+ */
+const offers = parseOffers(book.multibuy);
+const deals = sortOffers(offers)
+  .map((o) => {
+    const full = nowPence * o.qty;
+    const cost = lineCost(o.qty, nowPence, offers);
+    return { offer: o, full, cost, save: full - cost };
+  })
+  .filter((d) => d.save > 0);
 
 const coming = delivery(book);
 const mine: string | null = null;
@@ -282,22 +297,83 @@ const jsonLd = {
           )
         }
 
+        {/*
+          * Multi-buy offers, in the same chip style as a set's options, because
+          * they answer the same question - which way of buying this am I
+          * looking at. Pressing one sets the quantity; the price below follows.
+          */}
+        {
+          deals.length > 0 && (
+            <div class="mt-6" id="multibuyOffers">
+              <p class="eyebrow mb-2">Multi-buy - buy more, pay less</p>
+              <ul class="flex flex-wrap gap-2">
+                <li>
+                  <button
+                    type="button"
+                    data-mb-qty="1"
+                    aria-pressed="true"
+                    disabled={!(book.available > 0)}
+                    class="mb-chip block text-left px-3 py-2 rounded-[3px] border text-[13.5px] leading-tight border-[var(--color-rule)] hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:ring-1 aria-pressed:ring-[var(--color-navy)] disabled:cursor-default"
+                  >
+                    <span class="block font-medium">1 copy</span>
+                    <span class="block mt-0.5 text-[var(--color-ink-faint)]">{price(nowPence)}</span>
+                  </button>
+                </li>
+                {deals.map(({ offer, save }) => {
+                  const short = book.available > 0 && offer.qty > book.available;
+                  return (
+                    <li>
+                      <button
+                        type="button"
+                        data-mb-qty={offer.qty}
+                        data-mb-kind={offer.kind}
+                        aria-pressed="false"
+                        disabled={!(book.available > 0) || short}
+                        class:list={[
+                          'mb-chip block text-left px-3 py-2 rounded-[3px] border text-[13.5px] leading-tight border-[var(--color-rule)] hover:border-[var(--color-navy)] aria-pressed:border-[var(--color-navy)] aria-pressed:ring-1 aria-pressed:ring-[var(--color-navy)] disabled:cursor-default',
+                          short && 'opacity-55',
+                        ]}
+                      >
+                        <span class="block font-medium">{offerHeading(offer)}</span>
+                        <span class="flex items-baseline gap-1.5 mt-0.5">
+                          <span class="price text-[14px]">{offerPrice(offer)}</span>
+                          <span class="text-[12.5px] text-[var(--color-ink-faint)] line-through decoration-1">
+                            {offerWas(offer, nowPence)}
+                          </span>
+                        </span>
+                        <span class="block mt-0.5 text-[12px] font-medium text-[var(--color-outstock)]">
+                          {short ? `Only ${book.available} in stock` : `Save ${price(save)}`}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )
+        }
+
         {/* One panel for the whole decision: what it costs, whether it is
             there, how many, and the button. They were four loose rows that the
             eye had to gather up itself. */}
-        <div class="mt-7 max-w-[520px] bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-[22px]">
+        <div
+          id="pricePanel"
+          class="mt-7 max-w-[520px] bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-[22px]"
+          data-unit={nowPence}
+          data-full={book.price_pence}
+          data-offers={deals.length ? JSON.stringify(offers) : undefined}
+        >
+          {/* The three facts of a reduced price - what you pay, what it was, by
+              how much. With multi-buy they are for the quantity chosen, and
+              the script below repaints them as it changes. */}
           <div class="flex items-center gap-3.5 flex-wrap">
-            <span class="price text-[34px] leading-none">{price(nowPence)}</span>
-            {off > 0 && (
-              <>
-                <span class="text-[18px] text-[var(--color-ink-faint)] line-through decoration-1">
-                  {price(book.price_pence)}
-                </span>
-                <span class="text-[13px] font-medium px-3 py-1 rounded-[var(--radius-pill)] text-[var(--color-outstock)] bg-[var(--color-outstock)]/10">
-                  Save {price(savedPence)}
-                </span>
-              </>
-            )}
+            <span id="priceNow" class="price text-[34px] leading-none">{price(nowPence)}</span>
+            <span id="priceWas" hidden={!(off > 0)} class="text-[18px] text-[var(--color-ink-faint)] line-through decoration-1">
+              {price(book.price_pence)}
+            </span>
+            <span id="priceSave" hidden={!(off > 0)} class="text-[13px] font-medium px-3 py-1 rounded-[var(--radius-pill)] text-[var(--color-outstock)] bg-[var(--color-outstock)]/10">
+              Save {price(savedPence)}
+            </span>
             <span
               class:list={[
                 'text-[13.5px] font-medium px-3 py-1 rounded-[var(--radius-pill)]',
@@ -307,6 +383,8 @@ const jsonLd = {
               ]}>{pillLabel}</span
             >
           </div>
+
+          <p id="priceFor" hidden class="mt-2 text-[13.5px] text-[var(--color-ink-soft)]"></p>
 
           {off > 0 && sale && (
             <p class="mt-2.5 text-[13.5px] text-[var(--color-outstock)]">
@@ -506,6 +584,7 @@ const jsonLd = {
 
   <script>
     import { readGroup } from '../../scripts/group.ts';
+    import { lineCost, parseOffers } from '../../lib/multibuy';
 
     const qtyField = document.querySelector<HTMLInputElement>('#qty');
 
@@ -523,6 +602,74 @@ const jsonLd = {
           b.disabled = b.dataset.qty === '-1' ? v <= 1 : v >= max;
         }
       });
+    }
+
+    /*
+     * Multi-buy: the price panel follows the quantity.
+     *
+     * At one copy the panel says what it said before - the price, and the sale
+     * price's crossed-out original if there is one. Above that it shows the
+     * total for that many, the total at the ordinary price struck through, and
+     * the difference. `lineCost` is the function the server charges with.
+     */
+    const panel = document.querySelector<HTMLElement>('#pricePanel');
+    const mbOffers = parseOffers(panel?.dataset.offers ?? null);
+    if (panel && mbOffers.length) {
+      const unit = Number(panel.dataset.unit);
+      const full = Number(panel.dataset.full);
+      const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
+      const now = document.querySelector<HTMLElement>('#priceNow')!;
+      const was = document.querySelector<HTMLElement>('#priceWas')!;
+      const save = document.querySelector<HTMLElement>('#priceSave')!;
+      const forLine = document.querySelector<HTMLElement>('#priceFor')!;
+      const initial = { now: now.textContent, was: was.textContent, save: save.textContent, wasHidden: was.hidden };
+      const chips = [...document.querySelectorAll<HTMLButtonElement>('[data-mb-qty]')];
+
+      const paint = () => {
+        const q = Math.max(1, Math.trunc(Number(qtyField?.value) || 1));
+        // The chip for the offer in play: a bundle of exactly this many, or the
+        // largest "or more" rate this many qualifies for.
+        const fromTier = Math.max(0, ...mbOffers.filter((o) => o.kind === 'from' && o.qty <= q).map((o) => o.qty));
+        for (const chip of chips) {
+          const n = Number(chip.dataset.mbQty);
+          const on = n === 1
+            ? q === 1
+            : chip.dataset.mbKind === 'from' ? n === fromTier && !chips.some((c) => c.dataset.mbKind === 'bundle' && Number(c.dataset.mbQty) === q) : n === q;
+          chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+
+        if (q === 1) {
+          now.textContent = initial.now;
+          was.textContent = initial.was;
+          save.textContent = initial.save;
+          was.hidden = save.hidden = initial.wasHidden;
+          forLine.hidden = true;
+          return;
+        }
+        const cost = lineCost(q, unit, mbOffers);
+        const whole = full * q;
+        now.textContent = gbp(cost);
+        was.textContent = gbp(whole);
+        save.textContent = `Save ${gbp(whole - cost)}`;
+        was.hidden = save.hidden = cost >= whole;
+        forLine.hidden = false;
+        forLine.textContent = `For ${q} copies - ${gbp(Math.round(cost / q))} each on average`;
+      };
+
+      qtyField?.addEventListener('input', paint);
+      for (const chip of chips) {
+        chip.addEventListener('click', () => {
+          if (!qtyField || chip.disabled) return;
+          const max = Number(qtyField.max || '1');
+          qtyField.value = String(Math.min(max, Number(chip.dataset.mbQty)));
+          for (const b of document.querySelectorAll<HTMLButtonElement>('[data-qty]')) {
+            const v = Number(qtyField.value);
+            b.disabled = b.dataset.qty === '-1' ? v <= 1 : v >= max;
+          }
+          qtyField.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      }
+      paint();
     }
 
     const addBtn = document.querySelector<HTMLButtonElement>('#add');

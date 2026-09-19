@@ -86,6 +86,8 @@ export interface AmendableLine {
   title: string;
   pricePence: number;
   qty: number;
+  /** What multi-buy took off the line. Its total is price × qty minus this. */
+  multibuyPence: number;
   /** A claim on a delivery rather than a copy off the shelf. */
   fromIncoming: number;
 }
@@ -99,13 +101,17 @@ export interface RemovedLine {
   qty: number;
   /** What is left on the line, or zero when the whole line goes. */
   remaining: number;
+  /** The multi-buy saving the copies left keep. See `planAmendment`. */
+  multibuyKeep: number;
+  /** The share of the line's multi-buy saving that goes with the copies removed. */
+  multibuyPence: number;
   fromIncoming: number;
 }
 
 export interface AmendPlan {
   removed: RemovedLine[];
   /** Every line as it will read afterwards. Empty means the order is emptied. */
-  keeping: { title: string; qty: number; pricePence: number }[];
+  keeping: { title: string; qty: number; pricePence: number; multibuyPence: number }[];
   grossBefore: number;
   grossAfter: number;
   discountBefore: number;
@@ -132,6 +138,10 @@ export interface AmendPlan {
  *
  * Rounded down, then floored at what is left, so an amendment can never make a
  * discount larger than the books it is taken off.
+ *
+ * A multi-buy saving follows the same rule, line by line: the copies kept keep
+ * the rate they were bought at. Twenty bought as "20 for £45" and cut to twelve
+ * are twelve at £2.25, not twelve re-priced against today's offers.
  */
 export function planAmendment(
   lines: AmendableLine[],
@@ -152,8 +162,10 @@ export function planAmendment(
     const keep = asked === undefined ? line.qty : Math.min(line.qty, Math.max(0, Math.trunc(asked)));
     const goes = line.qty - keep;
 
-    grossBefore += line.pricePence * line.qty;
-    grossAfter += line.pricePence * keep;
+    const multibuyKeep = line.qty > 0 ? Math.floor((line.multibuyPence * keep) / line.qty) : 0;
+
+    grossBefore += line.pricePence * line.qty - line.multibuyPence;
+    grossAfter += line.pricePence * keep - multibuyKeep;
 
     if (goes > 0) {
       removed.push({
@@ -163,10 +175,14 @@ export function planAmendment(
         pricePence: line.pricePence,
         qty: goes,
         remaining: keep,
+        multibuyKeep,
+        multibuyPence: line.multibuyPence - multibuyKeep,
         fromIncoming: line.fromIncoming,
       });
     }
-    if (keep > 0) keeping.push({ title: line.title, qty: keep, pricePence: line.pricePence });
+    if (keep > 0) {
+      keeping.push({ title: line.title, qty: keep, pricePence: line.pricePence, multibuyPence: multibuyKeep });
+    }
   }
 
   const discountAfter = scaleDiscount(discountBefore, grossBefore, grossAfter);
@@ -283,6 +299,12 @@ export interface AddCandidate {
   fullPricePence: number;
   saleId: number | null;
   qty: number;
+  /**
+   * What multi-buy takes off these copies: the difference their arrival makes
+   * to the book's quantity on this order, at today's offers. Worked out by the
+   * endpoint with `marginalSaving`, which is the only place that knows both.
+   */
+  multibuyPence: number;
   /** A claim on a delivery rather than a copy off the shelf. */
   fromIncoming: boolean;
 }
@@ -303,7 +325,7 @@ export interface AddedLine extends AddCandidate {
 export interface AddPlan {
   added: AddedLine[];
   /** Every line as the order will read afterwards, the new ones included. */
-  holding: { title: string; qty: number; pricePence: number }[];
+  holding: { title: string; qty: number; pricePence: number; multibuyPence: number }[];
   grossBefore: number;
   grossAfter: number;
   discountBefore: number;
@@ -333,7 +355,7 @@ export function planAddition(
   adding: AddCandidate[],
   discountBefore: number,
 ): AddPlan {
-  const grossBefore = lines.reduce((n, l) => n + l.pricePence * l.qty, 0);
+  const grossBefore = lines.reduce((n, l) => n + l.pricePence * l.qty - l.multibuyPence, 0);
 
   const added: AddedLine[] = [];
   for (const candidate of adding) {
@@ -361,13 +383,15 @@ export function planAddition(
     );
     if (already) {
       already.qty += qty;
+      already.multibuyPence += candidate.multibuyPence;
       continue;
     }
 
     added.push({ ...candidate, qty, mergesInto: joins?.id ?? null });
   }
 
-  const grossAfter = grossBefore + added.reduce((n, a) => n + a.pricePence * a.qty, 0);
+  const grossAfter =
+    grossBefore + added.reduce((n, a) => n + a.pricePence * a.qty - a.multibuyPence, 0);
   const discountAfter = scaleDiscount(discountBefore, grossBefore, grossAfter);
 
   /*
@@ -377,14 +401,23 @@ export function planAddition(
    * it joins, so a line of two that becomes three reads as one line of three -
    * which is what the order itself will say once the batch has run.
    */
-  const holding = lines.map((line) => ({
-    title: line.title,
-    qty: line.qty + added.filter((a) => a.mergesInto === line.id).reduce((n, a) => n + a.qty, 0),
-    pricePence: line.pricePence,
-  }));
+  const holding = lines.map((line) => {
+    const joining = added.filter((a) => a.mergesInto === line.id);
+    return {
+      title: line.title,
+      qty: line.qty + joining.reduce((n, a) => n + a.qty, 0),
+      pricePence: line.pricePence,
+      multibuyPence: line.multibuyPence + joining.reduce((n, a) => n + a.multibuyPence, 0),
+    };
+  });
   for (const line of added) {
     if (line.mergesInto === null) {
-      holding.push({ title: line.title, qty: line.qty, pricePence: line.pricePence });
+      holding.push({
+        title: line.title,
+        qty: line.qty,
+        pricePence: line.pricePence,
+        multibuyPence: line.multibuyPence,
+      });
     }
   }
 

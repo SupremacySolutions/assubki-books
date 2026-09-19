@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { getOrderByRef } from '../../../../../lib/admin-db';
+import { getOrderByRef, getOrderItems } from '../../../../../lib/admin-db';
+import { parseOffers } from '../../../../../lib/multibuy';
 import { sellable } from '../../../../../lib/availability';
 import { canAmend, howToAdd } from '../../../../../lib/amend';
 import { ftsQuery } from '../../../../../lib/db';
@@ -71,7 +72,10 @@ export const GET: APIRoute = async ({ params, url }) => {
     .bind(...(order.shipment_id === null ? [match] : [match, order.shipment_id]))
     .all<{ id: number; title: string; title_ar: string | null; image_key: string | null }>();
 
-  const priced = await sellable(candidates.map((b) => b.id));
+  const [priced, lines] = await Promise.all([
+    sellable(candidates.map((b) => b.id)),
+    getOrderItems(order.id),
+  ]);
 
   const results = [];
   for (const candidate of candidates) {
@@ -93,6 +97,13 @@ export const GET: APIRoute = async ({ params, url }) => {
       pricePence: pence,
       wasPrice: pence === book.price_pence ? null : price(book.price_pence),
       free: verdict.free,
+      /*
+       * Multi-buy offers and how many of this book the order already holds, so
+       * the panel's preview can show the saving the endpoint will write. The
+       * endpoint works it out again from its own read; this is display only.
+       */
+      multibuy: parseOffers(book.multibuy),
+      holding: lines.filter((l) => l.book_id === book.id).reduce((n, l) => n + l.qty, 0),
       fromIncoming: verdict.fromIncoming,
       image: imageUrl(candidate.image_key, 'thumb'),
     });

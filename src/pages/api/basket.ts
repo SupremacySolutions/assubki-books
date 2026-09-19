@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { booksByIds } from '../../lib/db';
 import { whenText } from '../../lib/incoming';
 import { liveSale, orderDiscount } from '../../lib/sales';
+import { parseOffers } from '../../lib/multibuy';
 
 export const prerender = false;
 
@@ -46,6 +47,8 @@ export const GET: APIRoute = async ({ url }) => {
         // The reduction on this book, if a sale is running. The basket works
         // out its own totals from these, the same way the server does.
         salePercent: b.sale_percent ?? 0,
+        // Multi-buy offers, priced by the same `lineCost` the server uses.
+        multibuy: parseOffers(b.multibuy),
         expected: whenText(b.incoming_vague, b.incoming_month),
         imageKey: b.image_key,
       })),

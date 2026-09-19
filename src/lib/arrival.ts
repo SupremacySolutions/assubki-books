@@ -116,11 +116,14 @@ export async function receiveDelivery(input: {
       )
       .bind(key),
     // Preserve every price/sale snapshot when a partially filled line splits.
+    // The multi-buy saving is shared between the halves in proportion, so the
+    // two lines still add up to exactly what the one was charged.
     db
       .prepare(
         `INSERT INTO order_items(order_id,book_id,title_snapshot,price_pence_snapshot,qty,
-        from_incoming,sale_id,full_price_pence)
-      SELECT oi.order_id,oi.book_id,oi.title_snapshot,oi.price_pence_snapshot,a.qty,0,oi.sale_id,oi.full_price_pence
+        from_incoming,sale_id,full_price_pence,multibuy_pence)
+      SELECT oi.order_id,oi.book_id,oi.title_snapshot,oi.price_pence_snapshot,a.qty,0,oi.sale_id,oi.full_price_pence,
+        (oi.multibuy_pence*a.qty)/oi.qty
       FROM delivery_allocations a JOIN order_items oi ON oi.id=a.item_id
       WHERE a.delivery_id=?1 AND a.qty<oi.qty AND ${pending}`,
       )
@@ -130,6 +133,9 @@ export async function receiveDelivery(input: {
         `UPDATE order_items SET
         from_incoming=CASE WHEN qty=(SELECT qty FROM delivery_allocations WHERE delivery_id=?1 AND item_id=order_items.id)
           THEN 0 ELSE 1 END,
+        multibuy_pence=CASE WHEN qty>(SELECT qty FROM delivery_allocations WHERE delivery_id=?1 AND item_id=order_items.id)
+          THEN multibuy_pence-(multibuy_pence*(SELECT qty FROM delivery_allocations WHERE delivery_id=?1 AND item_id=order_items.id))/qty
+          ELSE multibuy_pence END,
         qty=CASE WHEN qty>(SELECT qty FROM delivery_allocations WHERE delivery_id=?1 AND item_id=order_items.id)
           THEN qty-(SELECT qty FROM delivery_allocations WHERE delivery_id=?1 AND item_id=order_items.id) ELSE qty END
       WHERE id IN (SELECT item_id FROM delivery_allocations WHERE delivery_id=?1) AND ${pending}`,

@@ -100,6 +100,8 @@ export interface AdminOrderItem {
   title_snapshot: string;
   price_pence_snapshot: number;
   qty: number;
+  /** What multi-buy took off the line. The line's total is price × qty minus this. */
+  multibuy_pence: number;
   slug: string | null;
   /** Still on a shipment, which is where it links - it has no product page. */
   shipment_id: number | null;
@@ -174,7 +176,7 @@ export async function getOrderByRef(ref: string): Promise<AdminOrderRow | null> 
 export async function getOrderItems(orderId: number): Promise<AdminOrderItem[]> {
   const { results } = await env.DB.prepare(
     `SELECT oi.id, oi.from_incoming, oi.book_id, oi.title_snapshot, oi.price_pence_snapshot, oi.qty,
-            b.slug, b.shipment_id
+            oi.multibuy_pence, b.slug, b.shipment_id
        FROM order_items oi LEFT JOIN books b ON b.id = oi.book_id
       WHERE oi.order_id = ? ORDER BY oi.id`,
   )
@@ -511,6 +513,8 @@ export async function bookFilterCounts(): Promise<Record<BookFilter, number>> {
 
 export interface AdminBookDetail extends AdminBookRow {
   delivery_version: number;
+  /** Multi-buy offers as stored JSON, or null. */
+  multibuy: string | null;
   incoming: number;
   reserved_incoming: number;
   incoming_vague: string | null;
