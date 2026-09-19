@@ -142,6 +142,10 @@ import Rosette from '../components/Rosette.astro';
             <span id="saleName" class="text-[var(--color-outstock)]"></span>
             <span id="saleSaving" class="tabular-nums text-[var(--color-outstock)]"></span>
           </div>
+          <div data-row="multibuy" hidden class="flex items-baseline justify-between gap-6 text-[14px]">
+            <span class="text-[var(--color-outstock)]">Multi-buy</span>
+            <span id="multibuySaving" class="tabular-nums text-[var(--color-outstock)]"></span>
+          </div>
           <div data-row="discount" hidden class="flex items-baseline justify-between gap-6 text-[14px]">
             <span id="discountName" class="text-[var(--color-outstock)]"></span>
             <span id="discountAmount" class="tabular-nums text-[var(--color-outstock)]"></span>
@@ -179,6 +183,7 @@ import Rosette from '../components/Rosette.astro';
 
   <script>
     import {planBasketLine,basketDeliveryNote} from "../lib/basket-plan";
+    import { lineCost, type Offer } from '../lib/multibuy';
     import { read, setQty, remove, setBadge, count } from '../scripts/basket.ts';
     import { readGroup, joinGroup, leaveGroup, shareLink, parseShare, escapeHtml, newMemberToken } from '../scripts/group.ts';
     import { IMAGE_VERSION } from '../lib/image-presets.ts';
@@ -198,19 +203,26 @@ import Rosette from '../components/Rosette.astro';
     let saleInfo: { name: string; headline: number } | null = null;
     let discountRule: { thresholdPence: number; percent: number } | null = null;
 
-    /** Fills the stack of rows beneath the basket. */
-    function paintSavings(fullPence: number, afterSale: number) {
+    /**
+     * Fills the stack of rows beneath the basket.
+     *
+     * `afterSale` is before multi-buy; `multibuyPence` is what multi-buy then
+     * takes off. The order discount is tested against what is left after both,
+     * which is what the server tests it against.
+     */
+    function paintSavings(fullPence: number, afterSale: number, multibuyPence = 0) {
       const el = (id: string) => document.querySelector<HTMLElement>(id);
       const saving = fullPence - afterSale;
+      const afterMultibuy = afterSale - multibuyPence;
 
-      // Tested after the sale, never before.
-      const qualifies = Boolean(discountRule) && afterSale >= discountRule!.thresholdPence;
+      // Tested after the sale and multi-buy, never before.
+      const qualifies = Boolean(discountRule) && afterMultibuy >= discountRule!.thresholdPence;
       const discountPence = qualifies
-        ? Math.round((afterSale * discountRule!.percent) / 100)
+        ? Math.round((afterMultibuy * discountRule!.percent) / 100)
         : 0;
 
       const stack = el('#savings')!;
-      stack.hidden = saving === 0 && discountPence === 0;
+      stack.hidden = saving === 0 && discountPence === 0 && multibuyPence === 0;
       el('#fullPrice')!.textContent = gbp(fullPence);
 
       const saleRow = document.querySelector<HTMLElement>('[data-row="sale"]')!;
@@ -219,6 +231,10 @@ import Rosette from '../components/Rosette.astro';
         el('#saleName')!.textContent = saleInfo?.name ?? 'Sale';
         el('#saleSaving')!.textContent = `-${gbp(saving)}`;
       }
+
+      const multibuyRow = document.querySelector<HTMLElement>('[data-row="multibuy"]')!;
+      multibuyRow.hidden = multibuyPence === 0;
+      if (multibuyPence > 0) el('#multibuySaving')!.textContent = `-${gbp(multibuyPence)}`;
 
       const discountRow = document.querySelector<HTMLElement>('[data-row="discount"]')!;
       discountRow.hidden = discountPence === 0;
@@ -229,19 +245,19 @@ import Rosette from '../components/Rosette.astro';
       }
 
       const nearly = el('#nearly')!;
-      const short = discountRule && !qualifies ? discountRule.thresholdPence - afterSale : 0;
+      const short = discountRule && !qualifies ? discountRule.thresholdPence - afterMultibuy : 0;
       nearly.hidden = short <= 0;
       if (short > 0) {
         nearly.querySelector('[data-nearly-text]')!.textContent =
           `Spend ${gbp(short)} more and ${discountRule!.percent}% comes off the whole order.`;
       }
 
-      const saved = saving + discountPence;
+      const saved = saving + multibuyPence + discountPence;
       const savedEl = el('#youSave')!;
       savedEl.hidden = saved === 0;
       savedEl.textContent = `You save ${gbp(saved)}`;
 
-      return afterSale - discountPence;
+      return afterMultibuy - discountPence;
     }
     const el = <T extends HTMLElement>(id: string) => document.querySelector<T>(id)!;
 
@@ -494,6 +510,7 @@ import Rosette from '../components/Rosette.astro';
           id: number; slug: string; title: string; titleAr: string | null;
           pricePence: number; available: number; imageKey: string | null;
           reservable?: number; expected?: string | null; salePercent?: number; shipmentId?:number|null;
+          multibuy?: Offer[];
         }[];
       };
       const books = payload.books;
@@ -515,6 +532,7 @@ import Rosette from '../components/Rosette.astro';
       rows.innerHTML = '';
       let subtotal = 0;
       let fullPrice = 0;
+      let multibuyTotal = 0;
 
       for (const book of live) {
         /*
@@ -526,6 +544,12 @@ import Rosette from '../components/Rosette.astro';
         const overrun = basket[String(book.id)] > ceiling;
         subtotal += salePence(book) * qty;
         fullPrice += book.pricePence * qty;
+        // Multi-buy, priced the way the server will price it: against the
+        // sale price, whichever of the two is cheaper, never both.
+        const lineNow = lineCost(qty, salePence(book), book.multibuy ?? []);
+        const lineSaving = salePence(book) * qty - lineNow;
+        multibuyTotal += lineSaving;
+        const hasOffers = (book.multibuy ?? []).length > 0;
 
         const li = document.createElement('li');
         li.className = 'grid grid-cols-[4rem_minmax(0,1fr)] gap-x-4 gap-y-3 px-4 py-4 items-start sm:flex sm:gap-4 sm:items-center';
@@ -543,6 +567,14 @@ import Rosette from '../components/Rosette.astro';
                   + `<span class="text-[12.5px] text-[var(--color-outstock)]">${book.salePercent}% off</span>`
                 : ''}
             </p>
+            ${lineSaving > 0
+              ? `<p class="mt-1 flex items-baseline gap-2 flex-wrap text-[13px]">`
+                + `<span class="font-medium text-[var(--color-outstock)]">Multi-buy: ${qty} for ${gbp(lineNow)}</span>`
+                + `<span class="text-[var(--color-ink-faint)] line-through decoration-1">${gbp(salePence(book) * qty)}</span>`
+                + `</p>`
+              : hasOffers
+                ? `<p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">Multi-buy discounts available - <a class="underline underline-offset-2" href="/book/${book.slug}">see offers</a></p>`
+                : ''}
             ${
               onOrder
                 ? `<p class="mt-1 text-[13px] font-medium text-[var(--color-brass)]">Reserved${book.expected ? ` - expected ${book.expected}` : ''}</p>`
@@ -581,7 +613,7 @@ import Rosette from '../components/Rosette.astro';
       }
 
       document.querySelector<HTMLElement>('#subtotal')!.textContent =
-        gbp(paintSavings(fullPrice, subtotal));
+        gbp(paintSavings(fullPrice, subtotal, multibuyTotal));
       wrap.hidden = false;
       empty.hidden = true;
 

@@ -75,6 +75,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
       title: i.title_snapshot,
       qty: i.qty,
       pricePence: i.price_pence_snapshot,
+      multibuyPence: i.multibuy_pence,
     })),
     subtotalPence: order.subtotal_pence,
     postagePence,

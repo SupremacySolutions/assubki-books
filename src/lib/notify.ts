@@ -17,6 +17,7 @@
  * and the stock already held before any of this runs.
  */
 
+import { lineTotal } from './multibuy';
 import { env } from 'cloudflare:workers';
 import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
@@ -126,7 +127,7 @@ function customerPlaced(input: PlacedInput) {
     `Request received - ${order.ref}\n\nالسلام عليكم ${name},\n\n` +
     `${opening} We will reply with the total including postage and how to pay.\n\n` +
     order.items
-      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
+      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(lineTotal(i))}`)
       .join('\n') +
     `\n  Subtotal: ${price(order.subtotalPence)}\n\n` +
     (input.fulfilment === 'collection'
@@ -203,7 +204,7 @@ function ownerPlaced(input: PlacedInput) {
       ? `\nWould rather pay: ${input.paymentPreference === 'cash' ? 'cash in person' : 'bank transfer'}`
       : '') +
     `\n\n` +
-    order.items.map((i) => `  ${i.title} x${i.qty}  ${price(i.pricePence * i.qty)}`).join('\n') +
+    order.items.map((i) => `  ${i.title} x${i.qty}  ${price(lineTotal(i))}`).join('\n') +
     `\n  Subtotal: ${price(order.subtotalPence)}\n\n` +
     (input.fulfilment === 'collection' ? 'Collection\n' : `Deliver to:\n${input.address ?? ''}\n`) +
     (input.notes ? `\nNote: ${input.notes}\n` : '') +
@@ -280,7 +281,7 @@ export interface ConfirmedInput {
   name: string;
   email: string;
   telegramChatId?: string | null;
-  items: { title: string; qty: number; pricePence: number }[];
+  items: { title: string; qty: number; pricePence: number; multibuyPence?: number }[];
   subtotalPence: number;
   postagePence: number;
   totalPence: number;
@@ -349,7 +350,7 @@ function confirmedEmail(input: ConfirmedInput) {
   const text =
     `Your order ${input.ref} is confirmed\n\nالسلام عليكم ${input.name},\n\n` +
     input.items
-      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
+      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(lineTotal(i))}`)
       .join('\n') +
     `\n  Subtotal: ${price(input.subtotalPence)}` +
     (input.fulfilment === 'collection' ? '' : `\n  Postage: ${price(input.postagePence)}`) +
@@ -387,7 +388,7 @@ function confirmedTelegram(input: ConfirmedInput): string {
       // Every literal here goes through esc() too. A bare "-" is reserved in
       // MarkdownV2 and rejects the whole message, which is how this line
       // silently stopped delivering payment details once.
-      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(i.pricePence * i.qty))}`,
+      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(lineTotal(i)))}`,
     ),
     '',
     `${esc('Subtotal')} ${esc(price(input.subtotalPence))}`,
@@ -450,9 +451,9 @@ export interface AmendedInput {
   email: string;
   telegramChatId?: string | null;
   /** What came off, as the lines read before they went. */
-  removed: { title: string; qty: number; pricePence: number }[];
+  removed: { title: string; qty: number; pricePence: number; multibuyPence?: number }[];
   /** What is left, which is the list that now describes the order. */
-  items: { title: string; qty: number; pricePence: number }[];
+  items: { title: string; qty: number; pricePence: number; multibuyPence?: number }[];
   subtotalPence: number;
   postagePence: number | null;
   /** Null on an order that has not been quoted a total yet. */
@@ -527,7 +528,7 @@ export async function notifyOrderAmended(
     (note ? `${note}\n\n` : '') +
     'What is on your order now:\n' +
     input.items
-      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
+      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(lineTotal(i))}`)
       .join('\n') +
     `\n  Subtotal: ${price(input.subtotalPence)}\n` +
     (copy.totalLine ? `\n${copy.totalLine}\n` : '\nWe will send you the total and how to pay as usual.\n') +
@@ -547,7 +548,7 @@ export async function notifyOrderAmended(
       // Every literal goes through esc(). A bare "-" is reserved in MarkdownV2
       // and rejects the whole message, which is how a payment message once
       // stopped being delivered at all.
-      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(i.pricePence * i.qty))}`,
+      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(lineTotal(i)))}`,
     ),
     '',
     `${esc('Subtotal')} ${esc(price(input.subtotalPence))}`,
@@ -589,9 +590,9 @@ export interface AddedInput {
   email: string;
   telegramChatId?: string | null;
   /** What went on, as the new lines read. */
-  added: { title: string; qty: number; pricePence: number }[];
+  added: { title: string; qty: number; pricePence: number; multibuyPence?: number }[];
   /** Everything the order holds now, which is the list that describes it. */
-  items: { title: string; qty: number; pricePence: number }[];
+  items: { title: string; qty: number; pricePence: number; multibuyPence?: number }[];
   /** The additions are claims on a delivery rather than copies off the shelf. */
   fromIncoming?: boolean;
   subtotalPence: number;
@@ -672,7 +673,7 @@ export async function notifyBooksAdded(
     (note ? `${note}\n\n` : '') +
     'What is on your order now:\n' +
     input.items
-      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(i.pricePence * i.qty)}`)
+      .map((i) => `  ${i.title}${i.qty > 1 ? ` x${i.qty}` : ''}  ${price(lineTotal(i))}`)
       .join('\n') +
     `\n  Subtotal: ${price(input.subtotalPence)}\n` +
     (copy.totalLine ? `\n${copy.totalLine}\n` : '\nWe will send you the total and how to pay as usual.\n') +
@@ -691,7 +692,7 @@ export async function notifyBooksAdded(
     // Every literal goes through esc(), for the reason spelled out in the
     // removal message above: one bare "-" rejects the whole message.
     ...input.items.map(
-      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(i.pricePence * i.qty))}`,
+      (i) => `• ${esc(i.title)}${i.qty > 1 ? esc(` ×${i.qty}`) : ''}${esc(' - ')}${esc(price(lineTotal(i)))}`,
     ),
     '',
     `${esc('Subtotal')} ${esc(price(input.subtotalPence))}`,

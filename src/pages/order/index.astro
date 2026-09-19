@@ -668,8 +668,20 @@ if (offerTelegram && telegramLink) {
                     item.title_snapshot
                   )}
                   {item.qty > 1 && <span class="text-[var(--color-ink-faint)]"> × {item.qty}</span>}
+                  {item.multibuy_pence > 0 && (
+                    <span class="block text-[13px] text-[var(--color-outstock)]">
+                      Multi-buy saving {price(item.multibuy_pence)}
+                    </span>
+                  )}
                 </span>
-                <span class="shrink-0 tabular-nums">{price(item.price_pence_snapshot * item.qty)}</span>
+                <span class="shrink-0 text-right tabular-nums">
+                  {price(item.price_pence_snapshot * item.qty - item.multibuy_pence)}
+                  {item.multibuy_pence > 0 && (
+                    <span class="block text-[13px] text-[var(--color-ink-faint)] line-through decoration-1">
+                      {price(item.price_pence_snapshot * item.qty)}
+                    </span>
+                  )}
+                </span>
               </li>
             ))}
           </ul>

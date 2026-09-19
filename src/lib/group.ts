@@ -8,6 +8,8 @@
  * promise a copy that a single-customer order then takes.
  */
 
+import { lineCost, parseOffers } from './multibuy';
+import { salePrice } from './sales';
 import { env } from 'cloudflare:workers';
 import { booksByIds } from './db';
 
@@ -176,7 +178,19 @@ export async function getGroup(code: string, key: string): Promise<GroupView | n
       qty: row.qty,
       addedBy: row.added_by,
     });
-    subtotalPence += book.price_pence * row.qty;
+  }
+
+  /*
+   * Priced per book across everybody's lines, the way the order will be: three
+   * people taking four copies each is twelve copies, and a "10 or more" rate
+   * applies to the group's twelve. Sale first, then multi-buy where cheaper -
+   * the same arithmetic `createCheckout` runs.
+   */
+  const perBook = new Map<number, number>();
+  for (const line of lines) perBook.set(line.bookId, (perBook.get(line.bookId) ?? 0) + line.qty);
+  for (const [bookId, qty] of perBook) {
+    const book = byId.get(bookId)!;
+    subtotalPence += lineCost(qty, salePrice(book.price_pence, book.sale_percent), parseOffers(book.multibuy));
   }
 
   return {

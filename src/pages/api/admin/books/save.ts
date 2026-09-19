@@ -6,6 +6,7 @@ import { tellWaiting } from '../../../../lib/stock-alerts';
 import { validIsbn, normaliseIsbn } from '../../../../lib/isbn-search';
 import { captionToStore } from '../../../../lib/channel-caption';
 import { readForm } from '../../../../lib/request-body';
+import { validateOffers, sortOffers, type Offer, type OfferKind } from '../../../../lib/multibuy';
 
 export const prerender = false;
 
@@ -118,6 +119,44 @@ export const POST: APIRoute = async ({ request }) => {
 
   if (!title) return new Response('A title is required', { status: 400 });
 
+  /*
+   * Multi-buy offers, one row per `mb_kind` / `mb_qty` / `mb_price`.
+   *
+   * A row left completely blank is simply not an offer. A half-filled one is
+   * refused, never completed with a guess - the same rule as the set parts,
+   * because a filled-in price is a price on the shop front nobody chose.
+   */
+  const kinds = form.getAll('mb_kind').map(String);
+  const qtys = form.getAll('mb_qty').map((v) => String(v).trim());
+  const prices = form.getAll('mb_price').map((v) => String(v).trim());
+  const offers: Offer[] = [];
+  let offerProblem: string | null = null;
+  for (let i = 0; i < Math.max(qtys.length, prices.length); i++) {
+    const qtyRaw = qtys[i] ?? '';
+    const priceRaw = (prices[i] ?? '').replace(/^£/, '');
+    if (!qtyRaw && !priceRaw) continue;
+    if (!qtyRaw || !priceRaw) {
+      offerProblem = `Multi-buy offer ${i + 1} needs both a number of copies and a price. We will not guess one - fill it in or clear the row.`;
+      break;
+    }
+    const kind: OfferKind = kinds[i] === 'from' ? 'from' : 'bundle';
+    offers.push({
+      kind,
+      qty: Number(qtyRaw),
+      pence: Math.round(Number(priceRaw) * 100),
+    });
+  }
+  offerProblem ??= validateOffers(offers, pricePence);
+  if (offerProblem) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: `/admin/books/${id ?? 'new'}?e=multibuy&m=${encodeURIComponent(offerProblem)}`,
+      },
+    });
+  }
+  const multibuy = offers.length ? JSON.stringify(sortOffers(offers)) : null;
+
   let bookId = id;
 
   if (bookId) {
@@ -147,14 +186,15 @@ export const POST: APIRoute = async ({ request }) => {
     // so it cannot be dropped below what open orders have already promised.
     await env.DB.prepare(
       `UPDATE books SET title = ?, title_ar = ?, title_ur = ?, author = ?, publisher = ?,
-                        volumes = ?, description_html = ?, price_pence = ?, status = ?, isbn = ?,
+                        volumes = ?, description_html = ?, price_pence = ?, multibuy = ?,
+                        status = ?, isbn = ?,
                         ${newSlug ? 'slug = ?,' : ''}
                         ${captionOffered ? 'telegram_caption = ?,' : ''}
                         updated_at = unixepoch()
         WHERE id = ?`,
     )
       .bind(title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
-            status, isbn, ...(newSlug ? [newSlug] : []),
+            multibuy, status, isbn, ...(newSlug ? [newSlug] : []),
             ...(captionOffered ? [telegramCaption] : []), bookId)
       .run();
     await setStock(bookId, stock, 'edited in portal');
@@ -186,12 +226,12 @@ export const POST: APIRoute = async ({ request }) => {
     const slug = await uniqueSlug(slugify(title), null);
     const created = await env.DB.prepare(
       `INSERT INTO books (slug, title, title_ar, title_ur, author, publisher, volumes,
-                          description_html, price_pence, stock, reserved, status, isbn,
+                          description_html, price_pence, multibuy, stock, reserved, status, isbn,
                           telegram_caption)
-       VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,?,?) RETURNING id`,
     )
       .bind(slug, title, titleAr, titleUr, author, publisher, volumes, description, pricePence,
-            stock, status, isbn, telegramCaption)
+            multibuy, stock, status, isbn, telegramCaption)
       .first<{ id: number }>();
     bookId = created!.id;
 
