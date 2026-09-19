@@ -23,6 +23,7 @@ import { pruneBulkEdits } from '../../src/lib/bulk-undo';
 import { pruneRequests } from '../../src/lib/book-requests';
 import { drainArrivalNotices } from '../../src/lib/shipment-notify';
 import { SITE } from '../../src/lib/format';
+import { syncChannelStock } from '../../src/lib/publish';
 
 interface Env {
   DB: D1Database;
@@ -254,6 +255,19 @@ export default {
       console.log(`told ${alerts.sent} waiting customer(s) a book is back, ${alerts.failed} to retry`);
     }
 
+    /*
+     * Channel posts out of step with the shop.
+     *
+     * After the releases above, so a hold that lapsed this run puts its copy
+     * back on the channel too. Also the net under every route that asks for
+     * this itself: a `waitUntil` the runtime cut short leaves a post at most a
+     * quarter of an hour behind rather than wrong until the owner notices.
+     */
+    const channel = await stage('channel stock', () => syncChannelStock(null, SITE.url, env.DB));
+    if (channel && (channel.edited || channel.failed)) {
+      console.log(`brought ${channel.edited} channel post(s) up to date, ${channel.failed} to retry`);
+    }
+
     const groups = await stage('group baskets', () => expireGroupBaskets(env.DB));
     if (groups) console.log(`cleared ${groups} abandoned group basket(s)`);
 
@@ -360,6 +374,7 @@ export default {
     const unpaid = await expireUnpaidReservations(env.DB);
     const told = await drainArrivalNotices(env.DB, SITE.url);
     const alerts = await drainStockAlerts(env.DB, SITE.url);
+    const channel = await syncChannelStock(null, SITE.url, env.DB);
     const groups = await expireGroupBaskets(env.DB);
     const proofs = await sweepProofs(env.DB, env.UPLOADS);
     const searches = await pruneSearches(env.DB);
@@ -370,7 +385,7 @@ export default {
     const edits = await pruneBulkEdits(env.DB);
     const asked = await pruneRequests(env.DB);
     return Response.json({
-      lapsed, unpaid, told, alerts, groups, proofs, searches, destroyed, edits, asked,
+      lapsed, unpaid, told, alerts, channel, groups, proofs, searches, destroyed, edits, asked,
     });
   },
 } satisfies ExportedHandler<Env>;

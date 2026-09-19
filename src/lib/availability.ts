@@ -15,6 +15,27 @@
 
 import { env } from 'cloudflare:workers';
 
+/**
+ * Copies free now, for a row aliased `b` - pooled when it is part of a set.
+ *
+ * Shared with the channel sync, which has to show the same figure as the
+ * catalogue: a set listing's own `stock - reserved` is not the truth once a
+ * sibling listing holds some of the same volumes.
+ */
+export const AVAILABLE_SQL = `CASE WHEN b.set_id IS NULL THEN (b.stock - b.reserved)
+                 ELSE MAX(0, COALESCE((
+                   SELECT MIN(v.have - COALESCE((
+                            SELECT SUM(o.reserved) FROM books o
+                             WHERE o.set_id = b.set_id
+                               AND o.deleted_at IS NULL
+                               AND v.volume BETWEEN o.set_from AND o.set_to
+                          ), 0))
+                     FROM book_set_stock v
+                    WHERE v.set_id = b.set_id
+                      AND v.volume BETWEEN b.set_from AND b.set_to
+                 ), 0))
+            END`;
+
 export interface Sellable {
   id: number;
   title: string;
@@ -62,19 +83,7 @@ export async function sellable(ids: number[]): Promise<Map<number, Sellable>> {
      * batch.
      */
     `SELECT b.id, b.title, b.price_pence, b.shipment_id,
-            CASE WHEN b.set_id IS NULL THEN (b.stock - b.reserved)
-                 ELSE MAX(0, COALESCE((
-                   SELECT MIN(v.have - COALESCE((
-                            SELECT SUM(o.reserved) FROM books o
-                             WHERE o.set_id = b.set_id
-                               AND o.deleted_at IS NULL
-                               AND v.volume BETWEEN o.set_from AND o.set_to
-                          ), 0))
-                     FROM book_set_stock v
-                    WHERE v.set_id = b.set_id
-                      AND v.volume BETWEEN b.set_from AND b.set_to
-                 ), 0))
-            END AS available,
+            ${AVAILABLE_SQL} AS available,
             MAX(0, b.incoming - b.reserved_incoming) AS reservable,
             si.percent_off AS sale_percent,
             si.sale_id AS sale_id

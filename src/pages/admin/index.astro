@@ -61,6 +61,7 @@ const jobs = [
   { n: work.noDescription, label: 'without a description', href: '/admin/books?filter=no-description' },
   { n: work.noCategory, label: 'not on a shelf', href: '/admin/books?filter=no-subject' },
   { n: work.unposted, label: 'never announced', href: '/admin/books?filter=not-announced' },
+  { n: work.repost, label: 'back in stock, to repost in the channel', href: '/admin/books?filter=repost' },
 ].filter((j) => j.n > 0);
 
 const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0);
