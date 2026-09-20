@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify, parseEnv } from 'node:util';
+import { readSqlite } from './sqlite-read.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -126,13 +127,6 @@ function localDb() {
  */
 const WRANGLER_BIN = new URL('../../node_modules/.bin/wrangler', import.meta.url).pathname;
 
-const SQLITE_FLAGS = [
-  '-readonly', '-json',
-  '-cmd', 'PRAGMA foreign_keys=ON',
-  '-cmd', 'PRAGMA trusted_schema=ON',
-  '-cmd', '.timeout 8000',
-];
-
 /**
  * Runs SQL against whichever database this mode is testing.
  *
@@ -164,20 +158,18 @@ const READ_ONLY = /^\s*(SELECT|PRAGMA|EXPLAIN)\b/i;
 export async function db(sql) {
   if (PROD) return viaWrangler(sql, '--remote');
 
-  // Read-only SQLite connections are cheap for assertions. Mutations use
+  // SQLite connections with query_only enabled are cheap for assertions. Mutations use
   // Wrangler's local D1 interface; it is a separate runtime, not the server's
   // transaction queue, so any concurrency failure must remain visible.
   if (READ_ONLY.test(sql)) {
     try {
-      const { stdout } = await execFileAsync('sqlite3', [...SQLITE_FLAGS, localDb(), sql], {
-        timeout: 60000, maxBuffer: 40 * 1024 * 1024,
-      });
+      const { stdout } = await readSqlite(localDb(), sql);
       return parseSqlite(stdout);
     } catch (err) {
       // sqlite3 says exactly what was wrong on stderr. Passing that on is the
       // difference between "Command failed" and "UNIQUE constraint failed".
       const why = (err.stderr || err.stdout || '').trim().split('\n')[0];
-      throw new Error(`${why || err.message.split('\n')[0]}\n       in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+      throw new Error(`${why || err.message.split('\n')[0]}\n       in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`, { cause: err });
     }
   }
 
