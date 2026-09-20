@@ -6257,7 +6257,8 @@ try {
     try {
       await fn();
     } catch (err) {
-      suite(`${name} (crashed)`).ok(false, String(err).split('\n')[0]);
+      console.error(err);
+      suite(`${name} (crashed)`).ok(false, String(err));
     }
   }
 } finally {
