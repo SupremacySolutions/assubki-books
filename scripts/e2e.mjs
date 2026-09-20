@@ -5169,8 +5169,13 @@ async function channelPost() {
   const inStockPage = await html(`/admin/books/${stocked.id}`);
   t.ok(inStockPage.includes('Update channel post'),
     'a listing in stock is offered the in-place edit as its main action');
-  t.ok(inStockPage.includes('Post it again at the bottom instead'),
+  t.ok(inStockPage.includes('Post it again and take the old post down'),
     'and reposting anyway is offered underneath, not withheld until it sells out');
+  /* It is a <button> styled as a link, so it needs the cursor a link has -
+     without it the pointer stays an arrow and the control reads as dead text,
+     which is exactly how it was reported. */
+  t.ok(/id="postRepostBtn"[^>]*cursor-pointer/.test(inStockPage),
+    'and it looks pressable, rather than like a sentence that happens to be blue');
 
   const forced = await admin(`/api/admin/books/${stocked.id}/telegram?mode=repost`);
   const forcedRow = await one(shown);
