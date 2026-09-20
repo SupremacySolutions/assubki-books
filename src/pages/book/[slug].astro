@@ -3,7 +3,7 @@ import Base from '../../layouts/Base.astro';
 import BookCard from '../../components/BookCard.astro';
 import Rosette from '../../components/Rosette.astro';
 import { bookBySlug, relatedBooks, setOptions } from '../../lib/db';
-import { price, availability, imageUrl, stripTags, truncate, SITE } from '../../lib/format';
+import { price, availability, imageUrl, stripTags, truncate, SITE, buildQuery } from '../../lib/format';
 import { delivery } from '../../lib/incoming';
 import { liveSale } from '../../lib/sales';
 import { classmark } from '../../lib/classmarks';
@@ -247,7 +247,16 @@ const jsonLd = {
                 .map((part, i) => (
                   <>
                     {i > 0 && <span class="text-[var(--color-ink-faint)]"> · </span>}
-                    <span class:list={[i === 0 ? '' : 'text-[var(--color-ink-faint)]']}>{part}</span>
+                    {/* The publisher leads to the rest of its books, the way a
+                        shop assistant would point along the shelf. */}
+                    {part && part === book.publisher ? (
+                      <a
+                        href={`/catalogue${buildQuery({ pub: part.trim() })}`}
+                        class="text-[var(--color-ink-faint)] underline decoration-[var(--color-rule)] underline-offset-2 hover:text-[var(--color-navy)]"
+                      >{part}</a>
+                    ) : (
+                      <span class:list={[i === 0 ? '' : 'text-[var(--color-ink-faint)]']}>{part}</span>
+                    )}
                   </>
                 ))}
             </p>

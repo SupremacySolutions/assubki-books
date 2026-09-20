@@ -5,7 +5,7 @@ import CategoryNav from '../../components/CategoryNav.astro';
 import Rosette from '../../components/Rosette.astro';
 import {
   categoryTree, categoryByPath, listBooks, arrivingBooks, asLanguage, BOOK_LANGUAGES,
-  type Sort,
+  publisherCounts, type Sort,
 } from '../../lib/db';
 import { buildQuery } from '../../lib/format';
 import { recordMiss } from '../../lib/searches';
@@ -39,19 +39,36 @@ const arriving = params.get('arriving') === '1';
 // Validated against the three the shop sells rather than passed through, so a
 // hand-typed `?lang=` cannot reach the query as anything else.
 const language = asLanguage(params.get('lang'));
+// Bound as a parameter, never spliced, so any text is safe; capped only so a
+// hand-typed URL cannot hand the query a page of it.
+const publisher = params.get('pub')?.trim().slice(0, 120) || null;
 const sortParam = params.get('sort');
 const validSorts: Sort[] = ['relevance', 'title', 'price-asc', 'price-desc', 'newest', 'saving'];
 const sort = (validSorts.includes(sortParam as Sort) ? sortParam : null) as Sort | null;
 const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
 
 const sale = await liveSale();
-const [tree, result, anyArriving] = await Promise.all([
+const [tree, result, anyArriving, publishers] = await Promise.all([
   // Counted in the language being browsed, so a shelf's number is the number
   // of books actually behind it and a shelf with none of them drops away.
   categoryTree(language),
-  listBooks({ categoryPath, q, inStockOnly, onSale, arriving, language, sort: sort ?? undefined, page }),
+  listBooks({ categoryPath, q, inStockOnly, onSale, arriving, language, publisher, sort: sort ?? undefined, page }),
   arrivingBooks(1),
+  // Narrowed to this shelf, like the shelf counts are to the language.
+  publisherCounts(language, categoryPath),
 ]);
+
+/*
+ * The chosen publisher is always offered, even when the shelf or language just chosen
+ * has none of its books - otherwise the select would silently show "Any" while
+ * the grid is still narrowed to it.
+ */
+const publisherOptions =
+  publisher && !publishers.some((p) => p.name.toLowerCase() === publisher.toLowerCase())
+    ? [{ name: publisher, count: 0 }, ...publishers]
+    : publishers;
+const chosenPublisher =
+  publisher && publisherOptions.find((p) => p.name.toLowerCase() === publisher.toLowerCase())!.name;
 
 /*
  * A search that found nothing is the one search worth writing down.
@@ -79,6 +96,7 @@ const base = {
   sale: onSale ? '1' : null,
   arriving: arriving ? '1' : null,
   lang: language,
+  pub: chosenPublisher,
 };
 const keep = buildQuery(base);
 const heading = category?.name ?? 'All titles';
@@ -157,6 +175,12 @@ if (language) {
     without: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, lang: null })}`,
   });
 }
+if (chosenPublisher) {
+  chips.push({
+    label: chosenPublisher,
+    without: `/catalogue${categoryPath ? `/${categoryPath}` : ''}${buildQuery({ ...base, pub: null })}`,
+  });
+}
 if (inStockOnly) {
   chips.push({
     label: 'In stock',
@@ -216,6 +240,9 @@ const description = category
           {/* Carried through the checkboxes, or ticking "In stock only" would
               quietly drop the language the customer had chosen. */}
           {language && <input type="hidden" name="lang" value={language} />}
+          {chosenPublisher && publisherOptions.length <= 1 && (
+            <input type="hidden" name="pub" value={chosenPublisher} />
+          )}
 
           {/*
             * Language, as links rather than checkboxes.
@@ -253,6 +280,34 @@ const description = category
               </a>
             ))}
           </div>
+
+          {/*
+            * Publisher, as one native select.
+            *
+            * A list of links or checkboxes grows by a line for every publisher
+            * the owner ever types, and on a phone - where this panel sits
+            * below the grid - that is a column of names to scroll past. A
+            * select is one line however many there are, opens as the
+            * platform's own picker, and on a desktop jumps by typed letter.
+            * Hidden when there is nothing to choose between.
+            */}
+          {publisherOptions.length > 1 && (
+            <label class="block mb-4">
+              <span class="eyebrow !text-[10.5px] mb-2.5 block">Publisher</span>
+              <select
+                name="pub"
+                data-autosubmit
+                class="field !py-1.5 !text-[14px]"
+              >
+                <option value="" selected={!chosenPublisher}>Any publisher</option>
+                {publisherOptions.map((p) => (
+                  <option value={p.name} selected={p.name === chosenPublisher}>
+                    {p.name}{p.count > 0 ? ` (${p.count})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <p class="eyebrow !text-[10.5px] mb-2.5">Refine</p>
           <label class="flex items-center gap-2.5 text-[14.5px] text-[var(--color-ink-soft)] cursor-pointer select-none">
@@ -343,6 +398,7 @@ const description = category
           <form method="get" class="shrink-0">
             {q && <input type="hidden" name="q" value={q} />}
             {inStockOnly && <input type="hidden" name="stock" value="in" />}
+            {chosenPublisher && <input type="hidden" name="pub" value={chosenPublisher} />}
             <label class="flex items-center gap-2 text-[14px] text-[var(--color-ink-faint)]">
               <span>Sort</span>
               <select
