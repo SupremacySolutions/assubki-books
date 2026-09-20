@@ -1050,7 +1050,17 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                       ? 'Posts it again at the bottom of the channel and takes the old post down.'
                       : 'Sends the post above and remembers it. Nothing else on this page needs saving first.'}
                 </p>
-                {offerRepost && (
+                {/*
+                  * Whichever the button does not do, offered underneath it.
+                  *
+                  * The automatic choice only knows about stock: it reposts a
+                  * listing that has been sold out long enough to have been
+                  * scrolled past, and edits in place otherwise. Neither test can
+                  * see that the photographs were replaced, or that a post nobody
+                  * ever ordered from is simply buried - so the other action is
+                  * always one press away rather than unreachable.
+                  */}
+                {offerRepost ? (
                   <button
                     type="submit"
                     form="telegramForm"
@@ -1060,6 +1070,18 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                   >
                     Just update the old post instead
                   </button>
+                ) : (
+                  book.telegram_message_id && (
+                    <button
+                      type="submit"
+                      form="telegramForm"
+                      formaction={`/api/admin/books/${book.id}/telegram?mode=repost`}
+                      id="postRepostBtn"
+                      class="mt-1 text-[12.5px] text-[var(--color-navy)] underline underline-offset-2"
+                    >
+                      Post it again at the bottom instead
+                    </button>
+                  )
                 )}
               </>
             ) : (

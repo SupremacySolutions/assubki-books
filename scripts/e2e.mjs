@@ -5159,6 +5159,34 @@ async function channelPost() {
     'and "just update the old post" edits the old post rather than posting again');
 
   /*
+   * The other direction, which the shop could not do at all.
+   *
+   * `backInStock` only knows about stock, so it never offers a repost to a
+   * listing that has stayed in stock - and a post whose photographs were
+   * replaced, or one that is simply buried, wants exactly that. The page offers
+   * it underneath the button and `?mode=repost` is what it presses.
+   */
+  const inStockPage = await html(`/admin/books/${stocked.id}`);
+  t.ok(inStockPage.includes('Update channel post'),
+    'a listing in stock is offered the in-place edit as its main action');
+  t.ok(inStockPage.includes('Post it again at the bottom instead'),
+    'and reposting anyway is offered underneath, not withheld until it sells out');
+
+  const forced = await admin(`/api/admin/books/${stocked.id}/telegram?mode=repost`);
+  const forcedRow = await one(shown);
+  t.ok(forced.location.includes('posted=repost') || forced.location.includes('posted=orphan'),
+    `an in-stock listing can be reposted on request (${forced.location})`);
+  t.ok(forcedRow.m !== 4242,
+    'and it really is a new post, not the old one edited');
+
+  /* Asking to repost something never announced is just the first post: there is
+     nothing to take down, and refusing would be a worse answer than doing it. */
+  const virgin = await makeBook({ stock: '2' });
+  const first = await admin(`/api/admin/books/${virgin.id}/telegram?mode=repost`);
+  t.ok(first.location.includes('posted=1') || first.location.includes('posted=repost'),
+    'and asking to repost a listing that was never announced simply posts it');
+
+  /*
    * Deleting has to clear the whole album. Clearing only the captioned message
    * would leave the other photographs in the channel with nothing to click.
    */
