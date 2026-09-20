@@ -1143,6 +1143,64 @@ async function listings() {
   const row = await one(`SELECT slug, status FROM books WHERE id=${book.id}`);
   t.ok((await get(`/book/${row.slug}`)).status === 200, 'it appears in the shop');
 
+  /*
+   * The publisher is something a customer can find books by: typed into the
+   * search box, chosen from the catalogue's one-line select, or followed from
+   * the book page. A name no real listing carries, so the counts are exact.
+   */
+  const press = `Qirtas ${Math.random().toString(36).slice(2, 7)}`;
+  const pressBook = await makeBook({ publisher: `  ${press} ` });
+  const pressTwin = await makeBook({ publisher: press.toUpperCase() });
+  /* Saving now folds capitals into the spelling in use, so the listings typed
+     before that existed are made directly - the catalogue must still group
+     them. The save that follows clears the cached list. */
+  await db(`UPDATE books SET publisher = '${press.toUpperCase()}' WHERE id = ${pressTwin.id}`);
+  await makeBook({ publisher: press });
+  const pressSearch = await html(`/catalogue?q=${encodeURIComponent(press)}`);
+  t.ok(pressSearch.includes(pressBook.title) && pressSearch.includes(pressTwin.title),
+    'searching a publisher name finds its books');
+  const byPress = await html(`/catalogue?pub=${encodeURIComponent(press.toLowerCase())}`);
+  t.ok(/>\s*3\s*titles/.test(byPress) && byPress.includes(pressTwin.title),
+    'the publisher filter matches regardless of case and stray spaces');
+  t.ok(byPress.includes(`<option value="${press}" selected`) && byPress.includes(`${press} (3)`),
+    'the select offers it once, counted, in the spelling most listings use');
+  t.ok(new RegExp(`>\\s*${press}\\s*<span[^>]*aria-hidden="true"`).test(byPress),
+    'and it appears as a removable chip');
+  /*
+   * The list follows the shelf. The fixtures sit on shelf 20 only, so its own
+   * page and its parent's offer the publisher, and a shelf beside it does not.
+   */
+  const shelf = await one(`SELECT path FROM categories WHERE id=20`);
+  const elsewhere = await one(
+    `SELECT path FROM categories WHERE id != 20 AND path NOT LIKE '${shelf.path.split('/')[0]}%'
+      ORDER BY id LIMIT 1`,
+  );
+  const onShelf = await html(`/catalogue/${shelf.path}`);
+  const parentShelf = await html(`/catalogue/${shelf.path.split('/')[0]}`);
+  const offShelf = await html(`/catalogue/${elsewhere.path}`);
+  t.ok(onShelf.includes(`${press} (3)`) && parentShelf.includes(`${press} (3)`),
+    "a shelf's publisher list includes the publishers on it and beneath it");
+  t.ok(/\d+ titles/.test(offShelf) && !offShelf.includes(`<option value="${press}"`),
+    'and a shelf without their books does not offer them');
+  /*
+   * The portal keeps one publisher from becoming three. A name typed in other
+   * capitals is saved in the spelling already in use; the form offers every
+   * name in use, and carries the hint that asks about near misses.
+   */
+  const typedLoosely = await makeBook({ publisher: `  ${press.toLowerCase().replace(' ', '   ')} ` });
+  t.ok((await one(`SELECT publisher FROM books WHERE id=${typedLoosely.id}`)).publisher === press,
+    'a publisher typed in other capitals and spacing is saved in the spelling already in use');
+  const form = await html(`/admin/books/${typedLoosely.id}`);
+  t.ok(form.includes('list="publisherNames"') && form.includes(`<option value="${press}" data-count="3"`),
+    'the portal suggests publishers already in use, with how many listings each has');
+  t.ok(form.includes(`<option value="${press.toUpperCase()}" data-count="1"`),
+    'and shows the older variant spelling too, so the owner can see it and tidy it');
+  t.ok(form.includes('id="publisherHint"') && /hidden/.test(form.match(/<p[^>]*id="publisherHint"[^>]*>/)?.[0] ?? ''),
+    'and has a did-you-mean hint, hidden until a name looks like another');
+  const pressSlug = (await one(`SELECT slug FROM books WHERE id=${pressBook.id}`)).slug;
+  t.ok((await html(`/book/${pressSlug}`)).includes(`href="/catalogue?pub=${encodeURIComponent(press).replace(/%20/g, '+')}"`),
+    'the book page links its publisher to the rest of its books');
+
   // Stock may not drop below what customers are already promised.
   const o = await placeOrder(book.id, 'collection');
   await admin('/api/admin/books/stock', { id: book.id, stock: '0' });
