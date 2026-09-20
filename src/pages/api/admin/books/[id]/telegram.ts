@@ -35,8 +35,13 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   /*
    * Repost or edit, decided here from the same test the page used to label the
    * button - so the default is right with scripting off, and a stale page
-   * cannot repost a book the channel already shows in stock. `?mode=edit` is
-   * the owner choosing to edit the old post anyway.
+   * cannot repost a book the channel already shows in stock.
+   *
+   * Both directions can be overridden, because the automatic answer only knows
+   * about stock. `?mode=edit` is the owner keeping the old post when the shop
+   * would have replaced it; `?mode=repost` is the owner replacing it when the
+   * shop would have edited - the photographs changed, or the post is simply old
+   * and buried, neither of which `backInStock` can see.
    */
   const row = await env.DB.prepare(
     `SELECT b.telegram_message_id, b.telegram_shown_available, b.telegram_sold_out_at,
@@ -50,7 +55,14 @@ export const POST: APIRoute = async ({ params, request, url }) => {
       telegram_sold_out_at: number | null;
       available: number;
     }>();
-  const repost = url.searchParams.get('mode') !== 'edit' && row !== null && backInStock(row, row.available);
+  const mode = url.searchParams.get('mode');
+  /*
+   * A repost needs a post to replace. Asking for one on a listing that has
+   * never been announced is the ordinary first post, not an error - there is
+   * nothing to take down and `publishListing` does exactly the right thing.
+   */
+  const repost = row !== null && row.telegram_message_id !== null &&
+    (mode === 'repost' || (mode !== 'edit' && backInStock(row, row.available)));
 
   const result = repost ? await repostListing(id, url.origin) : await publishListing(id, url.origin);
 
