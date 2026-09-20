@@ -210,22 +210,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
    * stock is floored at what is reserved - lowering it below that would strand
    * people holding a promise the shop has withdrawn.
    */
-  // The tick decides. Clearing it is how a delivery is cancelled - there was no
-  // other way to say "this is not coming after all" except typing a zero.
-  const hasIncoming = form.get('has_incoming') !== null;
-  const incomingWanted = hasIncoming
-    ? Math.max(0, Math.min(999, Math.round(Number(form.get('incoming')) || 0)))
-    : 0;
-  const vague = String(form.get('incoming_vague') ?? 'mid').trim() || 'mid';
-  const month = String(form.get('incoming_month') ?? '').trim() || null;
-  await env.DB.prepare(
-    `UPDATE books
-        SET incoming = MAX(?, reserved_incoming),
-            incoming_vague = ?, incoming_month = ?, updated_at = unixepoch()
-      WHERE id = ?`,
-  )
-    .bind(incomingWanted, vague, month, bookId)
-    .run();
+  /*
+   * Deliveries are not edited here.
+   *
+   * `incoming`, and the wording that describes when it lands, belong to the
+   * shipment the copies are on: `shipments` carries its own `incoming_vague`
+   * and `incoming_month` and copies them down to each listing it creates. This
+   * route used to write all three for any listing, with no check that the book
+   * was on a shipment - so saving an ordinary edit from the listing editor
+   * could quietly lower a shipment's count to whatever customers had already
+   * claimed. One owner for a number is the whole point.
+   */
   } else {
     const slug = await uniqueSlug(slugify(title), null);
     const created = await env.DB.prepare(

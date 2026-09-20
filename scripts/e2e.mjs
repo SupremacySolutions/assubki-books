@@ -3388,7 +3388,23 @@ async function integrity() {
   // A short delivery fills the oldest claims and leaves the rest waiting.
   const claimB = await placeOrder(rb.id, 'collection');
   await db(`UPDATE books SET reserved_incoming = 2 WHERE id = ${rb.id}`);
-  await admin(`/api/admin/books/${rb.id}/arrived`, { arrived: '1', receipt_key: crypto.randomUUID(), delivery_version: '0' });
+  /*
+   * Through the shipment, because that is the only way a delivery lands now.
+   *
+   * The listing editor used to carry its own "Has this delivery arrived?" panel
+   * posting to `books/<id>/arrived`. It predated shipments, wrote the same
+   * columns from a second place, and every delivery in the shop has been a
+   * shipment for a long time - so it went. `fillClaims` underneath it is
+   * unchanged and still covered directly by test-reservations.
+   */
+  await db(`INSERT INTO shipments (id, title, status) VALUES (90001, 'E2E arrival', 'open')`);
+  await db(`UPDATE books SET shipment_id = 90001 WHERE id = ${rb.id}`);
+  await admin(`/api/admin/shipments/90001/arrived`, {
+    receipt_key: crypto.randomUUID(),
+    delivery_version: '0',
+    [`received_${rb.id}`]: '1',
+  });
+  await db(`UPDATE books SET shipment_id = NULL WHERE id = ${rb.id}`);
   const afterArrival = await one(
     `SELECT stock AS s, reserved AS r, incoming AS inc, reserved_incoming AS ri
        FROM books WHERE id = ${rb.id}`,
