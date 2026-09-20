@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../../lib/publish';
 import { env } from 'cloudflare:workers';
 import { getOrderByRef, getOrderItems } from '../../../../../lib/admin-db';
 import {
@@ -43,7 +44,7 @@ const MAX_PER_LINE = 50;
  * writes it - on to `reserved`, or `reserved_incoming` for a claim on a
  * delivery, with every shelf copy appended to the ledger.
  */
-export const POST: APIRoute = async ({ params, request, url }) => {
+export const POST: APIRoute = async ({ params, request, url, locals }) => {
   const ref = params.ref!;
   const order = await getOrderByRef(ref);
   if (!order) return new Response('No such order', { status: 404 });
@@ -364,6 +365,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   if (!done[done.length - 1].meta.changes) return back('?e=state');
 
   forgetDashboard();
+  await syncChannelSoon(locals, url.origin);
 
   /*
    * The note goes into the thread as well as into the email, for the reason

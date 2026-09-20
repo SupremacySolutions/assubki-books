@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../lib/publish';
 import { createCheckout, StockConflict, type RequestedItem } from '../../lib/orders';
 import { notifyOrderPlaced } from '../../lib/notify';
 import { groupForOrder, markGroupSent, claimGroup, releaseGroup } from '../../lib/group';
@@ -233,6 +234,10 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     const ctx = (locals as { cfContext?: ExecutionContext }).cfContext;
     if (ctx?.waitUntil) ctx.waitUntil(notify);
     else await notify;
+
+    // The channel post drops by what was just held, and says "View listing"
+    // once nothing is left to order.
+    await syncChannelSoon(locals, origin, [...new Set(placed.flatMap((made) => made.items.map((i) => i.bookId)))]);
 
     return Response.json({
       ok: true,

@@ -7,6 +7,7 @@ import { getBookAdmin, partCandidates } from '../../../lib/admin-db';
 import { allCategories, categoryCounts, publisherSpellings, setOptionsForOwner } from '../../../lib/db';
 import { imageUrl, price, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
 import { botConfigured, plainCaption } from '../../../lib/telegram';
+import { backInStock } from '../../../lib/publish';
 import { parseOffers, type Offer } from '../../../lib/multibuy';
 
 const { id } = Astro.params;
@@ -188,11 +189,22 @@ const currentPrice = book ? `£${(book.price_pence / 100).toFixed(2)}` : '';
 const currentStock = book
   ? book.available > 0 ? `${book.available} available` : 'out of stock'
   : '';
+// At nought the shop marks a written post out of stock itself, so only the
+// price is left for him to keep true.
 const captionStale = Boolean(
   book?.telegram_caption &&
     (!book.telegram_caption.includes(currentPrice) ||
-      !book.telegram_caption.includes(currentStock)),
+      (book.available > 0 && !book.telegram_caption.includes(currentStock))),
 );
+
+/*
+ * The channel last said "out of stock" and there are copies again.
+ *
+ * The post is somewhere up the channel by now, so the button offers a fresh
+ * one at the bottom instead - with editing the old one still there for a
+ * restock that happens the same afternoon.
+ */
+const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, book.available));
 ---
 
 <Admin
@@ -223,6 +235,22 @@ const captionStale = Boolean(
     posted === '1' && (
       <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
         Posted to the Telegram channel.
+      </p>
+    )
+  }
+  {
+    posted === 'repost' && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Posted again at the bottom of the channel, and the old post taken down.
+      </p>
+    )
+  }
+  {
+    posted === 'orphan' && (
+      <p class="mb-5 p-3 bg-[var(--color-brass)]/10 border border-[var(--color-brass)]/30 rounded-[3px] text-[14.5px] leading-relaxed">
+        Posted again at the bottom of the channel, but the old post could not be taken down.
+        Delete it in the channel by hand, or give the bot the <em>Delete messages</em> right
+        there so it can do this itself next time.
       </p>
     )
   }
@@ -1015,9 +1043,15 @@ const captionStale = Boolean(
         book && (
           <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 scroll-mt-24">
             <h2 class="eyebrow mb-2">Telegram channel</h2>
-            {book.telegram_message_id ? (
+            {offerRepost ? (
+              <p class="text-[13.5px] text-[var(--color-ink-soft)] mb-3 leading-relaxed">
+                Back in stock. The channel post still says it is out of stock, and it is a long way
+                up the channel by now.
+              </p>
+            ) : book.telegram_message_id ? (
               <p class="text-[13.5px] text-[var(--color-instock)] mb-3">
                 ✓ Announced. Posting again updates that message rather than adding a new one.
+                The count keeps itself up to date as copies sell.
               </p>
             ) : (
               <p class="text-[13.5px] text-[var(--color-ink-soft)] mb-3">Not announced yet.</p>
@@ -1096,13 +1130,30 @@ const captionStale = Boolean(
                   data-blocked={book.status !== 'live' ? '1' : '0'}
                   data-reason={book.status !== 'live' ? 'Only live listings can be announced.' : ''}
                 >
-                  {book.telegram_message_id ? 'Update channel post' : 'Post to channel'}
+                  {offerRepost
+                    ? 'Repost to channel'
+                    : book.telegram_message_id
+                      ? 'Update channel post'
+                      : 'Post to channel'}
                 </button>
                 <p id="postHint" class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">
                   {book.status !== 'live'
                     ? 'Only live listings can be announced.'
-                    : 'Sends the post above and remembers it. Nothing else on this page needs saving first.'}
+                    : offerRepost
+                      ? 'Posts it again at the bottom of the channel and takes the old post down.'
+                      : 'Sends the post above and remembers it. Nothing else on this page needs saving first.'}
                 </p>
+                {offerRepost && (
+                  <button
+                    type="submit"
+                    form="telegramForm"
+                    formaction={`/api/admin/books/${book.id}/telegram?mode=edit`}
+                    id="postEditBtn"
+                    class="mt-1 text-[12.5px] text-[var(--color-navy)] underline underline-offset-2"
+                  >
+                    Just update the old post instead
+                  </button>
+                )}
               </>
             ) : (
               <p class="text-[13px] text-[var(--color-ink-faint)]">
@@ -1671,6 +1722,7 @@ const captionStale = Boolean(
         const saveHint = document.querySelector('#saveHint');
         const postBtn = document.querySelector('#postBtn');
         const postHint = document.querySelector('#postHint');
+        const postEditBtn = document.querySelector('#postEditBtn');
 
         const snapshot = () => new URLSearchParams(new FormData(bookForm)).toString();
         let saved = snapshot();
@@ -1686,6 +1738,7 @@ const captionStale = Boolean(
           if (postBtn) {
             const blocked = postBtn.dataset.blocked === '1';
             postBtn.disabled = dirty || blocked;
+            if (postEditBtn) postEditBtn.disabled = dirty;
             postHint.textContent = dirty
               ? 'Save your changes first, then post them.'
               : postBtn.dataset.reason || '';
@@ -1719,6 +1772,7 @@ const captionStale = Boolean(
 
         document.querySelector('#telegramForm')?.addEventListener('submit', () => {
           if (postBtn) { postBtn.disabled = true; postHint.textContent = 'Posting…'; }
+          if (postEditBtn) postEditBtn.disabled = true;
         });
 
         // Confirm in JS rather than an inline onsubmit: a title containing an

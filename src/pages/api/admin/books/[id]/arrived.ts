@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../../lib/publish';
 import { forgetHomeRows } from '../../../../../lib/db';
 import { forgetDashboard } from '../../../../../lib/dashboard';
 import { tellWaiting } from '../../../../../lib/stock-alerts';
@@ -6,7 +7,7 @@ import { fillClaims, ReceiptConflict } from '../../../../../lib/arrival';
 import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = async ({ params, request, locals }) => {
   const bookId = Number(params.id);
   const form = await readForm(request);
   if (!form) return new Response('Bad request', { status: 400 });
@@ -26,5 +27,6 @@ export const POST: APIRoute = async ({ params, request }) => {
   forgetHomeRows();
   forgetDashboard();
   await tellWaiting(bookId,new URL(request.url).origin);
+  await syncChannelSoon(locals, new URL(request.url).origin, [bookId]);
   return new Response(null,{status:302,headers:{Location:`/admin/books/${bookId}?arrived=1`}});
 };

@@ -248,6 +248,15 @@ export async function sendMessageId(chatId: string, text: string): Promise<numbe
   return retry === null ? null : (retry.message_id ?? null);
 }
 
+/**
+ * How long a post may say "out of stock" and still be brought back in place.
+ *
+ * Longer than a shelf hold (48 hours) plus a sweep, so a copy given back by a
+ * hold that lapsed puts the post it emptied straight back to how it was.
+ * Anything sold out for longer than this has been scrolled past.
+ */
+export const REPOST_AFTER_SECONDS = 3 * 86_400;
+
 export interface ListingPost {
   title: string;
   titleAr?: string | null;
@@ -290,7 +299,7 @@ export function plainCaption(post: ListingPost): string {
   if (post.blurb) lines.push(post.blurb, '');
   lines.push(`£${(post.pricePence / 100).toFixed(2)}`);
   lines.push(post.available > 0 ? `${post.available} available` : 'out of stock');
-  lines.push('', ORDER_HERE);
+  lines.push('', linkPhrase(post));
   return lines.join('\n');
 }
 
@@ -306,6 +315,32 @@ export function plainCaption(post: ListingPost): string {
 export const ORDER_HERE = 'Order here';
 
 /**
+ * The same link once there is nothing left to order.
+ *
+ * The post stays - people still want to see the book, and ask to be told when
+ * it is back - but "Order here" on a book that cannot be ordered sends them to
+ * a page that says no. This says what the link actually does.
+ */
+export const VIEW_LISTING = 'View listing';
+
+function linkPhrase(post: ListingPost): string {
+  return post.available > 0 ? ORDER_HERE : VIEW_LISTING;
+}
+
+/**
+ * A caption the owner wrote, as it goes out while the book is sold out.
+ *
+ * His words are left alone - they are his, and the stored caption is never
+ * changed, so all of this undoes itself when copies come back. Two things are
+ * not his to keep, because the shop cannot let them go on being false: the
+ * post has to say it is out of stock, and its link has to stop saying "Order".
+ */
+export function soldOutCaption(own: string): string {
+  const relinked = own.includes(ORDER_HERE) ? own.replace(ORDER_HERE, VIEW_LISTING) : own;
+  return /^out of stock/i.test(relinked) ? relinked : `Out of stock\n\n${relinked}`;
+}
+
+/**
  * Where to draw the link in a post the owner wrote.
  *
  * Telegram takes formatting either as markup in the text or as a list of
@@ -318,10 +353,10 @@ export const ORDER_HERE = 'Order here';
  * If he deleted the phrase, he gets no link, which is his to decide. A bare
  * URL left in the text still becomes one - Telegram finds those itself.
  */
-function linkEntities(text: string, url: string) {
-  const at = text.indexOf(ORDER_HERE);
+function linkEntities(text: string, url: string, phrase = ORDER_HERE) {
+  const at = text.indexOf(phrase);
   if (at < 0) return undefined;
-  return [{ type: 'text_link', offset: at, length: ORDER_HERE.length, url }];
+  return [{ type: 'text_link', offset: at, length: phrase.length, url }];
 }
 
 /** The caption shown under a listing in the channel. */
@@ -334,7 +369,7 @@ export function listingCaption(post: ListingPost): string {
   if (post.blurb) lines.push(esc(post.blurb), '');
   lines.push(`*${esc(price)}*`);
   lines.push(post.available > 0 ? esc(`${post.available} available`) : esc('out of stock'));
-  lines.push('', mdLink(ORDER_HERE, post.url));
+  lines.push('', mdLink(linkPhrase(post), post.url));
   return lines.join('\n');
 }
 
@@ -373,7 +408,9 @@ function captionFor(post: ListingPost): {
 } {
   const own = post.caption?.trim();
   if (!own) return { text: listingCaption(post), parse: 'MarkdownV2' };
-  return { text: own, entities: linkEntities(own, post.url) };
+  if (post.available > 0) return { text: own, entities: linkEntities(own, post.url) };
+  const text = soldOutCaption(own);
+  return { text, entities: linkEntities(text, post.url, VIEW_LISTING) };
 }
 
 export async function postListing(post: ListingPost): Promise<PostedListing | null> {

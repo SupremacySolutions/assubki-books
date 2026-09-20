@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { publishListing, publishQuery } from '../../../../../lib/publish';
+import { backInStock, publishListing, publishQuery, repostListing } from '../../../../../lib/publish';
+import { AVAILABLE_SQL } from '../../../../../lib/availability';
 import { captionToStore } from '../../../../../lib/channel-caption';
 
 export const prerender = false;
@@ -31,7 +32,27 @@ export const POST: APIRoute = async ({ params, request, url }) => {
       .run();
   }
 
-  const result = await publishListing(id, url.origin);
+  /*
+   * Repost or edit, decided here from the same test the page used to label the
+   * button - so the default is right with scripting off, and a stale page
+   * cannot repost a book the channel already shows in stock. `?mode=edit` is
+   * the owner choosing to edit the old post anyway.
+   */
+  const row = await env.DB.prepare(
+    `SELECT b.telegram_message_id, b.telegram_shown_available, b.telegram_sold_out_at,
+            ${AVAILABLE_SQL} AS available
+       FROM books b WHERE b.id = ?`,
+  )
+    .bind(id)
+    .first<{
+      telegram_message_id: number | null;
+      telegram_shown_available: number | null;
+      telegram_sold_out_at: number | null;
+      available: number;
+    }>();
+  const repost = url.searchParams.get('mode') !== 'edit' && row !== null && backInStock(row, row.available);
+
+  const result = repost ? await repostListing(id, url.origin) : await publishListing(id, url.origin);
 
   return new Response(null, {
     status: 302,

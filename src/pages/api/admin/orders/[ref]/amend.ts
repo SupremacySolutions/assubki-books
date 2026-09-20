@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../../lib/publish';
 import { env } from 'cloudflare:workers';
 import { getOrderByRef, getOrderItems } from '../../../../../lib/admin-db';
 import { canAmend, planAmendment, NOTE_MAX, type AmendableLine } from '../../../../../lib/amend';
@@ -30,7 +31,7 @@ export const prerender = false;
  * oversells the shelf; somebody who wants more books places another order,
  * which is what they already do.
  */
-export const POST: APIRoute = async ({ params, request, url }) => {
+export const POST: APIRoute = async ({ params, request, url, locals }) => {
   const ref = params.ref!;
   const order = await getOrderByRef(ref);
   if (!order) return new Response('No such order', { status: 404 });
@@ -274,6 +275,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   if (!done[done.length - 1].meta.changes) return back('?e=state');
 
   forgetDashboard();
+  await syncChannelSoon(locals, url.origin);
 
   /*
    * The note goes into the thread as well as into the email.

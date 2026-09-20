@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { syncChannelSoon } from '../../../../../lib/publish';
 import { getShipment, shipmentItems } from '../../../../../lib/shipments';
 import { receiveDelivery, ReceiptConflict } from '../../../../../lib/arrival';
 import { env } from 'cloudflare:workers';
@@ -8,7 +9,7 @@ import { readForm } from '../../../../../lib/request-body';
 
 export const prerender = false;
 
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = async ({ params, request, locals }) => {
   const shipmentId = Number(params.id);
   const form = await readForm(request);
   if (!form) return new Response('Bad request', { status: 400 });
@@ -65,6 +66,7 @@ export const POST: APIRoute = async ({ params, request }) => {
       waiting: String(after?.waiting ?? 0),
       spare: String(after?.spare ?? 0),
     });
+    await syncChannelSoon(locals, new URL(request.url).origin);
     return back(`?${figures}`);
   } catch (err) {
     if (!(err instanceof ReceiptConflict)) throw err;
