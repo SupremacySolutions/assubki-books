@@ -45,6 +45,10 @@ import CheckoutFields from '../components/CheckoutFields.astro';
             <span id="ckSaleName" class="text-[var(--color-outstock)]"></span>
             <span id="ckSaleAmount" class="tabular-nums text-[var(--color-outstock)]"></span>
           </div>
+          <div data-ck="multibuy" hidden class="flex items-baseline justify-between gap-4 text-[13px]">
+            <span class="text-[var(--color-outstock)]">Multi-buy</span>
+            <span id="ckMultibuyAmount" class="tabular-nums text-[var(--color-outstock)]"></span>
+          </div>
           <div data-ck="discount" hidden class="flex items-baseline justify-between gap-4 text-[13px]">
             <span id="ckDiscountName" class="text-[var(--color-outstock)]"></span>
             <span id="ckDiscountAmount" class="tabular-nums text-[var(--color-outstock)]"></span>
@@ -84,6 +88,7 @@ import CheckoutFields from '../components/CheckoutFields.astro';
     import { readGroup, leaveGroup, escapeHtml } from '../scripts/group.ts';
     // The same rules the server applies, so the two cannot drift apart.
     import { wireCheckoutForm } from '../scripts/checkout-form.ts';
+    import { lineCost, type Offer } from '../lib/multibuy';
 
     const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
 
@@ -96,13 +101,18 @@ import CheckoutFields from '../components/CheckoutFields.astro';
     let ckSale: { name: string; headline: number } | null = null;
     let ckDiscount: { thresholdPence: number; percent: number } | null = null;
 
-    function paintCheckoutSavings(fullPence: number, afterSale: number) {
+    function paintCheckoutSavings(fullPence: number, afterSale: number, multibuyPence = 0) {
       const el = (id: string) => document.querySelector<HTMLElement>(id)!;
       const saving = fullPence - afterSale;
-      const qualifies = Boolean(ckDiscount) && afterSale >= ckDiscount!.thresholdPence;
-      const discountPence = qualifies ? Math.round((afterSale * ckDiscount!.percent) / 100) : 0;
+      const afterMultibuy = afterSale - multibuyPence;
+      const qualifies = Boolean(ckDiscount) && afterMultibuy >= ckDiscount!.thresholdPence;
+      const discountPence = qualifies ? Math.round((afterMultibuy * ckDiscount!.percent) / 100) : 0;
 
-      el('#ckSavings').hidden = saving === 0 && discountPence === 0;
+      el('#ckSavings').hidden = saving === 0 && discountPence === 0 && multibuyPence === 0;
+
+      const multibuyRow = document.querySelector<HTMLElement>('[data-ck="multibuy"]')!;
+      multibuyRow.hidden = multibuyPence === 0;
+      if (multibuyPence > 0) el('#ckMultibuyAmount').textContent = `-${gbp(multibuyPence)}`;
       el('#ckFull').textContent = gbp(fullPence);
 
       const saleRow = document.querySelector<HTMLElement>('[data-ck="sale"]')!;
@@ -120,18 +130,18 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         el('#ckDiscountAmount').textContent = `-${gbp(discountPence)}`;
       }
 
-      const short = ckDiscount && !qualifies ? ckDiscount.thresholdPence - afterSale : 0;
+      const short = ckDiscount && !qualifies ? ckDiscount.thresholdPence - afterMultibuy : 0;
       el('#ckNearly').hidden = short <= 0;
       if (short > 0) {
         el('#ckNearly').textContent =
           `Spend ${gbp(short)} more and ${ckDiscount!.percent}% comes off the whole order.`;
       }
 
-      const saved = saving + discountPence;
+      const saved = saving + multibuyPence + discountPence;
       el('#ckSaved').hidden = saved === 0;
       el('#ckSaved').textContent = `You save ${gbp(saved)}`;
 
-      return afterSale - discountPence;
+      return afterMultibuy - discountPence;
     }
     const form = document.querySelector<HTMLFormElement>('#form')!;
     const errorBox = document.querySelector<HTMLElement>('#error')!;
@@ -199,12 +209,14 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         books: {
           id: number; title: string; pricePence: number; available: number;
           reservable?: number; expected?: string | null; salePercent?: number; shipmentId?:number|null;
+          multibuy?: Offer[];
         }[];
       };
       const books = payload.books;
       ckSale = payload.sale;
       ckDiscount = payload.discount;
       let ckFullPrice = 0;
+      let ckMultibuy = 0;
 
       const list = document.querySelector<HTMLUListElement>('#summary')!;
       list.innerHTML = '';
@@ -219,11 +231,13 @@ import CheckoutFields from '../components/CheckoutFields.astro';
         }
         subtotal += ckSalePence(book) * qty;
         ckFullPrice += book.pricePence * qty;
+        const lineNow = lineCost(qty, ckSalePence(book), book.multibuy ?? []);
+        ckMultibuy += ckSalePence(book) * qty - lineNow;
         const li = document.createElement('li');
         li.className = 'flex justify-between gap-3';
         li.innerHTML =
           `<span class="min-w-0">${escapeHtml(book.title)}${qty > 1 ? ` <span class="text-[var(--color-ink-faint)]">× ${qty}</span>` : ''}</span>` +
-          `<span class="shrink-0 tabular-nums">${gbp(ckSalePence(book) * qty)}</span>`;
+          `<span class="shrink-0 tabular-nums">${gbp(lineNow)}</span>`;
         list.appendChild(li);
       }
 
@@ -240,7 +254,7 @@ import CheckoutFields from '../components/CheckoutFields.astro';
       }
 
       document.querySelector<HTMLElement>('#subtotal')!.textContent =
-        gbp(paintCheckoutSavings(ckFullPrice, subtotal));
+        gbp(paintCheckoutSavings(ckFullPrice, subtotal, ckMultibuy));
       form.hidden = false;
       return true;
     }

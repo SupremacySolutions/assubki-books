@@ -11,6 +11,7 @@
  * never look to the customer like a failed order.
  */
 
+import { lineTotal } from './multibuy';
 import { env } from 'cloudflare:workers';
 import { SITE } from './format';
 
@@ -245,7 +246,7 @@ export function button(href: string, label: string): string {
 }
 
 export function itemRows(
-  items: { title: string; qty: number; pricePence: number }[],
+  items: { title: string; qty: number; pricePence: number; multibuyPence?: number }[],
   subtotalPence: number,
   extra: { label: string; pence: number }[] = [],
   totalLabel?: string,
@@ -257,9 +258,11 @@ export function itemRows(
       (i) => `<tr>
         <td style="padding:8px 0;border-bottom:1px solid #ddd9d1">${escapeHtml(i.title)}${
           i.qty > 1 ? ` <span style="color:#8b93a1">× ${i.qty}</span>` : ''
+        }${
+          i.multibuyPence ? `<br><span style="color:#8b93a1;font-size:13px">Multi-buy saving ${money(i.multibuyPence)}</span>` : ''
         }</td>
         <td style="padding:8px 0;border-bottom:1px solid #ddd9d1;text-align:right;white-space:nowrap">${money(
-          i.pricePence * i.qty,
+          lineTotal(i),
         )}</td></tr>`,
     )
     .join('');

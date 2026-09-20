@@ -7,6 +7,7 @@
  */
 
 import { env } from 'cloudflare:workers';
+import { tidyPublisher } from './publishers';
 
 export interface Category {
   id: number;
@@ -62,6 +63,8 @@ export interface BookRow {
   /** Percent off while a sale is running, or null. Never zero - a book with
       no reduction has no row in sale_items at all. */
   sale_percent: number | null;
+  /** Multi-buy offers as stored JSON, or null. Read with `parseOffers`. */
+  multibuy: string | null;
   /** How the arrival is described: a vagueness word and a month, never a date. */
   incoming_vague: string | null;
   incoming_month: string | null;
@@ -104,7 +107,7 @@ export const NOT_DELETED_BARE = 'deleted_at IS NULL';
 
 const BOOK_SELECT = `
   SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language, b.shipment_id,
-         b.price_pence, b.stock, b.reserved, b.volumes,
+         b.price_pence, b.stock, b.reserved, b.volumes, b.multibuy,
          b.set_id, b.set_from, b.set_to, b.isbn,
          b.incoming, b.reserved_incoming, b.incoming_vague, b.incoming_month,
          (b.stock - b.reserved) AS available,
@@ -246,6 +249,157 @@ export async function categoryCounts(): Promise<ShelfCounts> {
 /** Called after a listing changes, so the owner sees their own edit at once. */
 export function forgetCategoryCounts(): void {
   countsCache = null;
+  publishersCache = null;
+}
+
+// ---------------------------------------------------------------------------
+// Publishers
+// ---------------------------------------------------------------------------
+
+export interface PublisherCount {
+  name: string;
+  count: number;
+}
+
+/** A live book with a publisher: what it is filed under, and in what language. */
+interface PublishedBook {
+  /** The publisher folded to lower case - the key the list is grouped on. */
+  key: string;
+  language: BookLanguage;
+  paths: string[];
+}
+
+interface PublisherIndex {
+  books: PublishedBook[];
+  /** For each key, the spelling most of its listings use. */
+  spelling: Map<string, string>;
+}
+
+/**
+ * Every live book that has a publisher, with its shelves and language.
+ *
+ * Read once and counted here rather than asked of the database per page, the
+ * lesson `readCategoryCounts` records: a shelf and a language are two string
+ * comparisons in memory, and a GROUP BY per shelf per language per request
+ * would be the read bill that function exists to avoid. A few hundred rows,
+ * cached for a minute and forgotten with the shelf counts.
+ *
+ * The publisher is free text the owner types per listing, so "Zam Zam" and
+ * "zam zam " must not become two entries in the customer's list. Keyed on the
+ * trimmed name without regard to case - the same comparison `listBooks`
+ * filters with, so a count can never promise books the filter then fails to
+ * find. The spelling shown is the one most of its listings use.
+ */
+async function readPublisherIndex(): Promise<PublisherIndex> {
+  const { results } = await db()
+    .prepare(
+      `SELECT b.id AS id, TRIM(b.publisher) AS name, b.language AS language, c.path AS path
+         FROM books b
+         LEFT JOIN book_categories bc ON bc.book_id = b.id
+         LEFT JOIN categories c ON c.id = bc.category_id
+        WHERE b.status = 'live' AND ${NOT_DELETED}
+          AND TRIM(COALESCE(b.publisher, '')) != ''`,
+    )
+    .all<{ id: number; name: string; language: BookLanguage; path: string | null }>();
+
+  const byId = new Map<number, PublishedBook & { name: string }>();
+  for (const row of results) {
+    const book = byId.get(row.id) ??
+      { key: row.name.toLowerCase(), name: row.name, language: row.language, paths: [] };
+    if (row.path) book.paths.push(row.path);
+    byId.set(row.id, book);
+  }
+
+  const usage = new Map<string, number>();
+  for (const b of byId.values()) usage.set(b.name, (usage.get(b.name) ?? 0) + 1);
+  const spelling = new Map<string, string>();
+  for (const [name, n] of usage) {
+    const key = name.toLowerCase();
+    const best = spelling.get(key);
+    if (!best || n > usage.get(best)!) spelling.set(key, name);
+  }
+  return { books: [...byId.values()], spelling };
+}
+
+/**
+ * Every publisher name in use, for the portal's suggestions, most used first.
+ *
+ * Drafts and hidden listings count here, unlike the catalogue's list: the
+ * owner is choosing what to call a book, and a name he typed on a draft
+ * yesterday is exactly the one to offer today. Only the bin is left out.
+ * Exact spellings, not folded - the portal is where two spellings of one
+ * publisher get noticed, so it has to see both.
+ */
+export async function publisherSpellings(): Promise<PublisherCount[]> {
+  const { results } = await db()
+    .prepare(
+      `SELECT TRIM(publisher) AS name, COUNT(*) AS count
+         FROM books
+        WHERE ${NOT_DELETED_BARE} AND TRIM(COALESCE(publisher, '')) != ''
+        GROUP BY TRIM(publisher)
+        ORDER BY count DESC, name COLLATE NOCASE`,
+    )
+    .all<PublisherCount>();
+  return results;
+}
+
+/**
+ * The spelling to store for a publisher the owner has just typed.
+ *
+ * If another listing already uses this name in different capitals, the new one
+ * takes that listing's spelling, so "zam zam" typed in a hurry joins "Zam Zam"
+ * rather than starting a second entry in the customer's list. Only case and
+ * spacing are folded - anything more is a question for the owner, which the
+ * portal asks before saving (see `lib/publishers.ts`).
+ */
+export async function canonicalPublisher(typed: string | null, bookId: number | null): Promise<string | null> {
+  const name = typed ? tidyPublisher(typed) : '';
+  if (!name) return null;
+  const existing = await db()
+    .prepare(
+      `SELECT TRIM(publisher) AS name, COUNT(*) AS n
+         FROM books
+        WHERE ${NOT_DELETED_BARE} AND id != ?
+          AND TRIM(publisher) = ? COLLATE NOCASE
+        GROUP BY TRIM(publisher)
+        ORDER BY n DESC
+        LIMIT 1`,
+    )
+    .bind(bookId ?? 0, name)
+    .first<{ name: string }>();
+  return existing?.name ?? name;
+}
+
+let publishersCache: { at: number; value: PublisherIndex } | null = null;
+
+/**
+ * The publishers worth offering where the customer is standing, A-Z.
+ *
+ * Narrowed by the shelf and the language being browsed, so the Syllabus shelf
+ * offers the Syllabus shelf's publishers and each count is the number of books
+ * choosing it will actually show. A parent shelf includes what sits beneath
+ * it, as it does in the grid. Search and the tick-boxes are not applied: the
+ * list would then be answering a different question on every keystroke, and
+ * stock moves too often for a cached count to follow.
+ */
+export async function publisherCounts(
+  language: BookLanguage | null = null,
+  categoryPath: string | null = null,
+): Promise<PublisherCount[]> {
+  const now = Date.now();
+  if (!publishersCache || now - publishersCache.at >= 60_000) {
+    publishersCache = { at: now, value: await readPublisherIndex() };
+  }
+  const { books, spelling } = publishersCache.value;
+  const tally = new Map<string, number>();
+  for (const b of books) {
+    if (language && b.language !== language) continue;
+    if (categoryPath && !b.paths.some((p) => p === categoryPath || p.startsWith(`${categoryPath}/`))) continue;
+    tally.set(b.key, (tally.get(b.key) ?? 0) + 1);
+  }
+  return [...tally]
+    .map(([key, count]) => ({ name: spelling.get(key)!, count }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 }
 
 /**
@@ -344,6 +498,8 @@ export interface ListOptions {
   categoryPath?: string | null;
   q?: string | null;
   language?: BookLanguage | null;
+  /** One publisher, matched as `publisherCounts` groups them: trimmed, any case. */
+  publisher?: string | null;
   inStockOnly?: boolean;
   /** Only books in the sale that is running. */
   onSale?: boolean;
@@ -411,6 +567,11 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   if (opts.language) {
     where.push('b.language = ?');
     binds.push(opts.language);
+  }
+
+  if (opts.publisher) {
+    where.push('TRIM(b.publisher) = ? COLLATE NOCASE');
+    binds.push(opts.publisher.trim());
   }
 
   if (opts.inStockOnly) where.push('(b.stock - b.reserved) > 0');

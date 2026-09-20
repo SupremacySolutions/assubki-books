@@ -1143,6 +1143,64 @@ async function listings() {
   const row = await one(`SELECT slug, status FROM books WHERE id=${book.id}`);
   t.ok((await get(`/book/${row.slug}`)).status === 200, 'it appears in the shop');
 
+  /*
+   * The publisher is something a customer can find books by: typed into the
+   * search box, chosen from the catalogue's one-line select, or followed from
+   * the book page. A name no real listing carries, so the counts are exact.
+   */
+  const press = `Qirtas ${Math.random().toString(36).slice(2, 7)}`;
+  const pressBook = await makeBook({ publisher: `  ${press} ` });
+  const pressTwin = await makeBook({ publisher: press.toUpperCase() });
+  /* Saving now folds capitals into the spelling in use, so the listings typed
+     before that existed are made directly - the catalogue must still group
+     them. The save that follows clears the cached list. */
+  await db(`UPDATE books SET publisher = '${press.toUpperCase()}' WHERE id = ${pressTwin.id}`);
+  await makeBook({ publisher: press });
+  const pressSearch = await html(`/catalogue?q=${encodeURIComponent(press)}`);
+  t.ok(pressSearch.includes(pressBook.title) && pressSearch.includes(pressTwin.title),
+    'searching a publisher name finds its books');
+  const byPress = await html(`/catalogue?pub=${encodeURIComponent(press.toLowerCase())}`);
+  t.ok(/>\s*3\s*titles/.test(byPress) && byPress.includes(pressTwin.title),
+    'the publisher filter matches regardless of case and stray spaces');
+  t.ok(byPress.includes(`<option value="${press}" selected`) && byPress.includes(`${press} (3)`),
+    'the select offers it once, counted, in the spelling most listings use');
+  t.ok(new RegExp(`>\\s*${press}\\s*<span[^>]*aria-hidden="true"`).test(byPress),
+    'and it appears as a removable chip');
+  /*
+   * The list follows the shelf. The fixtures sit on shelf 20 only, so its own
+   * page and its parent's offer the publisher, and a shelf beside it does not.
+   */
+  const shelf = await one(`SELECT path FROM categories WHERE id=20`);
+  const elsewhere = await one(
+    `SELECT path FROM categories WHERE id != 20 AND path NOT LIKE '${shelf.path.split('/')[0]}%'
+      ORDER BY id LIMIT 1`,
+  );
+  const onShelf = await html(`/catalogue/${shelf.path}`);
+  const parentShelf = await html(`/catalogue/${shelf.path.split('/')[0]}`);
+  const offShelf = await html(`/catalogue/${elsewhere.path}`);
+  t.ok(onShelf.includes(`${press} (3)`) && parentShelf.includes(`${press} (3)`),
+    "a shelf's publisher list includes the publishers on it and beneath it");
+  t.ok(/\d+ titles/.test(offShelf) && !offShelf.includes(`<option value="${press}"`),
+    'and a shelf without their books does not offer them');
+  /*
+   * The portal keeps one publisher from becoming three. A name typed in other
+   * capitals is saved in the spelling already in use; the form offers every
+   * name in use, and carries the hint that asks about near misses.
+   */
+  const typedLoosely = await makeBook({ publisher: `  ${press.toLowerCase().replace(' ', '   ')} ` });
+  t.ok((await one(`SELECT publisher FROM books WHERE id=${typedLoosely.id}`)).publisher === press,
+    'a publisher typed in other capitals and spacing is saved in the spelling already in use');
+  const form = await html(`/admin/books/${typedLoosely.id}`);
+  t.ok(form.includes('list="publisherNames"') && form.includes(`<option value="${press}" data-count="3"`),
+    'the portal suggests publishers already in use, with how many listings each has');
+  t.ok(form.includes(`<option value="${press.toUpperCase()}" data-count="1"`),
+    'and shows the older variant spelling too, so the owner can see it and tidy it');
+  t.ok(form.includes('id="publisherHint"') && /hidden/.test(form.match(/<p[^>]*id="publisherHint"[^>]*>/)?.[0] ?? ''),
+    'and has a did-you-mean hint, hidden until a name looks like another');
+  const pressSlug = (await one(`SELECT slug FROM books WHERE id=${pressBook.id}`)).slug;
+  t.ok((await html(`/book/${pressSlug}`)).includes(`href="/catalogue?pub=${encodeURIComponent(press).replace(/%20/g, '+')}"`),
+    'the book page links its publisher to the rest of its books');
+
   // Stock may not drop below what customers are already promised.
   const o = await placeOrder(book.id, 'collection');
   await admin('/api/admin/books/stock', { id: book.id, stock: '0' });
@@ -6237,6 +6295,137 @@ async function bookRequests() {
   t.ok(privacy.includes('90 days'), 'and states how long it is kept');
 }
 
+/*
+ * Multi-buy prices: exactly N for a total, and N or more at a price each.
+ *
+ * The arithmetic itself is checked on paper in scripts/test-multibuy.mjs.
+ * What this checks is that every surface charges with it: the owner can save
+ * offers and is refused a bad one, the shop says so on the card and the book
+ * page, the basket is told the offers, and an order - placed, trimmed and added
+ * to - is written for exactly the figure the customer was shown.
+ */
+async function multibuy() {
+  const t = suite('28. Multi-buy prices');
+
+  // The standing order discount would take its own share off and blur the
+  // figures this is about. Put back afterwards exactly as it was.
+  const wasOn = await one("SELECT value FROM settings WHERE key = 'order_discount_active'");
+  await db("INSERT INTO settings (key, value) VALUES ('order_discount_active', '0') ON CONFLICT(key) DO UPDATE SET value = '0'");
+
+  const book = await makeBook({ stock: '40', price: '3.00' });
+  const nameOf = book.title.split(' ')[1];
+
+  /** Saves the listing with these offer rows, the way the portal form posts them. */
+  const saveOffers = (rows, price = '3.00') =>
+    admin('/api/admin/books/save', [
+      ['id', String(book.id)], ['title', book.title], ['title_ar', 'اختبار'],
+      ['price', price], ['stock', '40'], ['status', 'live'], ['categories', '20'],
+      ...rows.flatMap(([kind, qty, pounds]) => [['mb_kind', kind], ['mb_qty', qty], ['mb_price', pounds]]),
+    ]);
+
+  // --- the owner ------------------------------------------------------------
+  let r = await saveOffers([['from', '10', '3.50']]);
+  t.ok(r.location.includes('e=multibuy'), 'an offer dearer than the normal price is refused');
+  r = await saveOffers([['bundle', '20', '']]);
+  t.ok(r.location.includes('e=multibuy'), 'and so is a half-filled row, rather than guessed at');
+  t.ok((await one(`SELECT multibuy FROM books WHERE id=${book.id}`)).multibuy === null,
+    'and a refusal saves nothing');
+
+  r = await saveOffers([['from', '10', '2.50'], ['bundle', '20', '45.00'], ['', '', '']]);
+  t.ok(r.location.includes('saved=1'), 'a "10 or more" rate and a "20 for" bundle save together');
+  const stored = JSON.parse((await one(`SELECT multibuy FROM books WHERE id=${book.id}`)).multibuy);
+  t.ok(stored.length === 2 && stored[0].qty === 10 && stored[1].pence === 4500,
+    'as two offers, the blank row ignored');
+
+  const editor = await html(`/admin/books/${book.id}`);
+  t.ok(editor.includes('Multi-buy prices') && editor.includes('value="45.00"'),
+    'the editor shows the saved offers back');
+
+  // --- the shop -------------------------------------------------------------
+  const slug = (await one(`SELECT slug FROM books WHERE id=${book.id}`)).slug;
+  const page = await html(`/book/${slug}`);
+  t.ok(page.includes('buy more, pay less') && page.includes('10+ copies') && page.includes('20 copies'),
+    'the book page lists the offers');
+  t.ok(page.includes('£45.00') && page.includes('£60.00') && page.includes('Save £15.00'),
+    'with the price, the crossed-out original and the saving');
+
+  const search = await html(`/catalogue?q=${encodeURIComponent(nameOf)}`);
+  t.ok(search.includes('Multi-buy discounts available'), 'the catalogue card says multi-buy is available');
+
+  const basket = await json(`/api/basket?ids=${book.id}`);
+  t.ok(basket.body.books?.[0]?.multibuy?.length === 2, 'the basket is told the offers');
+
+  // --- the order ------------------------------------------------------------
+  const placed = await json('/api/orders', {
+    name: 'Mikail Bhana', email: `multibuy${Date.now()}@example.com`, phone: '07700 900321',
+    fulfilment: 'collection', items: [{ bookId: book.id, qty: 25 }],
+  });
+  t.ok(placed.body.ok === true, 'an order for 25 can be placed');
+  const ref = placed.body.ref;
+  created.orders.push(ref);
+
+  const line = () => one(
+    `SELECT oi.id, oi.qty, oi.price_pence_snapshot AS each, oi.multibuy_pence AS mb, o.subtotal_pence AS sub
+       FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.ref = '${ref}'`,
+  );
+  let l = await line();
+  // One bundle of 20 for £45, and five more at the 10+ rate of £2.50.
+  t.ok(l.each === 300 && l.mb === 7500 - 5750, `the line records the multi-buy saving (got ${l.mb}p)`);
+  t.ok(l.sub === 5750, `and the order is written for £57.50 (got ${money(l.sub)})`);
+
+  const orderPage = await html(`/order?ref=${ref}&t=${placed.body.token}`);
+  t.ok(orderPage.includes('Multi-buy saving') && orderPage.includes('£57.50'),
+    'the customer sees the saving on their order');
+
+  // Trimmed to 12: the copies kept keep their rate.
+  await admin(`/api/admin/orders/${ref}/amend`, { [`qty_${l.id}`]: '12' });
+  l = await line();
+  t.ok(l.qty === 12 && l.mb === Math.floor((1750 * 12) / 25),
+    `a trimmed line keeps its multi-buy rate (got ${l.mb}p)`);
+  t.ok(l.sub === 3600 - l.mb, 'and the order is repriced from its own lines');
+
+  // Three more go on: the marginal saving at today's offers.
+  const offered = await (await get(`/api/admin/orders/${ref}/addable?q=${encodeURIComponent(nameOf)}`)).json();
+  t.ok(offered.results?.[0]?.holding === 12 && offered.results?.[0]?.multibuy?.length === 2,
+    'the add picker knows the offers and how many the order holds');
+  const before = l.mb;
+  await admin(`/api/admin/orders/${ref}/add`, { [`add_${book.id}`]: '3' });
+  l = await line();
+  // 12 → 15 copies, all past "10 or more": each new copy saves 50p.
+  t.ok(l.qty === 15 && l.mb === before + 150, `copies added earn the saving they make (got ${l.mb}p)`);
+  t.ok(l.sub === 4500 - l.mb, 'and the subtotal follows');
+
+  const portal = await html(`/admin/orders/${ref}`);
+  t.ok(portal.includes('multi-buy -'), 'the portal shows the saving on the line');
+
+  // --- a sale that is cheaper wins, and they never stack --------------------
+  await db("UPDATE order_items SET sale_id = NULL WHERE sale_id IN (SELECT id FROM sales WHERE name = 'E2E multibuy sale')");
+  await db("DELETE FROM sales WHERE name = 'E2E multibuy sale'");
+  await db("UPDATE sales SET status = 'ended' WHERE status = 'live'");
+  await db("INSERT INTO sales (name, status) VALUES ('E2E multibuy sale', 'live')");
+  const sale = await one("SELECT id FROM sales WHERE name = 'E2E multibuy sale'");
+  await db(`INSERT INTO sale_items (sale_id, book_id, percent_off) VALUES (${sale.id}, ${book.id}, 20)`);
+  const onSale = await json('/api/orders', {
+    name: 'Mikail Bhana', email: `multibuy2${Date.now()}@example.com`, phone: '07700 900321',
+    fulfilment: 'collection', items: [{ bookId: book.id, qty: 10 }],
+  });
+  created.orders.push(onSale.body.ref);
+  const saleLine = await one(
+    `SELECT oi.price_pence_snapshot AS each, oi.multibuy_pence AS mb, o.subtotal_pence AS sub
+       FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.ref = '${onSale.body.ref}'`,
+  );
+  t.ok(saleLine.each === 240 && saleLine.mb === 0 && saleLine.sub === 2400,
+    'ten at a 20% sale price (£2.40) beat the £2.50 rate, and nothing stacks');
+
+  await db(`DELETE FROM orders WHERE ref IN ('${ref}', '${onSale.body.ref}')`);
+  await db(`DELETE FROM sale_items WHERE sale_id = ${sale.id}`);
+  await db(`DELETE FROM sales WHERE id = ${sale.id}`);
+  await db(`UPDATE books SET reserved = 0 WHERE id = ${book.id}`);
+  await db(`DELETE FROM stock_ledger WHERE book_id = ${book.id} AND field = 'reserved'`);
+  if (wasOn) await db(`UPDATE settings SET value = '${wasOn.value}' WHERE key = 'order_discount_active'`);
+  else await db("DELETE FROM settings WHERE key = 'order_discount_active'");
+}
+
 const SUITES = [
   ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
   ['validation', validation, true], ['stock', stockAndHolds, true],
@@ -6260,6 +6449,7 @@ const SUITES = [
   ['add', addingToOrders, true],
   ['bulk', bulkEdits, true],
   ['requests', bookRequests, true],
+  ['multibuy', multibuy, true],
   ['integrity', integrity, true],
 ];
 
@@ -6331,7 +6521,8 @@ try {
     try {
       await fn();
     } catch (err) {
-      suite(`${name} (crashed)`).ok(false, String(err).split('\n')[0]);
+      console.error(err);
+      suite(`${name} (crashed)`).ok(false, String(err));
     }
   }
 } finally {

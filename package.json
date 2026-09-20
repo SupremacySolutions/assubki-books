@@ -16,6 +16,7 @@
     "migrate:woo": "node scripts/migrate-from-woo.mjs",
     "images:fetch": "node scripts/fetch-images.mjs",
     "test:e2e": "node scripts/run-check.mjs node scripts/run-e2e.mjs",
+    "test:e2e:db": "node scripts/run-check.mjs node scripts/test-e2e-db.mjs",
     "test:e2e:prod": "node scripts/smoke-prod.mjs",
     "typecheck": "node scripts/run-check.mjs astro check --minimumSeverity error",
     "deploy:sweep": "wrangler deploy -c workers/expire-holds/wrangler.jsonc",
@@ -26,7 +27,8 @@
     "dev:stop": "node scripts/dev-server.mjs stop",
     "dev:sweep": "node scripts/dev-server.mjs sweep",
     "dev:images": "node scripts/run-check.mjs node --experimental-strip-types --no-warnings scripts/sync-dev-images.mjs",
-    "test:tooling": "node scripts/run-check.mjs node scripts/test-tooling.mjs"
+    "test:tooling": "node scripts/run-check.mjs node scripts/test-tooling.mjs",
+    "test:multibuy": "node scripts/run-check.mjs node --experimental-strip-types --no-warnings scripts/test-multibuy.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.2.5",

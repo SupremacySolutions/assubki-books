@@ -57,6 +57,7 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
     title: item.title_snapshot,
     pricePence: item.price_pence_snapshot,
     qty: item.qty,
+    multibuyPence: item.multibuy_pence,
     fromIncoming: item.from_incoming,
   }));
 
@@ -110,7 +111,7 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
    * anything else has moved a line, the figures still describe the order that
    * actually exists.
    */
-  const GROSS = `(SELECT COALESCE(SUM(price_pence_snapshot * qty), 0)
+  const GROSS = `(SELECT COALESCE(SUM(price_pence_snapshot * qty - multibuy_pence), 0)
                     FROM order_items WHERE order_id = ?1)`;
 
   /*
@@ -138,7 +139,9 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
   );
   const gone = JSON.stringify(plan.removed.filter((r) => r.remaining === 0).map((r) => r.id));
   const trimmed = JSON.stringify(
-    plan.removed.filter((r) => r.remaining > 0).map((r) => ({ id: r.id, keep: r.remaining })),
+    plan.removed
+      .filter((r) => r.remaining > 0)
+      .map((r) => ({ id: r.id, keep: r.remaining, mb: r.multibuyKeep })),
   );
   const removedRecord = JSON.stringify(
     plan.removed.map((r) => ({ title: r.title, qty: r.qty, pricePence: r.pricePence })),
@@ -210,7 +213,10 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
       env.DB.prepare(
         `UPDATE order_items
             SET qty = (SELECT json_extract(j.value, '$.keep') FROM json_each(?2) j
-                        WHERE json_extract(j.value, '$.id') = order_items.id)
+                        WHERE json_extract(j.value, '$.id') = order_items.id),
+                -- The copies kept keep their multi-buy rate; see planAmendment.
+                multibuy_pence = (SELECT json_extract(j.value, '$.mb') FROM json_each(?2) j
+                                   WHERE json_extract(j.value, '$.id') = order_items.id)
           WHERE order_id = ?1
             AND id IN (SELECT json_extract(value, '$.id') FROM json_each(?2))
             AND ${allowed}`,
@@ -316,11 +322,17 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
     name: order.customer_name,
     email: order.email,
     telegramChatId: order.telegram_chat_id,
-    removed: plan.removed.map((r) => ({ title: r.title, qty: r.qty, pricePence: r.pricePence })),
+    removed: plan.removed.map((r) => ({
+      title: r.title,
+      qty: r.qty,
+      pricePence: r.pricePence,
+      multibuyPence: r.multibuyPence,
+    })),
     items: remaining.map((i) => ({
       title: i.title_snapshot,
       qty: i.qty,
       pricePence: i.price_pence_snapshot,
+      multibuyPence: i.multibuy_pence,
     })),
     subtotalPence: amended?.subtotal_pence ?? plan.subtotalAfter,
     postagePence: amended?.postage_pence ?? postagePence,

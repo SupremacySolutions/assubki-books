@@ -12,6 +12,7 @@ import {
 } from '../../../../../lib/amend';
 import { sellable } from '../../../../../lib/availability';
 import { salePrice } from '../../../../../lib/sales';
+import { parseOffers, marginalSaving } from '../../../../../lib/multibuy';
 import { notifyBooksAdded } from '../../../../../lib/notify';
 import { forgetDashboard } from '../../../../../lib/dashboard';
 import { postMessage } from '../../../../../lib/messages';
@@ -100,6 +101,7 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
     title: item.title_snapshot,
     pricePence: item.price_pence_snapshot,
     qty: item.qty,
+    multibuyPence: item.multibuy_pence,
     fromIncoming: item.from_incoming,
   }));
 
@@ -119,15 +121,23 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
     const verdict = howToAdd(order.shipment_id, book);
     if (!verdict.ok) continue;
 
+    const unit = salePrice(book.price_pence, book.sale_percent);
+    const adding = Math.min(qty, verdict.free);
+    // Copies of this book the order already holds, which is what decides the
+    // multi-buy rate the new ones earn. The existing lines keep their quote.
+    const holdingNow = lines
+      .filter((line) => line.bookId === book.id)
+      .reduce((n, line) => n + line.qty, 0);
     candidates.push({
       bookId: book.id,
       title: book.title,
-      pricePence: salePrice(book.price_pence, book.sale_percent),
+      pricePence: unit,
+      multibuyPence: marginalSaving(holdingNow, adding, unit, parseOffers(book.multibuy)),
       // What it was reduced from and which sale did it, recorded because this
       // is the only moment both are true - the reasoning in `createCheckout`.
       fullPricePence: book.price_pence,
       saleId: book.sale_percent ? book.sale_id : null,
-      qty: Math.min(qty, verdict.free),
+      qty: adding,
       fromIncoming: verdict.fromIncoming,
     });
   }
@@ -167,7 +177,7 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
    * amending follows, and the reason the figures always describe the order
    * that actually exists.
    */
-  const GROSS = `(SELECT COALESCE(SUM(price_pence_snapshot * qty), 0)
+  const GROSS = `(SELECT COALESCE(SUM(price_pence_snapshot * qty - multibuy_pence), 0)
                     FROM order_items WHERE order_id = ?1)`;
 
   const fresh = JSON.stringify(
@@ -180,13 +190,14 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
         fullPricePence: line.fullPricePence,
         saleId: line.saleId,
         qty: line.qty,
+        multibuyPence: line.multibuyPence,
         fromIncoming: line.fromIncoming ? 1 : 0,
       })),
   );
   const joined = JSON.stringify(
     plan.added
       .filter((line) => line.mergesInto !== null)
-      .map((line) => ({ id: line.mergesInto, qty: line.qty })),
+      .map((line) => ({ id: line.mergesInto, qty: line.qty, mb: line.multibuyPence })),
   );
   /*
    * The holds, by book and by which column they land in.
@@ -220,11 +231,11 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
       env.DB.prepare(
         `INSERT INTO order_items
            (order_id, book_id, title_snapshot, price_pence_snapshot, qty, from_incoming,
-            sale_id, full_price_pence)
+            sale_id, full_price_pence, multibuy_pence)
          SELECT ?1, json_extract(value, '$.bookId'), json_extract(value, '$.title'),
                 json_extract(value, '$.pricePence'), json_extract(value, '$.qty'),
                 json_extract(value, '$.fromIncoming'), json_extract(value, '$.saleId'),
-                json_extract(value, '$.fullPricePence')
+                json_extract(value, '$.fullPricePence'), json_extract(value, '$.multibuyPence')
            FROM json_each(?2) WHERE ${allowed}`,
       ).bind(order.id, fresh),
     );
@@ -237,6 +248,8 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
       env.DB.prepare(
         `UPDATE order_items
             SET qty = qty + (SELECT json_extract(j.value, '$.qty') FROM json_each(?2) j
+                              WHERE json_extract(j.value, '$.id') = order_items.id),
+                multibuy_pence = multibuy_pence + (SELECT json_extract(j.value, '$.mb') FROM json_each(?2) j
                               WHERE json_extract(j.value, '$.id') = order_items.id)
           WHERE order_id = ?1
             AND id IN (SELECT json_extract(value, '$.id') FROM json_each(?2))
@@ -395,11 +408,13 @@ export const POST: APIRoute = async ({ params, request, url, locals }) => {
       title: line.title,
       qty: line.qty,
       pricePence: line.pricePence,
+      multibuyPence: line.multibuyPence,
     })),
     items: holding.map((i) => ({
       title: i.title_snapshot,
       qty: i.qty,
       pricePence: i.price_pence_snapshot,
+      multibuyPence: i.multibuy_pence,
     })),
     fromIncoming: order.shipment_id !== null,
     subtotalPence: changed?.subtotal_pence ?? plan.subtotalAfter,

@@ -13,6 +13,7 @@ import { delivery } from '../lib/incoming';
 import { IMAGE_PRESETS } from '../lib/image-presets';
 import { classmark } from '../lib/classmarks';
 import Rosette from './Rosette.astro';
+import { parseOffers, multibuySaving } from '../lib/multibuy';
 import type { BookRow } from '../lib/db';
 
 interface Props {
@@ -53,6 +54,13 @@ const nowPence = off > 0 ? Math.round((book.price_pence * (100 - off)) / 100) : 
  * worth saying.
  */
 const coming = book.available <= 0 ? delivery(book) : null;
+
+/* Cheaper when you take more. Named on the card so a class buying twenty
+   copies learns it from the grid, not only after opening every book. */
+const offers = parseOffers(book.multibuy);
+/* Only an offer that beats what this card is charging - a sale can undercut a
+   multi-buy price, and then the note would promise a saving nobody gets. */
+const multibuy = offers.some((o) => multibuySaving(o.qty, nowPence, offers) > 0);
 const marks = (book.cat_slugs ?? '')
   .split(',')
   .filter(Boolean)
@@ -210,4 +218,9 @@ const marks = (book.cat_slugs ?? '')
       >{avail.label}</p>
     )
   }
+  {multibuy && (
+    <p class="mt-1 text-[12.5px] font-medium text-[var(--color-outstock)]">
+      Multi-buy discounts available
+    </p>
+  )}
 </article>
