@@ -90,6 +90,7 @@ npm run test:covers
 npm run test:backup
 npm run test:tooling
 npm run test:e2e
+npm run test:e2e:db
 npm run test:e2e -- --only=shipments
 npm run test:e2e:prod
 ```
@@ -104,6 +105,11 @@ It never reads your `.dev.vars` or reuses your D1. On exit, failure or interrupt
 it stops its servers before removing the disposable directory. Setup/server logs
 are in `.cache/e2e-server.log`. The terminal output contains assertions and the
 summary. An unknown suite, failed cleanup or skipped authenticated suite fails.
+
+`test:e2e:db` checks the SQLite assertion reader, including an idle WAL database
+whose sidecars have been removed. Reads use an existing database in `mode=rw`
+with `query_only=ON`: this permits SQLite sidecar maintenance while refusing
+SQL writes. macOS `sqlite3 -readonly` cannot reopen that sidecar-free state.
 
 The HTTP suite changes settings, deletes fixture ranges and builds artificial
 inventory states. Its old production mode was unsafe; direct execution and
