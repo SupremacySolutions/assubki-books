@@ -27,7 +27,8 @@
     "dev:stop": "node scripts/dev-server.mjs stop",
     "dev:sweep": "node scripts/dev-server.mjs sweep",
     "dev:images": "node scripts/run-check.mjs node --experimental-strip-types --no-warnings scripts/sync-dev-images.mjs",
-    "test:tooling": "node scripts/run-check.mjs node scripts/test-tooling.mjs"
+    "test:tooling": "node scripts/run-check.mjs node scripts/test-tooling.mjs",
+    "test:multibuy": "node scripts/run-check.mjs node --experimental-strip-types --no-warnings scripts/test-multibuy.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.2.5",

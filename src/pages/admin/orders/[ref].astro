@@ -689,11 +689,12 @@ const [strip, ...demotedFlags] = flags;
                       owner was left to divide it themselves. */}
                   <span class="block text-[13px] text-[var(--color-ink-faint)]">
                     {price(item.price_pence_snapshot)} each
+                    {item.multibuy_pence > 0 ? ` · multi-buy -${price(item.multibuy_pence)}` : ''}
                     {item.from_incoming ? ' · reserved from a delivery' : ''}
                   </span>
                 </span>
                 <span class="shrink-0 tabular-nums">
-                  {price(item.price_pence_snapshot * item.qty)}
+                  {price(item.price_pence_snapshot * item.qty - item.multibuy_pence)}
                 </span>
               </li>
             ))
@@ -762,6 +763,7 @@ const [strip, ...demotedFlags] = flags;
                       data-amend-qty
                       data-was={item.qty}
                       data-price={item.price_pence_snapshot}
+                      data-mb={item.multibuy_pence}
                       data-title={item.title_snapshot}
                       class="field !w-16 !py-1.5 !text-[14px] tabular-nums text-center"
                     />
@@ -1626,13 +1628,15 @@ const [strip, ...demotedFlags] = flags;
       const money = (pence) => `£${(pence / 100).toFixed(2)}`;
       const kept = (box) =>
         Math.min(Number(box.dataset.was), Math.max(0, Math.trunc(Number(box.value) || 0)));
-      const grossBefore = boxes.reduce(
-        (n, box) => n + Number(box.dataset.price) * Number(box.dataset.was),
-        0,
-      );
+      // A line's multi-buy saving follows the copies kept, floored, exactly as
+      // planAmendment does it.
+      const lineAt = (box, qty) =>
+        Number(box.dataset.price) * qty -
+        Math.floor((Number(box.dataset.mb || 0) * qty) / Number(box.dataset.was));
+      const grossBefore = boxes.reduce((n, box) => n + lineAt(box, Number(box.dataset.was)), 0);
 
       const paintAmend = () => {
-        const grossAfter = boxes.reduce((n, box) => n + Number(box.dataset.price) * kept(box), 0);
+        const grossAfter = boxes.reduce((n, box) => n + lineAt(box, kept(box)), 0);
         const discount =
           grossBefore > 0
             ? Math.min(grossAfter, Math.floor((amendDiscount * grossAfter) / grossBefore))
@@ -1756,9 +1760,32 @@ const [strip, ...demotedFlags] = flags;
        * decides from, and a preview that disagreed with the result would be
        * worse than no preview at all.
        */
+      /*
+       * Multi-buy, for the preview only: the same cheapest-combination rule as
+       * src/lib/multibuy.ts, which the endpoint runs. This script is inline and
+       * cannot import it, so it is written out here - kept short, and checked by
+       * the e2e suite against the figure the endpoint writes.
+       */
+      const cost = (n, unit, offers) => {
+        let rate = unit;
+        for (const o of offers) if (o.kind === 'from' && o.qty <= n && o.pence < rate) rate = o.pence;
+        const bundles = offers.filter((o) => o.kind === 'bundle' && o.qty <= n);
+        const best = [0];
+        for (let r = 1; r <= n; r++) {
+          let c = best[r - 1] + rate;
+          for (const b of bundles) if (b.qty <= r) c = Math.min(c, best[r - b.qty] + b.pence);
+          best[r] = c;
+        }
+        return best[n];
+      };
+      const marginal = (held, added, unit, offers) =>
+        offers.length ? Math.max(0, unit * added - (cost(held + added, unit, offers) - cost(held, unit, offers))) : 0;
+
       const paintAdd = () => {
         let grossAfter = addGrossBefore;
-        for (const line of chosen.values()) grossAfter += line.pricePence * line.qty;
+        for (const line of chosen.values()) {
+          grossAfter += line.pricePence * line.qty - marginal(line.holding ?? 0, line.qty, line.pricePence, line.multibuy ?? []);
+        }
         const discount =
           addGrossBefore > 0
             ? Math.min(grossAfter, Math.floor((amendDiscount * grossAfter) / addGrossBefore))

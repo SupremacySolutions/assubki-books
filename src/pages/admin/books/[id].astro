@@ -7,6 +7,7 @@ import { getBookAdmin, partCandidates } from '../../../lib/admin-db';
 import { allCategories, categoryCounts, publisherSpellings, setOptionsForOwner } from '../../../lib/db';
 import { imageUrl, price, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
 import { botConfigured, plainCaption } from '../../../lib/telegram';
+import { parseOffers, type Offer } from '../../../lib/multibuy';
 
 const { id } = Astro.params;
 const isNew = id === 'new';
@@ -70,6 +71,13 @@ const SET_REFUSALS: Record<string, string> = {
 
 const justSaved = Astro.url.searchParams.get('saved') === '1';
 
+/*
+ * Multi-buy offers, as saved, and one empty row to type a new one into - so
+ * the form works with scripting off. The "Add another offer" button clones the
+ * template for as many more as the owner wants.
+ */
+const offers: (Offer | null)[] = [...parseOffers(book?.multibuy ?? null), null];
+
 /* A section that cannot be used yet is shown dashed and says why, rather than
    being hidden - a section that vanishes reads as missing, one that explains
    itself reads as waiting. */
@@ -131,6 +139,7 @@ const posted = Astro.url.searchParams.get('posted');
  */
 const fromShipment = Astro.url.searchParams.get('from_shipment');
 const error = Astro.url.searchParams.get('e');
+const multibuyProblem = error === 'multibuy' ? Astro.url.searchParams.get('m') : null;
 
 // What the channel post will look like, rendered from the same function that
 // builds the real caption - so the preview cannot drift from what is sent.
@@ -639,6 +648,68 @@ const captionStale = Boolean(
             </select>
           </div>
         </div>
+
+          {/*
+            * Multi-buy prices.
+            *
+            * Two kinds, as many of each as the owner wants: exactly N copies
+            * for a total, and N or more at a price each. The customer is
+            * charged the cheapest combination - see src/lib/multibuy.ts - and
+            * never a multi-buy price cut again by a sale.
+            */}
+          <div id="multibuy" class="pt-4 mt-4 border-t border-[var(--color-rule-faint)] scroll-mt-24">
+            <p class="text-[14.5px] font-medium">Multi-buy prices</p>
+            <p class="mt-0.5 mb-3 text-[13px] text-[var(--color-ink-faint)] leading-relaxed max-w-[62ch]">
+              Optional. Customers see "Multi-buy discounts available" on the listing and pay the
+              cheapest combination of these and the price above. Leave a row blank to have no offer.
+            </p>
+
+            {multibuyProblem && (
+              <p role="alert" class="mb-3 flex items-start gap-1.5 text-[13px] text-[var(--color-outstock)]">
+                <span aria-hidden="true">!</span><span>{multibuyProblem}</span>
+              </p>
+            )}
+
+            <div id="mbRows" class="space-y-2">
+              {offers.map((o) => (
+                <div data-mb-row class="flex flex-wrap items-center gap-2">
+                  {/* Read left to right as a sentence: "10 copies or more at
+                      £12.50 each", "20 copies exactly for £220.00 in total". */}
+                  <input type="number" name="mb_qty" min="2" max="999" placeholder="10"
+                    aria-label="Number of copies" value={o?.qty ?? ''}
+                    class="field !w-20 !py-1.5 !text-[13.5px] !px-2 tabular-nums" />
+                  <span class="text-[13px] text-[var(--color-ink-soft)]">copies</span>
+                  <select name="mb_kind" aria-label="Exactly that many, or that many or more"
+                    class="field !w-auto !py-1.5 !text-[13.5px]">
+                    <option value="bundle" selected={o?.kind !== 'from'}>exactly</option>
+                    <option value="from" selected={o?.kind === 'from'}>or more</option>
+                  </select>
+                  <span data-mb-joiner class="text-[13px] text-[var(--color-ink-soft)]">
+                    {o?.kind === 'from' ? 'at' : 'for'}
+                  </span>
+                  <div class="flex items-center w-28 rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white focus-within:border-[var(--color-navy)]">
+                    <span class="pl-2.5 text-[13.5px] text-[var(--color-ink-faint)]">£</span>
+                    <input type="text" name="mb_price" inputmode="decimal" placeholder="0.00"
+                      aria-label="Price" value={o ? (o.pence / 100).toFixed(2) : ''}
+                      class="w-full bg-transparent border-0 outline-none py-1.5 pl-1 pr-2 text-[13.5px] tabular-nums" />
+                  </div>
+                  <span data-mb-unit class="text-[13px] text-[var(--color-ink-soft)]">
+                    {o?.kind === 'from' ? 'each' : 'in total'}
+                  </span>
+                  <button type="button" data-mb-remove
+                    class="text-[12.5px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] underline underline-offset-2">
+                    Remove
+                  </button>
+                  <span data-mb-hint class="basis-full text-[12.5px] text-[var(--color-ink-faint)]"></span>
+                </div>
+              ))}
+            </div>
+
+            <button type="button" id="mbAdd"
+              class="mt-3 text-[13.5px] font-medium text-[var(--color-navy)] hover:underline underline-offset-2">
+              + Add another offer
+            </button>
+          </div>
 
           {/*
             * A delivery on its way.
@@ -2529,6 +2600,81 @@ const captionStale = Boolean(
       </script>
     )
   }
+  <script>
+    /*
+     * Multi-buy rows: add, remove, and say in plain words what each offer
+     * works out at, against the price typed above - so "20 for £45" reads back
+     * as "£2.25 each, saves £15.00 on 20" before anyone saves it.
+     */
+    const rows = document.querySelector<HTMLElement>('#mbRows');
+    const addBtn = document.querySelector<HTMLButtonElement>('#mbAdd');
+    const priceField = document.querySelector<HTMLInputElement>('#price');
+    const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
+
+    function hint(row: HTMLElement) {
+      const kind = row.querySelector('select')!.value;
+      const qty = Number(row.querySelector<HTMLInputElement>('[name="mb_qty"]')!.value);
+      const pence = Math.round(Number(row.querySelector<HTMLInputElement>('[name="mb_price"]')!.value.replace(/^£/, '')) * 100);
+      const base = Math.round(Number(priceField?.value || 0) * 100);
+      row.querySelector('[data-mb-joiner]')!.textContent = kind === 'from' ? 'at' : 'for';
+      row.querySelector('[data-mb-unit]')!.textContent = kind === 'from' ? 'each' : 'in total';
+      const out = row.querySelector<HTMLElement>('[data-mb-hint]')!;
+      out.classList.remove('!text-[var(--color-outstock)]');
+      if (!qty || !pence) {
+        out.textContent = '';
+        return;
+      }
+      if (qty < 2) {
+        out.textContent = 'An offer needs at least 2 copies.';
+        out.classList.add('!text-[var(--color-outstock)]');
+        return;
+      }
+      const full = base * qty;
+      const total = kind === 'from' ? pence * qty : pence;
+      if (total >= full) {
+        out.textContent = `Not cheaper than ${qty} at the normal price (${gbp(full)}) - this will be refused.`;
+        out.classList.add('!text-[var(--color-outstock)]');
+        return;
+      }
+      out.textContent = kind === 'from'
+        ? `Saves ${gbp(base - pence)} a copy - ${gbp(full - total)} on ${qty}, more on larger orders.`
+        : `Works out at ${gbp(Math.round(pence / qty))} each - saves ${gbp(full - total)} on ${qty}.`;
+    }
+
+    function wire(row: HTMLElement) {
+      for (const el of row.querySelectorAll('input, select')) {
+        el.addEventListener('input', () => hint(row));
+        el.addEventListener('change', () => hint(row));
+      }
+      row.querySelector('[data-mb-remove]')!.addEventListener('click', () => {
+        // The last row is emptied rather than removed, so there is always
+        // somewhere to type the next offer.
+        if (rows!.querySelectorAll('[data-mb-row]').length > 1) row.remove();
+        else {
+          for (const el of row.querySelectorAll<HTMLInputElement>('input')) el.value = '';
+          hint(row);
+        }
+        rows!.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      hint(row);
+    }
+
+    if (rows && addBtn) {
+      const all = () => [...rows.querySelectorAll<HTMLElement>('[data-mb-row]')];
+      all().forEach(wire);
+      priceField?.addEventListener('input', () => all().forEach(hint));
+
+      addBtn.addEventListener('click', () => {
+        const last = all().at(-1)!;
+        const row = last.cloneNode(true) as HTMLElement;
+        for (const el of row.querySelectorAll<HTMLInputElement>('input')) el.value = '';
+        row.querySelector('select')!.value = 'bundle';
+        rows.appendChild(row);
+        wire(row);
+        row.querySelector<HTMLInputElement>('[name="mb_qty"]')!.focus();
+      });
+    }
+  </script>
 </Admin>
 
 <style>

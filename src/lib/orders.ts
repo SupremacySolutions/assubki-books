@@ -10,6 +10,7 @@ import { env } from 'cloudflare:workers';
 import { whenText } from './incoming';
 import { sellable } from './availability';
 import { salePrice, orderDiscount, totals } from './sales';
+import { parseOffers, multibuySaving, lineTotal as lineTotalOf } from './multibuy';
 import { expireOrders, flagLapsedHolds } from './stock-release';
 import type { AddressParts } from './address';
 
@@ -56,7 +57,11 @@ export interface CreatedOrder {
   waitingWhen: string | null;
   /** Carried over from an earlier order by the same customer, if any. */
   telegramChatId: string | null;
-  items: { bookId: number; title: string; qty: number; pricePence: number; fromIncoming: boolean }[];
+  items: {
+    bookId: number; title: string; qty: number; pricePence: number; fromIncoming: boolean;
+    /** What multi-buy took off this line. */
+    multibuyPence: number;
+  }[];
 }
 
 export class StockConflict extends Error {
@@ -108,6 +113,17 @@ export async function expireStaleHolds(): Promise<number> {
 export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]> {
   await expireStaleHolds();
 
+  /*
+   * One line per book.
+   *
+   * A group basket can hold the same title from three people, and multi-buy is
+   * priced on a line's whole quantity - so "10 or more" has to see the ten,
+   * not three lines of three and one of one.
+   */
+  const merged = new Map<number, number>();
+  for (const item of input.items) merged.set(item.bookId, (merged.get(item.bookId) ?? 0) + item.qty);
+  input = { ...input, items: [...merged].map(([bookId, qty]) => ({ bookId, qty })) };
+
   const byId = await sellable(input.items.map((i) => i.bookId));
 
   // Check first so the customer gets a readable message naming the titles.
@@ -141,6 +157,17 @@ export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]>
       qty: item.qty,
       // The reduced price, which is what price_pence_snapshot must record.
       pricePence: salePrice(book.price_pence, book.sale_percent),
+      /*
+       * What multi-buy takes off the line, against the sale price - so the
+       * customer pays the cheaper of the two and never both. Stored as a
+       * saving beside the unit price rather than folded into it, because
+       * "3 for £10" is not a whole number of pence per copy.
+       */
+      multibuyPence: multibuySaving(
+        item.qty,
+        salePrice(book.price_pence, book.sale_percent),
+        parseOffers(book.multibuy),
+      ),
       /*
        * And what it was reduced *from*, plus which sale did it.
        *
@@ -176,8 +203,10 @@ export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]>
    * the discount it was actually given.
    */
   const discountRule = await orderDiscount();
+  // Each line at what it is charged, multi-buy included: the threshold is
+  // tested against the figure the customer will actually pay.
   const figures = totals(
-    items.map((i) => ({ pricePence: i.pricePence, qty: i.qty })),
+    items.map((i) => ({ pricePence: lineTotalOf(i), qty: 1 })),
     discountRule,
   );
   const discountPence = figures.orderDiscountPence;
@@ -213,8 +242,8 @@ export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]>
   const splitGroup = groups.length>1 ? crypto.randomUUID() : null;
   // Apply the discount the customer saw to the whole basket, then allocate it
   // proportionally. Splitting parcels must not silently remove that discount.
-  const gross = items.reduce((n,i)=>n+i.pricePence*i.qty,0);
-  const discounts = groups.map(([,lines])=>Math.floor(discountPence * lines.reduce((n,i)=>n+i.pricePence*i.qty,0) / (gross || 1)));
+  const gross = items.reduce((n,i)=>n+lineTotalOf(i),0);
+  const discounts = groups.map(([,lines])=>Math.floor(discountPence * lines.reduce((n,i)=>n+lineTotalOf(i),0) / (gross || 1)));
   let pennies = discountPence-discounts.reduce((n,d)=>n+d,0);
   for(let i=0;pennies>0;i=(i+1)%discounts.length,pennies--) discounts[i]++;
 
@@ -226,7 +255,7 @@ export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]>
       const ref=randomRef(), token=randomToken();
       const shipmentId=group.startsWith('shipment:')?Number(group.slice(9)):null;
       const expiresAt=group==='shelf'?Math.floor(Date.now()/1000)+HOLD_HOURS*3600:null;
-      const lineTotal=lines.reduce((n,i)=>n+i.pricePence*i.qty,0)-discounts[index];
+      const lineTotal=lines.reduce((n,i)=>n+lineTotalOf(i),0)-discounts[index];
       const data=JSON.stringify(lines);
       insertPositions.push(statements.length);
       statements.push(env.DB.prepare(`INSERT INTO orders
@@ -244,10 +273,10 @@ export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]>
           priorLink?Math.floor(Date.now()/1000):null,input.addressParts?.line1??null,input.addressParts?.line2??null,
           input.addressParts?.city??null,input.addressParts?.region??null,input.addressParts?.postcode??null,
           input.addressParts?.country??null,input.paymentPreference??null,input.paymentPreference==='cash'?1:0,data));
-      statements.push(env.DB.prepare(`INSERT INTO order_items(order_id,book_id,title_snapshot,price_pence_snapshot,qty,from_incoming,sale_id,full_price_pence)
+      statements.push(env.DB.prepare(`INSERT INTO order_items(order_id,book_id,title_snapshot,price_pence_snapshot,qty,from_incoming,sale_id,full_price_pence,multibuy_pence)
         SELECT (SELECT id FROM orders WHERE ref=?1),json_extract(value,'$.bookId'),json_extract(value,'$.title'),
           json_extract(value,'$.pricePence'),json_extract(value,'$.qty'),json_extract(value,'$.fromIncoming'),
-          json_extract(value,'$.saleId'),json_extract(value,'$.fullPricePence') FROM json_each(?2)`).bind(ref,data));
+          json_extract(value,'$.saleId'),json_extract(value,'$.fullPricePence'),json_extract(value,'$.multibuyPence') FROM json_each(?2)`).bind(ref,data));
       statements.push(env.DB.prepare(`UPDATE books SET
         reserved=reserved+COALESCE((SELECT SUM(qty) FROM order_items WHERE order_id=(SELECT id FROM orders WHERE ref=?1) AND book_id=books.id AND from_incoming=0),0),
         reserved_incoming=reserved_incoming+COALESCE((SELECT SUM(qty) FROM order_items WHERE order_id=(SELECT id FROM orders WHERE ref=?1) AND book_id=books.id AND from_incoming=1),0)
@@ -426,6 +455,8 @@ export interface OrderView {
   message_notified_at: number | null;
   items: {
     title_snapshot: string; price_pence_snapshot: number; qty: number; slug: string | null;
+    /** What multi-buy took off the line. */
+    multibuy_pence: number;
     /** This line is a claim on a delivery, not a copy off the shelf. */
     from_incoming: number;
     /**
@@ -558,7 +589,7 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
   if (diff !== 0) return null;
 
   const { results: items } = await env.DB.prepare(
-    `SELECT oi.title_snapshot, oi.price_pence_snapshot, oi.qty, b.slug,
+    `SELECT oi.title_snapshot, oi.price_pence_snapshot, oi.qty, oi.multibuy_pence, b.slug,
             oi.from_incoming, b.incoming_vague, b.incoming_month, b.shipment_id
        FROM order_items oi LEFT JOIN books b ON b.id = oi.book_id
       WHERE oi.order_id = (SELECT id FROM orders WHERE ref = ?)`,

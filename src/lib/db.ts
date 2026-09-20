@@ -63,6 +63,8 @@ export interface BookRow {
   /** Percent off while a sale is running, or null. Never zero - a book with
       no reduction has no row in sale_items at all. */
   sale_percent: number | null;
+  /** Multi-buy offers as stored JSON, or null. Read with `parseOffers`. */
+  multibuy: string | null;
   /** How the arrival is described: a vagueness word and a month, never a date. */
   incoming_vague: string | null;
   incoming_month: string | null;
@@ -105,7 +107,7 @@ export const NOT_DELETED_BARE = 'deleted_at IS NULL';
 
 const BOOK_SELECT = `
   SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language, b.shipment_id,
-         b.price_pence, b.stock, b.reserved, b.volumes,
+         b.price_pence, b.stock, b.reserved, b.volumes, b.multibuy,
          b.set_id, b.set_from, b.set_to, b.isbn,
          b.incoming, b.reserved_incoming, b.incoming_vague, b.incoming_month,
          (b.stock - b.reserved) AS available,

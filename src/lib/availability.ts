@@ -28,6 +28,8 @@ export interface Sellable {
   /** Percent off while a sale is running, never zero. */
   sale_percent: number | null;
   sale_id: number | null;
+  /** Multi-buy offers as stored JSON, or null. */
+  multibuy: string | null;
 }
 
 /**
@@ -61,7 +63,7 @@ export async function sellable(ids: number[]): Promise<Map<number, Sellable>> {
      * what turns it into a sentence naming the title rather than a rolled-back
      * batch.
      */
-    `SELECT b.id, b.title, b.price_pence, b.shipment_id,
+    `SELECT b.id, b.title, b.price_pence, b.shipment_id, b.multibuy,
             CASE WHEN b.set_id IS NULL THEN (b.stock - b.reserved)
                  ELSE MAX(0, COALESCE((
                    SELECT MIN(v.have - COALESCE((
