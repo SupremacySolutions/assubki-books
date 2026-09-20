@@ -1066,7 +1066,7 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                     form="telegramForm"
                     formaction={`/api/admin/books/${book.id}/telegram?mode=edit`}
                     id="postEditBtn"
-                    class="mt-1 text-[12.5px] text-[var(--color-navy)] underline underline-offset-2"
+                    class="mt-1 text-[12.5px] text-[var(--color-navy)] underline underline-offset-2 cursor-pointer hover:text-[var(--color-navy-deep)] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Just update the old post instead
                   </button>
@@ -1077,9 +1077,9 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                       form="telegramForm"
                       formaction={`/api/admin/books/${book.id}/telegram?mode=repost`}
                       id="postRepostBtn"
-                      class="mt-1 text-[12.5px] text-[var(--color-navy)] underline underline-offset-2"
+                      class="mt-1 text-[12.5px] text-[var(--color-navy)] underline underline-offset-2 cursor-pointer hover:text-[var(--color-navy-deep)] disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      Post it again at the bottom instead
+                      Post it again and take the old post down
                     </button>
                   )
                 )}
