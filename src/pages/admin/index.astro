@@ -141,7 +141,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
   </div>
 
   {/* What needs the owner today, before anything historical. */}
-  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
     <a
       href="/admin/orders?status=requested"
       class:list={[
@@ -179,6 +179,34 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toPost}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">paid, not sent</p>
     </a>
+    {/*
+      * Reservations, which the tiles beside this one deliberately leave out.
+      *
+      * They are counted apart because they are worked through apart: nothing
+      * to pack until a box lands, and a deadline that only starts then. Before
+      * this they were folded into "To confirm", which then disagreed with the
+      * page it opens - that page shows one half at a time.
+      */}
+    <a
+      href="/admin/orders?kind=reservations"
+      class:list={[
+        'block bg-white border rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors',
+        d.reservationsToConfirm > 0
+          ? 'border-[var(--color-navy)] border-l-[3px]'
+          : 'border-[var(--color-rule)]',
+      ]}
+    >
+      <p class="eyebrow">Reservations</p>
+      <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.reservations}</p>
+      <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
+        {d.reservations === 0
+          ? 'none waiting on a delivery'
+          : d.reservationsToConfirm > 0
+            ? `${d.reservationsToConfirm} to confirm`
+            : 'all confirmed'}
+      </p>
+    </a>
+
     <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow">Taken</p>
       <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.revenuePence)}</p>

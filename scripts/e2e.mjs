@@ -3083,7 +3083,7 @@ async function integrity() {
   const dash = await html('/admin');
   const dashText = visibleText(dash);
   for (const panel of [
-    'To confirm', 'Awaiting payment', 'To post', 'Taken per day', 'How it goes out',
+    'To confirm', 'Awaiting payment', 'To post', 'Reservations', 'Taken per day', 'How it goes out',
     'Selling best', 'Taken per shelf', 'Running low', 'Repeat customers', 'Average order',
   ]) {
     t.ok(dashText.includes(panel), `the dashboard shows "${panel}"`);
@@ -3099,11 +3099,57 @@ async function integrity() {
   t.ok((adminNav.match(/label: 'Dashboard'/g) ?? []).length === 1,
     'and the portal nav lists Dashboard once');
 
-  const [waitingNow] = await db(
-    `SELECT SUM(CASE WHEN status='requested' THEN 1 ELSE 0 END) AS n FROM orders`,
+  /*
+   * The tile has to agree with the page it opens.
+   *
+   * It counted every `requested` order, reservations included, while
+   * `/admin/orders` shows one half at a time - so the tile read nine and its
+   * own page read one. The old assertion counted both halves too, which is
+   * exactly why it never noticed.
+   *
+   * Read out of the tile rather than searched for anywhere on the page: a
+   * bare `includes('1')` passes on almost any dashboard.
+   */
+  const tile = (name) => {
+    const at = dash.indexOf(`>${name}</p>`);
+    return at === -1 ? null : Number(dash.slice(at).match(/tabular-nums[^>]*>\s*(\d+)/)?.[1] ?? NaN);
+  };
+  const [shopWaiting] = await db(
+    `SELECT COUNT(*) AS n FROM orders WHERE shipment_id IS NULL AND status='requested'`,
   );
-  t.ok(dashText.includes(String(waitingNow.n)),
-    `its "to confirm" count matches counting the orders directly (${waitingNow.n})`);
+  const [allWaiting] = await db(
+    `SELECT COUNT(*) AS n FROM orders WHERE status='requested'`,
+  );
+  const [openReservations] = await db(
+    `SELECT COUNT(*) AS n FROM orders WHERE shipment_id IS NOT NULL
+       AND status IN ('requested','awaiting_payment','paid','dispatched')`,
+  );
+
+  t.ok(tile('To confirm') === shopWaiting.n,
+    `"to confirm" counts the orders its own page lists (${tile('To confirm')} = ${shopWaiting.n})`);
+  t.ok(allWaiting.n === shopWaiting.n || tile('To confirm') !== allWaiting.n,
+    `and does not quietly include the ${allWaiting.n - shopWaiting.n} reservation(s) waiting too`);
+  t.ok(tile('Reservations') === openReservations.n,
+    `reservations are counted on their own instead (${openReservations.n})`);
+
+  /*
+   * And the scope itself, because the three counts above agree at zero.
+   *
+   * A disposable run can finish with no open reservation at all, and then
+   * "shop only" and "both halves" are the same number - the assertions pass
+   * either way, which is precisely how the old one sat here green while the
+   * tile was wrong. This reads the query instead: the tiles are fed by one
+   * statement, and that statement has to say which half it is counting.
+   */
+  const dashLib = readFileSync('src/lib/dashboard.ts', 'utf8');
+  const dashWaiting = dashLib.slice(
+    dashLib.indexOf('AS toConfirm'),
+    dashLib.indexOf('AS toPost'),
+  );
+  t.ok(/FROM orders\s+WHERE shipment_id IS NULL/.test(dashLib.slice(dashLib.indexOf('AS toConfirm'))),
+    'and the tiles are fed by a query that says it counts shop orders only');
+  t.ok(dashWaiting.length > 0 && !/shipment_id IS NOT NULL/.test(dashWaiting),
+    'with the reservation half kept out of it rather than mixed back in');
 
   /*
    * Carriers, the postage stepper, and the stepped checkout.

@@ -23,6 +23,10 @@ export interface Dashboard {
   toConfirm: number;
   /** Of those, the ones whose 48-hour hold has already run out. */
   lapsed: number;
+  /** Open reservations, which are worked through on their own page. */
+  reservations: number;
+  /** How many of those are still waiting to be confirmed. */
+  reservationsToConfirm: number;
   oldestWaitingHours: number | null;
   awaitingPayment: number;
   awaitingPence: number;
@@ -74,9 +78,22 @@ async function read(days: number): Promise<Dashboard> {
   const from = now - days * DAY;
   const previousFrom = from - days * DAY;
 
-  const [waiting, money, daily, splits, best, low, repeat, shelves, work, misses, requests] =
+  const [waiting, reserved, money, daily, splits, best, low, repeat, shelves, work, misses, requests] =
     await env.DB.batch([
-    // Everything the owner might need to act on, counted in one pass.
+    /*
+     * Everything the owner might need to act on, counted in one pass.
+     *
+     * Shop orders only, because that is what every one of these tiles opens.
+     * `/admin/orders` shows one half at a time - `shipment_id IS NULL` unless
+     * asked for reservations - so counting both halves here made a tile read 9
+     * and its own page read 1, which is how this was reported: "says 8 but
+     * there is only 1". A number that disagrees with the page behind it is
+     * worse than no number.
+     *
+     * Reservations are not dropped; they are counted separately below and get
+     * their own tile, because they are worked through differently and a
+     * deadline on one means something else entirely.
+     */
     env.DB.prepare(
       `SELECT
          SUM(CASE WHEN status = 'requested' THEN 1 ELSE 0 END) AS toConfirm,
@@ -87,7 +104,14 @@ async function read(days: number): Promise<Dashboard> {
          SUM(CASE WHEN status = 'awaiting_payment'
                   THEN COALESCE(total_pence, subtotal_pence) ELSE 0 END) AS awaitingPence,
          SUM(CASE WHEN status = 'paid' AND fulfilment <> 'collection' THEN 1 ELSE 0 END) AS toPost
-       FROM orders`,
+       FROM orders WHERE shipment_id IS NULL`,
+    ),
+    /* The other half, on the same terms `reservationCount` uses. */
+    env.DB.prepare(
+      `SELECT COUNT(*) AS open, SUM(CASE WHEN status = 'requested' THEN 1 ELSE 0 END) AS toConfirm
+         FROM orders
+        WHERE shipment_id IS NOT NULL
+          AND status IN ('requested','awaiting_payment','paid','dispatched')`,
     ),
     env.DB.prepare(
       `SELECT
@@ -198,6 +222,7 @@ async function read(days: number): Promise<Dashboard> {
   ]);
 
   const w = (waiting.results[0] ?? {}) as Record<string, number | null>;
+  const rv = (reserved.results[0] ?? {}) as Record<string, number | null>;
   const m = (money.results[0] ?? {}) as Record<string, number | null>;
   const s = (splits.results[0] ?? {}) as Record<string, number | null>;
 
@@ -207,6 +232,8 @@ async function read(days: number): Promise<Dashboard> {
   return {
     toConfirm: Number(w.toConfirm ?? 0),
     lapsed: Number(w.lapsed ?? 0),
+    reservations: Number(rv.open ?? 0),
+    reservationsToConfirm: Number(rv.toConfirm ?? 0),
     oldestWaitingHours: w.oldest ? Math.floor((now - Number(w.oldest)) / 3600) : null,
     awaitingPayment: Number(w.awaiting ?? 0),
     awaitingPence: Number(w.awaitingPence ?? 0),
