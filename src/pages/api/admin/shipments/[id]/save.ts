@@ -73,15 +73,24 @@ export const POST: APIRoute = async ({ params, request }) => {
         edit: form.get('edit') as string | null,
       });
   }
-  if (keep.some((r) => !['arabic', 'urdu', 'english'].includes(r.script)))
-    return back({ e: 'Invalid language', edit: form.get('edit') as string | null });
+  if (keep.some((r) => !Number.isSafeInteger(r.price) || !['arabic', 'urdu', 'english'].includes(r.script)))
+    return back({ e: 'Invalid price or language', edit: form.get('edit') as string | null });
 
+  // Freeze the eligible set and cap it inside the DELETE transaction. A
+  // concurrent removal or draft opening can invalidate the friendly preflight
+  // count above; even then an open shipment must keep one title.
   const [removed] = await env.DB.batch([
     env.DB.prepare(
-      `DELETE FROM books WHERE shipment_id=?1
-        AND id IN (SELECT value FROM json_each(?2))
-        AND ${REMOVABLE_ROW}
-      RETURNING id`,
+      `WITH removable AS MATERIALIZED (
+         SELECT id FROM books WHERE shipment_id=?1
+           AND id IN (SELECT value FROM json_each(?2))
+           AND ${REMOVABLE_ROW}
+         ORDER BY id
+         LIMIT (SELECT MAX(0, COUNT(*) - CASE
+                  WHEN (SELECT status FROM shipments WHERE id=?1) = 'open' THEN 1 ELSE 0 END)
+                  FROM books WHERE shipment_id=?1)
+       )
+       DELETE FROM books WHERE id IN (SELECT id FROM removable) RETURNING id`,
     ).bind(shipmentId, JSON.stringify(drop)),
     env.DB.prepare(
       `UPDATE books SET
@@ -107,7 +116,7 @@ export const POST: APIRoute = async ({ params, request }) => {
     {
       saved: 1,
       removed_n: gone || null,
-      /* Asked to go and still here: reserved, or on somebody's order. */
+      /* Asked to go and still here: protected, or the final open title. */
       kept_n: drop.length - gone || null,
     },
     landOn,

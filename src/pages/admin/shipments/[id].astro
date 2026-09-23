@@ -230,10 +230,10 @@ const EDIT_COLS =
   )}
   {keptMany > 0 && (
     <p class="mb-4 text-[14px] text-[var(--color-outstock)] leading-relaxed max-w-[46rem]">
-      {keptMany} {keptMany === 1 ? 'title was' : 'titles were'} kept: customers have reserved
-      {keptMany === 1 ? ' it' : ' them'}. Cancel those reservations in
-      {' '}<a href="/admin/orders?kind=reservations" class="underline">the reservations queue</a>
-      {' '}first if {keptMany === 1 ? 'it is' : 'they are'} really not coming.
+      {keptMany} {keptMany === 1 ? 'title could' : 'titles could'} not be removed.
+      Titles with stock or customer orders must stay, and an open shipment needs at least one title.
+      Check any reservations in
+      {' '}<a href="/admin/orders?kind=reservations" class="underline">the reservations queue</a>.
     </p>
   )}
   {removedOne && (

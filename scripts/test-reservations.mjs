@@ -168,6 +168,7 @@ const sql = (q) => execute(q + ';');
 const request = (id, fields = {}) => ({
   params: { id: String(id), ref: String(id) },
   url: new URL('https://example.invalid'),
+  locals: {},
   request: new Request('https://example.invalid', {
     method: 'POST',
     body: new URLSearchParams(fields),
@@ -448,6 +449,53 @@ async function test(name, fn) {
     const [o] = await order([b]);
     await app.saveShipment(request(s, { row: b, ['title_' + b]: '' }));
     assert.equal(row(`SELECT book_id FROM order_items WHERE order_id=${o.id}`).book_id, b);
+  });
+  await test('shipment edits refuse non-finite and unsafe prices without changing the row', async () => {
+    const s = shipment(), b = book(s, 2);
+    for (const price of ['Infinity', '1e30']) {
+      const response = await app.saveShipment(request(s, {
+        row: b, ['title_' + b]: 'Still here', ['price_' + b]: price,
+        ['incoming_' + b]: '2', ['script_' + b]: 'english',
+      }));
+      assert.ok(new URL(response.headers.get('location'), 'https://example.invalid').searchParams.has('e'));
+      assert.equal(row(`SELECT price_pence AS p FROM books WHERE id=${b}`).p, 1000);
+    }
+  });
+  await test('a concurrent removal cannot let a bulk save empty an open shipment', async () => {
+    const s = shipment(), a = book(s, 1), b = book(s, 1), c = book(s, 1);
+    let raced = false;
+    hook = async q => {
+      if (q.includes('SELECT COUNT(*) AS n FROM books WHERE shipment_id = ?')) {
+        hook = null;
+        sql(`DELETE FROM books WHERE id=${c}`);
+        raced = true;
+      }
+    };
+    const fields = new URLSearchParams();
+    for (const id of [a, b]) {
+      fields.append('row', String(id));
+      fields.append('remove', String(id));
+    }
+    await app.saveShipment({ ...request(s), request: new Request('https://example.invalid', { method: 'POST', body: fields }) });
+    assert.ok(raced, 'the other removal happened after the preflight count');
+    assert.ok(row(`SELECT COUNT(*) AS n FROM books WHERE shipment_id=${s}`).n >= 1);
+  });
+  await test('opening a draft during a save cannot let it remove every title', async () => {
+    const s = shipment(), a = book(s, 1), b = book(s, 1);
+    sql(`UPDATE shipments SET status='draft' WHERE id=${s}`);
+    let opened = false;
+    hook = async q => {
+      if (q.includes('SELECT status FROM shipments WHERE id=?')) {
+        hook = null;
+        sql(`UPDATE shipments SET status='open' WHERE id=${s}`);
+        opened = true;
+      }
+    };
+    const fields = new URLSearchParams();
+    for (const id of [a, b]) { fields.append('row', String(id)); fields.append('remove', String(id)); }
+    await app.saveShipment({ ...request(s), request: new Request('https://example.invalid', { method: 'POST', body: fields }) });
+    assert.ok(opened);
+    assert.equal(row(`SELECT COUNT(*) AS n FROM books WHERE shipment_id=${s}`).n, 1);
   });
   await test('100 reservations receive deadlines and notices with bounded SQL', async () => {
     const s = shipment(),
