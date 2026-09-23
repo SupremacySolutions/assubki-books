@@ -5635,6 +5635,220 @@ async function shipments() {
 }
 
 // ---------------------------------------------------------------------------
+async function shipmentRows() {
+  const t = suite('24b. Adding and removing shipment titles');
+
+  const postForm = async (path, pairs) => {
+    const body = new URLSearchParams();
+    for (const [k, v] of pairs) body.append(k, String(v));
+    const res = await fetch(`${SITE}${path}`, {
+      method: 'POST', redirect: 'manual',
+      headers: { ...ORIGIN, Cookie: adminCookie(), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    return { status: res.status, location: res.headers.get('location') ?? '' };
+  };
+  /* What a redirect told the page to say, read the way the page reads it. */
+  const said = (location) => new URL(location, SITE).searchParams;
+  const rowsOf = (sid) => db(`SELECT id, slug, title, shipment_sort AS sort FROM books
+                               WHERE shipment_id=${sid} ORDER BY shipment_sort, id`);
+
+  const made = await admin('/api/admin/shipments', {
+    title: `E2E Rows ${Math.random().toString(36).slice(2, 7)}`,
+    incoming_vague: 'late', incoming_month: '2026-12', note: '',
+    list: '1. Rows book one — 10£ — 2\n2. Rows book two — 12£ — 2\n3. Rows book three — 8£ — 1',
+  });
+  const sid = Number(made.location.match(/shipments\/(\d+)/)?.[1]);
+  t.ok(Number.isInteger(sid), 'a three-title shipment to work on');
+  const pasted = await rowsOf(sid);
+
+  try {
+    /*
+     * The owner's report: adding a title to an existing shipment led to an
+     * error page. D1 bound the shipment id as a REAL, so the slug series was
+     * looked up under `sh12.0-`, found nothing, restarted at 1 and collided.
+     */
+    const add = (fields) => admin(`/api/admin/shipments/${sid}/add`, {
+      price: '4.50', incoming: '2', volumes: '', script: 'english', ...fields,
+    });
+    const first = await add({ title: 'Added by hand' });
+    t.ok(first.status === 302 && said(first.location).get('added_one') === 'Added by hand',
+      `a title can be added to a shipment that already has some (${first.status})`);
+    const second = await add({ title: 'Added by hand again', volumes: '3', script: 'arabic' });
+    t.ok(second.status === 302 && said(second.location).has('added_one'),
+      'and a second one after it, which is where the slug used to collide');
+    let rows = await rowsOf(sid);
+    const slugs = rows.map((r) => r.slug);
+    t.ok(new Set(slugs).size === slugs.length && slugs.includes(`sh${sid}-4`) && slugs.includes(`sh${sid}-5`),
+      `each gets the next number in the shipment's series (${slugs.join(', ')})`);
+    t.ok(rows.at(-1).title === 'Added by hand again' && rows.at(-1).sort === 5,
+      'and goes on the end of the list');
+    const handRow = await one(`SELECT volumes, title_ar, incoming, incoming_month AS m
+                                 FROM books WHERE shipment_id=${sid} AND title='Added by hand again'`);
+    t.ok(handRow.volumes === 3 && handRow.title_ar === 'Added by hand again' && handRow.incoming === 2
+      && handRow.m === '2026-12',
+      'carrying its volumes, its language and the shipment\'s date like a pasted row');
+    const fresh = said(second.location);
+    t.ok(fresh.get('add') === '1' && Number(fresh.get('fresh')) === rows.at(-1).id,
+      'and the owner lands back on the form, with the new row marked');
+    const landed = await get(second.location);
+    t.ok(landed.status === 200, `the page it lands on renders (${landed.status})`);
+
+    for (const [fields, why] of [
+      [{ title: '   ' }, 'a blank title'],
+      [{ title: 'x', price: '0' }, 'no price'],
+      [{ title: 'x', price: '-3' }, 'a negative price'],
+      [{ title: 'x', incoming: '0' }, 'no copies'],
+      [{ title: 'x', incoming: '1000' }, 'more copies than the form allows'],
+      [{ title: 'x', volumes: '201' }, 'too many volumes'],
+      [{ title: 'x', script: 'klingon' }, 'a language the shop does not have'],
+    ]) {
+      const r = await add(fields);
+      t.ok(r.status === 302 && said(r.location).has('e') && said(r.location).get('add') === '1',
+        `adding is refused for ${why}, with the form left open`);
+    }
+    t.ok((await rowsOf(sid)).length === 5, 'and none of the refusals added anything');
+    t.ok((await admin('/api/admin/shipments/99999999/add', { title: 'x', price: '1', incoming: '1' })).status === 404,
+      'a shipment that does not exist is a 404, not a crash');
+
+    /* Where the owner was looking survives a round trip. */
+    const kept = await postForm(`/api/admin/shipments/${sid}/add`, [
+      ['title', ''], ['price', '1'], ['incoming', '1'],
+      ['view', 'q=Rows&filter=fixing&page=2&evil=https://example.com'],
+    ]);
+    const keptQ = said(kept.location);
+    t.ok(keptQ.get('q') === 'Rows' && keptQ.get('filter') === 'fixing' && keptQ.get('page') === '2'
+      && !keptQ.has('evil') && kept.location.startsWith(`/admin/shipments/${sid}?`),
+      'a refusal keeps the search, filter and page - and nothing else from the form');
+
+    // Removing, in a draft.
+    rows = await rowsOf(sid);
+    const byTitle = (title) => rows.find((r) => r.title === title);
+    const gone = await admin(`/api/admin/shipments/${sid}/remove`, { book: byTitle('Added by hand').id });
+    t.ok(said(gone.location).get('removed') === 'Added by hand',
+      'a title can be taken off a draft shipment with one button');
+    t.ok(!(await one(`SELECT id FROM books WHERE id=${byTitle('Added by hand').id}`)).id,
+      'and the row is gone');
+    const twice = await admin(`/api/admin/shipments/${sid}/remove`, { book: byTitle('Added by hand').id });
+    t.ok(said(twice.location).has('e'), 'a second press says it is already gone rather than failing');
+    /* The older gesture still works in a draft: clear the title and save. */
+    const again = byTitle('Added by hand again');
+    const cleared = await postForm(`/api/admin/shipments/${sid}/save`, [
+      ['row', again.id], [`title_${again.id}`, ''], [`price_${again.id}`, '4.50'],
+      [`incoming_${again.id}`, '2'], [`script_${again.id}`, 'arabic'],
+    ]);
+    t.ok(said(cleared.location).get('removed_n') === '1' && !(await one(`SELECT id FROM books WHERE id=${again.id}`)).id,
+      'clearing a title in the editor removes the row too');
+    const stranger = await makeBook({ stock: '1' });
+    const foreign = await admin(`/api/admin/shipments/${sid}/remove`, { book: stranger.id });
+    t.ok(said(foreign.location).has('e') && (await one(`SELECT id FROM books WHERE id=${stranger.id}`)).id,
+      'a book that is not on this shipment cannot be removed through it');
+    t.ok(said((await admin(`/api/admin/shipments/${sid}/remove`, { book: 'abc' })).location).has('e'),
+      'nor can nonsense');
+
+    // Open, with a reservation on the first title.
+    await admin(`/api/admin/shipments/${sid}/open`);
+    t.ok((await one(`SELECT status FROM shipments WHERE id=${sid}`)).status === 'open', 'the shipment opens');
+
+    const openAdd = await add({ title: 'Added while open' });
+    t.ok(said(openAdd.location).has('added_one'), 'a title can be added to an open shipment too');
+
+    const { body } = await json('/api/orders', {
+      name: 'E2E Rows', email: CUSTOMER_EMAIL, phone: '07700 900123', fulfilment: 'collection',
+      items: [{ bookId: pasted[0].id, qty: 1 }],
+    });
+    if (body.ref) created.orders.push(body.ref);
+    t.ok(body.ref, 'a customer reserves the first title');
+
+    const refused = await admin(`/api/admin/shipments/${sid}/remove`, { book: pasted[0].id });
+    t.ok(/reserved/.test(said(refused.location).get('e') ?? ''),
+      'a reserved title cannot be removed, and the owner is told why');
+    t.ok((await one(`SELECT id FROM books WHERE id=${pasted[0].id}`)).id, 'and it is still there');
+
+    const pageNow = await html(`/admin/shipments/${sid}`);
+    t.ok(pageNow.includes('form="remove-title"') && pageNow.includes('cancel the reservation first'),
+      'the page offers Remove on free rows and a lock on the reserved one');
+
+    const openGone = await admin(`/api/admin/shipments/${sid}/remove`, { book: pasted[2].id });
+    t.ok(said(openGone.location).has('removed'), 'an unreserved title can be removed from an open shipment');
+
+    /* The editor: tick Remove on a reserved row and a free one, edit a third. */
+    rows = await rowsOf(sid);
+    const openRow = rows.find((r) => r.title === 'Added while open');
+    const fields = (r, title, price) => [
+      ['row', r.id], [`title_${r.id}`, title], [`price_${r.id}`, price],
+      [`incoming_${r.id}`, '2'], [`volumes_${r.id}`, ''], [`script_${r.id}`, 'english'],
+    ];
+    const saved = await postForm(`/api/admin/shipments/${sid}/save`, [
+      ...fields(pasted[0], pasted[0].title, '10'), ['remove', pasted[0].id],
+      ...fields(openRow, openRow.title, '3'), ['remove', openRow.id],
+      ...fields(pasted[1], 'Rows book two, renamed', '13.25'),
+      ['edit', 'all'],
+    ]);
+    const s = said(saved.location);
+    t.ok(s.get('saved') === '1' && s.get('removed_n') === '1' && s.get('kept_n') === '1',
+      'saving the editor removes the free row and keeps the reserved one, and says so');
+    const two = await one(`SELECT title, price_pence AS p FROM books WHERE id=${pasted[1].id}`);
+    t.ok(two.title === 'Rows book two, renamed' && two.p === 1325, 'while the edit alongside them lands');
+    t.ok(!(await one(`SELECT id FROM books WHERE id=${openRow.id}`)).id, 'the ticked free row is gone');
+
+    const priceless = await postForm(`/api/admin/shipments/${sid}/save`, [
+      ...fields(pasted[1], 'Rows book two, renamed', '0'), ['edit', pasted[1].id],
+    ]);
+    t.ok(said(priceless.location).has('e') && said(priceless.location).get('edit') === String(pasted[1].id),
+      'an open shipment refuses a title with no price, and reopens the row');
+
+    const oneEdit = await postForm(`/api/admin/shipments/${sid}/save`, [
+      ...fields(pasted[1], 'Rows book two, renamed', '13.25'), ['edit', pasted[1].id],
+    ]);
+    t.ok(oneEdit.location.endsWith(`#row-${pasted[1].id}`), 'saving one row lands back on that row');
+
+    /* Two rows left: the reserved one and pasted[1]. Cancelling frees the
+       first; then pasted[1] is the only title on an open shipment. */
+    await db(`UPDATE orders SET status='cancelled' WHERE ref='${body.ref}'`);
+    created.orders = created.orders.filter((ref) => ref !== body.ref);
+    await db(`UPDATE books SET reserved_incoming=0 WHERE id=${pasted[0].id}`);
+    const afterCancel = await admin(`/api/admin/shipments/${sid}/remove`, { book: pasted[0].id });
+    t.ok(said(afterCancel.location).has('removed'),
+      'once the reservation is cancelled the title can be removed');
+    const history = await one(`SELECT book_id AS b, title_snapshot AS t FROM order_items
+                                WHERE order_id=(SELECT id FROM orders WHERE ref='${body.ref}')`);
+    t.ok(history.b === null && history.t === pasted[0].title,
+      'and the cancelled order keeps its line by name');
+
+    const last = await admin(`/api/admin/shipments/${sid}/remove`, { book: pasted[1].id });
+    t.ok(/only title/.test(said(last.location).get('e') ?? ''),
+      'the last title on an open shipment cannot be removed - it would 404 while still listed');
+    const lastBySave = await postForm(`/api/admin/shipments/${sid}/save`, [
+      ...fields(pasted[1], '', '13.25'),
+    ]);
+    t.ok(said(lastBySave.location).has('e') && (await one(`SELECT id FROM books WHERE id=${pasted[1].id}`)).id,
+      'nor by clearing its title in the editor');
+
+    // Arrived: nothing is editable.
+    await db(`UPDATE shipments SET status='arrived' WHERE id=${sid}`);
+    t.ok(/no longer editable/.test(said((await add({ title: 'Too late' })).location).get('e') ?? ''),
+      'nothing can be added once the shipment has arrived');
+    t.ok(/no longer editable/.test(said((await admin(`/api/admin/shipments/${sid}/remove`, { book: pasted[1].id })).location).get('e') ?? ''),
+      'nor removed');
+    t.ok((await one(`SELECT id FROM books WHERE id=${pasted[1].id}`)).id, 'and the row is untouched');
+
+    /* The details form said "Details saved" on a redirect it never made. */
+    const details = await admin(`/api/admin/shipments/${sid}/details`, {
+      title: 'E2E Rows renamed', incoming_vague: 'late', incoming_month: '2026-12', note: '',
+    });
+    t.ok(said(details.location).get('details') === 'saved'
+      && (await html(details.location)).includes('Details saved'),
+      'saving the details says so, instead of reopening the form');
+  } finally {
+    await db(`DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE shipment_id=${sid})`);
+    await db(`DELETE FROM orders WHERE shipment_id=${sid}`);
+    await db(`DELETE FROM books WHERE shipment_id=${sid}`);
+    await db(`DELETE FROM shipments WHERE id=${sid}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 async function amendingOrders() {
   const t = suite('25. Amending an order');
 
@@ -6540,6 +6754,7 @@ const SUITES = [
   ['languages', languages, true],
   ['channel', channelPost, true],
   ['shipments', shipments, true],
+  ['shipment-rows', shipmentRows, true],
   ['amend', amendingOrders, true],
   ['add', addingToOrders, true],
   ['bulk', bulkEdits, true],
