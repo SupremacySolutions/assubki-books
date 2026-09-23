@@ -71,5 +71,5 @@ export const POST: APIRoute = async ({ params, request }) => {
      second statement was a no-op too and there is nothing to undo. */
   if (!changed.meta.changes) return back('?e=' + encodeURIComponent('no such shipment'));
 
-  return back('?details=1');
+  return back('?details=saved');
 };

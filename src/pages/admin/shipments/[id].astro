@@ -23,6 +23,10 @@ const opened = params.get('opened');
 const error = params.get('e');
 const listed = params.get('listed');
 const addedOne = params.get('added_one');
+const fresh = Number(params.get('fresh') ?? 0);
+const removedOne = params.get('removed');
+const removedMany = Number(params.get('removed_n') ?? 0);
+const keptMany = Number(params.get('kept_n') ?? 0);
 const promoted = Number(params.get('promoted') ?? 0);
 const askedToPromote = Number(params.get('asked') ?? 0);
 const arrivedCount = Number(params.get('arrived') ?? -1);
@@ -99,6 +103,16 @@ const href = (over: Record<string, string | number | null>) => {
   return `/admin/shipments/${id}${query ? `?${query}` : ''}`;
 };
 
+/* What every form posts back so its answer lands on the same view - the
+   routes keep only the search, the filter and the page from it. */
+const viewState = (() => {
+  const next = new URLSearchParams();
+  if (q) next.set('q', q);
+  if (filter !== 'all') next.set('filter', filter);
+  if (view.page > 1) next.set('page', String(view.page));
+  return next.toString();
+})();
+
 const months = monthOptions();
 if (shipment.incoming_month && !months.some((m) => m.value === shipment.incoming_month)) {
   const [y, m] = shipment.incoming_month.split('-').map(Number);
@@ -159,8 +173,23 @@ const rows = view.items.map((i) => {
     claimPct: promised > 0 ? Math.round((i.reserved_incoming / promised) * 100) : 0,
     noCount: expectingMore && i.incoming <= 0,
     noPrice: i.price_pence <= 0,
+    /* Why the Remove control is locked, in the words the refusal would use. */
+    keptBecause: i.removable
+      ? null
+      : i.reserved_incoming > 0
+        ? `${i.reserved_incoming} reserved`
+        : shipment.status === 'open' && shipment.items === 1
+          ? 'last title'
+          : 'on an order',
   };
 });
+
+function lockReason(why: string | null): string {
+  if (why === 'last title')
+    return 'The only title on an open shipment - add the right one before removing this';
+  if (why === 'on an order') return 'On a customer’s order, so it has to stay';
+  return 'Reserved by a customer - cancel the reservation first to remove it';
+}
 
 const spareOnPage = view.items.filter((i) => i.spare > 0);
 const canPromote = ['arrived', 'closed'].includes(shipment.status) && spareOnPage.length > 0;
@@ -168,7 +197,12 @@ const canPromote = ['arrived', 'closed'].includes(shipment.status) && spareOnPag
 /* The grid is written once and used by the header row and every row under it,
    so a column cannot drift out of line with its own heading. */
 const COLS =
-  'grid grid-cols-[2.5rem_minmax(0,1fr)_5rem] md:grid-cols-[2.5rem_minmax(0,1fr)_4.5rem_8.25rem_5rem_8.5rem_6.5rem] gap-x-3 items-center';
+  'grid grid-cols-[2rem_minmax(0,1fr)_auto] md:grid-cols-[2.5rem_minmax(0,1fr)_4.5rem_8.25rem_5rem_8.5rem_6.5rem] gap-x-3 items-center';
+/* A row being edited on a phone has six fields and no header to name them,
+   so it becomes two captioned columns under the title instead. From md up it
+   is the same grid as every other row. */
+const EDIT_COLS =
+  'grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-2 md:gap-y-0 md:grid-cols-[2.5rem_minmax(0,1fr)_4.5rem_8.25rem_5rem_8.5rem_6.5rem] items-center max-md:items-start';
 ---
 
 <Admin
@@ -188,10 +222,32 @@ const COLS =
       )}
     </p>
   )}
-  {saved && <p class="mb-4 text-[14px] text-[var(--color-instock)]">Saved.</p>}
+  {saved && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+      Saved.
+      {removedMany > 0 && ` ${removedMany} ${removedMany === 1 ? 'title was' : 'titles were'} taken off the shipment.`}
+    </p>
+  )}
+  {keptMany > 0 && (
+    <p class="mb-4 text-[14px] text-[var(--color-outstock)] leading-relaxed max-w-[46rem]">
+      {keptMany} {keptMany === 1 ? 'title could' : 'titles could'} not be removed.
+      Titles with stock or customer orders must stay, and an open shipment needs at least one title.
+      Check any reservations in
+      {' '}<a href="/admin/orders?kind=reservations" class="underline">the reservations queue</a>.
+    </p>
+  )}
+  {removedOne && (
+    <p class="mb-4 text-[14px] text-[var(--color-instock)]">
+      Took “{removedOne}” off this shipment.
+    </p>
+  )}
   {addedOne && (
     <p class="mb-4 text-[14px] text-[var(--color-instock)]">
-      Added “{addedOne}” to the end of the list.
+      Added “{addedOne}” to the end of the list{fresh > 0 && (
+        <Fragment>
+          {' - '}<a href={`#row-${fresh}`} class="underline underline-offset-2">show it</a>
+        </Fragment>
+      )}.
     </p>
   )}
   {params.get('details') === 'saved' && (
@@ -460,7 +516,7 @@ const COLS =
 
     {/* Toolbar: find one title among three hundred. */}
     <div class="flex flex-wrap items-center gap-3 px-5 sm:px-7 py-3.5 bg-[var(--color-paper-raised)] border-b border-[var(--color-rule-soft)]">
-      <form method="get" action={`/admin/shipments/${id}`} class="flex items-center gap-2">
+      <form method="get" action={`/admin/shipments/${id}`} class="flex items-center gap-2 w-full sm:w-auto">
         {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
         <input
           type="search"
@@ -468,7 +524,7 @@ const COLS =
           value={q}
           dir="auto"
           placeholder={`Search these ${shipment.items} ${shipment.items === 1 ? 'title' : 'titles'}`}
-          class="field !py-2 !text-[14px] w-[15rem]"
+          class="field !py-2 !text-[14px] flex-1 min-w-0 sm:flex-none sm:w-[15rem]"
           aria-label="Search this shipment"
         />
         <button type="submit" class="btn btn-ghost !py-2 !text-[13.5px]">Search</button>
@@ -516,33 +572,46 @@ const COLS =
 
     {showAdd && (
       <form
+        id="add-title"
         method="post"
         action={`/api/admin/shipments/${id}/add`}
-        class="px-5 sm:px-7 py-4 bg-white border-b border-[var(--color-rule-soft)] grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem_6rem_6rem_7rem] sm:items-end"
+        class="px-5 sm:px-7 py-5 bg-white border-b border-[var(--color-rule-soft)] grid gap-3 grid-cols-2 sm:grid-cols-[minmax(0,1fr)_9.5rem_5.5rem_5.5rem_7.5rem] sm:items-start"
       >
-        <div class="sm:col-span-5 -mb-1">
-          <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
+        <input type="hidden" name="view" value={viewState} />
+        <div class="col-span-2 sm:col-span-5 -mb-1">
+          <p class="font-medium text-[14.5px]">Add a title</p>
+          <p class="mt-0.5 text-[13px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
             For a line the parser could not read, or a title the supplier left off the list. It
-            goes on the end and can be edited like any other row.
+            goes on the end and can be edited or removed like any other row.
+            {shipment.status === 'open' && ' Customers can reserve it as soon as it is added.'}
           </p>
         </div>
-        <div>
+        <div class="col-span-2 sm:col-span-1">
           <label for="add_title" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Title</label>
-          <input id="add_title" name="title" required maxlength="200" dir="auto" class="field ar !text-[14px]" />
+          <input
+            id="add_title"
+            name="title"
+            required
+            maxlength="200"
+            dir="auto"
+            autofocus
+            autocomplete="off"
+            class="field ar !text-[14px]"
+          />
         </div>
-        <div>
+        <div class="col-span-2 sm:col-span-1">
           <label for="add_price" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Price £</label>
           <PoundInput id="add_price" name="price" min="0.01" required class="!text-[14px]" />
-        </div>
-        <div>
-          <label for="add_volumes" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Volumes</label>
-          <input id="add_volumes" name="volumes" type="number" min="0" max="200" class="field !text-[14px]" />
         </div>
         <div>
           <label for="add_incoming" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Copies</label>
           <input id="add_incoming" name="incoming" type="number" min="1" max="999" required value="1" class="field !text-[14px]" />
         </div>
         <div>
+          <label for="add_volumes" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Volumes</label>
+          <input id="add_volumes" name="volumes" type="number" min="0" max="200" placeholder="1" class="field !text-[14px]" />
+        </div>
+        <div class="col-span-2 sm:col-span-1">
           <label for="add_script" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Language</label>
           <select id="add_script" name="script" class="field !text-[14px]">
             <option value="arabic">Arabic</option>
@@ -550,8 +619,11 @@ const COLS =
             <option value="english">English</option>
           </select>
         </div>
-        <div class="sm:col-span-5">
+        <div class="col-span-2 sm:col-span-5 flex flex-wrap items-center gap-3">
           <button type="submit" class="btn btn-primary !py-2 !text-[14px]">Add this title</button>
+          <a href={href({ add: null, fresh: null, added_one: null })} class="text-[13.5px] text-[var(--color-ink-faint)] underline underline-offset-2">
+            Done
+          </a>
         </div>
       </form>
     )}
@@ -594,7 +666,10 @@ const COLS =
               ? 'Move the selected titles out of this shipment and into Listings as drafts?'
               : undefined
           }
+          data-shipment-rows={editing ? '' : undefined}
         >
+          <input type="hidden" name="view" value={viewState} />
+          {editing && <input type="hidden" name="edit" value={editAll ? 'all' : String(editOne)} />}
           <div
             class:list={[
               COLS,
@@ -615,10 +690,11 @@ const COLS =
             const claimPct = i.claimPct;
             return (
               <div
+                id={`row-${i.id}`}
                 class:list={[
-                  COLS,
-                  'px-5 sm:px-7 py-2.5 border-b border-[var(--color-rule-faint)]',
-                  broken ? 'bg-[#fdf9f7]' : '',
+                  isEditing(i.id) ? EDIT_COLS : COLS,
+                  'shipment-row scroll-mt-24 px-5 sm:px-7 py-2.5 border-b border-[var(--color-rule-faint)] transition-colors',
+                  i.id === fresh ? 'is-fresh' : broken ? 'bg-[#fdf9f7]' : '',
                 ]}
               >
                 {canPromote && !editing ? (
@@ -639,7 +715,7 @@ const COLS =
                   </span>
                 )}
 
-                <div class="min-w-0 pr-3 py-1">
+                <div class:list={['min-w-0 pr-3 py-1', isEditing(i.id) && 'max-md:col-span-2 max-md:pr-0']}>
                   {isEditing(i.id) ? (
                     <Fragment>
                       <input type="hidden" name="row" value={i.id} />
@@ -668,6 +744,8 @@ const COLS =
 
                 {isEditing(i.id) ? (
                   <Fragment>
+                    <div class="min-w-0 max-md:col-start-2">
+                    <span class="md:hidden block text-[11px] text-[var(--color-ink-faint)] mb-1">Volumes</span>
                     <input
                       name={`volumes_${i.id}`}
                       type="number"
@@ -677,6 +755,9 @@ const COLS =
                       class="field !text-[14px] !py-1.5 !px-2"
                       aria-label="Volumes"
                     />
+                    </div>
+                    <div class="min-w-0">
+                    <span class="md:hidden block text-[11px] text-[var(--color-ink-faint)] mb-1">Price £</span>
                     <PoundInput
                       name={`price_${i.id}`}
                       min="0"
@@ -684,6 +765,9 @@ const COLS =
                       compact
                       label="Price in pounds"
                     />
+                    </div>
+                    <div class="min-w-0 max-md:col-start-2">
+                    <span class="md:hidden block text-[11px] text-[var(--color-ink-faint)] mb-1">Copies</span>
                     <input
                       name={`incoming_${i.id}`}
                       type="number"
@@ -693,6 +777,9 @@ const COLS =
                       class="field !text-[14px] !py-1.5 !px-2"
                       aria-label="Copies coming"
                     />
+                    </div>
+                    <div class="min-w-0">
+                    <span class="md:hidden block text-[11px] text-[var(--color-ink-faint)] mb-1">Language</span>
                     <select
                       name={`script_${i.id}`}
                       class="field !text-[13.5px] !py-1.5 !px-2"
@@ -702,8 +789,24 @@ const COLS =
                       <option value="arabic" selected={Boolean(i.title_ar)}>Arabic</option>
                       <option value="urdu" selected={Boolean(i.title_ur)}>Urdu</option>
                     </select>
-                    <span class="text-[12px] text-[var(--color-ink-faint)] text-right md:text-left">
-                      {i.reserved_incoming > 0 && `${i.reserved_incoming} reserved`}
+                    </div>
+                    <span class="flex max-md:col-start-2 max-md:col-span-2 max-md:pt-1 md:justify-start">
+                      {i.removable ? (
+                        <label class="remove-toggle inline-flex items-center gap-1.5 text-[12.5px] font-medium px-2.5 py-1.5 rounded-[7px] border border-[var(--color-rule)] bg-white text-[var(--color-ink-soft)] cursor-pointer select-none hover:border-[var(--color-outstock)] hover:text-[var(--color-outstock)] transition-colors">
+                          <input
+                            type="checkbox"
+                            name="remove"
+                            value={i.id}
+                            class="w-3.5 h-3.5 accent-[var(--color-outstock)]"
+                            aria-label={`Remove ${i.title || 'this row'} from the shipment`}
+                          />
+                          Remove
+                        </label>
+                      ) : (
+                        <span class="text-[12px] text-[var(--color-brass)] whitespace-nowrap" title={lockReason(i.keptBecause)}>
+                          {i.keptBecause}
+                        </span>
+                      )}
                     </span>
                   </Fragment>
                 ) : (
@@ -741,19 +844,47 @@ const COLS =
                         <span class="text-[12.5px] text-[var(--color-ink-faint)]">none yet</span>
                       )}
                     </span>
-                    <span class="flex justify-end md:justify-start">
+                    <span class="flex items-center justify-end md:justify-start gap-1.5">
                       {editable ? (
-                        <a
-                          href={`${href({ edit: i.id })}#row-${i.id}`}
-                          class:list={[
-                            'text-[13px] font-medium px-3 py-1.5 rounded-[7px] border transition-colors',
-                            broken
-                              ? 'border-transparent bg-[var(--color-outstock)] text-white'
-                              : 'border-[var(--color-rule)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)]',
-                          ]}
-                        >
-                          {broken ? 'Fix row' : 'Edit'}
-                        </a>
+                        <Fragment>
+                          <a
+                            href={`${href({ edit: i.id })}#row-${i.id}`}
+                            class:list={[
+                              'text-[13px] font-medium px-3 py-1.5 rounded-[7px] border transition-colors whitespace-nowrap',
+                              broken
+                                ? 'border-transparent bg-[var(--color-outstock)] text-white'
+                                : 'border-[var(--color-rule)] bg-white text-[var(--color-ink-soft)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)]',
+                            ]}
+                          >
+                            {broken ? 'Fix' : 'Edit'}
+                          </a>
+                          {i.removable ? (
+                            <button
+                              type="submit"
+                              form="remove-title"
+                              name="book"
+                              value={i.id}
+                              data-confirm={`Take “${(i.title || 'this untitled row').slice(0, 80)}” off this shipment? This cannot be undone.`}
+                              class="grid place-items-center w-[30px] h-[30px] shrink-0 rounded-[7px] border border-[var(--color-rule)] bg-white text-[var(--color-ink-faint)] hover:border-[var(--color-outstock)] hover:text-[var(--color-outstock)] transition-colors"
+                              aria-label={`Remove ${i.title || 'this untitled row'} from the shipment`}
+                              title="Remove from shipment"
+                            >
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+                              </svg>
+                            </button>
+                          ) : (
+                            <span
+                              class="grid place-items-center w-[30px] h-[30px] shrink-0 rounded-[7px] border border-[var(--color-rule-faint)] text-[var(--color-rule)] cursor-not-allowed"
+                              title={lockReason(i.keptBecause)}
+                              aria-hidden="true"
+                            >
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                              </svg>
+                            </span>
+                          )}
+                        </Fragment>
                       ) : i.spare > 0 ? (
                         <span class="text-[12.5px] text-[var(--color-ink-faint)]">
                           {i.spare} spare
@@ -806,7 +937,8 @@ const COLS =
                   : 'Editing one row'}
               </p>
               <p class="text-[13px] opacity-70 max-w-[34rem]">
-                Clearing a title removes the row. A title with reservations against it cannot be removed.
+                Tick Remove to take a title off the shipment when you save. A title customers have
+                reserved cannot be removed.
               </p>
               <div class="ml-auto flex gap-2.5">
                 <a
@@ -846,6 +978,17 @@ const COLS =
       )}
     </div>
 
+    {editable && !editing && (
+      <form
+        id="remove-title"
+        method="post"
+        action={`/api/admin/shipments/${id}/remove`}
+        class="hidden"
+      >
+        <input type="hidden" name="view" value={viewState} />
+      </form>
+    )}
+
     {editable && view.total > 0 && !editing && (
       <div class="flex flex-wrap items-center gap-3 px-5 sm:px-7 py-3.5 bg-[var(--color-paper-raised)] border-t border-[var(--color-rule-soft)]">
         <a href={href({ edit: 'all' })} class="btn btn-ghost !py-2 !text-[13.5px]">
@@ -874,6 +1017,47 @@ const COLS =
     * afternoon. When the queue empties the page reloads, because everything
     * else on it - what is still reserved, what can be listed - moved too.
     */}
+  <style>
+    /* The row just added, marked long enough to find and then let go. */
+    .shipment-row.is-fresh {
+      animation: fresh-row 2.4s ease-out 0.2s both;
+    }
+    @keyframes fresh-row {
+      from { background-color: color-mix(in srgb, var(--color-instock) 16%, white); }
+      to { background-color: color-mix(in srgb, var(--color-instock) 5%, white); }
+    }
+    /* A row ticked to go reads as going before the save makes it so. */
+    .shipment-row:has(input[name='remove']:checked) {
+      background-color: color-mix(in srgb, var(--color-outstock) 6%, white);
+    }
+    .shipment-row:has(input[name='remove']:checked) :global(:is(input:not([type='checkbox']), select, button)) {
+      opacity: 0.45;
+      text-decoration: line-through;
+    }
+    .remove-toggle:has(input:checked) {
+      border-color: var(--color-outstock);
+      background-color: var(--color-outstock);
+      color: white;
+    }
+    .remove-toggle:has(input:checked) input {
+      accent-color: white;
+    }
+  </style>
+
+  <script>
+    /*
+     * Saving with titles ticked to go asks once, naming how many. The rest of
+     * the editor's save is reversible by editing again; a removal is not.
+     */
+    const rowsForm = document.querySelector<HTMLFormElement>('form[data-shipment-rows]');
+    rowsForm?.addEventListener('submit', (event) => {
+      const n = rowsForm.querySelectorAll('input[name="remove"]:checked').length;
+      if (n === 0) return;
+      const what = n === 1 ? 'this title' : `these ${n} titles`;
+      if (!confirm(`Take ${what} off the shipment? This cannot be undone.`)) event.preventDefault();
+    });
+  </script>
+
   <script>
     const line = document.querySelector<HTMLElement>('[data-notice-queue]');
     const count = document.querySelector<HTMLElement>('[data-notice-count]');

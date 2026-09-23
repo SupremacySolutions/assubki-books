@@ -89,6 +89,33 @@ const COUNTS = `
     WHERE n.shipment_id = s.id AND n.sent_at IS NULL
       AND n.attempts >= ${STUCK_AFTER}) AS stuck`;
 
+/**
+ * Orders that still count against a title: anything not cancelled or expired.
+ *
+ * A dead order keeps its line - `order_items.book_id` is SET NULL on delete and
+ * the title is snapshotted - so it does not stop a row being removed. A live
+ * one does, because removing the book would leave a customer waiting on
+ * nothing.
+ */
+const LIVE_ORDER_ON_BOOK = `EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                    WHERE oi.book_id = books.id AND o.status NOT IN ('cancelled','expired'))`;
+
+/**
+ * The SQL that decides whether a shipment row may be deleted.
+ *
+ * Shared by the single remove, the bulk save and the page's buttons so they
+ * can never disagree: the shipment is still being put together or taking
+ * reservations, nobody is holding or waiting on a copy, and an open shipment
+ * keeps at least one title - an open shipment with nothing on it is listed on
+ * the shipments page and then answers its own link with a 404.
+ */
+export const REMOVABLE_ROW = `books.reserved_incoming = 0 AND books.reserved = 0 AND books.stock = 0
+  AND EXISTS (SELECT 1 FROM shipments s WHERE s.id = books.shipment_id
+               AND (s.status = 'draft'
+                    OR (s.status = 'open'
+                        AND (SELECT COUNT(*) FROM books x WHERE x.shipment_id = s.id) > 1)))
+  AND NOT ${LIVE_ORDER_ON_BOOK}`;
+
 export async function listShipments(): Promise<Shipment[]> {
   const { results } = await env.DB.prepare(
     `SELECT s.*, ${COUNTS} FROM shipments s
@@ -292,13 +319,19 @@ export async function createShipment(fields: {
  * under this prefix, including a row that has since been promoted out of the
  * shipment and still carries its imported slug, so a number is never handed
  * out twice.
+ *
+ * The prefix is built here and bound as text. D1 binds a JavaScript number as
+ * a REAL, so `'sh' || ?1` concatenated `sh12.0-`, matched nothing, and the
+ * series always restarted at one - which is exactly the collision this exists
+ * to prevent, and every title added by hand to a shipment answered with a 500.
  */
 async function nextSlugIndex(shipmentId: number): Promise<number> {
+  const prefix = `sh${shipmentId}-`;
   const row = await env.DB.prepare(
-    `SELECT COALESCE(MAX(CAST(SUBSTR(slug, LENGTH('sh' || ?1 || '-') + 1) AS INTEGER)), 0) AS n
-       FROM books WHERE slug LIKE 'sh' || ?1 || '-%'`,
+    `SELECT COALESCE(MAX(CAST(SUBSTR(slug, LENGTH(?1) + 1) AS INTEGER)), 0) AS n
+       FROM books WHERE slug LIKE ?1 || '%'`,
   )
-    .bind(shipmentId)
+    .bind(prefix)
     .first<{ n: number }>();
   return (row?.n ?? 0) + 1;
 }
@@ -528,7 +561,7 @@ function fixingSql(expectingMore: boolean): string {
 }
 
 export interface AdminShipmentPage {
-  items: (ShipmentItem & { free: number; spare: number })[];
+  items: (ShipmentItem & { free: number; spare: number; removable: number })[];
   /** Rows matching the current search and filter. */
   total: number;
   page: number;
@@ -602,13 +635,16 @@ export async function adminShipmentPage(
             MAX(0, incoming - reserved_incoming) AS free,
             /* What is left to sell once the claims on it are honoured. A title
                still expecting copies has nothing spare yet by definition. */
-            CASE WHEN incoming > 0 THEN 0 ELSE MAX(0, stock - reserved) END AS spare
+            CASE WHEN incoming > 0 THEN 0 ELSE MAX(0, stock - reserved) END AS spare,
+            /* Whether the Remove button can work, asked the same way the
+               DELETE asks it so the button never offers what it will refuse. */
+            CASE WHEN ${REMOVABLE_ROW} THEN 1 ELSE 0 END AS removable
        FROM books WHERE shipment_id = ?1${search}${where}
       ORDER BY shipment_sort, id
       LIMIT ${perPage} OFFSET ${(at - 1) * perPage}`,
   )
     .bind(id, ...bindSearch)
-    .all<ShipmentItem & { free: number; spare: number }>();
+    .all<ShipmentItem & { free: number; spare: number; removable: number }>();
 
   return {
     items: results,
@@ -660,7 +696,9 @@ export async function receiveRows(id: number): Promise<{
  * title the supplier forgot to list.
  *
  * The insert is conditional on the shipment still being editable, so a stale
- * form cannot add a row to a box that has already landed.
+ * form cannot add a row to a box that has already landed. The slug number is
+ * worked out inside the same statement rather than read first, so two tabs
+ * adding at once cannot both be handed the same one.
  */
 export async function addShipmentRow(
   shipmentId: number,
@@ -672,16 +710,21 @@ export async function addShipmentRow(
     script: string;
   },
 ): Promise<number | null> {
-  const index = await nextSlugIndex(shipmentId);
+  const prefix = `sh${shipmentId}-`;
   const row = await env.DB.prepare(
     `INSERT INTO books (slug, title, title_ar, title_ur, price_pence, volumes,
                         stock, reserved, status, incoming, reserved_incoming,
                         incoming_vague, incoming_month, shipment_id, shipment_sort)
-     SELECT ?2, ?3,
+     SELECT ?2 || (SELECT COALESCE(MAX(CAST(SUBSTR(slug, LENGTH(?2) + 1) AS INTEGER)), 0) + 1
+                     FROM books WHERE slug LIKE ?2 || '%'),
+            ?3,
             CASE WHEN ?7 = 'arabic' THEN ?3 END,
             CASE WHEN ?7 = 'urdu'   THEN ?3 END,
             ?4, ?5, 0, 0, 'draft', ?6, 0,
-            s.incoming_vague, s.incoming_month, s.id,
+            /* The same rule the importer follows: a vague "mid" means nothing
+               without a month to be the middle of. */
+            CASE WHEN s.incoming_month IS NOT NULL THEN s.incoming_vague END,
+            s.incoming_month, s.id,
             (SELECT COALESCE(MAX(shipment_sort), 0) + 1 FROM books WHERE shipment_id = s.id)
        FROM shipments s
       WHERE s.id = ?1 AND s.status IN ('draft','open')
@@ -689,7 +732,7 @@ export async function addShipmentRow(
   )
     .bind(
       shipmentId,
-      `sh${shipmentId}-${index}`,
+      prefix,
       fields.title,
       fields.price_pence,
       fields.volumes,
@@ -698,4 +741,88 @@ export async function addShipmentRow(
     )
     .first<{ id: number }>();
   return row?.id ?? null;
+}
+
+export type RemoveResult =
+  | { ok: true; title: string }
+  | { ok: false; why: string };
+
+/**
+ * Take one title off a shipment.
+ *
+ * A shipment row is not a listing - it has no cover, no description and no
+ * address anyone has seen - so it is deleted outright rather than sent to the
+ * bin. What guards it is the same as for a draft being cleared in the editor:
+ * the shipment must still be editable and no live order may point at the row.
+ * The guard lives in the DELETE itself; the read afterwards only explains a
+ * refusal.
+ */
+export async function removeShipmentRow(shipmentId: number, bookId: number): Promise<RemoveResult> {
+  const gone = await env.DB.prepare(
+    `DELETE FROM books WHERE id = ?1 AND shipment_id = ?2 AND ${REMOVABLE_ROW}
+     RETURNING title`,
+  )
+    .bind(bookId, shipmentId)
+    .first<{ title: string }>();
+  if (gone) return { ok: true, title: gone.title };
+
+  const now = await env.DB.prepare(
+    `SELECT b.title, b.reserved_incoming AS claimed, b.reserved + b.stock AS held,
+            (SELECT status FROM shipments WHERE id = ?2) AS status,
+            ${LIVE_ORDER_ON_BOOK.replaceAll('books.id', 'b.id')} AS ordered
+       FROM books b WHERE b.id = ?1 AND b.shipment_id = ?2`,
+  )
+    .bind(bookId, shipmentId)
+    .first<{ title: string; claimed: number; held: number; status: string; ordered: number }>();
+  if (!now) return { ok: false, why: 'That title is no longer on this shipment' };
+  if (!['draft', 'open'].includes(now.status))
+    return { ok: false, why: 'This shipment is no longer editable' };
+  const name = now.title.trim() ? `“${now.title.slice(0, 60)}”` : 'That title';
+  if (now.status === 'open' && now.claimed === 0 && !now.ordered && now.held === 0)
+    return {
+      ok: false,
+      why: `${name} is the only title left on this open shipment. Add the right title first, then remove this one`,
+    };
+  if (now.claimed > 0)
+    return {
+      ok: false,
+      why: `${name} has ${now.claimed} ${now.claimed === 1 ? 'copy' : 'copies'} reserved. Cancel ${now.claimed === 1 ? 'that reservation' : 'those reservations'} first if it is really not coming`,
+    };
+  return { ok: false, why: `${name} is on a customer's order, so it has to stay` };
+}
+
+/**
+ * Where a shipment form sends the owner back to.
+ *
+ * Every form on the shipment page used to land on its first page with the
+ * search and filter gone, so fixing row 140 of 300 meant finding it again
+ * after each save. The page posts what it was showing in a hidden `view`
+ * field; only the three keys that describe a view are carried over, each
+ * re-validated, so the field cannot be used to put anything else in the URL.
+ */
+export function shipmentReturn(
+  shipmentId: number,
+  form: FormData | null,
+  extra: Record<string, string | number | null | undefined> = {},
+  /** A row to scroll to, as `row-<id>`. */
+  anchor?: string,
+): Response {
+  const from = new URLSearchParams(String(form?.get('view') ?? ''));
+  const next = new URLSearchParams();
+  const q = (from.get('q') ?? '').slice(0, 80);
+  if (q) next.set('q', q);
+  const filter = asFilter(from.get('filter'));
+  if (filter !== 'all') next.set('filter', filter);
+  const page = Number.parseInt(from.get('page') ?? '', 10);
+  if (Number.isSafeInteger(page) && page > 1) next.set('page', String(page));
+  for (const [key, value] of Object.entries(extra)) {
+    if (value === null || value === undefined) next.delete(key);
+    else next.set(key, String(value));
+  }
+  const query = next.toString();
+  const hash = anchor ? `#${anchor}` : '';
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `/admin/shipments/${shipmentId}${query ? `?${query}` : ''}${hash}` },
+  });
 }
