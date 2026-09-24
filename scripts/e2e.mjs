@@ -42,6 +42,28 @@ async function publicCatalogue() {
   t.ok(/\d+ titles/.test(cat), 'catalogue reports a count');
   t.ok((await get('/catalogue?page=2')).status === 200, 'pagination serves page two');
 
+  /*
+   * A narrowed catalogue is served but not filed.
+   *
+   * The filters multiply into roughly 23,000 URLs for a catalogue of under 300
+   * books, each costing about 1,200 rows read because a shelf is matched with
+   * an OR/LIKE no index can serve. Left indexable, a crawler walking that space
+   * spends the day's whole row allowance on pages a shelf page already covers -
+   * and D1 stops answering when it runs out. Shelf pages stay indexable; these
+   * do not.
+   */
+  const indexable = async (path) => !(await html(path)).includes('name="robots" content="noindex"');
+  t.ok(await indexable('/catalogue'), 'the catalogue itself is indexable');
+  for (const [path, why] of [
+    ['/catalogue?pub=Zamzam', 'a publisher filter'],
+    ['/catalogue?lang=arabic', 'a language filter'],
+    ['/catalogue?sort=title', 'a sort'],
+    ['/catalogue?page=2', 'a second page'],
+    ['/catalogue?stock=in', 'an in-stock tick'],
+  ]) {
+    t.ok(!(await indexable(path)), `${why} is served but kept out of the index`);
+  }
+
   // Both buttons the same width with the label between them, short enough to
   // sit across a phone. The long form stays as the accessible name.
   const paged = await html('/catalogue?page=2');
