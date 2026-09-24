@@ -89,6 +89,25 @@ if (q && result.total === 0 && page === 1) {
   else await miss;
 }
 
+/*
+ * A narrowed view is for the customer in front of it, not for the index.
+ *
+ * Every shelf, publisher, language, sort and page is its own URL, so the
+ * filters multiply into about twenty-three thousand of them for a catalogue of
+ * under three hundred books - and each one costs roughly 1,200 rows read,
+ * because a shelf is matched with `c.path = ? OR c.path LIKE ? || '/%'`, which
+ * no index can serve. A crawler working steadily through that space spends
+ * days of the daily row allowance on pages that say nothing a shelf page does
+ * not already say, and when the allowance runs out the shop stops answering.
+ *
+ * Search was already held back for the same reason. This is the rest of it:
+ * the bare shelf pages stay indexable and are what the sitemap offers, and
+ * anything narrower is served normally and simply not filed.
+ */
+const narrowed = Boolean(
+  q || publisher || language || sort || inStockOnly || onSale || page > 1,
+);
+
 const base = {
   q,
   sort,
@@ -194,7 +213,7 @@ const description = category
   : `Browse ${result.total} Islamic titles - hadith, fiqh, tafsir, Dars Nizami and Maktab syllabus sets.`;
 ---
 
-<Base title={title} description={description} noindex={!!q}>
+<Base title={title} description={description} noindex={narrowed}>
   <div class="py-8 md:py-10">
     <nav aria-label="Breadcrumb" class="text-[13.5px] text-[var(--color-ink-faint)] mb-3">
       <a href="/" class="hover:text-[var(--color-navy)]">Home</a>
