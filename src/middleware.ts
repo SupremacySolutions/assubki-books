@@ -266,13 +266,17 @@ function withSecurityHeaders(response: Response, secure: boolean, nonce: string)
 /**
  * Can the database be reached at all?
  *
- * `SELECT 1` reads no rows, so it stays free even when the shop is being
- * rationed - and when the allowance is gone D1 refuses it like anything else,
- * which is exactly the answer wanted here.
+ * The probe has to read a row, and that is not an oversight. The first version
+ * asked `SELECT 1` on the grounds that reading no rows costs nothing - but
+ * D1's daily allowance is counted in rows read, so a query that reads none is
+ * still answered perfectly happily after the allowance is gone. It reported a
+ * healthy database throughout an outage, which is the one moment it existed
+ * for. Reading a single row costs one row against the allowance, and only on
+ * a path where a page has already failed.
  */
 async function databaseReachable(): Promise<boolean> {
   try {
-    await env.DB.prepare('SELECT 1').first();
+    await env.DB.prepare('SELECT id FROM books LIMIT 1').first();
     return true;
   } catch {
     return false;
