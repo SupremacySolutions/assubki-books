@@ -15,11 +15,21 @@ let fault = null,
   hook = null,
   queries = 0;
 function execute(query, path = active) {
+  /*
+   * The pragmas are part of the script, not `-cmd` flags.
+   *
+   * sqlite3 3.54 prints nothing at all for `-bail -json -cmd PRAGMA ...` - any
+   * one or two of those three is fine, the combination is not - and then exits
+   * before reading the rest of stdin, which reaches the caller as
+   * `spawnSync sqlite3 EPIPE` rather than as anything about SQL. Both of this
+   * project's sqlite3 scripts were dead on a machine with that build, for a
+   * reason that looked like a broken pipe. Prepending them keeps `-bail`.
+   */
   const raw = execFileSync(
     'sqlite3',
-    ['-bail', '-json', '-cmd', 'PRAGMA foreign_keys=ON', '-cmd', 'PRAGMA trusted_schema=ON', path],
+    ['-bail', '-json', path],
     {
-      input: query,
+      input: `PRAGMA foreign_keys=ON;\nPRAGMA trusted_schema=ON;\n${query}`,
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -383,6 +393,52 @@ async function test(name, fn) {
       2000,
     );
     assert.equal(row('SELECT COUNT(*) n FROM shipment_notices').n, 1);
+  });
+  await test('a title short in a delivery does not hold back the titles that came in full', async () => {
+    /*
+     * The shape an audit of this path kept reaching for: one box, three
+     * titles, and only one of them short.
+     *
+     * The single-title case above proves a short delivery fills the oldest
+     * claim first and leaves the later one waiting. What it cannot show is
+     * whether that waiting spreads - whether a title nobody can complete holds
+     * up the customer whose own title arrived whole, in the same receipt. Each
+     * line is allocated against its own book, so it must not.
+     */
+    const s = shipment();
+    const short = book(s, 3);   // three claimed, one arrives
+    const whole = book(s, 2);   // one claimed, it arrives
+    const spare = book(s, 2);   // nobody claimed it
+
+    const [first] = await order([{ bookId: short, qty: 2 }, { bookId: whole, qty: 1 }]);
+    const [second] = await order([{ bookId: short, qty: 1 }]);
+
+    await receive(s, [[short, 1], [whole, 1], [spare, 2]]);
+
+    // The oldest claim on the short title takes the copy that came.
+    assert.deepEqual(
+      row(`SELECT stock,reserved,incoming,reserved_incoming FROM books WHERE id=${short}`),
+      { stock: 1, reserved: 1, incoming: 2, reserved_incoming: 2 },
+    );
+    // The title that arrived whole is held for the customer who asked for it.
+    assert.deepEqual(
+      row(`SELECT stock,reserved,incoming,reserved_incoming FROM books WHERE id=${whole}`),
+      { stock: 1, reserved: 1, incoming: 1, reserved_incoming: 0 },
+    );
+    // Copies nobody claimed land on the shelf rather than being held for anyone.
+    assert.deepEqual(
+      row(`SELECT stock,reserved,incoming,reserved_incoming FROM books WHERE id=${spare}`),
+      { stock: 2, reserved: 0, incoming: 0, reserved_incoming: 0 },
+    );
+    // Neither order is finished: the first still waits on its second copy of
+    // the short title, and the second has had nothing at all.
+    assert.equal(row(`SELECT pay_by FROM orders WHERE id=${first.id}`).pay_by, null);
+    assert.equal(row(`SELECT pay_by FROM orders WHERE id=${second.id}`).pay_by, null);
+    // And nothing was cancelled to make the arithmetic work.
+    assert.equal(
+      row(`SELECT COUNT(*) n FROM orders WHERE status IN ('cancelled','expired')`).n,
+      0,
+    );
   });
   await test('payment is refused until arrival and consumes stock once after arrival', async () => {
     const s = shipment(),
