@@ -105,7 +105,7 @@ if (q && result.total === 0 && page === 1) {
  * anything narrower is served normally and simply not filed.
  */
 const narrowed = Boolean(
-  q || publisher || language || sort || inStockOnly || onSale || page > 1,
+  q || publisher || language || sort || inStockOnly || onSale || arriving || page > 1,
 );
 
 const base = {

@@ -1,4 +1,5 @@
 import { defineMiddleware } from 'astro:middleware';
+import { env } from 'cloudflare:workers';
 import { slugForLegacy } from './lib/db';
 import { authenticate, adminLocked, passwordFallbackActive } from './lib/admin-auth';
 import { maintenanceNotice } from './lib/maintenance';
@@ -149,7 +150,28 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (/^\/(shop|my-account)\/?$/.test(pathname)) return context.redirect('/catalogue', 301);
   if (/^\/cart\/?$/.test(pathname)) return context.redirect('/basket', 301);
 
-  const response = await next();
+  /*
+   * A database the shop cannot reach becomes a closed sign, not a stack trace.
+   *
+   * Every customer page reads D1, so when D1 stops answering - it has a daily
+   * row-read allowance, and an outage is an outage - every one of them fails
+   * at once and the shop serves raw 500s to customers. That reads as broken
+   * rather than busy, and a crawler treats it as broken too.
+   *
+   * The 500 is only turned into a closed sign once the database has been asked
+   * directly and refused to answer. A genuine bug still returns its 500 and
+   * still gets logged: disguising defects as maintenance is how they survive.
+   * The probe costs nothing on the healthy path because nothing reaches it.
+   */
+  let response: Response;
+  try {
+    response = await next();
+  } catch (err) {
+    if (await databaseReachable()) throw err;
+    return offlinePage();
+  }
+  if (response.status === 500 && !(await databaseReachable())) return offlinePage();
+
   return withSecurityHeaders(response, context.url.protocol === 'https:', context.locals.cspNonce);
 });
 
@@ -239,6 +261,39 @@ function withSecurityHeaders(response: Response, secure: boolean, nonce: string)
     statusText: response.statusText,
     headers,
   });
+}
+
+/**
+ * Can the database be reached at all?
+ *
+ * `SELECT 1` reads no rows, so it stays free even when the shop is being
+ * rationed - and when the allowance is gone D1 refuses it like anything else,
+ * which is exactly the answer wanted here.
+ */
+async function databaseReachable(): Promise<boolean> {
+  try {
+    await env.DB.prepare('SELECT 1').first();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The closed sign shown when the database is the thing that is down. */
+function offlinePage(): Response {
+  return new Response(
+    closedPage(
+      'We are briefly offline for maintenance and will be back very shortly.\nThank you for your patience.',
+    ),
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Retry-After': '900',
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
 }
 
 /**

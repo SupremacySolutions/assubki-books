@@ -5,4 +5,20 @@ Disallow: /checkout
 Disallow: /order/
 Disallow: /admin
 
+# Filtered, sorted and paged views of the catalogue.
+#
+# Nothing here is the only way to reach a book: the sitemap lists every live
+# title at /book/<slug> and every shelf at /catalogue/<path>, and those stay
+# crawlable. What these URLs add is a combinatorial space - shelves times
+# publishers times languages times sorts, about 23,000 of them for a catalogue
+# of under 300 books - and each one costs roughly 1,200 rows read, because a
+# shelf is matched with an OR against a LIKE prefix that no index can serve.
+# One crawl of that space is 27.7M rows: five days of D1's daily allowance in a
+# single sweep, after which D1 refuses every query and the shop stops serving.
+#
+# noindex alone does not fix this. It keeps the pages out of the results, but
+# the crawler still fetches them, and it is the fetch that spends the rows.
+Disallow: /catalogue?
+Disallow: /catalogue/*?
+
 Sitemap: https://assubkibooks.co.uk/sitemap.xml
