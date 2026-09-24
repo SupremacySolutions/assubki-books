@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const temp = mkdtempSync(join(tmpdir(), 'asb-backup-test-'));
 const source = join(temp,'source.db'), restored = join(temp,'restored.db'), backup = join(temp,'backup.sql');
-const sqlite = (file, sql) => execFileSync('sqlite3',['-bail','-json','-cmd','PRAGMA trusted_schema=ON',file],{input:sql,encoding:'utf8'});
+/* Pragma inline, not `-cmd`: see the note in test-reservations.mjs - the
+   combination with -bail and -json prints nothing on sqlite3 3.54. */
+const sqlite = (file, sql) => execFileSync('sqlite3',['-bail','-json',file],{input:`PRAGMA trusted_schema=ON;\n${sql}`,encoding:'utf8'});
 try {
   sqlite(source,readdirSync('migrations').filter(f=>f.endsWith('.sql')).sort().map(f=>readFileSync(join('migrations',f),'utf8')).join('\n'));
   writeFileSync(join(temp,'npx'),`#!/usr/bin/env node
