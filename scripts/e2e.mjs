@@ -60,6 +60,8 @@ async function publicCatalogue() {
     ['/catalogue?sort=title', 'a sort'],
     ['/catalogue?page=2', 'a second page'],
     ['/catalogue?stock=in', 'an in-stock tick'],
+    ['/catalogue?arriving=1', 'an arriving filter'],
+    ['/catalogue/syllabus?pub=Zamzam', 'a filter on a shelf'],
   ]) {
     t.ok(!(await indexable(path)), `${why} is served but kept out of the index`);
   }
@@ -147,6 +149,18 @@ async function publicCatalogue() {
   const robots = await html('/robots.txt');
   t.ok(robots.includes('Disallow: /admin'), 'robots keeps crawlers out of the portal');
   t.ok(robots.includes('Disallow: /order'), 'robots keeps crawlers off order pages');
+
+  /*
+   * noindex keeps the narrowed catalogue out of the results; it does not stop
+   * the crawler fetching it, and the fetch is what spends D1's row allowance.
+   * These two lines are what actually stops the request arriving. The clean
+   * shelf paths must survive them - they are how books are found.
+   */
+  t.ok(robots.includes('Disallow: /catalogue?'), 'robots keeps crawlers off filtered catalogue URLs');
+  t.ok(robots.includes('Disallow: /catalogue/*?'), 'and off filtered shelf URLs');
+  t.ok(!/Disallow: \/catalogue\s*$/m.test(robots), 'without blocking the catalogue itself');
+  t.ok(!/Disallow: \/catalogue\/\s*$/m.test(robots), 'or the shelves beneath it');
+  t.ok((await get('/catalogue/syllabus')).status === 200, 'a shelf still serves');
 
   // The emails point at this file by absolute URL. If it stops being served the
   // letterhead silently turns into a blank square in every inbox, and nothing
