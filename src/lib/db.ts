@@ -8,6 +8,7 @@
 
 import { env } from 'cloudflare:workers';
 import { tidyPublisher } from './publishers';
+import { cachedRead, writeCachedRead } from './read-cache';
 
 export interface Category {
   id: number;
@@ -238,18 +239,101 @@ export interface ShelfCounts {
 
 let countsCache: { at: number; value: ShelfCounts } | null = null;
 
-export async function categoryCounts(): Promise<ShelfCounts> {
+/*
+ * Set when something changed, cleared by the next read.
+ *
+ * A change cannot simply delete the shared entry: the delete is asynchronous
+ * and the read that follows does not wait for it, so the reader finds the entry
+ * it just asked to be rid of. Instead the next read goes to the database and
+ * writes its answer through, which leaves no window at all.
+ */
+let countsDirty = false;
+let publishersDirty = false;
+
+/**
+ * How long a shelf count may be out of date on a customer's page.
+ *
+ * Was one minute, which sounded prudent and bought almost nothing: the
+ * roll-up still ran 851 times on the day the shop ran out of its read
+ * allowance, because each new isolate starts with an empty module variable.
+ * Five minutes is the same answer to anyone reading it and a fifth of the
+ * reads. The portal does not wait it out - see `fresh` below.
+ */
+const COUNTS_TTL_MS = 5 * 60_000;
+
+/** The key both layers agree on, so forgetting one forgets the other. */
+const COUNTS_KEY = 'shelf-counts';
+
+/*
+ * `ShelfCounts` is four `Map`s, which JSON does not survive, so they travel as
+ * entry arrays. Written out rather than reached for generically: the shape is
+ * fixed, and a clever round-trip here would be a silent way to lose a count.
+ */
+type PackedCounts = Record<keyof ShelfCounts, [number, number][]>;
+
+const packCounts = (value: ShelfCounts): PackedCounts => ({
+  any: [...value.any],
+  english: [...value.english],
+  arabic: [...value.arabic],
+  urdu: [...value.urdu],
+});
+
+const unpackCounts = (raw: unknown): ShelfCounts => {
+  const packed = raw as PackedCounts;
+  return {
+    any: new Map(packed.any),
+    english: new Map(packed.english),
+    arabic: new Map(packed.arabic),
+    urdu: new Map(packed.urdu),
+  };
+};
+
+/**
+ * A shelf's book count.
+ *
+ * Three layers, cheapest first: this isolate's memory, then the data centre's
+ * cache, then the database. `fresh` skips both caches and is what the portal
+ * passes - the owner moves a book between shelves and must see the new number,
+ * not a number from up to five minutes ago that happens to be shared with
+ * every customer in the same data centre.
+ */
+export async function categoryCounts(fresh = false): Promise<ShelfCounts> {
+  if (fresh || countsDirty) {
+    const wasDirty = countsDirty;
+    countsDirty = false;
+    const value = await readCategoryCounts();
+    countsCache = { at: Date.now(), value };
+    /* A change repairs the shared entry; a portal read just reads. */
+    if (wasDirty) void writeCachedRead(COUNTS_KEY, COUNTS_TTL_MS / 1000, value, packCounts);
+    return value;
+  }
+
   const now = Date.now();
-  if (countsCache && now - countsCache.at < 60_000) return countsCache.value;
-  const value = await readCategoryCounts();
+  if (countsCache && now - countsCache.at < COUNTS_TTL_MS) return countsCache.value;
+  const value = await cachedRead(
+    COUNTS_KEY,
+    COUNTS_TTL_MS / 1000,
+    readCategoryCounts,
+    packCounts,
+    unpackCounts,
+  );
   countsCache = { at: now, value };
   return value;
 }
 
-/** Called after a listing changes, so the owner sees their own edit at once. */
+/**
+ * Called after a listing changes, so the owner sees their own edit at once.
+ *
+ * Memory clears outright. The data centre's cache is dropped too, but only the
+ * one this runs in - the Cache API does not replicate, so the others wait out
+ * the TTL. That is the reason the TTL is five minutes and not an hour, and the
+ * reason the portal reads past it entirely.
+ */
 export function forgetCategoryCounts(): void {
   countsCache = null;
   publishersCache = null;
+  countsDirty = true;
+  publishersDirty = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -372,6 +456,21 @@ export async function canonicalPublisher(typed: string | null, bookId: number | 
 
 let publishersCache: { at: number; value: PublisherIndex } | null = null;
 
+/** Matches the shelf counts: this is forgotten with them and reads like them. */
+const PUBLISHERS_TTL_MS = 5 * 60_000;
+const PUBLISHERS_KEY = 'publisher-index';
+
+/* `spelling` is a Map, so it travels as entries. `books` is already plain. */
+const packPublishers = (value: PublisherIndex) => ({
+  books: value.books,
+  spelling: [...value.spelling],
+});
+
+const unpackPublishers = (raw: unknown): PublisherIndex => {
+  const packed = raw as { books: PublishedBook[]; spelling: [string, string][] };
+  return { books: packed.books, spelling: new Map(packed.spelling) };
+};
+
 /**
  * The publishers worth offering where the customer is standing, A-Z.
  *
@@ -387,8 +486,22 @@ export async function publisherCounts(
   categoryPath: string | null = null,
 ): Promise<PublisherCount[]> {
   const now = Date.now();
-  if (!publishersCache || now - publishersCache.at >= 60_000) {
-    publishersCache = { at: now, value: await readPublisherIndex() };
+  if (publishersDirty) {
+    publishersDirty = false;
+    const value = await readPublisherIndex();
+    publishersCache = { at: now, value };
+    void writeCachedRead(PUBLISHERS_KEY, PUBLISHERS_TTL_MS / 1000, value, packPublishers);
+  } else if (!publishersCache || now - publishersCache.at >= PUBLISHERS_TTL_MS) {
+    publishersCache = {
+      at: now,
+      value: await cachedRead(
+        PUBLISHERS_KEY,
+        PUBLISHERS_TTL_MS / 1000,
+        readPublisherIndex,
+        packPublishers,
+        unpackPublishers,
+      ),
+    };
   }
   const { books, spelling } = publishersCache.value;
   const tally = new Map<string, number>();

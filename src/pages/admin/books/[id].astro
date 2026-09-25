@@ -38,7 +38,9 @@ const publishers = await publisherSpellings();
    the shelf you meant among twenty-six similar names. Cached for a minute and
    read as 441 links rather than the rollup that once ate the read budget; see
    `categoryCounts`. */
-const shelfCounts = (await categoryCounts()).any;
+/* `fresh`: the owner must see the shelf they just moved a book onto, not a
+   number the customer-facing cache is still serving for another few minutes. */
+const shelfCounts = (await categoryCounts(true)).any;
 const selected = new Set(book?.categoryIds ?? []);
 
 /*
