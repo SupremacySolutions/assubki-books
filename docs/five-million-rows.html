@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Five Million Rows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<style>
+  :root {
+    --sp-measure: 68ch;
+    --display: "Spectral", Georgia, "Times New Roman", serif;
+    --body: "IBM Plex Sans", var(--sp-font-sans, ui-sans-serif, system-ui, sans-serif);
+    --mono: "IBM Plex Mono", var(--sp-font-mono, ui-monospace, Menlo, monospace);
+    --brick: #9b2c2c;
+    --brick-soft: #f6eae8;
+    --moss: #2f6b4f;
+    --moss-soft: #e9f0ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --brick: #e49a92;
+      --brick-soft: #33211f;
+      --moss: #8fc4a6;
+      --moss-soft: #1b2a22;
+    }
+  }
+
+  body { font-family: var(--body); line-height: 1.65; }
+  .wrap { max-width: 74ch; margin: 0 auto; padding-inline: 20px; padding-block: 0 5rem; }
+
+  header.top { padding-block: 3.5rem 2rem; border-bottom: 2px solid var(--sp-text); display: flex; flex-direction: column; gap: 1rem; }
+  .kicker { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--brick); display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+  h1 { font-family: var(--display); font-weight: 600; font-size: clamp(2.4rem, 8vw, 3.6rem); line-height: 1.05; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
+  .standfirst { font-family: var(--display); font-size: clamp(1.05rem, 2.6vw, 1.22rem); line-height: 1.55; color: var(--sp-muted); max-width: var(--sp-measure); margin: 0; }
+
+  section { padding-block: 2.75rem 0; }
+  h2 { font-family: var(--display); font-weight: 600; font-size: 1.62rem; line-height: 1.2; letter-spacing: -.01em; margin: 0 0 .25rem; text-wrap: balance; }
+  h3 { font-family: var(--body); font-weight: 600; font-size: .95rem; margin: 1.9rem 0 .4rem; }
+  .eyebrow { font-family: var(--mono); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; color: var(--sp-muted); margin: 0 0 .7rem; }
+
+  p { max-width: var(--sp-measure); margin: 0 0 1rem; }
+  p:last-child { margin-bottom: 0; }
+  ul { max-width: var(--sp-measure); }
+  li { margin-bottom: .45rem; }
+  code { font-family: var(--mono); font-size: .855em; word-break: break-word; }
+
+  .scroll { overflow-x: auto; margin: 1.1rem 0 1.4rem; border-top: 1px solid var(--sp-text); border-bottom: 1px solid var(--sp-border); }
+  table { border-collapse: collapse; width: 100%; min-width: 34rem; font-size: .875rem; }
+  thead th { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--sp-muted); font-weight: 500; text-align: left; padding: .7rem .8rem; border-bottom: 1px solid var(--sp-border); white-space: nowrap; }
+  tbody td { padding: .62rem .8rem; border-bottom: 1px solid var(--sp-border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bad { color: var(--brick); font-weight: 500; }
+  .good { color: var(--moss); font-weight: 500; }
+  td.what { min-width: 13rem; }
+
+  .ba { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1px; background: var(--sp-border); border: 1px solid var(--sp-border); margin: 1.4rem 0; }
+  .ba > div { background: var(--sp-surface); padding: 1.3rem 1.4rem; }
+  .ba .lab { font-family: var(--mono); font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 .6rem; }
+  .ba .now .lab { color: var(--brick); }
+  .ba .then .lab { color: var(--moss); }
+  .ba .fig { font-family: var(--display); font-size: 2.1rem; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; margin: 0 0 .3rem; }
+  .ba .now .fig { color: var(--brick); }
+  .ba .then .fig { color: var(--moss); }
+  .ba .sub { font-size: .845rem; color: var(--sp-muted); margin: 0; max-width: none; }
+
+  .note { border-left: 3px solid var(--sp-accent); background: var(--sp-surface); padding: 1rem 1.2rem; margin: 1.3rem 0; max-width: var(--sp-measure); }
+  .note.warn { border-left-color: var(--brick); background: var(--brick-soft); }
+  .note.done { border-left-color: var(--moss); background: var(--moss-soft); }
+  .note p { font-size: .9rem; }
+  .note .tag { font-family: var(--mono); font-size: .67rem; letter-spacing: .13em; text-transform: uppercase; display: block; margin-bottom: .35rem; color: var(--sp-muted); }
+
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 1.1rem 0 0; max-width: var(--sp-measure); }
+  ol.steps li { counter-increment: s; display: grid; grid-template-columns: 2rem 1fr; gap: .9rem; padding-block: .7rem; border-bottom: 1px solid var(--sp-border); margin: 0; }
+  ol.steps li:last-child { border-bottom: 0; }
+  ol.steps li::before { content: counter(s); font-family: var(--mono); font-size: .8rem; color: var(--brick); padding-top: .18rem; }
+
+  .pill { display: inline-block; font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; padding: .18em .5em; border-radius: 2px; white-space: nowrap; }
+  .pill.snap { background: var(--moss-soft); color: var(--moss); }
+  .pill.keep { background: var(--sp-surface); color: var(--sp-muted); }
+  .pill.todo { background: var(--brick-soft); color: var(--brick); }
+
+  footer.end { margin-top: 3.5rem; padding-top: 1.4rem; border-top: 2px solid var(--sp-text); font-size: .82rem; color: var(--sp-muted); font-family: var(--mono); }
+  footer.end p { max-width: none; margin-bottom: .3rem; }
+
+  @media (max-width: 34rem) {
+    .wrap { padding-inline: 16px; }
+    header.top { padding-block: 2.5rem 1.6rem; }
+  }
+</style>
+</head>
+<body class="auto">
+<div class="wrap">
+
+  <header class="top">
+    <div class="kicker">
+      <span>As-Subkī Books</span>
+      <span>D1 read budget</span>
+      <span>25 Sep 2026</span>
+    </div>
+</body>
+</html>
+    <h1>Five Million Rows</h1>
+    <p class="standfirst">
+      The shop went offline for an hour because the database ran out of its daily
+      allowance. Here is where every row went, and the plan to make a page view
+      cost nothing at all.
+    </p>
+  </header>
+
+  <section>
+    <p class="eyebrow">What happened</p>
+    <h2>The allowance ran out, and D1 stopped answering</h2>
+    <p>
+      D1's free plan allows <strong>5,000,000 rows read per day</strong>. On
+      24 September that ceiling was passed, and D1 refused every query for about
+      an hour — account-wide, including from the command line. Every page that
+      touches the database failed at once.
+    </p>
+    <p>
+      Nothing was broken and nothing was misconfigured. The shop simply asks the
+      database more questions than the allowance permits, and a crawler asked a
+      great many of them in one day.
+    </p>
+    <div class="note done">
+      <span class="tag">Already shipped</span>
+      <p>
+        Three fixes went out during the outage: <code>noindex</code> on every
+        filtered catalogue view; <code>robots.txt</code> now blocks the filtered
+        URLs entirely; and the shop shows a proper “Back shortly” page at 503
+        instead of a raw error when the database is unreachable. Those stop the
+        <em>surge</em>. They do not move the ceiling. That is what this plan is for.
+      </p>
+    </div>
+</body>
+</html>
+  </section>
+
+  <section>
+    <p class="eyebrow">The measurements</p>
+    <h2>Five queries are the entire budget</h2>
+    <p>
+      Measured over seven days with
+      <code>wrangler d1 insights</code>. These five account for essentially all of
+      a 13,071,980-row week — about 1.87M a day, 37% of the allowance.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Query</th>
+            <th>7-day rows</th>
+            <th>Per call</th>
+            <th>Efficiency</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="what">Category counts roll-up</td>
+            <td class="num">3,624,319</td>
+            <td class="num">1,658</td>
+            <td class="num">0.33</td>
+          </tr>
+          <tr>
+            <td class="what">Shelf + publisher + language — book list</td>
+            <td class="num">3,332,495</td>
+            <td class="num">1,180</td>
+            <td class="num bad">0.00</td>
+          </tr>
+          <tr>
+            <td class="what">Shelf + publisher + language — count</td>
+            <td class="num">2,790,422</td>
+            <td class="num">1,180</td>
+            <td class="num bad">0.0008</td>
+          </tr>
+          <tr>
+            <td class="what">Shelf — book list</td>
+            <td class="num">1,818,358</td>
+            <td class="num">1,352</td>
+            <td class="num bad">0.009</td>
+          </tr>
+          <tr>
+            <td class="what">Shelf + publisher — count</td>
+            <td class="num">1,506,386</td>
+            <td class="num">1,212</td>
+            <td class="num bad">0.0008</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+</body>
+</html>
+    <p>
+      <em>Efficiency</em> is rows returned divided by rows read. The bottom four
+      read around <strong>1,200 rows to return a single number</strong> or one
+      page of 24 books. The catalogue holds under 300 books, so each of these
+      reads the whole shop roughly four times over to answer one question.
+    </p>
+    <p>
+      Four of the five share one shape — the shelf lookup
+      <code>c.path = ? OR c.path LIKE ? || '/%'</code>, which no index can serve.
+      That family alone is 72% of all reads. The roll-up is the other 28%.
+    </p>
+    <div class="note warn">
+      <span class="tag">Worth being clear about</span>
+      <p>
+        The roll-up has <em>already</em> been optimised once, from 34,700 rows per
+        call down to 1,658, and it has a 60-second cache. But that cache is a
+        variable in memory, and Workers run many short-lived isolates, so each
+        cold one pays full price. It still ran about 312 times a day. The problem
+        is not a slow query — it is that cost is tied to traffic.
+      </p>
+    </div>
+</body>
+</html>
+  </section>
+
+  <section>
+    <p class="eyebrow">The idea</p>
+    <h2>Count the shop once, then write the answer down</h2>
+    <p>
+      Today, every time someone opens a shelf page the Worker counts the whole
+      shop from scratch — reads every book, every shelf link, works out the
+      totals, throws the answer away, and does it again for the next visitor.
+    </p>
+    <p>
+      Instead: build one snapshot of the catalogue — about 300 books, roughly
+      200KB of JSON — keep it in Cloudflare KV, and let every page read that one
+      shared copy. Filtering, counting, sorting and pagination all happen in the
+      Worker over 300 objects, which costs microseconds and <strong>no database
+      reads at all</strong>. The database is touched only when something actually
+      changes: a listing edited, or an order placed.
+    </p>
+    <p>
+      The shift that matters is what the cost is tied to. Traffic is the thing
+      nobody controls — a crawler decided the 24th, not customers. Edits are the
+      thing the owner controls, and there are a few dozen a day.
+    </p>
+
+    <div class="ba">
+      <div class="now">
+        <p class="lab">Now — cost follows traffic</p>
+        <p class="fig">~4,000</p>
+        <p class="sub">
+          catalogue page views a day before the shop falls over. One page view
+          costs ~1,200 rows per question, and asks three or four.
+        </p>
+      </div>
+</body>
+</html>
+      <div class="then">
+        <p class="lab">After — cost follows change</p>
+        <p class="fig">~2,500</p>
+        <p class="sub">
+          <em>edits</em> a day before the same ceiling. Page views cost nothing,
+          so traffic could grow a hundredfold without moving the number.
+        </p>
+      </div>
+</body>
+</html>
+    </div>
+</body>
+</html>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>Now</th><th>After</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="what">One catalogue page view</td>
+            <td class="num">~1,200 rows × 3–4</td>
+            <td class="num good">0</td>
+          </tr>
+          <tr>
+            <td class="what">One listing edit</td>
+            <td class="num">~1,200 rows</td>
+            <td class="num">~2,000 rows, once</td>
+          </tr>
+          <tr>
+            <td class="what">A typical day</td>
+            <td class="num">1.87M <span class="bad">(37%)</span></td>
+            <td class="num good">~150k (~3%)</td>
+          </tr>
+          <tr>
+            <td class="what">24 September</td>
+            <td class="num bad">5.65M (113%) — offline</td>
+            <td class="num good">~150k, unaffected</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+</body>
+</html>
+    <p>
+      Two figures there are estimates rather than measurements, and are worth
+      labelling as such: the ~2,000 rows to rebuild the snapshot, and the
+      assumption of a few dozen changes a day. Everything in the “Now” column is
+      measured. Even if the rebuild cost were triple and the edits ten times as
+      many, the result would still sit near a fifth of the allowance.
+    </p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Coverage</p>
+    <h2>Every path through the site, and what happens to it</h2>
+    <p>
+      The first draft of this plan covered only the catalogue. Checking each page
+      against what it actually reads turned up three paths it had missed —
+      search, the shipments pages, and the sitemap.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Path</th><th>What it reads</th><th>After</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="what"><code>/catalogue</code><br>browse, filter, sort, page</td>
+            <td>categoryTree, listBooks, publisherCounts, arrivingBooks</td>
+            <td><span class="pill snap">Snapshot</span><br>This is the budget.</td>
+          </tr>
+          <tr>
+            <td class="what"><code>/</code> home</td>
+            <td>homeRows, shelfBooks, saleBooks, arrivingBooks, catalogueStats</td>
+            <td><span class="pill snap">Snapshot</span></td>
+          </tr>
+          <tr>
+            <td class="what"><code>/catalogue?q=</code> search</td>
+            <td>listBooks with <code>books_fts MATCH</code></td>
+            <td><span class="pill keep">Stays on D1</span><br>Cannot be snapshotted — see below.</td>
+          </tr>
+          <tr>
+            <td class="what"><code>/api/search/suggest</code></td>
+            <td>ftsQuery, listBooks</td>
+            <td><span class="pill keep">Stays on D1</span></td>
+          </tr>
+          <tr>
+            <td class="what"><code>/book/&lt;slug&gt;</code></td>
+            <td>bookBySlug, relatedBooks, liveSale</td>
+            <td><span class="pill snap">Partly</span><br>relatedBooks from the snapshot; bookBySlug is a single indexed row and never appeared in the top queries.</td>
+          </tr>
+          <tr>
+            <td class="what"><code>/shipments</code></td>
+            <td>lib/incoming, lib/shipments</td>
+            <td><span class="pill keep">Unchanged</span><br>Not in the top five. Do not touch it here.</td>
+          </tr>
+          <tr>
+            <td class="what"><code>/sitemap.xml</code></td>
+            <td>every live book + every category, uncached</td>
+            <td><span class="pill todo">Needs a cache</span><br>Crawler-hit and currently uncached. Same snapshot data.</td>
+          </tr>
+          <tr>
+            <td class="what"><code>/basket</code></td>
+            <td>nothing — client-side</td>
+            <td><span class="pill keep">Unchanged</span></td>
+          </tr>
+          <tr>
+            <td class="what"><code>/checkout</code>, <code>/api/orders*</code></td>
+            <td>sellable() and order reads</td>
+            <td><span class="pill keep">Unchanged</span><br>Non-negotiable. D1 is the only authority on what may be sold.</td>
+          </tr>
+          <tr>
+            <td class="what"><code>/order/&lt;ref&gt;</code></td>
+            <td>order reads</td>
+            <td><span class="pill keep">Unchanged</span><br>Stays open even when the shop is closed.</td>
+          </tr>
+          <tr>
+            <td class="what"><code>/admin/*</code></td>
+            <td>admin-db, direct</td>
+            <td><span class="pill keep">Unchanged</span><br>The owner must see their own edit with certainty.</td>
+          </tr>
+          <tr>
+            <td class="what">Telegram webhook, hold sweeper</td>
+            <td>D1</td>
+            <td><span class="pill keep">Unchanged</span><br>Low volume.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+</body>
+</html>
+
+    <h3>Search is the one real exception</h3>
+    <p>
+      <code>listBooks</code> has two modes. Without a search term it filters and
+      counts — that is what the snapshot replaces. With one, it joins
+      <code>books_fts</code> and uses FTS5 ranking, Arabic normalisation and
+      diacritic folding. <strong>None of that can be reproduced by filtering 300
+      objects in JavaScript</strong>, and trying would quietly make search worse —
+      the thing customers use most deliberately.
+    </p>
+    <p>
+      So the function keeps both paths: a search term goes to D1, no search term
+      goes to the snapshot. That is affordable now, because search is
+      <code>noindex</code> and robots-disallowed, so crawlers no longer walk it.
+      If search becomes the new top consumer after this lands, the answer is
+      caching result sets per query string — not reimplementing FTS.
+    </p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Design</p>
+    <h2>How the snapshot is built and kept honest</h2>
+
+    <h3>What it holds</h3>
+    <p>
+      Enough to answer every catalogue question without a second read: id, slug,
+      title, Arabic title, language, publisher, price, sale percent, stock,
+      reserved, shipment, multi-buy, cover key — and <code>paths</code>, every
+      shelf the book sits on, <em>already resolved</em>.
+    </p>
+    <p>
+      That last field is what kills the expensive lookup. A descendant test stops
+      being <code>OR</code> against <code>LIKE</code> in SQL and becomes
+      <code>p === path || p.startsWith(path + '/')</code> in JavaScript, over 300
+      objects.
+    </p>
+
+    <h3>Where it lives</h3>
+    <p>
+      Cloudflare KV. <strong>There is no KV namespace configured yet</strong> —
+      the <code>SESSION</code> line in the build output is Astro's own sessions
+      warning, not a binding. One needs creating and adding to
+      <code>wrangler.jsonc</code>. The free tier allows 100,000 reads and 1,000
+      writes a day; reads are one per page view and writes one per change, so
+      both sit far inside.
+    </p>
+    <p>
+      If KV misses or returns malformed JSON, fall back to reading D1 directly.
+      A cache that cannot fail safely is a second outage waiting.
+    </p>
+
+    <h3>Invalidation rides the pattern that already exists</h3>
+    <p>
+      <code>forgetCategoryCounts()</code> and <code>forgetHomeRows()</code> are
+      already called from every place that changes the catalogue — four sites in
+      <code>book-deletion.ts</code>, the shelf move and create endpoints, and the
+      listing editor. That wiring is correct today. It only needs to bump a
+      <em>version token</em> rather than clear a local variable, exactly the way
+      <code>IMAGE_VERSION</code> already works for covers. The snapshot key
+      carries the version, so a bump invalidates globally with no purge and no
+      race.
+    </p>
+    <div class="note warn">
+      <span class="tag">The one gap in that wiring</span>
+      <p>
+        Placing an order changes <code>reserved</code> without going through the
+        listing editor, so it never calls those functions. Left alone, displayed
+        stock would drift over a busy day. The bump has to be added where stock is
+        reserved — plus a five-minute TTL as a backstop against any other missed
+        bump.
+      </p>
+    </div>
+</body>
+</html>
+  </section>
+
+  <section>
+    <p class="eyebrow">Effect on customers</p>
+    <h2>Same pages, one narrow trade-off</h2>
+    <p>
+      Nothing changes in what a customer sees or can do: same filters, sorting,
+      counts and prices, and faster if anything, with no database round-trip in
+      the render path. There is no schema change and no migration.
+    </p>
+    <p>
+      The one behavioural difference is that stock figures could be stale for up
+      to the TTL if a bump were ever missed. That matters less than it sounds,
+      because it is already true — checkout re-reads availability from D1 and
+      refuses a copy that has gone. A customer can <em>today</em> add a book that
+      sells out while they are deciding. This widens that window from seconds to
+      at most a minute, and it is caught in exactly the same place.
+    </p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Doing it</p>
+    <h2>Steps</h2>
+    <ol class="steps">
+      <li>Create the KV namespace and bind it in <code>wrangler.jsonc</code>.</li>
+      <li>Write <code>src/lib/catalogue-snapshot.ts</code> — build from one D1 read, get-with-fallback, version token, TTL backstop.</li>
+      <li>Point the customer-facing readers in <code>db.ts</code> at it. Keep one implementation of the filtering logic fed from either source — forking it is how the portal and the shop drift apart.</li>
+      <li>Bump the version in <code>forgetCategoryCounts</code> / <code>forgetHomeRows</code>, <strong>and at order placement</strong>.</li>
+      <li>Cache <code>sitemap.xml</code> off the same snapshot.</li>
+      <li>Test, deploy, then measure.</li>
+    </ol>
+
+    <h3>Testing</h3>
+    <ul>
+      <li>Full <code>npm run test:e2e</code> — the baseline to beat is <strong>1,122 passed, 0 failed</strong>. Run it in the background; a 600-second foreground limit truncates it and reports a false timeout.</li>
+      <li>Negative controls, as used throughout this work: break the invalidation and prove a test fails; serve a deliberately stale snapshot and prove checkout still refuses a sold copy.</li>
+      <li>New assertions worth having: an edit is visible to a customer on the next load; an order moves the displayed stock; a corrupt snapshot falls back to D1 rather than erroring; shelf counts match the D1 answer exactly, for every shelf.</li>
+      <li>Confirm the portal still reads through to D1 — change a price, see it at once.</li>
+    </ul>
+
+    <h3>Done when</h3>
+    <p>
+      The snapshot serves every customer catalogue page; <code>d1 insights</code>
+      no longer shows those five queries at the top; <code>rows_read_24h</code>
+      sits in the low tens of thousands on a normal day; the full suite is green;
+      and the portal behaves exactly as before.
+    </p>
+  </section>
+
+
+  <section>
+    <p class="eyebrow">What this touches</p>
+    <h2>Every file the change opens, and the one shared seam</h2>
+    <p>
+      Checked from the owner's side as well as the customer's. The portal is
+      <em>not</em> being cached — but two of its screens call the same functions
+      the catalogue does, and one of them matters.
+    </p>
+
+    <div class="note warn">
+      <span class="tag">Highlight — the one real overlap</span>
+      <p>
+        <code>admin/books/[id].astro:41</code> — the listing editor calls
+        <code>categoryCounts()</code> to show how many books sit on each shelf.
+        That is the <strong>same function</strong> the catalogue uses, and the
+        28%-of-budget one this plan repoints at the snapshot. Left alone, the
+        owner would move a book between shelves and see the old counts.
+        <strong>This call site must keep the D1-backed path.</strong> It is the
+        only place in the portal where that is true, and it is the single
+        easiest thing to get wrong in this change.
+      </p>
+    </div>
+
+    <p>
+      Checked and clear: <code>admin/sales/[id]/preview.astro</code> calls
+      <code>saleBooksFor</code>, which is an owner-only function and not on the
+      repoint list. The one <code>saleBooks</code> mention in
+      <code>api/admin/sales/index.ts</code> is inside a comment, not a call.
+      Nothing else in <code>admin/</code>, <code>api/admin/</code>,
+      <code>admin-db.ts</code> or <code>dashboard.ts</code> touches a function
+      this plan changes.
+    </p>
+
+    <h3>Files opened</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>File</th><th>Change</th><th>Risk</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="what"><code>src/lib/catalogue-snapshot.ts</code></td>
+            <td>New. Build, read, fall back, version.</td>
+            <td><span class="pill snap">New code</span></td>
+          </tr>
+          <tr>
+            <td class="what"><code>src/lib/db.ts</code></td>
+            <td>Customer-facing readers take the snapshot; <code>listBooks</code> keeps its FTS path; <code>categoryCounts</code> gains a direct-read variant for the portal.</td>
+            <td><span class="pill todo">Significant</span></td>
+          </tr>
+          <tr>
+            <td class="what"><code>src/pages/admin/books/[id].astro</code></td>
+            <td>One line — point it at the direct-read variant.</td>
+            <td><span class="pill todo">Significant</span></td>
+          </tr>
+          <tr>
+            <td class="what">Order placement (stock reserve)</td>
+            <td>Bump the version token.</td>
+            <td><span class="pill todo">Significant</span></td>
+          </tr>
+          <tr>
+            <td class="what"><code>book-deletion.ts</code>, shelf move &amp; create</td>
+            <td>Existing <code>forget*</code> calls bump the token. No new call sites.</td>
+            <td><span class="pill keep">Low</span></td>
+          </tr>
+          <tr>
+            <td class="what"><code>src/pages/sitemap.xml.ts</code></td>
+            <td>Read the snapshot instead of D1.</td>
+            <td><span class="pill keep">Low</span></td>
+          </tr>
+          <tr>
+            <td class="what"><code>wrangler.jsonc</code></td>
+            <td>Add the KV binding.</td>
+            <td><span class="pill keep">Low</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>What changes significantly</h3>
+    <ul>
+      <li><strong>Where customer catalogue data comes from</strong> — D1 on every request becomes one shared snapshot. This is the point of the change, and the thing to watch in testing.</li>
+      <li><strong>Stock can be briefly stale on customer pages</strong> if a version bump is ever missed. Checkout still refuses a sold copy, so the failure is caught where it is caught today.</li>
+      <li><strong>Order placement gains a cache-invalidation responsibility</strong> it does not have now. New coupling between the order path and the browsing path — worth a test of its own.</li>
+    </ul>
+
+    <h3>What does not change</h3>
+    <ul>
+      <li>The portal reads D1 directly, exactly as now — including the shelf counts in the listing editor, provided the seam above is handled.</li>
+      <li>Checkout, orders, <code>/order/&lt;ref&gt;</code>, shipments, Telegram and the hold sweeper are untouched.</li>
+      <li>No schema change, no migration, nothing to roll back in the database if it has to be reverted.</li>
+    </ul>
+  </section>
+
+  <section>
+    <p class="eyebrow">Held in reserve</p>
+    <h2>Two things deliberately not in this change</h2>
+    <p>
+      <strong>A closure table for shelf descendants</strong> would turn the
+      <code>OR</code>/<code>LIKE</code> into an index probe. It needs a migration
+      and sync logic, and it is largely redundant once the snapshot lands.
+    </p>
+    <p>
+      <strong>Edge-caching the HTML</strong> is a bigger lever still — but it has
+      a real prerequisite. Every public page carries a per-request CSP nonce.
+      Caching the HTML would either reuse one nonce across visitors, weakening the
+      CSP that was deliberately built to drop <code>'unsafe-inline'</code>, or
+      desynchronise the header from the body and break the inline scripts. Those
+      scripts would have to move to hashes or external files first. Separate work.
+    </p>
+    <div class="note">
+      <span class="tag">Scope discipline</span>
+      <p>
+        Shipments, orders, checkout and the portal are all explicitly out of
+        scope. They are correct today and are not what spent the budget. Touching
+        them would put the order path at risk to fix a browsing problem.
+      </p>
+    </div>
+</body>
+</html>
+  </section>
+
+  <section>
+    <p class="eyebrow">Afterwards</p>
+    <h2>What to watch</h2>
+    <p>
+      Crawlers take days to re-read <code>robots.txt</code>, so
+      <code>rows_read_24h</code> will fall gradually rather than at once. Worth
+      checking over the next few days with
+      <code>wrangler d1 info assubki-books</code>, and again a week after the
+      snapshot ships to confirm those five queries have left the top of
+      <code>d1 insights</code>.
+    </p>
+  </section>
+
+  <footer class="end">
+    <p>Plan file: ~/.claude-personal/plans/catalogue-snapshot-d1-budget.md</p>
+    <p>Measurements from wrangler d1 insights, 7-day window ending 24 Sep 2026.</p>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -276,7 +276,7 @@ function withSecurityHeaders(response: Response, secure: boolean, nonce: string)
  */
 async function databaseReachable(): Promise<boolean> {
   try {
-    await env.DB.prepare('SELECT id FROM books LIMIT 1').first();
+    await env.DB.prepare('SELECT id FROM books WHERE deleted_at IS NULL LIMIT 1').first();
     return true;
   } catch {
     return false;
