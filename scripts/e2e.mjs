@@ -3136,6 +3136,33 @@ async function integrity() {
     'and the portal nav lists Dashboard once');
 
   /*
+   * Traffic and health.
+   *
+   * The number it reports came off the page twice: on 24 and 25 September the
+   * database passed its daily row allowance and refused every query, and both
+   * times the first anyone knew was a customer seeing a closed sign.
+   *
+   * It reads Cloudflare's analytics API, which is the only thing in the portal
+   * that reaches outside the edge - so the assertion that matters is not that
+   * it shows a number. It is that with no token, which is how it runs here and
+   * on any checkout without the secret, it still loads and says so rather than
+   * taking the page down with it.
+   */
+  const health = await get('/admin/health');
+  t.ok(health.status === 200, 'the health page loads without an analytics token');
+  const healthText = visibleText(await html('/admin/health'));
+  t.ok(healthText.includes('Not set up') || healthText.includes('Rows read today'),
+    'and either reports usage or explains how to switch it on');
+  t.ok(healthText.includes('Crawlers and bot traffic'),
+    'and points at where bot traffic is actually visible');
+  t.ok(!healthText.includes('Taken per day') && !healthText.includes('Selling best'),
+    'without becoming a second dashboard');
+  t.ok(visibleText(await html('/admin')).length > 0 && (await get('/admin')).status === 200,
+    'and the dashboard still loads when the analytics API is not configured');
+  t.ok((adminNav.match(/label: 'Health'/g) ?? []).length === 1,
+    'the portal nav lists Health once');
+
+  /*
    * The tile has to agree with the page it opens.
    *
    * It counted every `requested` order, reservations included, while

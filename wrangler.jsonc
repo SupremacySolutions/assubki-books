@@ -12,7 +12,12 @@
   "ORDER_FROM": "As-Subki Orders <orders@assubkibooks.co.uk>",
   "OWNER_EMAIL": "subkibooks@gmail.com",
   "TELEGRAM_BOT_USERNAME": "AsSubkiBooksBot",
-  "TELEGRAM_CHANNEL_ID": "-1003018950072"
+  "TELEGRAM_CHANNEL_ID": "-1003018950072",
+  // Read by /admin/health to show how much of D1's daily row allowance has
+  // gone. Not secrets - they name the account and database, they do not open
+  // them. The token that does is set with `wrangler secret put`.
+  "CLOUDFLARE_ACCOUNT_ID": "a7bafdf9f1a31187a2c073c6a1dc059e",
+  "D1_DATABASE_ID": "efc0b55d-885f-44cb-9baf-a4431bb169ce"
 },
 
   "assets": {

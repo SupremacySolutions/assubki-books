@@ -7,6 +7,7 @@ import { emailConfigured, lastEmailError, fromAddress } from '../../lib/email';
 import { lastNotifyError } from '../../lib/notify';
 import { dashboard } from '../../lib/dashboard';
 import { stuckNotices } from '../../lib/shipment-notify';
+import { d1Usage, usageLevel, compact, D1_DAILY_ROW_LIMIT } from '../../lib/d1-usage';
 import { env } from 'cloudflare:workers';
 
 const [counts, pending, emailError, notifyError, stuck] = await Promise.all([
@@ -16,6 +17,13 @@ const [counts, pending, emailError, notifyError, stuck] = await Promise.all([
   lastNotifyError(),
   stuckNotices(env.DB),
 ]);
+
+/* Outside Cloudflare's edge, and the only thing here that is. It returns null
+   rather than throwing, so a metrics API having a bad morning cannot take the
+   dashboard with it. */
+const usage = await d1Usage();
+const usageShare = usage ? usage.rowsRead / D1_DAILY_ROW_LIMIT : 0;
+const level = usage ? usageLevel(usage.rowsRead) : 'calm';
 
 const days = Astro.url.searchParams.get('d') === '90' ? 90 : 30;
 const d = await dashboard(days);
@@ -41,6 +49,18 @@ const warnings = [
     `${stuck.orders} ${stuck.orders === 1 ? 'customer has' : 'customers have'} not been told ` +
     `their reserved books arrived, so those copies stay reserved and cannot lapse` +
     `${stuck.lastError ? `. Last error: ${stuck.lastError}` : '.'}`,
+  /*
+   * The number that took the shop down twice, on the page the owner opens.
+   *
+   * 24 and 25 September: D1 passed its five million rows a day and refused
+   * every query for an hour, and both times the first anyone knew was a
+   * customer seeing a closed sign. It only speaks up past halfway, because a
+   * warning that is always there is furniture.
+   */
+  usage && level !== 'calm' &&
+    `The database has read ${compact(usage.rowsRead)} of its ${compact(D1_DAILY_ROW_LIMIT)} rows today` +
+    `${level === 'urgent' ? ' and will stop answering if it runs out' : ''}` +
+    `. It resets at midnight UTC.`,
 ].filter(Boolean) as string[];
 
 const CARDS = [
@@ -114,6 +134,34 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
           </p>
         ))}
       </div>
+    )
+  }
+
+  {
+    usage && (
+      <a
+        href="/admin/health"
+        class:list={[
+          'reveal flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-6 p-3 bg-white border rounded-[var(--radius-panel)] hover:border-[var(--color-navy)] transition-colors',
+          level === 'urgent'
+            ? 'border-[var(--color-outstock)]'
+            : 'border-[var(--color-rule-soft)]',
+        ]}
+      >
+        <span class="eyebrow">Database today</span>
+        <span class="text-[15px] font-semibold tabular-nums">
+          {compact(usage.rowsRead)} / {compact(D1_DAILY_ROW_LIMIT)} rows
+        </span>
+        <span
+          class:list={[
+            'text-[12.5px]',
+            level === 'calm' ? 'text-[var(--color-ink-faint)]' : 'text-[var(--color-outstock)]',
+          ]}
+        >
+          {Math.round(usageShare * 100)}% of the daily allowance
+        </span>
+        <span class="ml-auto text-[12.5px] text-[var(--color-navy)]">Traffic and health &rarr;</span>
+      </a>
     )
   }
 
