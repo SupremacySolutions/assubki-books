@@ -253,13 +253,14 @@ let publishersDirty = false;
 /**
  * How long a shelf count may be out of date on a customer's page.
  *
- * Was one minute, which sounded prudent and bought almost nothing: the
- * roll-up still ran 851 times on the day the shop ran out of its read
- * allowance, because each new isolate starts with an empty module variable.
- * Five minutes is the same answer to anyone reading it and a fifth of the
- * reads. The portal does not wait it out - see `fresh` below.
+ * A minute, as it always was. It was briefly five, to squeeze the read bill
+ * during the outages of 24-25 September - but the cause of those turned out to
+ * be AI crawlers, and blocking them at the edge cut the traffic by 85%. The
+ * saving that mattered here was never the longer window; it was that the answer
+ * now outlives the isolate, and a minute gets almost all of that. Freshness is
+ * worth more than the remainder.
  */
-const COUNTS_TTL_MS = 5 * 60_000;
+const COUNTS_TTL_MS = 60_000;
 
 /** The key both layers agree on, so forgetting one forgets the other. */
 const COUNTS_KEY = 'shelf-counts';
@@ -457,7 +458,7 @@ export async function canonicalPublisher(typed: string | null, bookId: number | 
 let publishersCache: { at: number; value: PublisherIndex } | null = null;
 
 /** Matches the shelf counts: this is forgotten with them and reads like them. */
-const PUBLISHERS_TTL_MS = 5 * 60_000;
+const PUBLISHERS_TTL_MS = 60_000;
 const PUBLISHERS_KEY = 'publisher-index';
 
 /* `spelling` is a Map, so it travels as entries. `books` is already plain. */
