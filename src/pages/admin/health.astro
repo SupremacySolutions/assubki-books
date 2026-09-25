@@ -1,0 +1,144 @@
+---
+/*
+ * Traffic and health, kept apart from the dashboard on purpose.
+ *
+ * `/admin/dashboard` records what happens when this line is drawn in the wrong
+ * place: the portal briefly had two pages both called Dashboard showing
+ * overlapping counts, and they had to be merged back. So this page holds
+ * nothing about orders, revenue or stock - those live on `/admin` and stay
+ * there. What is here is the shop's plumbing: how much of the database's daily
+ * allowance has gone, and where to look when it starts climbing.
+ */
+import Admin from '../../layouts/Admin.astro';
+import { d1Usage, usageLevel, compact, D1_DAILY_ROW_LIMIT } from '../../lib/d1-usage';
+
+export const prerender = false;
+
+const usage = await d1Usage();
+const level = usage ? usageLevel(usage.rowsRead) : 'calm';
+const share = usage ? usage.rowsRead / D1_DAILY_ROW_LIMIT : 0;
+
+/* Every day the API returned, padded to seven so a quiet week keeps its shape. */
+const peak = Math.max(D1_DAILY_ROW_LIMIT, ...(usage?.days.map((d) => d.rowsRead) ?? [0]));
+const label = (iso: string) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
+---
+
+<Admin title="Traffic and health">
+  {
+    !usage ? (
+      <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+        <p class="eyebrow">Not set up</p>
+        <p class="mt-2 text-[14.5px] text-[var(--color-ink-soft)]">
+          This page reads the database's usage from Cloudflare's analytics API, which needs a
+          token. Create one in the Cloudflare dashboard under My Profile &rarr; API Tokens with
+          <strong> Account Analytics: Read</strong>, then set it as a secret:
+        </p>
+        <pre class="mt-3 p-3 bg-[var(--color-paper)] rounded-[3px] overflow-x-auto text-[13px]"><code>npx wrangler secret put CLOUDFLARE_API_TOKEN</code></pre>
+        <p class="mt-3 text-[14.5px] text-[var(--color-ink-soft)]">
+          Until then everything else in the portal works as normal — this page is the only thing
+          that reads it.
+        </p>
+      </div>
+    ) : (
+      <>
+        <section class="mb-8">
+          <div
+            class:list={[
+              'p-4 bg-white border rounded-[var(--radius-panel)]',
+              level === 'urgent' ? 'border-[var(--color-outstock)]' : 'border-[var(--color-rule-soft)]',
+            ]}
+          >
+            <p class="eyebrow">Rows read today</p>
+            <p class="mt-2 text-[34px] font-semibold leading-none tabular-nums">
+              {usage.rowsRead.toLocaleString('en-GB')}
+            </p>
+            <p class="mt-1.5 text-[14px] text-[var(--color-ink-soft)]">
+              of {D1_DAILY_ROW_LIMIT.toLocaleString('en-GB')} a day. Resets at midnight UTC.
+            </p>
+
+            {/* The bar is the point: a number without its ceiling says nothing. */}
+            <div class="mt-3 h-2 bg-[var(--color-paper)] rounded-full overflow-hidden">
+              <div
+                class:list={[
+                  'h-full rounded-full',
+                  level === 'urgent'
+                    ? 'bg-[var(--color-outstock)]'
+                    : level === 'watch'
+                      ? 'bg-[var(--color-navy)]'
+                      : 'bg-[var(--color-instock)]',
+                ]}
+                style={`width:${Math.min(100, share * 100).toFixed(1)}%`}
+              />
+            </div>
+
+            <p class="mt-3 text-[13.5px] text-[var(--color-ink-faint)]">
+              {usage.readQueries.toLocaleString('en-GB')} queries ·{' '}
+              {usage.rowsWritten.toLocaleString('en-GB')} rows written
+            </p>
+          </div>
+        </section>
+
+        <section class="mb-8">
+          <h2 class="eyebrow mb-3">The last seven days</h2>
+          <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+            <div class="flex items-end gap-2 h-40">
+              {usage.days.map((d) => (
+                <div class="flex-1 flex flex-col items-center gap-1.5 min-w-0">
+                  <span class="text-[11.5px] tabular-nums text-[var(--color-ink-faint)]">
+                    {compact(d.rowsRead)}
+                  </span>
+                  <div
+                    class:list={[
+                      'w-full rounded-t-[2px]',
+                      d.rowsRead >= D1_DAILY_ROW_LIMIT
+                        ? 'bg-[var(--color-outstock)]'
+                        : 'bg-[var(--color-navy)]',
+                    ]}
+                    style={`height:${Math.max(2, (d.rowsRead / peak) * 120)}px`}
+                  />
+                  <span class="text-[11.5px] text-[var(--color-ink-faint)] truncate">
+                    {label(d.date)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p class="mt-3 text-[12.5px] text-[var(--color-ink-faint)]">
+              A bar that reaches the top is a day the shop stopped serving.
+            </p>
+          </div>
+        </section>
+      </>
+    )
+  }
+
+  <section>
+    <h2 class="eyebrow mb-3">Where the traffic comes from</h2>
+    <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[14.5px] text-[var(--color-ink-soft)] space-y-3">
+      <p>
+        Cloudflare counts every request before it reaches the shop, including the ones that
+        never run a page. That is the only place bot traffic is visible, and it is better than
+        anything this page could draw, so it is a link rather than a copy.
+      </p>
+      <p>
+        <a
+          href="https://dash.cloudflare.com/?to=/:account/assubkibooks.co.uk/security/analytics"
+          rel="noreferrer noopener"
+          target="_blank"
+          class="text-[var(--color-navy)] hover:underline underline-offset-2"
+        >
+          Crawlers and bot traffic &rarr;
+        </a>
+      </p>
+      {/* Written down because it is the whole reason this page exists, and in a
+          year nobody will remember why the shop kept falling over. */}
+      <p class="text-[13.5px] text-[var(--color-ink-faint)]">
+        On 24 and 25 September 2026 the shop went offline for an hour each day, both times
+        because this allowance ran out. The cause was AI crawlers scraping for training data —
+        Amazonbot, GPTBot and Meta-ExternalAgent were about 92% of all traffic, and none of them
+        sends a customer. Blocking them in Cloudflare's crawler settings cut the traffic by
+        roughly 85%. If these numbers start climbing again, that list is the first place to look.
+      </p>
+    </div>
+  </section>
+</Admin>
