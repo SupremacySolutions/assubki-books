@@ -144,11 +144,39 @@ const BOOK_SELECT = `
 // Categories
 // ---------------------------------------------------------------------------
 
-export async function allCategories(): Promise<Category[]> {
+async function readCategories(): Promise<Category[]> {
   const { results } = await db()
     .prepare('SELECT id, slug, name, parent_id, path, sort FROM categories ORDER BY sort')
     .all<Category>();
   return results;
+}
+
+let categoriesCache: { at: number; value: Category[] } | null = null;
+let categoriesDirty = false;
+const CATEGORIES_KEY = 'all-categories';
+const CATEGORIES_TTL_MS = 60_000;
+
+/**
+ * The shelves themselves, cached like the counts of what is on them.
+ *
+ * Thirty-odd rows, but read on the home page, every shelf page, every book page
+ * and the breadcrumbs on all of them - about 2,400 rows an hour before this,
+ * for a list that changes when the owner adds a shelf. Dirtied by the same edits
+ * as the counts, so a new shelf appears at once.
+ */
+export async function allCategories(): Promise<Category[]> {
+  const now = Date.now();
+  if (categoriesDirty) {
+    categoriesDirty = false;
+    const value = await readCategories();
+    categoriesCache = { at: now, value };
+    void writeCachedRead(CATEGORIES_KEY, CATEGORIES_TTL_MS / 1000, value);
+    return value;
+  }
+  if (categoriesCache && now - categoriesCache.at < CATEGORIES_TTL_MS) return categoriesCache.value;
+  const value = await cachedRead(CATEGORIES_KEY, CATEGORIES_TTL_MS / 1000, readCategories);
+  categoriesCache = { at: now, value };
+  return value;
 }
 
 /**
@@ -335,6 +363,7 @@ export function forgetCategoryCounts(): void {
   publishersCache = null;
   countsDirty = true;
   publishersDirty = true;
+  categoriesDirty = true;
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ import {
   publisherCounts, type Sort,
 } from '../../lib/db';
 import { buildQuery } from '../../lib/format';
+import { allCategories } from '../../lib/db';
+import { shelfTrail, breadcrumbJsonLd } from '../../lib/breadcrumbs';
 import { recordMiss } from '../../lib/searches';
 import { WANTED } from '../../lib/order-status';
 import { liveSale } from '../../lib/sales';
@@ -119,9 +121,20 @@ const base = {
 };
 const keep = buildQuery(base);
 const heading = category?.name ?? 'All titles';
-const crumbs = category
-  ? category.path.split('/').map((seg, i, arr) => ({ seg, path: arr.slice(0, i + 1).join('/') }))
-  : [];
+
+/*
+ * One trail, drawn twice: on the page, and again for search engines.
+ *
+ * It used to be built from the path segments, so a shelf appeared as "dars
+ * nizami" where the shop calls it "Dars Nizami". Harmless on its own, but the
+ * structured data below has to say the same thing the page says - a
+ * BreadcrumbList that disagrees with the visible trail is the kind of mismatch
+ * Google treats as an attempt to mislead it. So both read the shelves.
+ */
+const crumbs = category ? shelfTrail(category.path, await allCategories()) : [];
+
+/* Not on a narrowed view: it is noindex, so the trail would be read by nobody. */
+const crumbsLd = category && !narrowed ? breadcrumbJsonLd(Astro.url.origin, crumbs) : null;
 
 const LANGUAGE_LABEL: Record<string, string> = {
   english: 'English',
@@ -214,6 +227,14 @@ const description = category
 ---
 
 <Base title={title} description={description} noindex={narrowed}>
+  {crumbsLd && (
+    <script
+      is:inline
+      nonce={Astro.locals.cspNonce}
+      type="application/ld+json"
+      set:html={JSON.stringify(crumbsLd)}
+    />
+  )}
   <div class="py-8 md:py-10">
     <nav aria-label="Breadcrumb" class="text-[13.5px] text-[var(--color-ink-faint)] mb-3">
       <a href="/" class="hover:text-[var(--color-navy)]">Home</a>
@@ -226,8 +247,8 @@ const description = category
             {i === crumbs.length - 1 ? (
               <span class="text-[var(--color-ink-soft)]">{heading}</span>
             ) : (
-              <a href={`/catalogue/${c.path}`} class="hover:text-[var(--color-navy)] capitalize">
-                {c.seg.replace(/-/g, ' ')}
+              <a href={`/catalogue/${c.path}`} class="hover:text-[var(--color-navy)]">
+                {c.name}
               </a>
             )}
           </>

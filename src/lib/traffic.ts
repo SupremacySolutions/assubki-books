@@ -57,6 +57,21 @@ const TRAFFIC_QUERY = `
 const day = (offset: number) =>
   new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
+/**
+ * Why the last attempt came back with nothing.
+ *
+ * The same idea as `lastEmailError`: a thing that silently does not work is
+ * indistinguishable from a thing nobody switched on, and both of those look
+ * like a bug in the page. Cleared on success, shown quietly on the page when
+ * the panel is absent. Never carries the token - GraphQL's own messages are
+ * about permissions and fields, not credentials.
+ */
+let lastError: string | null = null;
+
+export function lastTrafficError(): string | null {
+  return lastError;
+}
+
 async function graphql<T>(token: string, query: string, variables: unknown): Promise<T | null> {
   try {
     const response = await fetch('https://api.cloudflare.com/client/v4/graphql', {
@@ -64,13 +79,26 @@ async function graphql<T>(token: string, query: string, variables: unknown): Pro
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, variables }),
     });
-    if (!response.ok) return null;
-    const body = (await response.json()) as { data?: T; errors?: unknown[] };
+    if (!response.ok) {
+      lastError = `Cloudflare answered ${response.status}`;
+      return null;
+    }
+    const body = (await response.json()) as {
+      data?: T;
+      errors?: { message?: string }[];
+    };
     /* GraphQL answers 200 with an errors array when a field is not permitted,
        which is exactly how a token without the zone scope fails. */
-    if (body.errors?.length) return null;
+    if (body.errors?.length) {
+      lastError = body.errors
+        .map((e) => e.message ?? 'unknown error')
+        .join('; ')
+        .slice(0, 300);
+      return null;
+    }
     return body.data ?? null;
-  } catch {
+  } catch (err) {
+    lastError = String(err).slice(0, 200);
     return null;
   }
 }
@@ -83,13 +111,20 @@ interface Group {
 
 async function readTraffic(): Promise<Traffic | null> {
   const token = (env as unknown as Record<string, string | undefined>).CLOUDFLARE_API_TOKEN;
-  if (!token) return null;
+  if (!token) {
+    lastError = 'No CLOUDFLARE_API_TOKEN is set.';
+    return null;
+  }
+  lastError = null;
 
   const zones = await graphql<{ viewer: { zones: { zoneTag: string }[] } }>(token, ZONE_QUERY, {
     name: ZONE_NAME,
   });
   const zone = zones?.viewer?.zones?.[0]?.zoneTag;
-  if (!zone) return null;
+  if (!zone) {
+    lastError ??= `The token can see no zone named ${ZONE_NAME}.`;
+    return null;
+  }
 
   const data = await graphql<{ viewer: { zones: { httpRequests1dGroups: Group[] }[] } }>(
     token,
@@ -97,7 +132,11 @@ async function readTraffic(): Promise<Traffic | null> {
     { zone, start: day(-6), end: day(0) },
   );
   const groups = data?.viewer?.zones?.[0]?.httpRequests1dGroups;
-  if (!groups) return null;
+  if (!groups) {
+    lastError ??= 'The zone answered, but carried no httpRequests1dGroups data.';
+    return null;
+  }
+  lastError = null;
 
   const days = groups.map((g) => ({
     date: g.dimensions.date,

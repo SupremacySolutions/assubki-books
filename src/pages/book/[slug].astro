@@ -1,5 +1,7 @@
 ---
 import Base from '../../layouts/Base.astro';
+import { allCategories } from '../../lib/db';
+import { shelfTrail, breadcrumbJsonLd } from '../../lib/breadcrumbs';
 import BookCard from '../../components/BookCard.astro';
 import Rosette from '../../components/Rosette.astro';
 import { bookBySlug, relatedBooks, setOptions } from '../../lib/db';
@@ -120,6 +122,20 @@ const shareDescription = truncate(
  * postage is quoted per order, so there is no true value to give. A guessed one
  * would be a promise the shop has not made.
  */
+/*
+ * The shelf this book is filed under, as a trail.
+ *
+ * The first shelf only. A book on two shelves has two true trails and no way
+ * to choose between them, and Google takes the first it is given - so giving it
+ * one is honest, and giving it several is noise.
+ */
+const crumbs = book.categories[0]
+  ? breadcrumbJsonLd(Astro.url.origin, [
+      ...shelfTrail(book.categories[0].path, await allCategories()),
+      { name: book.title, path: null },
+    ])
+  : null;
+
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': ['Book', 'Product'],
@@ -590,6 +606,14 @@ const jsonLd = {
   </div>
 
   <script is:inline nonce={Astro.locals.cspNonce} set:html={JSON.stringify(jsonLd)} type="application/ld+json" />
+  {crumbs && (
+    <script
+      is:inline
+      nonce={Astro.locals.cspNonce}
+      type="application/ld+json"
+      set:html={JSON.stringify(crumbs)}
+    />
+  )}
 
   <script>
     import { readGroup } from '../../scripts/group.ts';

@@ -146,6 +146,38 @@ async function publicCatalogue() {
   t.ok((await get('/catalogue/not-a-shelf')).status === 404, 'unknown shelf 404s');
   t.ok((await get('/sitemap.xml')).status === 200, 'sitemap responds');
 
+  /*
+   * Breadcrumbs, and the visible trail agreeing with them.
+   *
+   * The trail on the page used to come from the URL segments and the structured
+   * data from the shelf names, so a shelf read "dars nizami" on screen and
+   * "Dars Nizami" in the markup. A BreadcrumbList that disagrees with the
+   * visible trail is what Google treats as an attempt to mislead it, so the
+   * assertion is not that the markup exists - it is that both say the same.
+   */
+  const shelf = await html('/catalogue/syllabus/dars-nizami');
+  const crumbLd = /<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g;
+  const blocks = [...shelf.matchAll(crumbLd)].map((m) => JSON.parse(m[1]));
+  const trail = blocks.find((b) => b['@type'] === 'BreadcrumbList');
+  t.ok(Boolean(trail), 'a shelf carries a breadcrumb trail for search engines');
+  t.ok(trail?.itemListElement?.[0]?.name === 'Catalogue',
+    'the trail starts at the catalogue');
+  t.ok(trail?.itemListElement?.at(-1)?.item === undefined,
+    'and the last rung is the page itself, so it carries no link to itself');
+  for (const rung of trail?.itemListElement ?? []) {
+    t.ok(visibleText(shelf).includes(rung.name),
+      `the trail's "${rung.name}" is on the page as well as in the markup`);
+  }
+  t.ok(!(await html('/catalogue/syllabus/dars-nizami?pub=Zamzam')).includes('BreadcrumbList'),
+    'a narrowed view has no trail, because nothing will read it');
+
+  const bookTrail = [...(await html('/book/al-nahw-al-wadih')).matchAll(crumbLd)]
+    .map((m) => JSON.parse(m[1]))
+    .find((b) => b['@type'] === 'BreadcrumbList');
+  t.ok(Boolean(bookTrail), 'a book carries one too');
+  t.ok(bookTrail?.itemListElement?.at(-1)?.name?.length > 0,
+    'ending at the book itself');
+
   const robots = await html('/robots.txt');
   t.ok(robots.includes('Disallow: /admin'), 'robots keeps crawlers out of the portal');
   t.ok(robots.includes('Disallow: /order'), 'robots keeps crawlers off order pages');
