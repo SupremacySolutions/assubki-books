@@ -11,10 +11,13 @@
  */
 import Admin from '../../layouts/Admin.astro';
 import { d1Usage, usageLevel, compact, D1_DAILY_ROW_LIMIT } from '../../lib/d1-usage';
+import { traffic, perVisitor } from '../../lib/traffic';
 
 export const prerender = false;
 
-const usage = await d1Usage();
+const [usage, visits] = await Promise.all([d1Usage(), traffic()]);
+const ratio = visits ? perVisitor(visits) : null;
+const trafficPeak = Math.max(1, ...(visits?.days.map((d) => d.requests) ?? [1]));
 const level = usage ? usageLevel(usage.rowsRead) : 'calm';
 const share = usage ? usage.rowsRead / D1_DAILY_ROW_LIMIT : 0;
 
@@ -109,6 +112,79 @@ const label = (iso: string) =>
           </div>
         </section>
       </>
+    )
+  }
+
+  {
+    visits && (
+      <section class="mb-8">
+        <h2 class="eyebrow mb-3">Traffic today</h2>
+        <div class="grid gap-3 sm:grid-cols-3 mb-3">
+          <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+            <p class="eyebrow">Requests</p>
+            <p class="mt-2 text-[26px] font-semibold leading-none tabular-nums">
+              {visits.requests.toLocaleString('en-GB')}
+            </p>
+            <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
+              everything that reached the edge
+            </p>
+          </div>
+          <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+            <p class="eyebrow">Visitors</p>
+            <p class="mt-2 text-[26px] font-semibold leading-none tabular-nums">
+              {visits.uniques.toLocaleString('en-GB')}
+            </p>
+            <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">unique today</p>
+          </div>
+          <div
+            class:list={[
+              'p-4 bg-white border rounded-[var(--radius-panel)]',
+              ratio?.automated ? 'border-[var(--color-outstock)]' : 'border-[var(--color-rule-soft)]',
+            ]}
+          >
+            <p class="eyebrow">Each visitor</p>
+            <p class="mt-2 text-[26px] font-semibold leading-none tabular-nums">
+              {ratio ? ratio.ratio.toFixed(1) : '—'}
+            </p>
+            <p
+              class:list={[
+                'mt-1.5 text-[12.5px]',
+                ratio?.automated ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-faint)]',
+              ]}
+            >
+              {ratio?.automated ? 'high — something is reading, not shopping' : 'requests apiece'}
+            </p>
+          </div>
+        </div>
+
+        <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+          <p class="eyebrow mb-3">Requests, last seven days</p>
+          <div class="flex items-end gap-2 h-28">
+            {visits.days.map((d) => (
+              <div class="flex-1 flex flex-col items-center gap-1.5 min-w-0">
+                <span class="text-[11.5px] tabular-nums text-[var(--color-ink-faint)]">
+                  {compact(d.requests)}
+                </span>
+                <div
+                  class="w-full rounded-t-[2px] bg-[var(--color-navy)]"
+                  style={`height:${Math.max(2, (d.requests / trafficPeak) * 76)}px`}
+                />
+                <span class="text-[11.5px] text-[var(--color-ink-faint)] truncate">
+                  {label(d.date)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Said plainly, because the number above is a hint and not a verdict. */}
+        <p class="mt-3 text-[12.5px] text-[var(--color-ink-faint)]">
+          Cloudflare does not sell the bot classification through its API on this plan, so this
+          page cannot split humans from crawlers. Requests per visitor is the next best thing:
+          people look at a few pages, crawlers look at thousands. To see which crawler, follow
+          the link below.
+        </p>
+      </section>
     )
   }
 
