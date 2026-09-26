@@ -77,6 +77,16 @@ export async function cachedRead<T>(
 
   const value = await read();
 
+  /*
+   * A failure is not an answer, so it is not kept.
+   *
+   * `null` is how the callers here say "could not find out" - no token yet, a
+   * refused one, an API having a bad minute. Cached, that momentary state is
+   * repeated for the whole TTL, so switching the token on appears not to work
+   * and a one-second blip becomes five minutes of blank.
+   */
+  if (value === null || value === undefined) return value;
+
   if (cache) {
     try {
       await cache.put(
