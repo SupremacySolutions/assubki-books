@@ -3161,6 +3161,17 @@ async function integrity() {
     'and the dashboard still loads when the analytics API is not configured');
   t.ok((adminNav.match(/label: 'Health'/g) ?? []).length === 1,
     'the portal nav lists Health once');
+  /*
+   * The traffic panel reads Cloudflare's zone analytics, which is a second
+   * thing that can be absent - a token without the zone scope, or a plan that
+   * does not carry the dataset. It has to vanish rather than half-render, and
+   * the page has to stand up without it, exactly as it does without the D1
+   * figures.
+   */
+  t.ok(!healthText.includes('NaN') && !healthText.includes('undefined'),
+    'the health page never renders a missing figure as NaN or undefined');
+  t.ok(healthText.includes('Traffic today') || !healthText.includes('Each visitor'),
+    'the traffic panel is either whole or absent, never partly drawn');
 
   /*
    * The tile has to agree with the page it opens.
