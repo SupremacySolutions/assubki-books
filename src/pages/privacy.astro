@@ -1,5 +1,8 @@
 ---
 import PolicyPage from '../components/PolicyPage.astro';
+import { ownerAddress } from '../lib/email';
+
+const contactEmail = ownerAddress();
 ---
 <PolicyPage
   title="Privacy"
@@ -33,7 +36,7 @@ import PolicyPage from '../components/PolicyPage.astro';
   <p>Order records are kept for <span class="blank">[how long - six years is usual for UK tax records]</span>. Baskets that are never ordered are cleared automatically after 48 hours.</p>
 
   <h2>Your rights</h2>
-  <p>You can ask for a copy of what we hold, ask us to correct it, or ask us to delete it, by writing to <span class="blank">[the email address to use]</span>. We will answer within a month. If you are not satisfied you can complain to the Information Commissioner's Office at ico.org.uk.</p>
+  <p>You can ask for a copy of what we hold, ask us to correct it, or ask us to delete it, by writing to <a href={`mailto:${contactEmail}`}>{contactEmail}</a>. We will answer within a month. If you are not satisfied you can complain to the Information Commissioner's Office at ico.org.uk.</p>
 
   <h2>Who we are</h2>
   <p>This shop is run by <span class="blank">[trading name and, if registered, company number]</span> at <span class="blank">[address]</span>.</p>

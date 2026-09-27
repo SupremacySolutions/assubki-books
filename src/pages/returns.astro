@@ -1,12 +1,15 @@
 ---
 import PolicyPage from '../components/PolicyPage.astro';
+import { ownerAddress } from '../lib/email';
+
+const contactEmail = ownerAddress();
 ---
 <PolicyPage
   title="Returns and cancellations"
   intro="Changing your mind, and what to do if something arrives damaged."
 >
   <h2>Changing your mind</h2>
-  <p>If you are buying as a consumer you may cancel within 14 days of receiving the books, for any reason, and you have a further 14 days to send them back. Tell us by writing to <span class="blank">[the email address to use]</span> - quoting your order reference is enough.</p>
+  <p>If you are buying as a consumer you may cancel within 14 days of receiving the books, for any reason, and you have a further 14 days to send them back. Tell us by writing to <a href={`mailto:${contactEmail}`}>{contactEmail}</a> - quoting your order reference is enough.</p>
   <p>We refund what you paid, including the standard postage you were charged, within 14 days of the books coming back to us.</p>
 
   <h2>Sending them back</h2>

@@ -1,12 +1,15 @@
 ---
 import PolicyPage from '../components/PolicyPage.astro';
+import { ownerAddress } from '../lib/email';
+
+const contactEmail = ownerAddress();
 ---
 <PolicyPage
   title="Terms"
   intro="Who we are, and how an order becomes an agreement."
 >
   <h2>Who you are buying from</h2>
-  <p><span class="blank">[Trading name, and company number if registered]</span>, at <span class="blank">[address]</span>. You can reach us at <span class="blank">[email]</span>.</p>
+  <p><span class="blank">[Trading name, and company number if registered]</span>, at <span class="blank">[address]</span>. You can reach us at <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</p>
 
   <h2>How an order works</h2>
   <p>Adding books to your basket and sending a request does not complete a sale - it asks us for those books. Copies on the shelf are held for you for 48 hours; copies coming in a future delivery are reserved for you until that delivery arrives, with no time limit on your side. The agreement is made when we confirm your order and send you the total. Until then either of us can walk away, and nothing has been charged.</p>

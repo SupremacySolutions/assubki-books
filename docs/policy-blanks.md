@@ -1,4 +1,4 @@
-# The 18 blanks to fill in
+# The 15 blanks to fill in
 
 Every specific the shop must supply is marked as a blank on the four policy
 pages rather than invented. A made-up returns address is worse than an empty
@@ -10,21 +10,19 @@ text with the real answer and delete the surrounding span, so
 
 ---
 
-## `/privacy` — `src/pages/privacy.astro` (5)
+## `/privacy` — `src/pages/privacy.astro` (4)
 
 | Blank | What it is asking |
 |---|---|
 | `[how long — six years is usual for UK tax records]` | How long order records are kept |
-| `[the email address to use]` | Where someone writes to ask for a copy of their data, or its deletion |
 | `[trading name and, if registered, company number]` | Who runs the shop |
 | `[address]` | The shop's address |
 | `[date]` | When the policy was last updated |
 
-## `/returns` — `src/pages/returns.astro` (3)
+## `/returns` — `src/pages/returns.astro` (2)
 
 | Blank | What it is asking |
 |---|---|
-| `[the email address to use]` | Where a customer tells you they are cancelling |
 | `[you or us — say which]` | Who pays return postage |
 | `[the return address]` | Where books are sent back to |
 
@@ -39,13 +37,12 @@ text with the real answer and delete the surrounding span, so
 | `[e.g. 2–3 working days]` | How long delivery then takes |
 | `[Say whether duties are the customer's responsibility, and any countries you do not post to.]` | The overseas position |
 
-## `/terms` — `src/pages/terms.astro` (4)
+## `/terms` — `src/pages/terms.astro` (3)
 
 | Blank | What it is asking |
 |---|---|
 | `[Trading name, and company number if registered]` | Trading identity |
 | `[address]` | Trading address |
-| `[email]` | Contact address |
 | `[England and Wales, or as applicable]` | Which law governs the terms |
 
 ---
