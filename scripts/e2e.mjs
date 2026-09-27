@@ -4802,6 +4802,7 @@ async function findable() {
 
   t.ok(ids.length === live.n, 'the feed lists every live book and nothing else', `${ids.length} vs ${live.n}`);
   t.ok(new Set(ids).size === ids.length, 'each exactly once');
+  t.ok(ids.every((id) => id.length <= 50), 'each Merchant Center ID fits its 50-character limit');
   t.ok(!/<g:gtin><\/g:gtin>/.test(feed), 'an unknown ISBN is left out rather than sent empty');
   t.ok(!feed.includes('identifier_exists'),
     'and never claims a published book has no identifier');

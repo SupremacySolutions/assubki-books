@@ -42,6 +42,10 @@ export const GET: APIRoute = async ({ site, url }) => {
   const { books } = await listBooks({ perPage: 1000, withTotal: false, withDetails: true });
 
   const item = (b: (typeof books)[number]) => {
+    // Merchant Center limits IDs to 50 characters. Keep existing short IDs so
+    // already imported products retain their history; use the immutable book
+    // row ID for longer slugs rather than truncating into possible collisions.
+    const merchantId = b.slug.length <= 50 ? b.slug : `asb-${b.id}`;
     const pence = salePrice(b.price_pence, b.sale_percent);
     const description = truncate(stripTags(b.description_html ?? '') || b.title, 4000);
     const imagePath = imageUrl(b.image_key, 'detail');
@@ -49,7 +53,7 @@ export const GET: APIRoute = async ({ site, url }) => {
 
     return [
       '    <item>',
-      `      <g:id>${xml(b.slug)}</g:id>`,
+      `      <g:id>${xml(merchantId)}</g:id>`,
       `      <g:title>${xml(truncate(b.title, 150))}</g:title>`,
       `      <g:description>${xml(description)}</g:description>`,
       `      <g:link>${origin}/book/${xml(b.slug)}</g:link>`,
