@@ -1,29 +1,27 @@
 ---
 import PolicyPage from '../components/PolicyPage.astro';
 import { ownerAddress } from '../lib/email';
+import { SITE } from '../lib/format';
 
 const contactEmail = ownerAddress();
 ---
-<PolicyPage
-  title="Terms"
-  intro="Who we are, and how an order becomes an agreement."
->
-  <h2>Who you are buying from</h2>
-  <p><span class="blank">[Trading name, and company number if registered]</span>, at <span class="blank">[address]</span>. You can reach us at <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</p>
+<PolicyPage title="Terms" intro="Who we are, and how a book request becomes an order.">
+  <h2>The shop</h2>
+  <p>{SITE.name} <span lang="ar" dir="rtl">{SITE.nameAr}</span>, {SITE.address.street}, {SITE.address.locality}, {SITE.address.postcode}, United Kingdom. Contact us at <a href={`mailto:${contactEmail}`}>{contactEmail}</a> or through the <a href="/contact">Telegram messaging option</a>.</p>
 
   <h2>How an order works</h2>
-  <p>Adding books to your basket and sending a request does not complete a sale - it asks us for those books. Copies on the shelf are held for you for 48 hours; copies coming in a future delivery are reserved for you until that delivery arrives, with no time limit on your side. The agreement is made when we confirm your order and send you the total. Until then either of us can walk away, and nothing has been charged.</p>
-  <p>We may not be able to confirm an order if a title has sold in the meantime, or if there is an obvious error in the price. If that happens we tell you and nothing is owed.</p>
+  <p>Adding books to your basket and sending a request does not complete a sale or take payment. We check availability and postage, then send you the confirmed total and payment arrangements. A sale is agreed when you accept those details with us. Until then you can choose not to proceed.</p>
+  <p>Books from future shipments are reservations until stock arrives. We will tell you when they are available and confirm the next steps. If a title becomes unavailable or there is an obvious pricing error, we will explain before agreeing the sale.</p>
 
   <h2>Prices and payment</h2>
-  <p>Prices are in pounds sterling and include VAT where it applies. No card details are taken on this website. You pay by bank transfer, or in cash if you are collecting or we have agreed it.</p>
+  <p>Prices are in pounds sterling and include VAT where applicable. Postage is additional and confirmed before you agree to buy. All payments are arranged and made separately, outside this website, by bank transfer or agreed cash payment. We do not take card details on the site.</p>
 
-  <h2>Your books</h2>
-  <p>The books remain ours until they are paid for in full.</p>
+  <h2>Books and delivery</h2>
+  <p>All listed books are new; we do not stock second-hand books. The books remain ours until paid for in full. Delivery and collection arrangements are explained on our <a href="/delivery">delivery page</a>.</p>
 
   <h2>Returns</h2>
-  <p>Covered separately on the <a href="/returns" class="text-[var(--color-navy)] underline underline-offset-2">returns page</a>, which forms part of these terms.</p>
+  <p>Our <a href="/returns">returns and cancellations policy</a> explains change-of-mind returns, faults and refunds and forms part of these terms.</p>
 
   <h2>Law</h2>
-  <p>These terms are governed by the law of <span class="blank">[England and Wales, or as applicable]</span>. Nothing here affects your statutory rights as a consumer.</p>
+  <p>These terms are governed by the law of England and Wales. Nothing here removes any consumer protections that apply to your purchase.</p>
 </PolicyPage>

@@ -1,45 +1,45 @@
 ---
 import PolicyPage from '../components/PolicyPage.astro';
 import { ownerAddress } from '../lib/email';
+import { SITE } from '../lib/format';
+import { COMPLETED_ORDER_YEARS } from '../lib/order-retention';
 
 const contactEmail = ownerAddress();
 ---
-<PolicyPage
-  title="Privacy"
-  intro="What we hold about you, why, and how to have it back or removed."
->
-  <h2>What we keep</h2>
-  <p>When you place an order we store your name, email address, delivery address if you are having books posted, your phone number - which we ask for on every order, so we can reach you about it - and what you ordered. If you connect Telegram we also store the identifier of that chat, so we can message you about the order.</p>
-  <p>We do not use analytics, advertising or tracking of any kind. Nothing on this site follows you anywhere else.</p>
-
-  <h2>Why</h2>
-  <p>To confirm your order, take payment, get the books to you, and answer you if you write to us. We have no other use for it and we do not sell or share it for marketing.</p>
-
-  <h2>Who else sees it</h2>
-  <ul>
-    <li><strong>Resend</strong> sends our emails, so it handles your email address and the contents of those messages.</li>
-    <li><strong>Telegram</strong> carries our messages if you choose to connect it.</li>
-    <li><strong>Cloudflare</strong> hosts the site and the database.</li>
-  </ul>
-  <p>Nobody else.</p>
-
-  <h2>Searching</h2>
-  <p>When a search finds nothing we record what was typed, so we know which books to stock. Nothing is stored about who searched - no address, no account, no link to any order - and these records are deleted after 90 days. Searches that find something are not recorded at all. That stays true unless you separately choose to ask us to find the title, which is a different thing and is described next.</p>
-
-  <h2>Asking us to find a book</h2>
-  <p>If a search finds nothing you can ask us to look for the title. We then hold what you searched for, anything you added to help us find it, and your email address - so that we can write back to you about that one book. We use it for nothing else and it is never passed on. We delete it as soon as we have dealt with your request, and in any case after 90 days.</p>
-
-  <h2>Telling you when a book is back</h2>
-  <p>If you ask us to tell you when an out-of-stock title returns, we hold your email address against that book and nothing else. It is deleted the moment that message is sent, so there is nothing to unsubscribe from and nothing kept afterwards. If the book never comes back - editions do go out of print - we forget the request after six months rather than hold your address indefinitely.</p>
-
-  <h2>How long</h2>
-  <p>Order records are kept for <span class="blank">[how long - six years is usual for UK tax records]</span>. Baskets that are never ordered are cleared automatically after 48 hours.</p>
-
-  <h2>Your rights</h2>
-  <p>You can ask for a copy of what we hold, ask us to correct it, or ask us to delete it, by writing to <a href={`mailto:${contactEmail}`}>{contactEmail}</a>. We will answer within a month. If you are not satisfied you can complain to the Information Commissioner's Office at ico.org.uk.</p>
-
+<PolicyPage title="Privacy" intro="What we keep about you, why, and how to contact us about it.">
   <h2>Who we are</h2>
-  <p>This shop is run by <span class="blank">[trading name and, if registered, company number]</span> at <span class="blank">[address]</span>.</p>
+  <p>{SITE.name} <span lang="ar" dir="rtl">{SITE.nameAr}</span>, {SITE.address.street}, {SITE.address.locality}, {SITE.address.postcode}, United Kingdom. Contact us at <a href={`mailto:${contactEmail}`}>{contactEmail}</a> or through the <a href="/contact">Telegram messaging option on our contact page</a>.</p>
 
-  <p class="!text-[13.5px] !text-[var(--color-ink-faint)] pt-4">Last updated <span class="blank">[date]</span>.</p>
+  <h2>What we keep</h2>
+  <p>When you send an order request, we store your name, email address, phone number, the books requested, any notes, and your delivery address if you want postage. We also keep messages and any images you choose to send about the order. If you connect Telegram, we store the chat identifier needed to message you.</p>
+  <p>Payments are arranged directly with the shop and made separately, outside this website. We do not take card details here. If you upload a payment screenshot, it is stored with your order; please hide unrelated balances, transactions and account details first.</p>
+  <p>For shared baskets, we keep the organiser's details and the names and book choices entered by participants. Anyone with the shared basket link can see its contents.</p>
+
+  <h2>Why we use it</h2>
+  <p>We use these details to respond to your request, confirm availability and postage, arrange payment separately, fulfil your order and help with returns or queries. This processing is needed to take the steps you ask for before a sale and to fulfil an agreed order. We use limited security records to protect the site from spam and misuse, which is in our legitimate interests.</p>
+  <p>We do not sell customer details or use them for advertising. We do not use advertising cookies or analytics trackers. The site uses necessary browser storage for your basket and shared-basket access.</p>
+
+  <h2>Who receives information</h2>
+  <ul>
+    <li><strong>Cloudflare</strong> hosts the website, database and uploaded images.</li>
+    <li><strong>Resend</strong> handles email addresses and the messages we send by email.</li>
+    <li><strong>Telegram</strong> carries messages when you choose to contact or connect with us there.</li>
+    <li><strong>Delivery carriers</strong> receive the name, address and contact details needed to deliver your parcel.</li>
+  </ul>
+  <p>These services may process information outside the UK. Their applicable privacy terms and data-transfer safeguards govern that processing. Contact us if you would like more details about the services used for your request.</p>
+
+  <h2>How long we keep it</h2>
+  <p>Completed order records and their associated messages are removed from this website after {COMPLETED_ORDER_YEARS} years from completion. Other order requests remain until the shop deletes them; you can contact us to request deletion. Payment screenshots and other uploaded order images are normally removed about six months after an order is completed, cancelled or expired.</p>
+  <p>An untouched personal basket expires after 48 hours and is cleared when the site next reads it. Unsubmitted shared baskets expire after seven days. The site also keeps IP addresses and action times to limit misuse; records older than 24 hours are cleared during subsequent form activity.</p>
+
+  <h2>Searches and book requests</h2>
+  <p>We record searches that find no results so we can see which books customers want. These search records are not linked to an account or order and are deleted after 90 days.</p>
+  <p>If you separately ask us to find a book, we keep the title, your note and your email address to deal with that request. We delete the request when we mark it dealt with, or after 90 days.</p>
+  <p>If you ask for a back-in-stock message, we keep your email address against that title until the notification is successfully sent, then delete the request. Unanswered alerts are deleted after about six months.</p>
+
+  <h2>Your choices and rights</h2>
+  <p>You can contact us to ask for access to your information, a correction, deletion, restriction of its use, or a portable copy where applicable. You can also object to processing based on legitimate interests. We normally respond within one month. Some requests may be limited where information is still needed to deal with an order or another obligation.</p>
+  <p>If you are unhappy with how we handle your information, you can complain to the <a href="https://ico.org.uk/make-a-complaint/">Information Commissioner's Office</a>.</p>
+
+  <p class="!text-[13.5px] !text-[var(--color-ink-faint)] pt-4">Last updated 28 September 2026.</p>
 </PolicyPage>

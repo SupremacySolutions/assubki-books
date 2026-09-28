@@ -4790,10 +4790,9 @@ async function findable() {
   const site = graph.find((n) => n['@type'] === 'WebSite');
   t.ok(Boolean(org), 'naming who the shop is');
   t.ok(Boolean(site?.potentialAction), 'and that it has a search box');
-  // A shop with no address is not a local business, and saying so to Google is
-  // the kind of claim it checks.
-  t.ok(org['@type'] === 'BookStore' ? Boolean(org.address) : !org.address,
-    'it only calls itself a shop with an address once it has one');
+  t.ok(org['@type'] === 'Organization' && org.address?.streetAddress === '2 Atkinson Street'
+    && org.address?.postalCode === 'LE5 3QA',
+    'the shop publishes its supplied postal address without claiming a walk-in storefront');
 
   // --- the feed --------------------------------------------------------------
   const feed = await (await get('/feed.xml')).text();
@@ -6704,10 +6703,24 @@ async function bookRequests() {
 
   await db(`DELETE FROM book_requests`);
 
-  // The privacy page has to describe this, and must not go on claiming the
-  // search log is the whole story.
-  const privacy = await html('/privacy');
-  t.ok(privacy.includes('Asking us to find a book'), 'the privacy page describes it');
+  /*
+   * The privacy page has to describe this, and must not go on claiming the
+   * search log is the whole story.
+   *
+   * Asserted on what the page has to say rather than on the heading it says it
+   * under. The heading was "Asking us to find a book" and is now "Searches and
+   * book requests", which covers more - searches, requests and back-in-stock
+   * alerts - and the old assertion failed a page that had got better. What
+   * cannot change is that a request is described as kept, and as deleted when
+   * it is dealt with.
+   */
+  const privacy = visibleText(await html('/privacy'));
+  t.ok(/ask us to find a book/i.test(privacy),
+    'the privacy page describes asking for a book');
+  t.ok(/dealt with/i.test(privacy) && /delete/i.test(privacy),
+    'and says the request is deleted once it is dealt with');
+  t.ok(/search/i.test(privacy) && /no results/i.test(privacy),
+    'and still describes the search log separately');
   t.ok(privacy.includes('90 days'), 'and states how long it is kept');
 }
 

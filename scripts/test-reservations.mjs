@@ -130,6 +130,7 @@ export {receiveDelivery,fillClaims} from './src/lib/arrival';
 export {importLines} from './src/lib/shipments';
 export {createGroup,getGroup,setGroupLine} from './src/lib/group';
 export {expireOrders} from './src/lib/stock-release';
+export {pruneCompletedOrders,completedOrderCutoff} from './src/lib/order-retention';
 export {drainArrivalNotices,pendingNotices} from './src/lib/shipment-notify';
 export {drainStockAlerts,leaseAlert,alertFailed,alertSent} from './src/lib/stock-alerts';
 export {forgetOrderDiscount} from './src/lib/sales';
@@ -748,6 +749,54 @@ async function test(name, fn) {
       ),
       /2 separate orders/,
     );
+  });
+  await test('completed orders expire after two years with child records, without releasing stock', async () => {
+    const now = new Date('2026-09-28T12:00:00Z');
+    const cutoff = app.completedOrderCutoff(now);
+    const b = book(null, 0, 5);
+    const fixture = (status, completed, updated = cutoff - 1) => row(`
+      INSERT INTO orders(ref,access_token,customer_name,email,status,subtotal_pence,completed_at,updated_at)
+      VALUES ('RET-${++seq}','token','Retention test','test@example.invalid','${status}',1000,${completed ?? 'NULL'},${updated}) RETURNING id,ref`);
+    const old = fixture('completed', cutoff);
+    const legacy = fixture('completed', null);
+    const recent = fixture('completed', cutoff + 1);
+    const active = ['requested','awaiting_payment','paid','dispatched','cancelled','expired'].map(x => fixture(x, cutoff - 1));
+    const picture = fixture('completed', cutoff - 1);
+    sql(`INSERT INTO messages(order_id,sender,via,body) VALUES (${old.id},'customer','web','Private message')`);
+    sql(`INSERT INTO messages(order_id,sender,via,image_key,had_image) VALUES (${picture.id},'customer','web','proofs/retention-test',1)`);
+    sql(`INSERT INTO order_items(order_id,book_id,title_snapshot,price_pence_snapshot,qty) VALUES (${old.id},${b},'Book',1000,1)`);
+    sql(`INSERT INTO stock_ledger(book_id,delta,field,reason,order_id) VALUES (${b},-1,'stock','sale',${old.id})`);
+    const g = row(`INSERT INTO group_baskets(code,token,organiser,expires_at,order_ref) VALUES ('RET-GROUP','token','Private organiser',1,'${old.ref}') RETURNING id`);
+    sql(`INSERT INTO group_basket_items(group_id,book_id,qty,added_by) VALUES (${g.id},${b},1,'Private participant')`);
+    assert.equal(await app.pruneCompletedOrders(db, now), 2);
+    assert.equal(row(`SELECT COUNT(*) n FROM orders WHERE id IN (${old.id},${legacy.id})`).n, 0);
+    for (const o of [recent,picture,...active]) assert.equal(row(`SELECT COUNT(*) n FROM orders WHERE id=${o.id}`).n, 1);
+    assert.equal(row(`SELECT COUNT(*) n FROM messages WHERE order_id=${old.id}`).n, 0);
+    assert.equal(row(`SELECT COUNT(*) n FROM order_items WHERE order_id=${old.id}`).n, 0);
+    assert.equal(row(`SELECT COUNT(*) n FROM group_baskets WHERE id=${g.id}`).n, 0);
+    assert.equal(row(`SELECT COUNT(*) n FROM group_basket_items WHERE group_id=${g.id}`).n, 0);
+    assert.equal(row(`SELECT stock FROM books WHERE id=${b}`).stock, 5);
+    assert.equal(row(`SELECT COUNT(*) n FROM stock_ledger WHERE book_id=${b} AND order_id IS NULL`).n, 1);
+    assert.equal(await app.pruneCompletedOrders(db, now), 0);
+    // Failed image cleanup keeps the pointer and order until the existing R2
+    // sweep succeeds; then retention can safely remove the remaining rows.
+    sql(`UPDATE messages SET image_key=NULL WHERE order_id=${picture.id}`);
+    assert.equal(await app.pruneCompletedOrders(db, now), 1);
+  });
+  await test('completed-order cleanup is bounded and rolls back the linked basket on failure', async () => {
+    const now = new Date('2026-09-28T12:00:00Z');
+    const cutoff = app.completedOrderCutoff(now);
+    sql(Array.from({length:101},(_,i)=>`INSERT INTO orders(ref,access_token,customer_name,email,status,subtotal_pence,completed_at)
+      VALUES ('RET-BATCH-${i}','token','Test','test@example.invalid','completed',0,${cutoff - 1})`).join(';'));
+    sql(`INSERT INTO group_baskets(code,token,organiser,expires_at,order_ref) VALUES ('RET-ROLLBACK','token','Test',1,'RET-BATCH-0')`);
+    fault = q => q.startsWith('DELETE FROM orders');
+    await assert.rejects(app.pruneCompletedOrders(db, now));
+    assert.equal(row("SELECT COUNT(*) n FROM group_baskets WHERE code='RET-ROLLBACK'").n, 1);
+    fault = null;
+    assert.equal(await app.pruneCompletedOrders(db, now), 100);
+    assert.equal(await app.pruneCompletedOrders(db, now), 1);
+    assert.equal(await app.pruneCompletedOrders(db, now), 0);
+    assert.equal(new Date(app.completedOrderCutoff(new Date('2028-02-29T12:00:00Z'))*1000).toISOString(), '2026-02-28T12:00:00.000Z');
   });
   console.log(`${passed} reservation regression tests passed`);
 } finally {

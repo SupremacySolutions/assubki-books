@@ -21,6 +21,7 @@ import { pruneAlerts, drainStockAlerts } from '../../src/lib/stock-alerts';
 import { purgeDeletedBooks } from '../../src/lib/book-deletion';
 import { pruneBulkEdits } from '../../src/lib/bulk-undo';
 import { pruneRequests } from '../../src/lib/book-requests';
+import { pruneCompletedOrders } from '../../src/lib/order-retention';
 import { drainArrivalNotices } from '../../src/lib/shipment-notify';
 import { SITE } from '../../src/lib/format';
 import { syncChannelStock } from '../../src/lib/publish';
@@ -274,6 +275,9 @@ export default {
     const proofs = await stage('payment screenshots', () => sweepProofs(env.DB, env.UPLOADS));
     if (proofs) console.log(`removed ${proofs} payment screenshot(s) from closed orders`);
 
+    const completed = await stage('prune completed orders', () => pruneCompletedOrders(env.DB));
+    if (completed) console.log(`removed ${completed} completed order(s) older than two years`);
+
     /*
      * A log nobody trims is a liability rather than an asset. This is free
      * text a customer typed into a search box, and people occasionally type
@@ -377,6 +381,7 @@ export default {
     const channel = await syncChannelStock(null, SITE.url, env.DB);
     const groups = await expireGroupBaskets(env.DB);
     const proofs = await sweepProofs(env.DB, env.UPLOADS);
+    const completed = await pruneCompletedOrders(env.DB);
     const searches = await pruneSearches(env.DB);
     // The purge belongs here for the reason stated above: a manual trigger that
     // does less than the scheduled one is a trigger you cannot test the
@@ -385,7 +390,7 @@ export default {
     const edits = await pruneBulkEdits(env.DB);
     const asked = await pruneRequests(env.DB);
     return Response.json({
-      lapsed, unpaid, told, alerts, channel, groups, proofs, searches, destroyed, edits, asked,
+      lapsed, unpaid, told, alerts, channel, groups, proofs, completed, searches, destroyed, edits, asked,
     });
   },
 } satisfies ExportedHandler<Env>;

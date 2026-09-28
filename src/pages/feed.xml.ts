@@ -18,12 +18,10 @@ export const prerender = false;
  * the same function the card and the page use, and availability is read off
  * the same `available` the page prints.
  *
- * Worth knowing about this shop: no money moves on the site. An order is a
- * request, and the shop replies with a total and payment details. Google's
- * guidelines allow invoicing and payment on delivery as conventional methods,
- * while its checkout-requirements page says a purchase must be completable
- * online. Whether this feed is accepted is genuinely uncertain, and the
- * refusal - if it comes - will say why.
+ * This shop accepts requests and quotes postage before a sale is agreed.
+ * Google permits invoicing, but explicitly excludes quote-only websites:
+ * https://support.google.com/merchants/answer/10249082
+ * Completing this feed does not establish Merchant Center eligibility.
  */
 const ESCAPE: Record<string, string> = {
   '&': '&amp;',
