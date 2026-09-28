@@ -4790,10 +4790,9 @@ async function findable() {
   const site = graph.find((n) => n['@type'] === 'WebSite');
   t.ok(Boolean(org), 'naming who the shop is');
   t.ok(Boolean(site?.potentialAction), 'and that it has a search box');
-  // A shop with no address is not a local business, and saying so to Google is
-  // the kind of claim it checks.
-  t.ok(org['@type'] === 'BookStore' ? Boolean(org.address) : !org.address,
-    'it only calls itself a shop with an address once it has one');
+  t.ok(org['@type'] === 'Organization' && org.address?.streetAddress === '2 Atkinson Street'
+    && org.address?.postalCode === 'LE5 3QA',
+    'the shop publishes its supplied postal address without claiming a walk-in storefront');
 
   // --- the feed --------------------------------------------------------------
   const feed = await (await get('/feed.xml')).text();

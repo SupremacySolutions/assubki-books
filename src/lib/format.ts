@@ -8,34 +8,14 @@ export const SITE = {
   tagline: 'An affordable Islamic bookshop with a vast catalogue',
   telegram: 'https://t.me/alsubkibooks',
   email: 'subkibooks@gmail.com',
-  /*
-   * Where the shop actually is.
-   *
-   * Blank until somebody fills them in, and deliberately not guessed - the
-   * same rule the policy pages follow. Google cross-checks a Business Profile
-   * against the site, so these must end up written exactly as they are on the
-   * profile, down to the punctuation.
-   *
-   * While they are empty the shop cannot appear in map results, and Merchant
-   * Center has no contact details to find. Filling them is the single highest
-   * return of anything in the SEO work.
-   */
+  // Business address supplied by the shop. Collection is by arrangement.
   address: {
-    street: '',
+    street: '2 Atkinson Street',
     locality: 'Leicester',
     region: '',
-    postcode: '',
+    postcode: 'LE5 3QA',
     country: 'GB',
   },
-  /*
-   * Written the way a person reads it, and converted for machines below.
-   *
-   * There is no street address here on purpose: the shop's stock is held at
-   * another bookseller's premises, under their name and their signage, so it
-   * is not an address this shop can claim as its own - to Google or to anybody
-   * else. A phone number and an email are what Merchant Center actually asks
-   * for, and both are true.
-   */
   phone: '07873 546794',
 } as const;
 

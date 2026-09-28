@@ -53,12 +53,11 @@ const shelfCount = tree.reduce((n, c) => n + 1 + (c.children?.length ?? 0), 0);
  * listing. Both live here rather than in the layout: they describe the shop
  * once, and repeating them on 226 book pages says nothing extra.
  *
- * `LocalBusiness` only once there is a real address to give - see SITE. A
- * business with no address is not a local business, and claiming otherwise to
- * Google is the kind of thing it checks.
+ * A business address does not imply a walk-in shop. Collection is arranged
+ * with the owner, so identify the organisation without claiming opening hours.
  */
 const org = {
-  '@type': hasAddress() ? 'BookStore' : 'Organization',
+  '@type': 'Organization',
   '@id': `${SITE.url}/#shop`,
   name: SITE.name,
   alternateName: SITE.nameAr,
