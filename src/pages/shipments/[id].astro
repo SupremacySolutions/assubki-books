@@ -18,7 +18,28 @@ if (!shipment || !['open', 'arrived'].includes(shipment.status)) {
 }
 if (shipment.items === 0) return Astro.rewrite('/404');
 
+/*
+ * A shipment is not closed to reservations by its first box.
+ *
+ * This page keyed everything on `status === 'open'`, and recording any
+ * delivery flips the status to 'arrived'. So the moment one carton was
+ * received the page told customers the shipment "has landed, so it can no
+ * longer be reserved from", dropped the count of copies still free, and hid
+ * every Reserve button - while the rest of the shipment was still at sea and
+ * those copies were still perfectly reservable, because reservability comes
+ * from a book's own `incoming - reserved_incoming` and never from this status.
+ *
+ * The owner's side was always built for part-loads: the receive page is
+ * offered "whenever anything is still expected, not only while the status says
+ * 'open' - otherwise the second box has nowhere to be recorded". This is that
+ * same rule, on the side the customer sees.
+ *
+ * `copies` is the sum of what is still incoming, so it is the question being
+ * asked here: is there anything left to reserve?
+ */
 const open = shipment.status === 'open';
+const stillComing = shipment.copies > 0;
+const takingReservations = stillComing && shipment.status !== 'closed';
 const params = Astro.url.searchParams;
 const q = (params.get('q') ?? '').slice(0, 80);
 /*
@@ -30,7 +51,7 @@ const q = (params.get('q') ?? '').slice(0, 80);
  * same default would show an empty list; then everything is the only sane
  * opening.
  */
-const filter: PublicFilter = asPublicFilter(params.get('show'), open ? 'available' : 'all');
+const filter: PublicFilter = asPublicFilter(params.get('show'), takingReservations ? 'available' : 'all');
 const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
 const { items, total, page: at, pages, counts } = await publicShipmentPage(
   id,
@@ -55,7 +76,7 @@ const last = Math.min(at * SHIPMENT_PAGE, total);
 const href = (over: Record<string, string | number | null>) => {
   const next = new URLSearchParams();
   if (q) next.set('q', q);
-  if (filter !== (open ? 'available' : 'all')) next.set('show', filter);
+  if (filter !== (takingReservations ? 'available' : 'all')) next.set('show', filter);
   if (at > 1) next.set('page', String(at));
   for (const [key, value] of Object.entries(over)) {
     if (value === null) next.delete(key);
@@ -99,17 +120,22 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
     <div class="mt-3 p-5 sm:p-6 bg-[#fdfaf1] border border-[#e6d9b8] rounded-[var(--radius-panel)]">
       <h1 class="text-[26px] sm:text-[30px] leading-tight">{shipment.title}</h1>
       <p class="mt-2 text-[15px] sm:text-[16px] font-medium text-[var(--color-brass)]">
-        {open ? (when ? `Expected ${when}` : 'Expected date to be confirmed') : `Arrived ${when}`}
+        {open
+          ? (when ? `Expected ${when}` : 'Expected date to be confirmed')
+          : stillComing
+            ? 'Part of it has arrived · the rest is still on its way'
+            : `Arrived ${when}`}
         {' · '}{shipment.items} {shipment.items === 1 ? 'title' : 'titles'}
-        {open && ` · ${freeCopies} ${freeCopies === 1 ? 'copy' : 'copies'} still free to reserve`}
+        {takingReservations && ` · ${freeCopies} ${freeCopies === 1 ? 'copy' : 'copies'} still free to reserve`}
       </p>
 
-      {open ? (
+      {takingReservations ? (
         <p class="mt-2.5 max-w-[64ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
           Reserving adds the copy to your basket - take as many of a title as are free. The copies
           are set aside in your name when you send the request at checkout, not before, and nothing
           is paid now or charged on this site at any point. When the shipment lands we write to
           you, and you have seven days to reply.
+          {!open && ' Some of this shipment has already arrived; the rest is still coming, and the copies below are what is left to reserve.'}
         </p>
       ) : (
         <p class="mt-2.5 max-w-[64ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
@@ -129,7 +155,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
     {/* Find one book among three hundred. */}
     <div class="mt-4 flex flex-wrap items-center gap-2.5">
       <form method="get" action={`/shipments/${id}`} class="flex items-center gap-2 flex-1 min-w-[16rem]">
-        {filter !== (open ? 'available' : 'all') && <input type="hidden" name="show" value={filter} />}
+        {filter !== (takingReservations ? 'available' : 'all') && <input type="hidden" name="show" value={filter} />}
         <input
           type="search"
           name="q"
@@ -190,7 +216,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
                 {item.volumes && item.volumes > 1 && (
                   <span class="text-[13px] text-[var(--color-ink-faint)]">{item.volumes} volumes</span>
                 )}
-                {open && (
+                {takingReservations && (
                   <span
                     class:list={[
                       'text-[13px]',
@@ -213,7 +239,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
               </div>
             </div>
 
-            {open && item.free > 0 && (
+            {takingReservations && item.free > 0 && (
               <div class="shrink-0 text-right">
                 {/* Brass, not navy. Reserving is a different act from buying
                     something on the shelf, and the button should not pretend
@@ -252,7 +278,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
               </div>
             )}
 
-            {open && item.free === 0 && (
+            {takingReservations && item.free === 0 && (
               <span class="shrink-0 text-[13.5px] font-medium px-4 py-2.5 rounded-[var(--radius-pill)] bg-[var(--color-paper)] text-[var(--color-ink-faint)]">
                 Fully reserved
               </span>
@@ -295,7 +321,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
       </nav>
     )}
 
-    {open && (
+    {takingReservations && (
       <p class="mt-6 text-[13px] text-[var(--color-ink-faint)] leading-relaxed max-w-[44rem]">
         Books from a shipment become their own order, separate from anything on the shelf, so what
         is in stock can be sent to you now. Postage is quoted once per order.
@@ -309,7 +335,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
     * The control reverts to "Reserve a copy" after a moment, and without this
     * there was nothing left on the page to show that anything had happened.
     */}
-  {open && (
+  {takingReservations && (
     <div
       data-basket-bar
       hidden

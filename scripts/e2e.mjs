@@ -5561,6 +5561,28 @@ async function shipments() {
   t.ok(/ready to send/i.test(receivePage) && /place/i.test(receivePage),
     'with the rest keeping their place rather than being cancelled');
 
+  /*
+   * A shipment marked arrived while copies are still expected stays open to
+   * reservations.
+   *
+   * The page keyed on status === 'open', and recording any delivery flips the
+   * status to 'arrived' - so the first carton told customers it "has landed,
+   * so it can no longer be reserved from" and hid every Reserve button, while
+   * the rest was still at sea and those copies were still reservable.
+   *
+   * Set directly rather than by receiving a box: this is a rendering rule, and
+   * driving a real delivery here would consume the fixture the assertions
+   * below depend on.
+   */
+  await db(`UPDATE shipments SET status='arrived', arrived_at=unixepoch() WHERE id=${sid}`);
+  const partly = await html(`/shipments/${sid}`);
+  t.ok(!visibleText(partly).includes('can no longer be reserved from'),
+    'a shipment still expecting copies is not called closed');
+  t.ok(/still on its way/i.test(visibleText(partly)),
+    'and says the rest is still coming');
+  t.ok(partly.includes('Reserve a copy'), 'with the remaining copies still reservable');
+  await db(`UPDATE shipments SET status='open', arrived_at=NULL WHERE id=${sid}`);
+
   const receipt = {receipt_key: crypto.randomUUID(), delivery_version: '0',
     ...Object.fromEntries(rows.map(r=>[`received_${r.id}`,'2']))};
   const arrived = await admin(`/api/admin/shipments/${sid}/arrived`,receipt);
