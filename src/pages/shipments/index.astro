@@ -72,26 +72,41 @@ const when = (s: {
                   <h2 class="text-[21px] leading-snug">{s.title}</h2>
                   {when(s) && (
                     <p class="mt-0.5 text-[14px] text-[var(--color-ink-soft)]">
-                      {s.status === 'open' ? 'Expected ' : 'Arrived '}{when(s)}
+                      {s.status === 'open'
+                        ? `Expected ${when(s)}`
+                        : s.copies > 0
+                          ? 'Part of it has arrived'
+                          : `Arrived ${when(s)}`}
                     </p>
                   )}
                 </div>
+                {/*
+                  * Reservations close when there is nothing left to reserve,
+                  * not when a box has been opened. A shipment can arrive over
+                  * several deliveries, and this said "reservations closed"
+                  * from the first one - while the shipment's own page went on
+                  * taking them, which is the worse half of being wrong.
+                  */}
                 <span
                   class:list={[
                     'text-[13.5px] shrink-0',
-                    s.status === 'open'
+                    s.copies > 0
                       ? 'text-[var(--color-instock)]'
                       : 'text-[var(--color-ink-faint)]',
                   ]}
                 >
-                  {s.status === 'open' ? 'Open for reservations' : 'Arrived - reservations closed'}
+                  {s.copies > 0
+                    ? s.status === 'open'
+                      ? 'Open for reservations'
+                      : 'More still on its way'
+                    : 'Arrived - reservations closed'}
                 </span>
               </div>
 
               <p class="mt-3 text-[14px] text-[var(--color-ink-soft)] tabular-nums">
                 {s.items} {s.items === 1 ? 'title' : 'titles'}
                 {' · '}{s.copies} {s.copies === 1 ? 'copy' : 'copies'}
-                {s.status === 'open' && (
+                {s.copies > 0 && (
                   <span class={free > 0 ? '' : 'text-[var(--color-outstock)]'}>
                     {' · '}{free > 0 ? `${free} free to reserve` : 'all reserved'}
                   </span>

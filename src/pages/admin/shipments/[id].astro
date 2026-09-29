@@ -445,9 +445,13 @@ const EDIT_COLS =
               </button>
             </form>
           )}
+          {/* "a delivery", not "arrived": a shipment can come in several boxes
+              and this button is pressed once per box. The page it opens
+              explains that a part-load is enough to release the orders it
+              completes. */}
           {canReceive && (
             <a href={`/admin/shipments/${id}/receive`} class="btn btn-primary !py-2.5 !text-[14.5px]">
-              Record a delivery
+              {shipment.status === 'arrived' ? 'Record another delivery' : 'Record a delivery'}
             </a>
           )}
         </div>
@@ -606,7 +610,7 @@ const EDIT_COLS =
           <p class="mt-0.5 text-[13px] text-[var(--color-ink-soft)] leading-relaxed max-w-[46rem]">
             For a line the parser could not read, or a title the supplier left off the list. It
             goes on the end and can be edited or removed like any other row.
-            {shipment.status === 'open' && ' Customers can reserve it as soon as it is added.'}
+            {stillExpected && ' Customers can reserve it as soon as it is added.'}
           </p>
         </div>
         <div class="col-span-2 sm:col-span-1">

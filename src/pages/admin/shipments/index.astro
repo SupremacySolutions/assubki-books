@@ -139,7 +139,9 @@ const cards = shipments.map((s) => {
               )}
             </div>
             <p class="mt-1.5 text-[13.5px] text-[var(--color-ink-soft)]">{s.facts.join(' · ')}</p>
-            {s.status === 'open' && s.copies > 0 && (
+            {/* While anything is still coming, not only before the first box:
+                a part-arrived shipment still has copies being claimed. */}
+            {s.copies > 0 && (
               <span class="mt-2.5 block h-1.5 rounded-[var(--radius-pill)] bg-[var(--color-rule-faint)] overflow-hidden">
                 <span class="block h-full bg-[var(--color-brass)]" style={`width:${s.claimedPct}%`}></span>
               </span>
