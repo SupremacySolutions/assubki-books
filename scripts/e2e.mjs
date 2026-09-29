@@ -5550,6 +5550,39 @@ async function shipments() {
   // Arrival.
   /* Two orders hold claims on this shipment by now: the reservation above and
      the mixed basket just after it. Both are told. */
+  /*
+   * Read while copies are still expected: once everything has been received
+   * the page has nothing left to do and redirects, so this is the only moment
+   * it can be asked what it tells the owner.
+   */
+  const receivePage = visibleText(await html(`/admin/shipments/${sid}/receive`));
+  t.ok(/do not have to wait for the whole shipment/i.test(receivePage),
+    'the receive page says a part-load is enough on its own');
+  t.ok(/ready to send/i.test(receivePage) && /place/i.test(receivePage),
+    'with the rest keeping their place rather than being cancelled');
+
+  /*
+   * A shipment marked arrived while copies are still expected stays open to
+   * reservations.
+   *
+   * The page keyed on status === 'open', and recording any delivery flips the
+   * status to 'arrived' - so the first carton told customers it "has landed,
+   * so it can no longer be reserved from" and hid every Reserve button, while
+   * the rest was still at sea and those copies were still reservable.
+   *
+   * Set directly rather than by receiving a box: this is a rendering rule, and
+   * driving a real delivery here would consume the fixture the assertions
+   * below depend on.
+   */
+  await db(`UPDATE shipments SET status='arrived', arrived_at=unixepoch() WHERE id=${sid}`);
+  const partly = await html(`/shipments/${sid}`);
+  t.ok(!visibleText(partly).includes('can no longer be reserved from'),
+    'a shipment still expecting copies is not called closed');
+  t.ok(/still on its way/i.test(visibleText(partly)),
+    'and says the rest is still coming');
+  t.ok(partly.includes('Reserve a copy'), 'with the remaining copies still reservable');
+  await db(`UPDATE shipments SET status='open', arrived_at=NULL WHERE id=${sid}`);
+
   const receipt = {receipt_key: crypto.randomUUID(), delivery_version: '0',
     ...Object.fromEntries(rows.map(r=>[`received_${r.id}`,'2']))};
   const arrived = await admin(`/api/admin/shipments/${sid}/arrived`,receipt);
@@ -5571,6 +5604,20 @@ async function shipments() {
   t.ok(days > 6.9 && days < 7.1, `and seven days to reply (${days.toFixed(1)})`);
   t.ok((await one(`SELECT COUNT(*) AS n FROM shipment_notices WHERE shipment_id=${sid} AND sent_at IS NULL`)).n === 2,
     'both customers queued to be told, rather than written to inside the request');
+
+  /*
+   * And the owner is told how many orders that made ready.
+   *
+   * The machinery already released an order the moment nothing on it was still
+   * on order from a delivery - a part-load that happens to hold everything one
+   * customer asked for is enough, and the shipment need not be finished. But
+   * the receipt counted titles and never orders, so receiving half a shipment
+   * reported what came and not that somebody could now be posted their books.
+   * One order went out with no record of it at all.
+   */
+  t.ok(arrived.location.includes('released=2'),
+    'the receipt says how many orders that delivery made ready to send');
+
 
   /*
    * A notice that keeps failing has to be visible.

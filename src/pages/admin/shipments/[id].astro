@@ -38,6 +38,7 @@ const receipt = {
   missing: Number(params.get('missing') ?? 0),
   waiting: Number(params.get('waiting') ?? 0),
   spare: Number(params.get('spare') ?? 0),
+  released: Number(params.get('released') ?? 0),
 };
 
 const isDraft = shipment.status === 'draft';
@@ -293,6 +294,28 @@ const EDIT_COLS =
         </p>
       )}
       <dl class="mt-5 grid grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-rule-soft)] border border-[var(--color-rule-soft)] rounded-[10px] overflow-hidden">
+        {/*
+          * First, because it is the only figure that is a job rather than a
+          * fact. A part-load that happens to hold everything one customer
+          * asked for makes that order ready to send while the rest of the
+          * shipment is still coming - and until this said so, that looked
+          * like nothing had happened.
+          */}
+        {receipt.released > 0 && (
+          <a
+            href="/admin/orders?kind=reservations&status=awaiting_payment"
+            class="p-3.5 bg-white border-l-[3px] border-[var(--color-navy)] hover:bg-[var(--color-paper)] transition-colors"
+          >
+            <dd class="font-[family-name:var(--font-display)] text-[20px] font-semibold tabular-nums text-[var(--color-navy)]">
+              {receipt.released}
+            </dd>
+            <dt class="mt-0.5 text-[12.5px] text-[var(--color-navy)]">
+              {receipt.released === 1
+                ? 'order now complete - ready to send'
+                : 'orders now complete - ready to send'}
+            </dt>
+          </a>
+        )}
         <div class="p-3.5 bg-white">
           <dd class="font-[family-name:var(--font-display)] text-[20px] font-semibold tabular-nums">{receipt.full}</dd>
           <dt class="mt-0.5 text-[12.5px] text-[var(--color-ink-faint)]">

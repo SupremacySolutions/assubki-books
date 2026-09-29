@@ -3,6 +3,17 @@ import { env } from 'cloudflare:workers';
 export interface Arrival {
   filled: number;
   orderIds: number[];
+  /**
+   * Orders this delivery completed, and so released for payment.
+   *
+   * The receipt counted titles - how many came in full, short or not at all -
+   * and never the thing the owner acts on next. A part-load that happens to
+   * contain everything one customer asked for makes that order ready to send
+   * while the rest of the shipment is still at sea, which is exactly what the
+   * two statements above do; nothing said so, so it looked like nothing had
+   * happened and an order went out with no record of it.
+   */
+  released: number;
 }
 
 /** Actual receipts, independent of how many copies are still expected. */
@@ -187,9 +198,27 @@ export async function receiveDelivery(input: {
     )
     .bind(key)
     .all<{ order_id: number; filled: number }>();
+  /*
+   * Counted after the batch, off the same condition the two statements use:
+   * allocated by this delivery, nothing left on order from incoming stock.
+   * Reading it back rather than inferring it keeps one definition of "ready".
+   */
+  const ready = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM orders
+        WHERE id IN (SELECT oi.order_id FROM delivery_allocations a
+                       JOIN order_items oi ON oi.id = a.item_id
+                      WHERE a.delivery_id = ?1)
+          AND status IN ('requested','awaiting_payment')
+          AND NOT EXISTS (SELECT 1 FROM order_items WHERE order_id = orders.id AND from_incoming = 1)`,
+    )
+    .bind(key)
+    .first<{ n: number }>();
+
   return {
     filled: results.reduce((n, r) => n + r.filled, 0),
     orderIds: results.map((r) => r.order_id),
+    released: ready?.n ?? 0,
   };
 }
 
