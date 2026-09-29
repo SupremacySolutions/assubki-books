@@ -5627,6 +5627,22 @@ async function shipments() {
   t.ok(arrived.location.includes('released=2'),
     'the receipt says how many orders that delivery made ready to send');
 
+  /*
+   * And the list it links to marks them.
+   *
+   * The receipt used to link to ?status=awaiting_payment, which a released
+   * order does not have - arrival gives it a pay_by and leaves the status
+   * alone - so the link went to a page that did not contain the order it was
+   * pointing at. The flag is the same condition arrival uses, so the badge and
+   * the release can never disagree.
+   */
+  const reservations = await html('/admin/orders?kind=reservations');
+  t.ok(visibleText(reservations).includes('ready to send'),
+    'the reservations list marks an order whose books have all arrived');
+  const shipmentPageNow = await html(`/admin/shipments/${sid}`);
+  t.ok(!shipmentPageNow.includes('status=awaiting_payment'),
+    'and the receipt does not link to a status a released order has not got');
+
 
   /*
    * A notice that keeps failing has to be visible.
