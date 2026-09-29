@@ -62,6 +62,19 @@ const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1f
         fills the oldest reservations first and the rest keep their place - nothing is cancelled
         because a box was light.
       </p>
+      {/*
+        * Said out loud because it is the whole point and nothing said it.
+        * A part-load that happens to contain everything one customer asked
+        * for makes that order ready to send now - the shipment does not have
+        * to be finished, and one order going out early is not a special case
+        * to be handled by hand.
+        */}
+      <p class="mt-2 max-w-[74ch] text-[14px] leading-relaxed text-[var(--color-ink-soft)]">
+        <strong>You do not have to wait for the whole shipment.</strong> Record each box as it
+        lands. Any order whose books have all now arrived is given seven days to pay, its customer
+        is told, and it is ready to send - while everyone still waiting on a later box keeps
+        their place in the queue.
+      </p>
       <div class="mt-3.5 flex flex-wrap items-center gap-2.5" data-bulk hidden>
         <button type="button" data-all-arrived class="btn btn-ghost !py-2 !text-[13.5px] !text-[var(--color-navy)]">
           Everything arrived as expected

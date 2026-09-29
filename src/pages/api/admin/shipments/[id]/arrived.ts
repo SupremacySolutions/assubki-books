@@ -39,7 +39,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
      *
      * "Marked as arrived" on its own leaves the one question a person actually
      * has - what came, what did not, and what there is to do next - to be
-     * answered by scrolling three hundred rows. These four figures answer it,
+     * answered by scrolling three hundred rows. These figures answer it,
      * and none of them changes how the delivery was recorded: the first three
      * are read off the receipt that was just posted, and the last two off the
      * shipment as it now stands.
@@ -65,6 +65,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
       missing: String(missing),
       waiting: String(after?.waiting ?? 0),
       spare: String(after?.spare ?? 0),
+      released: String(result.released),
     });
     await syncChannelSoon(locals, new URL(request.url).origin);
     return back(`?${figures}`);
