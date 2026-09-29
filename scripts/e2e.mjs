@@ -5581,6 +5581,15 @@ async function shipments() {
   t.ok(/still on its way/i.test(visibleText(partly)),
     'and says the rest is still coming');
   t.ok(partly.includes('Reserve a copy'), 'with the remaining copies still reservable');
+
+  /* The listing has to agree with the page it links to. It said "Arrived -
+     reservations closed" from the first box while that page went on taking
+     them, which is the worse half of being wrong. */
+  const listing = visibleText(await html('/shipments'));
+  t.ok(!/reservations closed/i.test(listing) || !/More still on its way/i.test(listing),
+    'the shipments list never calls a part-arrived shipment closed');
+  t.ok(/More still on its way|free to reserve/i.test(listing),
+    'and says more is coming while copies are still expected');
   await db(`UPDATE shipments SET status='open', arrived_at=NULL WHERE id=${sid}`);
 
   const receipt = {receipt_key: crypto.randomUUID(), delivery_version: '0',
