@@ -440,6 +440,37 @@ async function test(name, fn) {
       row(`SELECT COUNT(*) n FROM orders WHERE status IN ('cancelled','expired')`).n,
       0,
     );
+
+    /*
+     * The shipment has not arrived, because it has not arrived.
+     *
+     * The status used to flip to 'arrived' on the first delivery, so a
+     * shipment with most of its copies still at sea described itself as
+     * landed - to the owner, and to every customer still waiting on it. Three
+     * copies are still expected here, so it is still open.
+     */
+    assert.equal(row(`SELECT status FROM shipments WHERE id=${s}`).status, 'open');
+    assert.equal(
+      row(`SELECT COALESCE(SUM(incoming),0) n FROM books WHERE shipment_id=${s}`).n,
+      3,
+    );
+  });
+
+  await test('a shipment is arrived once nothing is still expected', async () => {
+    /* The other half of the rule above: the last box does flip it. */
+    const s = shipment();
+    const b = book(s, 2);
+    await order([{ bookId: b, qty: 1 }]);
+
+    await receive(s, [[b, 1]]);
+    assert.equal(row(`SELECT status FROM shipments WHERE id=${s}`).status, 'open');
+
+    /* The version moved with the first box, as it is meant to. */
+    const v = row(`SELECT delivery_version FROM shipments WHERE id=${s}`).delivery_version;
+    await receive(s, [[b, 1]], v);
+    const done = row(`SELECT status, arrived_at FROM shipments WHERE id=${s}`);
+    assert.equal(done.status, 'arrived');
+    assert.ok(done.arrived_at > 0, 'and it is stamped with when it landed');
   });
   await test('payment is refused until arrival and consumes stock once after arrival', async () => {
     const s = shipment(),

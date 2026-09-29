@@ -173,8 +173,28 @@ export async function receiveDelivery(input: {
       .bind(key),
     db
       .prepare(
-        `UPDATE shipments SET status=CASE WHEN status='closed' THEN 'closed' ELSE 'arrived' END,arrived_at=COALESCE(arrived_at,unixepoch()),
-        delivery_version=delivery_version+1,updated_at=unixepoch()
+        /*
+         * 'arrived' means arrived, not "a box turned up".
+         *
+         * This used to flip the status on the first delivery, and a shipment
+         * that still had a hundred and fifty copies at sea then described
+         * itself as landed - to the owner, and to every customer still waiting
+         * on it. The pages were taught to ask what was still coming instead,
+         * but that was treating the symptom: the status was simply wrong.
+         *
+         * The books statement above has already reduced `incoming` for what
+         * came in this delivery, and a D1 batch runs in order, so the sum here
+         * is what is left after it. Nothing left means the shipment really has
+         * arrived; anything left and it is still open, which is what it is.
+         */
+        `UPDATE shipments SET status=CASE
+            WHEN status='closed' THEN 'closed'
+            WHEN (SELECT COALESCE(SUM(b.incoming),0) FROM books b WHERE b.shipment_id=shipments.id)=0 THEN 'arrived'
+            ELSE status END,
+          arrived_at=CASE
+            WHEN (SELECT COALESCE(SUM(b.incoming),0) FROM books b WHERE b.shipment_id=shipments.id)=0
+              THEN COALESCE(arrived_at,unixepoch()) ELSE arrived_at END,
+          delivery_version=delivery_version+1,updated_at=unixepoch()
       WHERE id=(SELECT shipment_id FROM deliveries WHERE id=?1) AND ${pending}`,
       )
       .bind(key),

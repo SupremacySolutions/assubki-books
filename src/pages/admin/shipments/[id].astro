@@ -445,13 +445,11 @@ const EDIT_COLS =
               </button>
             </form>
           )}
-          {/* "a delivery", not "arrived": a shipment can come in several boxes
-              and this button is pressed once per box. The page it opens
-              explains that a part-load is enough to release the orders it
-              completes. */}
+          {/* "a delivery", not "the shipment": this is pressed once per box,
+              and a shipment stays open until nothing is still expected. */}
           {canReceive && (
             <a href={`/admin/shipments/${id}/receive`} class="btn btn-primary !py-2.5 !text-[14.5px]">
-              {shipment.status === 'arrived' ? 'Record another delivery' : 'Record a delivery'}
+              Record a delivery
             </a>
           )}
         </div>
