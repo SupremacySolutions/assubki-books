@@ -59,6 +59,14 @@ export interface AdminOrderRow {
   pay_by: number | null;
   /** Which shipment this came from, if it is a reservation. */
   shipment_id: number | null;
+  /**
+   * 1 when every book on this reservation has arrived and it can go out.
+   *
+   * Only ever set on a reservation that is still open. A shipment arriving in
+   * boxes means one order can be ready while the rest of the shipment is at
+   * sea, and this is how the list says which.
+   */
+  ready_to_send?: number;
   confirmed_at: number | null;
   /** Set when payment was recorded, and when the order was closed. */
   paid_at: number | null;
@@ -127,7 +135,24 @@ export async function listOrders(
   const clauses = [kind === 'reservation' ? 'o.shipment_id IS NOT NULL' : 'o.shipment_id IS NULL'];
   if (status) clauses.push('o.status = ?');
   const stmt = env.DB.prepare(
-    `SELECT o.*, (SELECT COALESCE(SUM(qty),0) FROM order_items WHERE order_id = o.id) AS item_count
+    `SELECT o.*, (SELECT COALESCE(SUM(qty),0) FROM order_items WHERE order_id = o.id) AS item_count,
+            /*
+             * Everything this order asked for is now on the shelf.
+             *
+             * The same condition arrival.ts uses to release an order: nothing
+             * left on order from a delivery. A shipment can land in several
+             * boxes, so one customer's order can be complete while the shipment
+             * is still coming - and until this column existed, the only way to
+             * know which was to open each one.
+             *
+             * Read off the rows already being counted above, so it costs the
+             * same scan rather than a query per order.
+             */
+            CASE WHEN o.shipment_id IS NOT NULL
+                  AND o.status IN ('requested','awaiting_payment')
+                  AND NOT EXISTS (SELECT 1 FROM order_items
+                                   WHERE order_id = o.id AND from_incoming = 1)
+                 THEN 1 ELSE 0 END AS ready_to_send
        FROM orders o WHERE ${clauses.join(' AND ')}
       ORDER BY CASE o.status WHEN 'requested' THEN 0 WHEN 'awaiting_payment' THEN 1
                              WHEN 'paid' THEN 2 ELSE 3 END, o.created_at DESC
