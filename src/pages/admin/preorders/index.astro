@@ -1,0 +1,94 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { listPreorders } from '../../../lib/preorders';
+import { imageUrl, price } from '../../../lib/format';
+
+/**
+ * Books put up for pre-order, and how many copies people want of each.
+ *
+ * The copies column is the reason the page exists - it is what the owner
+ * sizes an order by - so it is the large number on every row, not the people
+ * count beside it.
+ */
+const preorders = await listPreorders();
+const open = preorders.filter((p) => p.status === 'open').length;
+
+const deleted = Astro.url.searchParams.get('deleted');
+const orphan = Astro.url.searchParams.get('orphan') === '1';
+
+const STATUS_LABEL = { draft: 'Draft', open: 'Open', closed: 'Closed' } as const;
+const STATUS_TONE = {
+  draft: 'text-[var(--color-ink-faint)]',
+  open: 'text-[var(--color-instock)]',
+  closed: 'text-[var(--color-ink-soft)]',
+} as const;
+---
+
+<Admin
+  title="Pre-orders"
+  sub={preorders.length === 0 ? 'none yet' : `${open} open · ${preorders.length} in all`}
+>
+  {
+    deleted && (
+      <p class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+        Deleted “{deleted}”, with everyone’s registered interest.
+        {orphan && (
+          <span class="block mt-1 text-[var(--color-outstock)]">
+            Its Telegram post could not be removed - Telegram only lets the bot delete posts under
+            48 hours old. Delete it in the channel by hand.
+          </span>
+        )}
+      </p>
+    )
+  }
+
+  <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <p class="text-[14.5px] text-[var(--color-ink-soft)] max-w-2xl leading-relaxed">
+      Put up a book you are thinking of buying. Customers register how many copies they would take
+      on the <a href="/preorders" class="text-[var(--color-navy)] underline underline-offset-2">Pre-order</a>
+      page, and the totals here tell you how many to order.
+    </p>
+    <a href="/admin/preorders/new" class="btn btn-primary shrink-0">New pre-order</a>
+  </div>
+
+  {
+    preorders.length === 0 ? (
+      <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
+        No pre-orders yet.
+      </p>
+    ) : (
+      <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
+        {preorders.map((p) => {
+          const thumb = imageUrl(p.image_key, 'thumb');
+          return (
+            <li>
+              <a
+                href={`/admin/preorders/${p.id}`}
+                class="flex items-center gap-4 p-4 hover:bg-[var(--color-wash-soft)] transition-colors"
+              >
+                <span class="w-[45px] h-[63px] shrink-0 overflow-hidden rounded-[2px] bg-[var(--color-wash-soft)]">
+                  {thumb && <img src={thumb} alt="" width="45" height="63" class="w-full h-full object-cover" loading="lazy" />}
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block text-[15px] font-medium truncate">{p.title}</span>
+                  <span class="mt-0.5 block text-[13px] text-[var(--color-ink-faint)]">
+                    <span class={STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</span>
+                    {' · '}
+                    {p.price_pence !== null ? price(p.price_pence) : 'price to be confirmed'}
+                    {p.telegram_message_id ? ' · posted to Telegram' : ''}
+                  </span>
+                </span>
+                <span class="text-right shrink-0">
+                  <span class="block text-[22px] font-semibold tabular-nums leading-none">{p.copies}</span>
+                  <span class="block mt-1 text-[12.5px] text-[var(--color-ink-faint)] tabular-nums">
+                    {p.copies === 1 ? 'copy' : 'copies'} · {p.people} {p.people === 1 ? 'person' : 'people'}
+                  </span>
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )
+  }
+</Admin>

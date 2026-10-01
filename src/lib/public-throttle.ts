@@ -45,6 +45,14 @@ export const LIMITS = {
    * three things in a sitting.
    */
   request: { perHour: 6, window: 3600 },
+  /*
+   * Registering interest in a pre-order.
+   *
+   * Bounded by what the owner has put up, unlike a free-text request, but each
+   * one still stores a name and an address. Twenty an hour is a customer going
+   * down a long list and changing their mind twice; a script meets it fast.
+   */
+  preorder: { perHour: 20, window: 3600 },
 } as const;
 
 export type PublicAction = keyof typeof LIMITS;

@@ -89,6 +89,21 @@ export function htmlToPlainText(html: string | null | undefined): string {
     .trim();
 }
 
+/**
+ * Plain text from the owner → the same safe HTML subset the importer produces.
+ * The reverse of {@link htmlToPlainText}; every description form saves through it.
+ */
+export function plainTextToHtml(text: string): string | null {
+  const clean = text.replace(/\r\n/g, '\n').trim();
+  if (!clean) return null;
+  const escape = (s: string) =>
+    s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+  return clean
+    .split(/\n{2,}/)
+    .map((para) => `<p>${escape(para).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
 export function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return `${text.slice(0, text.lastIndexOf(' ', max) || max).trimEnd()}…`;

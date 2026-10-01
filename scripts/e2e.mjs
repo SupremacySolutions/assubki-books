@@ -6927,6 +6927,188 @@ async function multibuy() {
   else await db("DELETE FROM settings WHERE key = 'order_discount_active'");
 }
 
+// ---------------------------------------------------------------------------
+async function preorders() {
+  const t = suite('29. Pre-orders');
+  const made = [];
+
+  const save = async (fields) => {
+    const r = await admin('/api/admin/preorders/save', {
+      id: '', title: `E2E pre-order ${Math.random().toString(36).slice(2, 7)}`,
+      title_ar: 'كتاب', author: 'Test Author', publisher: 'Test Press',
+      description: 'First paragraph.\n\nSecond paragraph.', price: '18.00', status: 'draft',
+      ...fields,
+    });
+    const id = Number(r.location.match(/\/admin\/preorders\/(\d+)/)?.[1]);
+    if (id && !made.includes(id)) made.push(id);
+    return { ...r, id };
+  };
+  const register = (fields) =>
+    fetch(`${SITE}/api/preorders/interest`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fields).toString(),
+    }).then((r) => r.headers.get('location') ?? '');
+
+  try {
+    const strangers = await fetch(`${SITE}/admin/preorders`, { redirect: 'manual' });
+    t.ok(strangers.status === 302 || strangers.status === 403, 'the portal page is closed to strangers');
+    const apiShut = await fetch(`${SITE}/api/admin/preorders/save`, { method: 'POST', redirect: 'manual' });
+    t.ok(apiShut.status === 302 || apiShut.status === 403, 'and so is saving one');
+
+    const home = await html('/');
+    t.ok(home.includes('href="/preorders"'), 'the header has a Pre-order tab');
+
+    const draft = await save({ price: '' });
+    t.ok(draft.id > 0 && draft.location.includes('saved=1'), 'the owner can create a pre-order');
+    const row = await one(`SELECT status, price_pence, description_html, publisher FROM preorders WHERE id=${draft.id}`);
+    t.ok(row.status === 'draft', 'which starts as a draft');
+    t.ok(row.price_pence === null, 'a blank price is "to be confirmed", not free');
+    t.ok(row.description_html === '<p>First paragraph.</p><p>Second paragraph.</p>',
+      'and the description is stored the way listings store theirs');
+
+    const title = (await one(`SELECT title FROM preorders WHERE id=${draft.id}`)).title;
+    t.ok(!(await html('/preorders')).includes(title), 'a draft is not on the public page');
+    t.ok((await register({ preorderId: String(draft.id), name: 'Amina', email: 'amina@example.com', copies: '1' }))
+      .includes('r=closed'), 'and takes no registrations');
+
+    t.ok((await save({ id: String(draft.id), isbn: '9780000000001' })).location.includes('e=isbn'),
+      'a mistyped ISBN is refused');
+    t.ok((await save({ id: String(draft.id), price: 'lots' })).location.includes('e=price'),
+      'and so is a price that is not a number');
+
+    /*
+     * Open and announced in one save. TELEGRAM_DRY_RUN answers with a made-up
+     * message id, so this checks the post was attempted and remembered without
+     * anything reaching the channel.
+     */
+    const opened = await save({ id: String(draft.id), title, price: '', status: 'open', post_telegram: '1' });
+    t.ok(opened.location.includes('tg=posted'), 'opening with the box ticked posts it to the channel');
+    t.ok((await one(`SELECT telegram_message_id AS m FROM preorders WHERE id=${draft.id}`)).m > 0,
+      'and the post is remembered so a later save edits it');
+    t.ok((await save({ id: String(draft.id), title, price: '', status: 'open', post_telegram: '1' })).location.includes('tg=updated'),
+      'posting again updates the same post rather than announcing it twice');
+
+    const notOpen = await save({ status: 'draft', post_telegram: '1' });
+    t.ok(notOpen.location.includes('tg=not-open'), 'a draft is never announced');
+
+    const page = await html('/preorders');
+    t.ok(page.includes(title) && page.includes(`id="p${draft.id}"`), 'an open pre-order is on the public page');
+    t.ok(page.includes('Price to be confirmed'), 'saying the price is not known yet');
+    const forms = page.match(/<\/?form\b/gi) ?? [];
+    let depth = 0;
+    let deepest = 0;
+    for (const tag of forms) {
+      if (tag.toLowerCase() === '<form') deepest = Math.max(deepest, ++depth);
+      else depth--;
+    }
+    t.ok(deepest <= 1 && depth === 0, 'and its interest form is not nested inside another');
+
+    const id = String(draft.id);
+    const first = await register({ preorderId: id, name: 'Amina Khan', email: 'Amina@Example.com', copies: '1' });
+    t.ok(first.includes('r=added') && first.startsWith('/preorders') && first.endsWith(`#p${id}`),
+      'a customer can register interest, and is returned to the same card');
+    t.ok((await register({ preorderId: id, name: 'Amina Khan', email: 'amina@example.com', copies: '3' }))
+      .includes('r=updated'), 'registering again with the same address changes the number');
+    t.ok((await register({ preorderId: id, name: 'Yusuf', email: 'yusuf@example.com', copies: '2' }))
+      .includes('r=added'), 'and a second person is counted separately');
+
+    for (const [fields, why] of [
+      [{ name: 'Z', email: 'z@example.com', copies: '1' }, 'a one-letter name'],
+      [{ name: 'Zayd', email: 'not-an-email', copies: '1' }, 'a bad address'],
+      [{ name: 'Zayd', email: 'z@example.com', copies: '0' }, 'nought copies'],
+      [{ name: 'Zayd', email: 'z@example.com', copies: '51' }, 'more than fifty copies'],
+      [{ name: 'Zayd', email: 'z@example.com', copies: '1.5' }, 'part of a copy'],
+    ]) {
+      t.ok((await register({ preorderId: id, ...fields })).includes('r=bad'), `${why} is refused`);
+    }
+    t.ok((await register({ preorderId: 'abc', name: 'Zayd', email: 'z@example.com', copies: '1' })) === '/preorders?r=bad',
+      'a nonsense id goes back to the page and nowhere else');
+
+    const demand = await one(
+      `SELECT COUNT(*) AS people, SUM(copies) AS copies FROM preorder_interest WHERE preorder_id=${id}`,
+    );
+    t.ok(demand.people === 2 && demand.copies === 5,
+      `the totals are 2 people and 5 copies (got ${demand.people} and ${demand.copies})`);
+    t.ok((await one(`SELECT COUNT(*) AS n FROM preorder_interest WHERE email='amina@example.com'`)).n === 1,
+      'addresses are stored lower-cased, so one person is one line');
+
+    const portal = visibleText(await html(`/admin/preorders/${id}`));
+    t.ok(portal.includes('Amina Khan') && portal.includes('yusuf@example.com'), 'the owner sees who registered');
+    t.ok(/Copies wanted\s*5/.test(portal), 'and the number to order by');
+    const list = visibleText(await html('/admin/preorders'));
+    t.ok(list.includes(title) && /5\s*copies · 2 people/.test(list), 'the portal list shows the totals too');
+
+    /*
+     * Closing keeps the names for the owner and stamps when, so the ninety-day
+     * clock on the privacy page has something to run from - and reopening
+     * clears it, or a pre-order reopened for a second round would lose its
+     * names to a clock started by the first.
+     */
+    await save({ id, title, status: 'closed' });
+    const closed = await one(`SELECT closed_at FROM preorders WHERE id=${id}`);
+    t.ok(closed.closed_at > 0, 'closing records when');
+    t.ok((await register({ preorderId: id, name: 'Late', email: 'late@example.com', copies: '1' })).includes('r=closed'),
+      'a closed pre-order takes no more registrations');
+    t.ok(!(await html('/preorders')).includes(title), 'and leaves the public page');
+    t.ok((await one(`SELECT COUNT(*) AS n FROM preorder_interest WHERE preorder_id=${id}`)).n === 2,
+      'but the names are kept for the owner');
+    await db(`UPDATE preorders SET closed_at = closed_at - 1000 WHERE id=${id}`);
+    await save({ id, title, status: 'closed' });
+    t.ok((await one(`SELECT closed_at FROM preorders WHERE id=${id}`)).closed_at === closed.closed_at - 1000,
+      'saving a closed pre-order again does not restart its clock');
+    await save({ id, title, status: 'open' });
+    t.ok((await one(`SELECT closed_at FROM preorders WHERE id=${id}`)).closed_at === null, 'reopening clears it');
+
+    const yusuf = (await one(`SELECT id FROM preorder_interest WHERE email='yusuf@example.com'`)).id;
+    const removed = await admin('/api/admin/preorders/interest/delete', { id: String(yusuf) });
+    t.ok(removed.location.startsWith(`/admin/preorders/${id}`), 'the owner can take somebody off the list');
+    t.ok((await one(`SELECT COUNT(*) AS n FROM preorder_interest WHERE id=${yusuf}`)).n === 0, 'which deletes the row');
+
+    // A cover, sent the way the portal's script sends it: the photo plus a
+    // sized version under a preset name, and one under a name that is not.
+    const png = Uint8Array.from(atob(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    ), (ch) => ch.charCodeAt(0));
+    const form = new FormData();
+    for (const [k, v] of Object.entries({ id, title, status: 'open', price: '18' })) form.append(k, v);
+    form.append('photo', new File([png], 'cover.png', { type: 'image/png' }));
+    form.append('width', '500');
+    form.append('height', '700');
+    form.append('variant:card', new File([png], 'card.webp', { type: 'image/webp' }));
+    form.append('variant:../../escape', new File([png], 'x.webp', { type: 'image/webp' }));
+    const uploaded = await fetch(`${SITE}/api/admin/preorders/save`, {
+      method: 'POST', headers: { ...ORIGIN, Cookie: adminCookie() }, body: form, redirect: 'manual',
+    });
+    t.ok((uploaded.headers.get('location') ?? '').includes('saved=1'), 'a cover can be saved with the form');
+    const withCover = await one(`SELECT image_key, image_width FROM preorders WHERE id=${id}`);
+    t.ok(withCover.image_key?.startsWith(`uploads/preorders/${id}/`) && withCover.image_width === 500,
+      'and is filed under the pre-order with its size');
+    t.ok((await get(`/img/${withCover.image_key}?p=card`)).status === 200, 'and served like any other cover');
+    t.ok((await html('/preorders')).includes(withCover.image_key), 'and shown on the public page');
+
+    const bad = new FormData();
+    for (const [k, v] of Object.entries({ id, title, status: 'open' })) bad.append(k, v);
+    bad.append('photo', new File(['GIF89a'], 'x.gif', { type: 'image/gif' }));
+    const refused = await fetch(`${SITE}/api/admin/preorders/save`, {
+      method: 'POST', headers: { ...ORIGIN, Cookie: adminCookie() }, body: bad, redirect: 'manual',
+    });
+    t.ok((refused.headers.get('location') ?? '').includes('photo=type'), 'a photo of the wrong type is refused, and said so');
+    t.ok((await one(`SELECT image_key FROM preorders WHERE id=${id}`)).image_key === withCover.image_key,
+      'leaving the cover it had');
+
+    const gone = await admin(`/api/admin/preorders/${id}/delete`);
+    t.ok(gone.location.startsWith('/admin/preorders?deleted='), 'the owner can delete a pre-order');
+    t.ok((await one(`SELECT COUNT(*) AS n FROM preorders WHERE id=${id}`)).n === 0 &&
+      (await one(`SELECT COUNT(*) AS n FROM preorder_interest WHERE preorder_id=${id}`)).n === 0,
+      'and the names go with it');
+    t.ok((await get(`/img/${withCover.image_key}`)).status === 404, 'and so does its cover');
+  } finally {
+    for (const id of made) await admin(`/api/admin/preorders/${id}/delete`).catch(() => {});
+  }
+}
+
 const SUITES = [
   ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
   ['validation', validation, true], ['stock', stockAndHolds, true],
@@ -6952,6 +7134,7 @@ const SUITES = [
   ['bulk', bulkEdits, true],
   ['requests', bookRequests, true],
   ['multibuy', multibuy, true],
+  ['preorders', preorders, true],
   ['integrity', integrity, true],
 ];
 

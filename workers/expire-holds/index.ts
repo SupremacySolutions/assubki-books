@@ -21,6 +21,7 @@ import { pruneAlerts, drainStockAlerts } from '../../src/lib/stock-alerts';
 import { purgeDeletedBooks } from '../../src/lib/book-deletion';
 import { pruneBulkEdits } from '../../src/lib/bulk-undo';
 import { pruneRequests } from '../../src/lib/book-requests';
+import { prunePreorderInterest } from '../../src/lib/preorders';
 import { pruneCompletedOrders } from '../../src/lib/order-retention';
 import { drainArrivalNotices } from '../../src/lib/shipment-notify';
 import { SITE } from '../../src/lib/format';
@@ -337,6 +338,11 @@ export default {
      */
     const asked = await stage('prune book requests', () => pruneRequests(env.DB));
     if (asked) console.log(`forgot ${asked} unanswered book request(s)`);
+
+    // Names on pre-orders closed more than ninety days ago - the other half of
+    // the same promise on the privacy page.
+    const interested = await stage('prune pre-order interest', () => prunePreorderInterest(env.DB));
+    if (interested) console.log(`forgot ${interested} registration(s) on long-closed pre-orders`);
   },
 
   /**
@@ -389,8 +395,10 @@ export default {
     const destroyed = await purgeDeletedBooks(env.DB, env.UPLOADS);
     const edits = await pruneBulkEdits(env.DB);
     const asked = await pruneRequests(env.DB);
+    const interested = await prunePreorderInterest(env.DB);
     return Response.json({
       lapsed, unpaid, told, alerts, channel, groups, proofs, completed, searches, destroyed, edits, asked,
+      interested,
     });
   },
 } satisfies ExportedHandler<Env>;
