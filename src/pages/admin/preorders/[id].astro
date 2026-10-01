@@ -229,8 +229,8 @@ const everyone = interest.length
         <div>
           <label for="status" class="block text-[14.5px] font-medium mb-1.5">Visibility</label>
           <select id="status" name="status" class="field">
-            <option value="draft" selected={(p?.status ?? 'draft') === 'draft'}>Draft (hidden)</option>
-            <option value="open" selected={p?.status === 'open'}>Open - customers can register</option>
+            <option value="draft" selected={(p?.status ?? 'open') === 'draft'}>Draft (hidden)</option>
+            <option value="open" selected={(p?.status ?? 'open') === 'open'}>Open - customers can register</option>
             <option value="closed" selected={p?.status === 'closed'}>Closed - no more registrations</option>
           </select>
           <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
@@ -283,10 +283,26 @@ const everyone = interest.length
 
     <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
       <h2 class="eyebrow mb-3">Telegram</h2>
+      {/*
+        * Nothing reaches the channel before the owner has read it.
+        *
+        * A new pre-order has nothing to preview - the form has not been saved,
+        * so there is no row to build a caption from - and offering to post one
+        * on save meant the first the owner saw of the wording was in the
+        * channel. So the offer only appears once there is something to show.
+        */}
+      {!p && canPost && (
+        <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+          Save it first. The exact wording of the channel post is shown here afterwards, and you
+          can send it once you have read it - nothing is posted before then.
+        </p>
+      )}
       {channelPreview && canPost && (
         <div class="mb-4">
           <p class="text-[12.5px] text-[var(--color-ink-faint)] mb-1.5">
-            What the channel will show{p?.telegram_message_id ? ' once you save' : ''}
+            {p?.telegram_message_id
+              ? 'What the post will say after you save'
+              : 'What the post will say'}
             {p?.status !== 'open' && ' - while it is not Open, the post says registrations are closed'}
           </p>
           <pre class="whitespace-pre-wrap break-words rounded-[var(--radius-field)] bg-[var(--color-paper)] border border-[var(--color-rule-faint)] p-3.5 text-[13.5px] leading-relaxed font-[family-name:var(--font-sans)]">{channelPreview}</pre>
@@ -299,7 +315,7 @@ const everyone = interest.length
       )}
       {!canPost ? (
         <p class="text-[14px] text-[var(--color-ink-soft)]">The Telegram bot is not configured, so nothing can be posted.</p>
-      ) : p?.telegram_message_id ? (
+      ) : !p ? null : p?.telegram_message_id ? (
         <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
           Posted to the channel{p.telegram_posted_at ? ` on ${when(p.telegram_posted_at)}` : ''}. Saving
           keeps the post up to date - closing the pre-order changes it to say registrations are closed.
@@ -308,9 +324,10 @@ const everyone = interest.length
         <label class="flex items-start gap-2.5 text-[14.5px]">
           <input type="checkbox" name="post_telegram" value="1" class="mt-1" />
           <span>
-            Post it in the Telegram channel as a pre-order when I save
+            Send the post above to the channel when I save
             <span class="block text-[13px] text-[var(--color-ink-faint)]">
-              Only posts if Visibility is Open. The post links to the Pre-order page.
+              Goes out once, exactly as shown. Only if Visibility is Open, and only this once -
+              after that, saving keeps the same post up to date rather than making a new one.
             </span>
           </span>
         </label>

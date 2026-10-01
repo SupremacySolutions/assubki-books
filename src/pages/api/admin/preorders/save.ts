@@ -66,8 +66,10 @@ export const POST: APIRoute = async ({ request, url }) => {
   const volumesRaw = Math.round(Number(form.get('volumes')) || 0);
   const volumes = volumesRaw > 1 ? Math.min(volumesRaw, 200) : null;
 
-  const statusRaw = String(form.get('status') ?? 'draft') as PreorderStatus;
-  const status = STATUSES.includes(statusRaw) ? statusRaw : 'draft';
+  /* Open unless the owner says otherwise. The point of a pre-order is to be
+     seen, and one left on Draft quietly collects nothing. */
+  const statusRaw = String(form.get('status') ?? 'open') as PreorderStatus;
+  const status = STATUSES.includes(statusRaw) ? statusRaw : 'open';
 
   const fields = [
     title,
