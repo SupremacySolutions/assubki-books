@@ -31,7 +31,7 @@ CREATE TABLE preorders (
   /*
    * draft  - being written, nobody outside the portal can see it
    * open   - on the pre-order page, taking interest
-   * closed - the owner has their number; the list of names stays for them
+   * closed - the owner has their number, and the list of names stays for them
    */
   status           TEXT    NOT NULL DEFAULT 'draft'
                    CHECK (status IN ('draft','open','closed')),
