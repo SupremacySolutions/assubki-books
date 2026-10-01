@@ -1,0 +1,175 @@
+---
+import Base from '../layouts/Base.astro';
+import Rosette from '../components/Rosette.astro';
+import { openPreorders, INTEREST_WORDS, MAX_COPIES, type InterestResult } from '../lib/preorders';
+import { imageUrl, price } from '../lib/format';
+import { IMAGE_PRESETS } from '../lib/image-presets';
+
+/*
+ * Books the shop is thinking of buying.
+ *
+ * Every word on this page has to keep one promise: registering is not
+ * ordering. Nothing is set aside and nothing is owed, so nothing here may read
+ * as if a copy has been secured - the owner is counting hands, and a customer
+ * who thought they had reserved a book would be let down by an honest count.
+ */
+const preorders = await openPreorders();
+
+/* The answer from the form, shown on the card it came from. */
+const result = Astro.url.searchParams.get('r') as InterestResult | null;
+const answeredId = Number(Astro.url.searchParams.get('p'));
+const answer = result && result in INTEREST_WORDS ? INTEREST_WORDS[result] : null;
+const good = result === 'added' || result === 'updated';
+---
+
+<Base
+  title="Pre-order"
+  description="Books we are thinking of bringing in. Tell us how many copies you would like and we will order accordingly."
+>
+  <div class="wrap py-10">
+    <h1 class="text-[30px] sm:text-[34px] leading-tight">Pre-order</h1>
+    <p class="mt-3 max-w-[44rem] text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+      These are books we are thinking of bringing in. Tell us how many copies you
+      would like and we will use the numbers to decide how many to order. Registering
+      is not an order: nothing is paid, nothing is reserved, and you are free to change
+      your mind. If we bring a book in, we will write to everyone who registered for it first.
+    </p>
+
+    {answer && !preorders.some((p) => p.id === answeredId) && (
+      <p role="status" class="mt-6 text-[14.5px] text-[var(--color-ink-soft)]">{answer}</p>
+    )}
+
+    {preorders.length === 0 && (
+      <p class="mt-8 text-[15.5px] text-[var(--color-ink-soft)]">
+        Nothing open for pre-order just now. Have a look at
+        {' '}<a href="/shipments" class="underline">upcoming shipments</a>
+        {' '}or <a href="/catalogue" class="underline">the catalogue</a>.
+      </p>
+    )}
+
+    <ul class="mt-8 grid gap-5">
+      {preorders.map((p) => {
+        const img = imageUrl(p.image_key, 'card');
+        const native = p.title_ar || p.title_ur;
+        const mine = p.id === answeredId;
+        return (
+          <li id={`p${p.id}`} class="scroll-mt-28">
+            <article class="bg-white border border-[var(--color-rule)] rounded-[var(--radius-panel)] p-5 grid gap-5 sm:grid-cols-[9.5rem_1fr]">
+              <div class="w-[7.5rem] sm:w-full">
+                <div class="relative overflow-hidden bg-white rounded-[var(--radius-card)] shadow-[var(--shadow-cover),inset_3px_0_0_rgba(14,42,85,0.14)] aspect-[5/7] grid place-items-center">
+                  {img ? (
+                    <img
+                      src={img}
+                      alt={p.title}
+                      width={IMAGE_PRESETS.card.width}
+                      height={IMAGE_PRESETS.card.height}
+                      loading="lazy"
+                      decoding="async"
+                      class="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div class="grid place-items-center text-[var(--color-wash)]">
+                      <Rosette size={48} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div class="min-w-0">
+                <h2 class="text-[21px] leading-snug">{p.title}</h2>
+                {native && (
+                  <p class="ar mt-1 text-[18px] text-[var(--color-ink-soft)]" dir="rtl" lang={p.title_ar ? 'ar' : 'ur'}>
+                    {native}
+                  </p>
+                )}
+                <p class="mt-1 text-[14px] text-[var(--color-ink-soft)]">
+                  {[p.author, p.publisher, p.volumes && p.volumes > 1 ? `${p.volumes} volume set` : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <p class="mt-2 text-[15px] font-medium tabular-nums">
+                  {p.price_pence !== null ? `Expected price ${price(p.price_pence)}` : 'Price to be confirmed'}
+                </p>
+
+                {p.description_html && (
+                  <div
+                    class="prose-book mt-3 !text-[14.5px] leading-relaxed"
+                    set:html={p.description_html}
+                  />
+                )}
+
+                {/* Its own form, never nested inside another - a nested form
+                    is discarded by the browser and its button submits the
+                    outer one, which has broken this codebase twice. */}
+                <form
+                  method="post"
+                  action="/api/preorders/interest"
+                  class="mt-4 pt-4 border-t border-[var(--color-rule-faint)] grid gap-3 sm:grid-cols-[1fr_1fr_6.5rem_auto] sm:items-end"
+                >
+                  <input type="hidden" name="preorderId" value={p.id} />
+                  <div>
+                    <label for={`name-${p.id}`} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">Your name</label>
+                    <input
+                      id={`name-${p.id}`}
+                      name="name"
+                      required
+                      minlength="2"
+                      maxlength="120"
+                      autocomplete="name"
+                      class="field !py-2 !text-[14.5px]"
+                    />
+                  </div>
+                  <div>
+                    <label for={`email-${p.id}`} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">Email</label>
+                    <input
+                      id={`email-${p.id}`}
+                      type="email"
+                      name="email"
+                      required
+                      maxlength="160"
+                      autocomplete="email"
+                      class="field !py-2 !text-[14.5px]"
+                    />
+                  </div>
+                  <div>
+                    <label for={`copies-${p.id}`} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">Copies</label>
+                    <input
+                      id={`copies-${p.id}`}
+                      type="number"
+                      name="copies"
+                      required
+                      min="1"
+                      max={MAX_COPIES}
+                      value="1"
+                      inputmode="numeric"
+                      class="field !py-2 !text-[14.5px] tabular-nums"
+                    />
+                  </div>
+                  <button type="submit" class="btn btn-primary !py-2 !text-[14px]">
+                    Register interest
+                  </button>
+                </form>
+
+                {mine && answer ? (
+                  <p
+                    role="status"
+                    class:list={[
+                      'mt-2 text-[13.5px] leading-relaxed',
+                      good ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]',
+                    ]}
+                  >{answer}</p>
+                ) : (
+                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                    Already registered? Enter the same email to change your number.
+                    We only use your details for this book. See our{' '}
+                    <a href="/privacy" class="underline">privacy notice</a>.
+                  </p>
+                )}
+              </div>
+            </article>
+          </li>
+        );
+      })}
+    </ul>
+  </div>
+</Base>

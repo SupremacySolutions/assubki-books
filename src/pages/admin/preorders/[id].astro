@@ -1,0 +1,381 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import PoundInput from '../../../components/PoundInput.astro';
+import CoverReview from '../../../components/CoverReview.astro';
+import { getPreorder, interestFor, KEEP_DAYS_AFTER_CLOSE } from '../../../lib/preorders';
+import { publisherSpellings } from '../../../lib/db';
+import { imageUrl, htmlToPlainText } from '../../../lib/format';
+import { botConfigured } from '../../../lib/telegram';
+
+const { id } = Astro.params;
+const isNew = id === 'new';
+const preorderId = isNew ? null : Number.parseInt(id ?? '', 10);
+if (!isNew && (!preorderId || Number.isNaN(preorderId))) return Astro.rewrite('/404');
+
+const p = preorderId ? await getPreorder(preorderId) : null;
+if (!isNew && !p) return Astro.rewrite('/404');
+
+const interest = p ? await interestFor(p.id) : [];
+const publishers = await publisherSpellings();
+const cover = imageUrl(p?.image_key, 'card');
+const canPost = botConfigured();
+
+const q = Astro.url.searchParams;
+const error = q.get('e');
+const ERRORS: Record<string, string> = {
+  title: 'A pre-order needs a title.',
+  isbn: 'That is not a real ISBN - the check digit does not add up. Correct it or clear the field.',
+  price: 'The price has to be a number of pounds, like 12.50, or left blank.',
+};
+const PHOTO: Record<string, string> = {
+  storage: 'Saved, but photo storage is not configured, so the cover was not kept.',
+  size: 'Saved, but that photo is larger than 8 MB, so the cover was not kept.',
+  type: 'Saved, but the cover has to be a JPEG, PNG or WebP.',
+};
+const TELEGRAM: Record<string, { ok: boolean; text: string }> = {
+  posted: { ok: true, text: 'Posted to the Telegram channel.' },
+  updated: { ok: true, text: 'The Telegram post has been updated.' },
+  failed: { ok: false, text: 'Telegram did not accept the post. Check the bot is still an admin of the channel.' },
+  'not-open': { ok: false, text: 'Not posted - only an open pre-order can be announced. Set it to Open first.' },
+};
+const tg = TELEGRAM[q.get('tg') ?? ''];
+
+const when = (at: number) =>
+  new Date(at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/* Everyone at once, blind-copied, for "the books have arrived". */
+const everyone = interest.length
+  ? `mailto:?bcc=${interest.map((i) => encodeURIComponent(i.email)).join(',')}&subject=${encodeURIComponent(
+      `${p!.title}: pre-order`,
+    )}`
+  : null;
+---
+
+<Admin
+  title={p ? p.title : 'New pre-order'}
+  sub={p ? `${p.copies} ${p.copies === 1 ? 'copy' : 'copies'} wanted by ${p.people} ${p.people === 1 ? 'person' : 'people'}` : undefined}
+  back={{ href: '/admin/preorders', label: 'Pre-orders' }}
+>
+  {q.get('saved') === '1' && !q.get('photo') && (
+    <p class="mb-4 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-instock)]">
+      Saved.
+    </p>
+  )}
+  {q.get('photo') && PHOTO[q.get('photo')!] && (
+    <p role="alert" class="mb-4 p-3 bg-[var(--color-outstock)]/6 border border-[var(--color-outstock)]/25 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+      {PHOTO[q.get('photo')!]}
+    </p>
+  )}
+  {tg && (
+    <p
+      role="status"
+      class:list={[
+        'mb-4 p-3 rounded-[3px] text-[14.5px] border',
+        tg.ok
+          ? 'bg-[var(--color-instock)]/10 border-[var(--color-instock)]/30 text-[var(--color-instock)]'
+          : 'bg-[var(--color-outstock)]/6 border-[var(--color-outstock)]/25 text-[var(--color-outstock)]',
+      ]}
+    >{tg.text}</p>
+  )}
+  {error && ERRORS[error] && (
+    <p role="alert" class="mb-4 p-3 bg-[var(--color-outstock)]/6 border border-[var(--color-outstock)]/25 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
+      {ERRORS[error]}
+    </p>
+  )}
+
+  {p && (
+    <div class="mb-6 grid gap-3 sm:grid-cols-3">
+      <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+        <p class="eyebrow">Copies wanted</p>
+        <p class="mt-1 text-[32px] font-semibold tabular-nums leading-none">{p.copies}</p>
+      </div>
+      <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+        <p class="eyebrow">People</p>
+        <p class="mt-1 text-[32px] font-semibold tabular-nums leading-none">{p.people}</p>
+      </div>
+      <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+        <p class="eyebrow">Status</p>
+        <p class="mt-1.5 text-[17px] font-medium">
+          {p.status === 'open' ? 'Open - taking interest' : p.status === 'closed' ? 'Closed' : 'Draft - not on the shop'}
+        </p>
+        {p.status === 'open' && (
+          <a href={`/preorders#p${p.id}`} class="mt-1 inline-block text-[13px] text-[var(--color-navy)] underline underline-offset-2">
+            See it on the shop
+          </a>
+        )}
+      </div>
+    </div>
+  )}
+
+  <form
+    id="preorderForm"
+    method="post"
+    action="/api/admin/preorders/save"
+    enctype="multipart/form-data"
+    class="grid gap-5"
+  >
+    <input type="hidden" name="id" value={p?.id ?? ''} />
+
+    <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 grid gap-4">
+      <h2 class="eyebrow">The book</h2>
+      <div>
+        <label for="title" class="block text-[14.5px] font-medium mb-1.5">Title</label>
+        <input id="title" name="title" required maxlength="200" value={p?.title ?? ''} class="field" />
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="title_ar" class="block text-[14.5px] font-medium mb-1.5">
+            Arabic title <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <input id="title_ar" name="title_ar" dir="rtl" maxlength="200" value={p?.title_ar ?? ''} class="field ar" />
+        </div>
+        <div>
+          <label for="title_ur" class="block text-[14.5px] font-medium mb-1.5">
+            Urdu title <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <input id="title_ur" name="title_ur" dir="rtl" lang="ur" maxlength="200" value={p?.title_ur ?? ''} class="field ar" />
+        </div>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="author" class="block text-[14.5px] font-medium mb-1.5">
+            Author <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <input id="author" name="author" maxlength="160" value={p?.author ?? ''} class="field" />
+        </div>
+        <div>
+          <label for="publisher" class="block text-[14.5px] font-medium mb-1.5">
+            Publisher <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <input
+            id="publisher"
+            name="publisher"
+            maxlength="160"
+            value={p?.publisher ?? ''}
+            list="publisherNames"
+            autocomplete="off"
+            class="field"
+          />
+          <datalist id="publisherNames">
+            {publishers.map((pub) => <option value={pub.name} />)}
+          </datalist>
+        </div>
+        <div>
+          <label for="volumes" class="block text-[14.5px] font-medium mb-1.5">
+            Volumes in the set <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <input
+            id="volumes"
+            name="volumes"
+            type="number"
+            min="1"
+            max="200"
+            placeholder="Leave blank unless it is a set"
+            value={p?.volumes ?? ''}
+            class="field"
+          />
+        </div>
+        <div>
+          <label for="isbn" class="block text-[14.5px] font-medium mb-1.5">
+            ISBN <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <input id="isbn" name="isbn" maxlength="20" inputmode="numeric" placeholder="978…" value={p?.isbn ?? ''} class="field" />
+        </div>
+      </div>
+      <div>
+        <label for="description" class="block text-[14.5px] font-medium mb-1.5">
+          Description <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+        </label>
+        <textarea id="description" name="description" rows="6" maxlength="6000" class="field"
+          >{htmlToPlainText(p?.description_html)}</textarea
+        >
+        <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+          Plain text. Blank lines start a new paragraph. The first couple of lines are what appears on Telegram.
+        </p>
+      </div>
+    </section>
+
+    <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 grid gap-4">
+      <h2 class="eyebrow">Price and visibility</h2>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="price" class="block text-[14.5px] font-medium mb-1.5">
+            Expected price (£) <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <PoundInput
+            id="price"
+            name="price"
+            min="0"
+            value={p?.price_pence != null ? (p.price_pence / 100).toFixed(2) : ''}
+          />
+          <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+            Leave blank and customers see “Price to be confirmed”.
+          </p>
+        </div>
+        <div>
+          <label for="status" class="block text-[14.5px] font-medium mb-1.5">Visibility</label>
+          <select id="status" name="status" class="field">
+            <option value="draft" selected={(p?.status ?? 'draft') === 'draft'}>Draft (hidden)</option>
+            <option value="open" selected={p?.status === 'open'}>Open - customers can register</option>
+            <option value="closed" selected={p?.status === 'closed'}>Closed - no more registrations</option>
+          </select>
+          <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+            Closing keeps the list of names for you. They are deleted {KEEP_DAYS_AFTER_CLOSE} days
+            after closing, or straight away if you delete the pre-order.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
+      <h2 class="eyebrow mb-3">Cover</h2>
+      <div class="flex flex-wrap items-start gap-5">
+        <div class="w-[120px] aspect-[5/7] overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-wash-soft)] grid place-items-center">
+          {cover ? (
+            <img id="coverPreview" src={cover} alt="" class="w-full h-full object-cover" />
+          ) : (
+            <img id="coverPreview" alt="" class="w-full h-full object-cover" hidden />
+          )}
+        </div>
+        <div class="min-w-0 flex-1 grid gap-2">
+          <label for="photo" class="block text-[14.5px] font-medium">
+            {cover ? 'Replace the cover' : 'Add a cover'}
+            <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+          </label>
+          <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" class="text-[14px]" />
+          <p id="coverStatus" class="text-[13px] text-[var(--color-ink-faint)]">
+            JPEG, PNG or WebP, up to 8 MB. You can straighten it before it is saved.
+          </p>
+          {cover && (
+            <label class="inline-flex items-center gap-2 text-[14px]">
+              <input type="checkbox" name="remove_cover" value="1" />
+              Remove the cover
+            </label>
+          )}
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
+      <h2 class="eyebrow mb-3">Telegram</h2>
+      {!canPost ? (
+        <p class="text-[14px] text-[var(--color-ink-soft)]">The Telegram bot is not configured, so nothing can be posted.</p>
+      ) : p?.telegram_message_id ? (
+        <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+          Posted to the channel{p.telegram_posted_at ? ` on ${when(p.telegram_posted_at)}` : ''}. Saving
+          keeps the post up to date - closing the pre-order changes it to say registrations are closed.
+        </p>
+      ) : (
+        <label class="flex items-start gap-2.5 text-[14.5px]">
+          <input type="checkbox" name="post_telegram" value="1" class="mt-1" />
+          <span>
+            Post it in the Telegram channel as a pre-order when I save
+            <span class="block text-[13px] text-[var(--color-ink-faint)]">
+              Only posts if Visibility is Open. The post links to the Pre-order page.
+            </span>
+          </span>
+        </label>
+      )}
+    </section>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="submit" class="btn btn-primary">{p ? 'Save' : 'Create pre-order'}</button>
+      <a href="/admin/preorders" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+
+  <CoverReview />
+
+  {p && (
+    <section id="interest" class="mt-10 scroll-mt-24">
+      <div class="flex flex-wrap items-baseline justify-between gap-3 mb-3">
+        <h2 class="font-[family-name:var(--font-display)] text-[22px] font-semibold">Registered interest</h2>
+        {everyone && (
+          <a href={everyone} class="text-[14px] text-[var(--color-navy)] underline underline-offset-2">
+            Email everyone (blind copy)
+          </a>
+        )}
+      </div>
+      {q.get('removed') === '1' && (
+        <p class="mb-3 text-[14px] text-[var(--color-instock)]">Removed from the list.</p>
+      )}
+      {interest.length === 0 ? (
+        <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
+          {p.status === 'open' ? 'Nobody has registered yet.' : 'Nobody registered.'}
+        </p>
+      ) : (
+        <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-x-auto">
+          <table class="w-full text-[14.5px]">
+            <thead>
+              <tr class="text-left text-[12.5px] text-[var(--color-ink-faint)] border-b border-[var(--color-rule-faint)]">
+                <th class="px-4 py-2.5 font-medium">Name</th>
+                <th class="px-4 py-2.5 font-medium">Email</th>
+                <th class="px-4 py-2.5 font-medium text-right">Copies</th>
+                <th class="px-4 py-2.5 font-medium">Registered</th>
+                <th class="px-4 py-2.5"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[var(--color-rule-faint)]">
+              {interest.map((i) => (
+                <tr>
+                  <td class="px-4 py-2.5">{i.name}</td>
+                  <td class="px-4 py-2.5 break-all">
+                    <a
+                      href={`mailto:${encodeURIComponent(i.email)}?subject=${encodeURIComponent(`${p.title}: pre-order`)}`}
+                      class="text-[var(--color-navy)] hover:underline underline-offset-2"
+                    >{i.email}</a>
+                  </td>
+                  <td class="px-4 py-2.5 text-right tabular-nums font-medium">{i.copies}</td>
+                  <td class="px-4 py-2.5 text-[var(--color-ink-faint)] whitespace-nowrap">
+                    {when(i.updated_at ?? i.at)}{i.updated_at ? ' (changed)' : ''}
+                  </td>
+                  <td class="px-4 py-2.5 text-right">
+                    <form method="post" action="/api/admin/preorders/interest/delete" data-confirm={`Remove ${i.name} from this list? Their address is deleted.`}>
+                      <input type="hidden" name="id" value={i.id} />
+                      <button type="submit" class="btn btn-ghost !py-1 !px-2 !text-[12.5px]">Remove</button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr class="border-t border-[var(--color-rule-soft)] font-medium">
+                <td class="px-4 py-2.5" colspan="2">Total</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{p.copies}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </section>
+  )}
+
+  {p && canPost && p.telegram_message_id && (
+    <form method="post" action={`/api/admin/preorders/${p.id}/telegram`} class="mt-8">
+      <button type="submit" class="btn btn-ghost">Update the Telegram post now</button>
+    </form>
+  )}
+
+  {p && (
+    <form
+      method="post"
+      action={`/api/admin/preorders/${p.id}/delete`}
+      class="mt-8 pt-6 border-t border-[var(--color-rule-soft)]"
+      data-confirm="Delete this pre-order? Everyone's registered interest is deleted with it."
+    >
+      <button type="submit" class="btn btn-ghost !text-[var(--color-outstock)]">Delete pre-order</button>
+      <span class="ml-2 text-[13px] text-[var(--color-ink-faint)]">
+        Deletes the names too{p.telegram_message_id ? ', and removes the Telegram post if it is under 48 hours old' : ''}.
+      </span>
+    </form>
+  )}
+
+  <script>
+    import { mountCoverReview } from '../../../scripts/cover-review.ts';
+    import { submitPreorderForm } from '../../../scripts/preorder-form.ts';
+
+    mountCoverReview();
+    submitPreorderForm();
+  </script>
+</Admin>

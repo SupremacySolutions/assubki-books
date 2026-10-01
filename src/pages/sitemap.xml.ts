@@ -39,6 +39,7 @@ export const GET: APIRoute = async ({ site, url }) => {
     entry('/catalogue', newest),
     entry('/about', newest),
     entry('/shipments', newest),
+    entry('/preorders', newest),
     entry('/contact', newest),
     ...categories.results.map((c) => entry(`/catalogue/${c.path}`, newest)),
     ...books.results.map((b) => entry(`/book/${b.slug}`, b.updated_at)),

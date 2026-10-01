@@ -7,21 +7,10 @@ import { tellWaiting } from '../../../../lib/stock-alerts';
 import { validIsbn, normaliseIsbn } from '../../../../lib/isbn-search';
 import { captionToStore } from '../../../../lib/channel-caption';
 import { readForm } from '../../../../lib/request-body';
+import { plainTextToHtml as toHtml } from '../../../../lib/format';
 import { validateOffers, sortOffers, type Offer, type OfferKind } from '../../../../lib/multibuy';
 
 export const prerender = false;
-
-/** Plain text from the owner → the same safe HTML subset the importer produces. */
-function toHtml(text: string): string | null {
-  const clean = text.replace(/\r\n/g, '\n').trim();
-  if (!clean) return null;
-  const escape = (s: string) =>
-    s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
-  return clean
-    .split(/\n{2,}/)
-    .map((para) => `<p>${escape(para).replace(/\n/g, '<br>')}</p>`)
-    .join('');
-}
 
 function slugify(str: string): string {
   return str

@@ -401,11 +401,7 @@ export interface PostedListing {
  * somebody's typing to a markup parser is how a stray bracket in a book title
  * silently fails the whole post.
  */
-function captionFor(post: ListingPost): {
-  text: string;
-  parse?: 'MarkdownV2';
-  entities?: { type: string; offset: number; length: number; url: string }[];
-} {
+function captionFor(post: ListingPost): ChannelText {
   const own = post.caption?.trim();
   if (!own) return { text: listingCaption(post), parse: 'MarkdownV2' };
   if (post.available > 0) return { text: own, entities: linkEntities(own, post.url) };
@@ -414,13 +410,35 @@ function captionFor(post: ListingPost): {
 }
 
 export async function postListing(post: ListingPost): Promise<PostedListing | null> {
+  const photos = (post.imageUrls?.length ? post.imageUrls : [post.imageUrl])
+    .filter((url): url is string => Boolean(url));
+  return postToChannel(captionFor(post), photos);
+}
+
+/** What a channel post says, and how Telegram should read it. */
+export interface ChannelText {
+  text: string;
+  parse?: 'MarkdownV2';
+  entities?: { type: string; offset: number; length: number; url: string }[];
+}
+
+/**
+ * Puts a post in the channel: an album, a photo, or text, in that order of
+ * preference, each falling back to the next.
+ *
+ * Shared by listings and pre-orders, which say different things but must
+ * arrive in the channel the same way.
+ */
+export async function postToChannel(
+  { text: caption, parse, entities }: ChannelText,
+  imageUrls: string[],
+): Promise<PostedListing | null> {
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) {
     console.log('[telegram] channel post skipped - no channel id');
     return null;
   }
 
-  const { text: caption, parse, entities } = captionFor(post);
   /*
    * A caption's ranges are `caption_entities`; a plain message's are
    * `entities`. Sending the wrong name is not an error, it is silently
@@ -428,9 +446,7 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
    */
   const captionMarkup = parse ? { parse_mode: parse } : entities ? { caption_entities: entities } : {};
   const textMarkup = parse ? { parse_mode: parse } : entities ? { entities } : {};
-  const photos = (post.imageUrls?.length ? post.imageUrls : [post.imageUrl])
-    .filter((url): url is string => Boolean(url))
-    .slice(0, ALBUM_MAX);
+  const photos = imageUrls.slice(0, ALBUM_MAX);
 
   /*
    * Every photo on the listing, as one album.
@@ -480,10 +496,17 @@ export async function postListing(post: ListingPost): Promise<PostedListing | nu
 
 /** Updates an existing channel post after the owner edits a listing. */
 export async function editListing(messageId: number, post: ListingPost): Promise<boolean> {
+  return editChannelPost(messageId, captionFor(post));
+}
+
+/** Rewrites what an existing channel post says, whether it carries a photo or not. */
+export async function editChannelPost(
+  messageId: number,
+  { text: caption, parse, entities }: ChannelText,
+): Promise<boolean> {
   const channel = cfg().TELEGRAM_CHANNEL_ID;
   if (!channel) return false;
 
-  const { text: caption, parse, entities } = captionFor(post);
   const captionMarkup = parse ? { parse_mode: parse } : entities ? { caption_entities: entities } : {};
   const textMarkup = parse ? { parse_mode: parse } : entities ? { entities } : {};
   let notModified = false;

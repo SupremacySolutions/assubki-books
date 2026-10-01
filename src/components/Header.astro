@@ -100,6 +100,15 @@ const isCatalogue = path.startsWith('/catalogue');
           ]}>Upcoming shipments</a
         >
         <a
+          href="/preorders"
+          class:list={[
+            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] whitespace-nowrap',
+            path.startsWith('/preorders')
+              ? 'text-[var(--color-navy)] font-medium'
+              : 'text-[var(--color-ink-soft)]',
+          ]}>Pre-order</a
+        >
+        <a
           href="/order"
           class:list={[
             'hidden lg:block px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] whitespace-nowrap',
@@ -154,6 +163,15 @@ const isCatalogue = path.startsWith('/catalogue');
             : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',
         ]}
       >Upcoming shipments</a>
+      <a
+        href="/preorders"
+        class:list={[
+          'shrink-0 rounded-sm px-3 py-2 text-[14px]',
+          path.startsWith('/preorders')
+            ? 'bg-[var(--color-navy)] text-white'
+            : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',
+        ]}
+      >Pre-order</a>
       <a
         href="/order"
         class:list={[
