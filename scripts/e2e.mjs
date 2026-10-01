@@ -7058,6 +7058,26 @@ async function preorders() {
     t.ok(/Copies wanted\s*5/.test(portal), 'and the number to order by');
     const list = visibleText(await html('/admin/preorders'));
     t.ok(list.includes(title) && /5\s*copies · 2 people/.test(list), 'the portal list shows the totals too');
+    /* The names are a click away and nothing said so, which is how the owner
+       came to ask where they were. */
+    t.ok(/who registered/i.test(list), 'and says where to find who they are');
+
+    /*
+     * Nothing reaches the channel before the owner has read it.
+     *
+     * A new pre-order has no saved row to build a caption from, so offering to
+     * post one on save meant the first the owner saw of the wording was in the
+     * channel. The offer now waits until there is a preview to read.
+     */
+    const fresh = visibleText(await html('/admin/preorders/new'));
+    t.ok(!/when I save/i.test(fresh) && /Save it first/i.test(fresh),
+      'a new pre-order offers no posting until there is something to preview');
+    t.ok(portal.includes('Pre-order: ') || /What the post will say/i.test(portal),
+      'a saved one shows exactly what the channel post will say');
+
+    /* Open, not Draft: a pre-order nobody can see collects nothing. */
+    t.ok(/<option value="open"[^>]*selected/.test(await html('/admin/preorders/new')),
+      'and a new pre-order starts Open rather than hidden');
 
     /*
      * Closing keeps the names for the owner and stamps when, so the ninety-day
