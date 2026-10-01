@@ -337,6 +337,38 @@ export function preorderCaption(p: Preorder, origin: string): ChannelText {
   return { text: lines.join('\n'), parse: 'MarkdownV2' };
 }
 
+/**
+ * The same post, written the way a person would type it.
+ *
+ * Not a rendering of the markdown one, for the reason `plainCaption` gives for
+ * listings: MarkdownV2 escapes every full stop, so an expected price of £12.50
+ * would reach the owner as `£12\.50`. This says the same facts in the same
+ * order, so what the preview shows is what the channel gets - and it sits
+ * directly beneath `preorderCaption` so the two are changed together.
+ */
+export function plainPreorderCaption(p: Preorder, origin: string): string {
+  const lines = [`Pre-order: ${p.title}`];
+  const native = p.title_ar || p.title_ur;
+  if (native) lines.push(native);
+  if (p.author) lines.push(p.author);
+  if (p.volumes && p.volumes > 1) lines.push(`${p.volumes} volume set`);
+  lines.push('');
+
+  const blurb = truncate(stripTags(p.description_html), 180);
+  if (blurb) lines.push(blurb, '');
+
+  if (p.status === 'open') {
+    lines.push(
+      p.price_pence !== null ? `Expected price ${price(p.price_pence)}` : 'Price to be confirmed',
+    );
+    lines.push('Tell us how many copies you would like, so we know how many to order.');
+    lines.push('', `Register interest - ${preorderUrl(origin, p.id)}`);
+  } else {
+    lines.push('Pre-orders for this book are now closed.');
+  }
+  return lines.join('\n');
+}
+
 export type PreorderPostResult = 'posted' | 'updated' | 'failed' | 'not-open';
 
 /**

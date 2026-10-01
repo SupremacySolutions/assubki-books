@@ -13,12 +13,24 @@ const { title, sub, back, showHeading = true } = Astro.props;
 const admin = Astro.locals.admin;
 const path = Astro.url.pathname;
 
+/*
+ * The five the owner opens all day, and the rest behind one disclosure.
+ *
+ * Ten tabs in one row had outgrown the bar: on a phone the last of them sat
+ * behind a horizontal scroll, which is a poor place to keep Settings. Split by
+ * how often a page is wanted rather than by what it is about - Shelves and
+ * Sales are set up once and left, Health and Settings are opened when
+ * something is wrong or changing.
+ */
 const NAV = [
   { href: '/admin', label: 'Dashboard' },
   { href: '/admin/orders', label: 'Orders' },
   { href: '/admin/books', label: 'Listings' },
   { href: '/admin/shipments', label: 'Shipments' },
   { href: '/admin/preorders', label: 'Pre-orders' },
+];
+
+const MORE = [
   { href: '/admin/shelves', label: 'Shelves' },
   { href: '/admin/sales', label: 'Sales' },
   { href: '/admin/requests', label: 'Requests' },
@@ -32,6 +44,10 @@ const NAV = [
 
 const active = (href: string) =>
   href === '/admin' ? path === '/admin' : path.startsWith(href);
+
+/* The menu names the page you are on rather than saying "More" over the top of
+   it, so a hidden tab still tells you where you are. */
+const openHere = MORE.find((item) => active(item.href)) ?? null;
 import { maintenanceNotice } from '../lib/maintenance';
 const closed = await maintenanceNotice();
 ---
@@ -75,7 +91,7 @@ const closed = await maintenanceNotice();
             View shop
           </a>
         </div>
-        <nav class="flex gap-1 -mb-px overflow-x-auto" aria-label="Portal">
+        <nav class="flex items-end gap-1 -mb-px" aria-label="Portal">
           {
             NAV.map((item) => (
               <a
@@ -91,6 +107,41 @@ const closed = await maintenanceNotice();
               </a>
             ))
           }
+
+          {/*
+            * A disclosure, not a scripted menu: it opens with the keyboard,
+            * works with scripting off, and closes itself when the link inside
+            * it loads the next page.
+            */}
+          <details class="relative ml-auto shrink-0" name="portal-more">
+            <summary
+              class:list={[
+                'cursor-pointer list-none select-none px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors',
+                openHere
+                  ? 'border-[var(--color-wash)] text-white font-medium'
+                  : 'border-transparent text-[var(--color-wash)]/70 hover:text-white',
+              ]}
+            >
+              {openHere ? openHere.label : 'More'}
+              <span aria-hidden="true" class="ml-1 text-[11px]">&#9662;</span>
+              <span class="sr-only">{openHere ? ' - more portal pages' : 'portal pages'}</span>
+            </summary>
+            <div class="absolute right-0 top-full z-30 mt-1 min-w-[11rem] rounded-[var(--radius-panel)] border border-[var(--color-rule-soft)] bg-white py-1 shadow-lg">
+              {MORE.map((item) => (
+                <a
+                  href={item.href}
+                  class:list={[
+                    'block px-4 py-2 text-[14.5px] whitespace-nowrap',
+                    active(item.href)
+                      ? 'font-medium text-[var(--color-navy)] bg-[var(--color-paper)]'
+                      : 'text-[var(--color-ink)] hover:bg-[var(--color-paper)]',
+                  ]}
+                >
+                  {item.label}
+                </a>
+              ))}
+            </div>
+          </details>
         </nav>
       </div>
     </header>

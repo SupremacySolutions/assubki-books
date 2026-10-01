@@ -6,6 +6,7 @@ import { getPreorder, interestFor, KEEP_DAYS_AFTER_CLOSE } from '../../../lib/pr
 import { publisherSpellings } from '../../../lib/db';
 import { imageUrl, htmlToPlainText } from '../../../lib/format';
 import { botConfigured } from '../../../lib/telegram';
+import { plainPreorderCaption } from '../../../lib/preorders';
 
 const { id } = Astro.params;
 const isNew = id === 'new';
@@ -18,6 +19,19 @@ if (!isNew && !p) return Astro.rewrite('/404');
 const interest = p ? await interestFor(p.id) : [];
 const publishers = await publisherSpellings();
 const cover = imageUrl(p?.image_key, 'card');
+
+/*
+ * What the channel post will say, shown before it is sent.
+ *
+ * Built from `plainPreorderCaption`, which sits directly beneath the function
+ * that builds the real caption so the two are changed together - the same
+ * arrangement the listing editor uses, and for the same reason: a preview that
+ * can drift from what is sent is worse than no preview.
+ *
+ * Only for a saved pre-order. A new one has nothing to describe yet, and the
+ * text would be a guess at what the form is about to contain.
+ */
+const channelPreview = p ? plainPreorderCaption(p, Astro.url.origin) : null;
 const canPost = botConfigured();
 
 const q = Astro.url.searchParams;
@@ -242,7 +256,18 @@ const everyone = interest.length
             {cover ? 'Replace the cover' : 'Add a cover'}
             <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
           </label>
-          <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" class="text-[14px]" />
+          {/* A labelled button rather than a bare file input, so it reads as
+              something to press - the same affordance the listing editor
+              gives. The input itself is what the form posts, and is only
+              visually hidden so the keyboard still reaches it. */}
+          <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only peer" />
+          <label
+            for="photo"
+            class="inline-flex w-fit cursor-pointer items-center gap-2 rounded-[var(--radius-field)] border border-[var(--color-rule-soft)] bg-white px-3.5 py-2 text-[14px] font-medium text-[var(--color-navy)] transition-colors hover:border-[var(--color-navy)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-navy)]"
+          >
+            {cover ? 'Choose a different photo' : 'Upload a photo'}
+          </label>
+          <span id="photoName" class="text-[13px] text-[var(--color-ink-faint)]" aria-live="polite"></span>
           <p id="coverStatus" class="text-[13px] text-[var(--color-ink-faint)]">
             JPEG, PNG or WebP, up to 8 MB. You can straighten it before it is saved.
           </p>
@@ -258,6 +283,20 @@ const everyone = interest.length
 
     <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
       <h2 class="eyebrow mb-3">Telegram</h2>
+      {channelPreview && canPost && (
+        <div class="mb-4">
+          <p class="text-[12.5px] text-[var(--color-ink-faint)] mb-1.5">
+            What the channel will show{p?.telegram_message_id ? ' once you save' : ''}
+            {p?.status !== 'open' && ' - while it is not Open, the post says registrations are closed'}
+          </p>
+          <pre class="whitespace-pre-wrap break-words rounded-[var(--radius-field)] bg-[var(--color-paper)] border border-[var(--color-rule-faint)] p-3.5 text-[13.5px] leading-relaxed font-[family-name:var(--font-sans)]">{channelPreview}</pre>
+          {!cover && (
+            <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
+              With no cover it goes as text only.
+            </p>
+          )}
+        </div>
+      )}
       {!canPost ? (
         <p class="text-[14px] text-[var(--color-ink-soft)]">The Telegram bot is not configured, so nothing can be posted.</p>
       ) : p?.telegram_message_id ? (

@@ -3193,6 +3193,25 @@ async function integrity() {
     'and the dashboard still loads when the analytics API is not configured');
   t.ok((adminNav.match(/label: 'Health'/g) ?? []).length === 1,
     'the portal nav lists Health once');
+
+  /*
+   * Ten tabs had outgrown the bar, so five stay and the rest sit behind one
+   * disclosure. What matters is that nothing was lost on the way: every page
+   * in the portal is still reachable from every page in the portal.
+   */
+  const bar = await html('/admin/settings');
+  for (const where of ['/admin', '/admin/orders', '/admin/books', '/admin/shipments',
+                       '/admin/preorders', '/admin/shelves', '/admin/sales',
+                       '/admin/requests', '/admin/health', '/admin/settings']) {
+    t.ok(bar.includes(`href="${where}"`), `the portal nav still reaches ${where}`);
+  }
+  t.ok(bar.includes('<details'), 'with the overflow as a disclosure, which needs no scripting');
+  /* On a page inside the menu, the menu says so rather than saying "More"
+     over the top of where you actually are. */
+  t.ok(/<summary[^>]*>[\s\S]{0,120}Settings/.test(bar),
+    'and names the page you are on when it is one of the hidden ones');
+  t.ok(/<summary[^>]*>[\s\S]{0,120}More/.test(await html('/admin/orders')),
+    'but says More when you are not');
   /*
    * The traffic panel reads Cloudflare's zone analytics, which is a second
    * thing that can be absent - a token without the zone scope, or a plan that

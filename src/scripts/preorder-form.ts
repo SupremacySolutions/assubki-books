@@ -23,6 +23,21 @@ export function submitPreorderForm(): void {
   const preview = document.querySelector<HTMLImageElement>('#coverPreview');
   if (!form || !input) return;
 
+  /*
+   * The file input is visually hidden behind its button, so nothing else says
+   * a photo was chosen. Without this the owner presses Upload, picks a file,
+   * and the page looks exactly as it did.
+   */
+  const chosenName = document.querySelector<HTMLElement>('#photoName');
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (chosenName) chosenName.textContent = file ? file.name : '';
+    if (file && preview) {
+      preview.src = URL.createObjectURL(file);
+      preview.hidden = false;
+    }
+  });
+
   let sending = false;
 
   form.addEventListener('submit', async (event) => {
