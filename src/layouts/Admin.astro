@@ -126,7 +126,7 @@ const closed = await maintenanceNotice();
               <span aria-hidden="true" class="ml-1 text-[11px]">&#9662;</span>
               <span class="sr-only">{openHere ? ' - more portal pages' : 'portal pages'}</span>
             </summary>
-            <div class="absolute right-0 top-full z-30 mt-1 min-w-[11rem] rounded-[var(--radius-panel)] border border-[var(--color-rule-soft)] bg-white py-1 shadow-lg">
+            <div class="absolute left-0 top-full z-30 mt-1 min-w-[11rem] rounded-[var(--radius-panel)] border border-[var(--color-rule-soft)] bg-white py-1 shadow-lg">
               {MORE.map((item) => (
                 <a
                   href={item.href}
