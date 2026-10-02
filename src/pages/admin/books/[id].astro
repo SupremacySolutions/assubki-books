@@ -27,6 +27,15 @@ const siblings = book?.set_id ? await setOptionsForOwner(book.set_id) : [];
 const setTotal = siblings.reduce((n, o) => Math.max(n, o.set_to ?? 0), 0);
 const wholeId = siblings.find((o) => o.set_from === 1 && o.set_to === setTotal)?.id ?? null;
 const partCount = siblings.filter((o) => o.id !== wholeId).length;
+/*
+ * The parts, which are every listing in the set except the set itself.
+ *
+ * Keyed off `wholeId` rather than `set_part`, because this page is reached by
+ * the whole and the column answers "should the shop browse this row", not
+ * "which of these is the parent". They agree, and the suite checks that they do.
+ */
+const parts = siblings.filter((o) => o.id !== wholeId);
+const wholeAvailable = siblings.find((o) => o.id === wholeId)?.available ?? 0;
 /* The builder starts from the volume count already saved, when there is one
    worth splitting. Worked out here because a `>` inside a tag's attribute is
    where the source check for stray builder fields stops reading. */
@@ -96,6 +105,13 @@ const SET_REFUSALS: Record<string, string> = {
   stranger:
     'One of the listings ticked is not one this page offered, so it was not linked. Reload the page and try again.',
   nonepicked: 'No listings were ticked, so there was nothing to link.',
+  heldpart:
+    'A customer is holding copies of that part, so it cannot be taken down yet. Complete or cancel their order first, and it comes down after that.',
+  heldrange:
+    'A customer is holding copies of that part, so the volumes it covers cannot be changed - their order is a claim on the volumes as they were. Its name and price can still be edited.',
+  lastpart:
+    'That would leave the set with no parts, which is not an edit but a decision to stop selling in parts - use that button instead, so the shelf count goes back onto this listing.',
+  nochange: 'Nothing was changed, so nothing was saved.',
   volumes: 'A set needs between 2 and 200 volumes.',
   badaction: 'That form did not say what it wanted to do. Reload the page and try again.',
 };
@@ -1166,60 +1182,163 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                   Sold whole and in {partCount} {partCount === 1 ? 'part' : 'parts'}
                 </h3>
                 <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed mb-5 max-w-[62ch]">
-                  All {siblings.length} listings sell from the same shelf of {setTotal}-volume sets.
-                  Each has its own price and cover. Open one to change it.
+                  This is the only listing in the shop. The parts below are ways to buy it, offered
+                  on its page behind one picker, and they all sell from the same shelf of
+                  {setTotal}-volume sets. Change a name or a price here and save.
                 </p>
 
-                <div class="rounded-[10px] border border-[var(--color-rule-soft)] overflow-hidden">
-                  <div class="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_5rem_5rem] gap-3 px-4 py-2.5 bg-[var(--color-paper-raised)] text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
-                    <span>Listing</span>
-                    <span class="hidden sm:block">Volumes</span>
-                    <span class="text-right">Price</span>
-                    <span class="text-right">Can sell</span>
-                  </div>
-                  {siblings.map((o) => {
-                    const whole = o.id === wholeId;
-                    const range = o.set_from === o.set_to ? `${o.set_from}` : `${o.set_from}-${o.set_to}`;
-                    return (
-                      <div class="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_5rem_5rem] gap-3 items-center px-4 py-3 border-t border-[var(--color-rule-faint)] text-[14px]">
-                        <span class="flex items-center gap-2.5 min-w-0 flex-wrap">
-                          {setTotal <= 24 && (
-                            <span class="hidden sm:flex gap-0.5" aria-hidden="true">
-                              {Array.from({ length: setTotal }, (_, v) => (
-                                <span
-                                  class:list={[
-                                    'w-2.5 h-[18px] rounded-[2px] border',
-                                    v + 1 >= (o.set_from ?? 0) && v + 1 <= (o.set_to ?? 0)
-                                      ? 'bg-[var(--color-navy)] border-[var(--color-navy)]'
-                                      : 'bg-white border-[var(--color-rule)]',
-                                  ]}
-                                />
-                              ))}
-                            </span>
-                          )}
-                          {o.id === book.id ? (
-                            <span class="font-medium truncate">{whole ? 'Complete set' : o.title}</span>
-                          ) : (
-                            <a href={`/admin/books/${o.id}`} class="font-medium truncate text-[var(--color-navy)] underline underline-offset-2">
-                              {whole ? 'Complete set' : o.title}
-                            </a>
-                          )}
-                          {o.id === book.id && (
-                            <span class="rounded-[var(--radius-pill)] bg-[var(--color-wash-soft)] px-2 py-0.5 text-[11.5px] text-[var(--color-navy)]">
-                              This listing
-                            </span>
-                          )}
-                        </span>
-                        <span class="hidden sm:block tabular-nums text-[var(--color-ink-soft)]">{range}</span>
-                        <span class="text-right tabular-nums font-semibold">{price(o.price_pence)}</span>
-                        <span class="text-right tabular-nums font-semibold">{o.available}</span>
-                      </div>
-                    );
-                  })}
+                {/*
+                  * The whole set, read-only, above the parts it is made of.
+                  *
+                  * Its price and title belong to this listing and are edited in
+                  * Identity above; repeating them here as a second set of boxes
+                  * would be two places to change one thing.
+                  */}
+                <div class="rounded-[10px] border border-[var(--color-rule-soft)] bg-[var(--color-paper-raised)] px-4 py-3 mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  {setTotal <= 24 && (
+                    <span class="hidden sm:flex gap-0.5" aria-hidden="true">
+                      {Array.from({ length: setTotal }, () => (
+                        <span class="w-2.5 h-[18px] rounded-[2px] border bg-[var(--color-navy)] border-[var(--color-navy)]" />
+                      ))}
+                    </span>
+                  )}
+                  <span class="font-medium">Complete set</span>
+                  <span class="text-[13px] text-[var(--color-ink-faint)] tabular-nums">
+                    Volumes 1-{setTotal}
+                  </span>
+                  <span class="tabular-nums font-semibold ml-auto">{price(book.price_pence)}</span>
+                  <span class="text-[13px] text-[var(--color-ink-faint)]">
+                    can sell {wholeAvailable}
+                  </span>
                 </div>
-                <p class="mt-2.5 mb-5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
-                  Each listing shows how many it can still sell from the shelf. Selling a part uses
-                  those volumes up, so the complete set goes down with it.
+
+                {/* Each part, editable in place. The four boxes are the same four
+                    the builder offers, read by the same function on the way in. */}
+                <div class="grid gap-2.5">
+                  {parts.map((o) => (
+                    <div class="rounded-[10px] border border-[var(--color-rule-soft)] p-3">
+                      <div class="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_4.25rem_4.25rem_6rem]">
+                        <label class="block">
+                          <span class="block text-[11px] tracking-[0.1em] uppercase text-[var(--color-ink-faint)] mb-1">
+                            What it is called
+                          </span>
+                          <input
+                            type="text"
+                            name={`edit_${o.id}_name`}
+                            value={o.title}
+                            maxlength="200"
+                            form="partsForm"
+                            class="field !py-1.5 !text-[14px]"
+                          />
+                        </label>
+                        <label class="block">
+                          <span class="block text-[11px] tracking-[0.1em] uppercase text-[var(--color-ink-faint)] mb-1">
+                            First
+                          </span>
+                          <input
+                            type="number" min="1" max={setTotal}
+                            name={`edit_${o.id}_from`} value={o.set_from ?? ''}
+                            form="partsForm"
+                            class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                          />
+                        </label>
+                        <label class="block">
+                          <span class="block text-[11px] tracking-[0.1em] uppercase text-[var(--color-ink-faint)] mb-1">
+                            Last
+                          </span>
+                          <input
+                            type="number" min="1" max={setTotal}
+                            name={`edit_${o.id}_to`} value={o.set_to ?? ''}
+                            form="partsForm"
+                            class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                          />
+                        </label>
+                        <label class="block">
+                          <span class="block text-[11px] tracking-[0.1em] uppercase text-[var(--color-ink-faint)] mb-1">
+                            Price
+                          </span>
+                          <input
+                            type="text" inputmode="decimal"
+                            name={`edit_${o.id}_price`}
+                            value={(o.price_pence / 100).toFixed(2)}
+                            form="partsForm"
+                            class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                          />
+                        </label>
+                      </div>
+                      <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px]">
+                        <span class="text-[var(--color-ink-faint)] tabular-nums">
+                          Can sell {o.available}
+                        </span>
+                        {o.reserved > 0 && (
+                          <span class="rounded-[var(--radius-pill)] bg-[var(--color-brass)]/15 px-2 py-0.5 text-[11.5px] text-[var(--color-brass-deep)]">
+                            {o.reserved} held - volumes locked
+                          </span>
+                        )}
+                        <label class="ml-auto flex items-center gap-2 cursor-pointer text-[var(--color-outstock)]">
+                          <input
+                            type="checkbox"
+                            name={`remove_${o.id}`}
+                            value="1"
+                            form="partsForm"
+                            disabled={o.reserved > 0}
+                            class="w-4 h-4 accent-[var(--color-outstock)] disabled:opacity-40"
+                          />
+                          <span class:list={[o.reserved > 0 && 'opacity-40']}>Take this part down</span>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/*
+                  * Room to add one, without taking the set apart first.
+                  *
+                  * Adding used to mean "stop selling in parts" and building the
+                  * whole thing again, which archives every part listing and
+                  * strands its cover and channel post.
+                  */}
+                <details class="mt-3">
+                  <summary class="text-[14px] text-[var(--color-navy)] cursor-pointer">
+                    Add another way to buy it
+                  </summary>
+                  <div class="mt-3 grid gap-2.5">
+                    {Array.from({ length: 2 }, (_, i) => (
+                      <div class="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_4.25rem_4.25rem_6rem] rounded-[10px] border border-dashed border-[var(--color-rule)] p-3">
+                        <input
+                          type="text" name={`part_${i}_name`} form="partsForm"
+                          placeholder="e.g. Volumes 5-6" maxlength="200"
+                          class="field !py-1.5 !text-[14px]"
+                        />
+                        <input
+                          type="number" min="1" max={setTotal} name={`part_${i}_from`} form="partsForm"
+                          placeholder="1" class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                        />
+                        <input
+                          type="number" min="1" max={setTotal} name={`part_${i}_to`} form="partsForm"
+                          placeholder={String(setTotal)} class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                        />
+                        <input
+                          type="text" inputmode="decimal" name={`part_${i}_price`} form="partsForm"
+                          placeholder="17.00" class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </details>
+
+                <div class="mt-4 flex flex-wrap items-center gap-3">
+                  <button type="submit" form="partsForm" class="btn btn-primary !py-2 !text-[14px]">
+                    Save the parts
+                  </button>
+                  <p class="text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                    A name or price can change at any time - an order already placed keeps what it
+                    was sold at. Which volumes a part covers is fixed while a customer is holding it.
+                  </p>
+                </div>
+
+                <p class="mt-4 mb-5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                  Selling a part uses those volumes up, so the complete set goes down with it.
                 </p>
 
                 <div class="bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[10px] p-4">
@@ -1742,6 +1861,9 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
         <form id="partsForm" method="post" action={`/api/admin/books/${book.id}/set`} />
         <form id="adoptForm" method="post" action={`/api/admin/books/${book.id}/set`}>
           <input type="hidden" name="action" value="adopt" />
+        </form>
+        <form id="partsForm" method="post" action={`/api/admin/books/${book.id}/set`}>
+          <input type="hidden" name="action" value="parts" />
         </form>
         <form id="unsplitForm" method="post" action={`/api/admin/books/${book.id}/set`}>
           <input type="hidden" name="action" value="unsplit" />

@@ -10,8 +10,11 @@ export const GET: APIRoute = async ({ site, url }) => {
   const origin = (site ?? new URL(url.origin)).origin;
 
   const [books, categories] = await Promise.all([
+    // A part of a set shares its parent's page through a picker, so listing its
+    // own address here would offer Google several URLs for one thing to buy.
     env.DB.prepare(`SELECT slug, updated_at FROM books
-        WHERE status = 'live' AND deleted_at IS NULL ORDER BY slug`).all<{
+        WHERE status = 'live' AND deleted_at IS NULL AND set_part = 0
+        ORDER BY slug`).all<{
       slug: string;
       updated_at: number;
     }>(),

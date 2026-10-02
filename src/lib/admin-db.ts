@@ -432,7 +432,16 @@ export function bookListWhere(opts: BookScope): { where: string; binds: unknown[
    * having to know this rule exists. `deleted` is the single exception, and it
    * opts out by name rather than by the absence of anything.
    */
-  const clauses: string[] = ['b.shipment_id IS NULL'];
+  /*
+   * A part of a set is not a listing either.
+   *
+   * The owner manages the parts from the set's own page, where they can be
+   * renamed, repriced and removed together. Listing them here as well put a
+   * four-volume work split three ways into this table four times, and gave
+   * three of those rows an Edit screen whose Identity and Photos sections
+   * belong to the parent.
+   */
+  const clauses: string[] = ['b.shipment_id IS NULL', 'b.set_part = 0'];
   if (filter !== 'deleted') clauses.push('b.deleted_at IS NULL');
   const binds: unknown[] = [];
 
@@ -537,7 +546,8 @@ export async function bookFilterCounts(): Promise<Record<BookFilter, number>> {
   // The same exclusion the list itself makes, or the chips would promise work
   // that the page they lead to does not show.
   const row = await env.DB.prepare(
-    `SELECT ${parts.join(', ')} FROM books b WHERE b.shipment_id IS NULL`,
+    `SELECT ${parts.join(', ')} FROM books b
+      WHERE b.shipment_id IS NULL AND b.set_part = 0`,
   ).first<Record<string, number>>();
   return (row ?? {}) as Record<BookFilter, number>;
 }
