@@ -32,6 +32,9 @@ export const prerender = false;
  * sets need - but a half-filled one is, because it means something was meant
  * and mistyped.
  */
+/** How many part rows the builder offers, and this reads. */
+export const MAX_PARTS = 8;
+
 function readPart(form: FormData, i: number, volumes: number) {
   const name = String(form.get(`part_${i}_name`) ?? '').trim();
   const fromRaw = String(form.get(`part_${i}_from`) ?? '').trim();
@@ -335,7 +338,17 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
   if (!(volumes >= 2 && volumes <= 200)) return fail('volumes');
   const sets = Math.max(0, Math.min(999, Math.round(Number(form.get('sets')) || 0)));
 
-  const rows = [0, 1, 2, 3].map((i) => readPart(form, i, volumes));
+  /*
+   * Eight, not four.
+   *
+   * Four was enough for a work split into halves or quarters, which is what
+   * this was built for. It is not enough for the case that turned up: six
+   * separate books by one author, sold singly or as the six. The owner had the
+   * listing and no way to describe it - the fifth and sixth rows did not
+   * exist. Eight covers that with room spare, and an empty row still costs
+   * nothing.
+   */
+  const rows = Array.from({ length: MAX_PARTS }, (_, i) => readPart(form, i, volumes));
   /* Whichever is wrong, said by name. `noparts` is its own answer: "half
      filled in" made no sense at all when every row was empty. */
   const wrong = rows.find((r) => r === 'half' || r === 'range' || r === 'price');
