@@ -67,9 +67,27 @@ const SET_REFUSALS: Record<string, string> = {
     'That is fewer sets than customers are already holding. Cancel or complete those orders first, or set a number at least as high as what is reserved.',
   notaset: 'This listing is not sold in parts, so there is no shelf count to change.',
   alreadyset: 'This listing is already sold in parts.',
-  parts:
-    'One of those rows is half filled in. Every part needs a name, a first and last volume inside the set, and a price - or leave the row completely empty.',
+  /*
+   * One sentence used to cover all of these.
+   *
+   * Every refusal from a part row said "one of those rows is half filled in",
+   * so an owner who typed volumes 1 to 6 of a four volume set was told a row
+   * was half filled in - which it was not - and an owner who filled in nothing
+   * at all was told the same. Three mistakes wearing one sentence is how this
+   * came to be reported as an error that makes no sense.
+   */
+  half:
+    'One of those rows is half filled in. A part needs all four: a name, a first volume, a last volume and a price - or leave the row completely empty.',
+  range:
+    'One of those rows covers volumes the set does not have. The first and last volume must be within the number of volumes altogether, and the last cannot come before the first.',
+  price: 'One of those rows has a price that is not a number. Write it as 17.00.',
+  noparts:
+    'No parts were filled in, so there is nothing to build. Fill in at least one row - a name, which volumes it covers, and a price.',
+  stranger:
+    'One of the listings ticked is not one this page offered, so it was not linked. Reload the page and try again.',
+  nonepicked: 'No listings were ticked, so there was nothing to link.',
   volumes: 'A set needs between 2 and 200 volumes.',
+  badaction: 'That form did not say what it wanted to do. Reload the page and try again.',
 };
 
 const justSaved = Astro.url.searchParams.get('saved') === '1';
@@ -280,9 +298,9 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
     * the button.
     */}
   {
-    SET_REFUSALS[error ?? ''] && (
+    error && (
       <p class="mb-5 p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14.5px] text-[var(--color-outstock)]">
-        {SET_REFUSALS[error!]}
+        {SET_REFUSALS[error] ?? `Something was refused and the page did not know what to call it (${error}). Nothing was changed.`}
       </p>
     )
   }
@@ -1280,11 +1298,26 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                   </div>
                 )}
 
-                <div class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3">
+                {/*
+                  * Said in the order a person needs it: what they end up with,
+                  * then the one thing that surprises them.
+                  *
+                  * "Drawing on one shared count" was the whole idea in four
+                  * words of jargon, and the shared pile is exactly the part
+                  * that catches people out - sell half a set and you have half
+                  * a set left, not a whole one.
+                  */}
+                <div class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3 space-y-1.5">
                   <p>
-                    <strong class="text-[var(--color-ink)]">This listing becomes the complete set</strong>,
-                    keeping its cover and description. Each part below becomes a listing of its own,
-                    drawing on one shared count.
+                    Sell the whole set, and pieces of it, from the same shelf. This listing stays as
+                    the complete set and keeps its cover and description; each part you name below
+                    becomes a listing of its own, with its own price.
+                  </p>
+                  <p>
+                    <strong class="text-[var(--color-ink)]">They all come out of the same pile.</strong>
+                    {' '}If you have three sets and somebody buys volumes 1-2 on their own, two
+                    complete sets are left and the odd volumes stay sellable. You keep one number on
+                    the shelf, not one per part.
                   </p>
                 </div>
 
@@ -1303,8 +1336,9 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                     <span class="tabular-nums text-[var(--color-ink)]">17.00</span>
                   </div>
                   <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                    A four volume set, sold whole or as either half. Parts may overlap or leave gaps
-                    - it is your shelf.
+                    A four volume set, also sold as either half. Every first and last volume has to
+                    be inside the set - with four volumes altogether, a part cannot run to 6. Parts
+                    may overlap or leave gaps; that is your shelf, not a mistake.
                   </p>
                 </div>
 
@@ -1582,6 +1616,38 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
               if (!el) continue;
               el.classList.toggle('!border-[var(--color-outstock)]', filled[n] === 0);
             }
+          }
+
+          /*
+           * And whether the volumes it covers exist.
+           *
+           * This used to check only that a row was filled in, so a part
+           * covering volumes 1 to 6 of a four volume set passed here and was
+           * refused by the server - which then called it half filled in. The
+           * owner saw a sentence about a row they had completed.
+           */
+          const total = Number((document.querySelector('[name="volumes"][form="partsForm"]') || {}).value) || 0;
+          for (let i = 0; i < 4 && !problem; i++) {
+            const fromEl = document.querySelector('[name="part_' + i + '_from"]');
+            const toEl = document.querySelector('[name="part_' + i + '_to"]');
+            if (!fromEl || !toEl || !fromEl.value.trim() || !toEl.value.trim()) continue;
+            const from = Number(fromEl.value);
+            const to = Number(toEl.value);
+            const bad = to < from
+              ? 'ends before it starts'
+              : total && to > total
+                ? 'runs past volume ' + total
+                : from < 1
+                  ? 'starts before volume 1'
+                  : null;
+            if (!bad) {
+              fromEl.classList.remove('!border-[var(--color-outstock)]');
+              toEl.classList.remove('!border-[var(--color-outstock)]');
+              continue;
+            }
+            problem = 'Row ' + (i + 1) + ' ' + bad + '.';
+            fromEl.classList.toggle('!border-[var(--color-outstock)]', from < 1 || to < from);
+            toEl.classList.add('!border-[var(--color-outstock)]');
           }
           partsError.hidden = !problem;
           if (problem) partsError.querySelector('[data-parts-message]').textContent = problem;
