@@ -3737,12 +3737,14 @@ async function integrity() {
    */
   const splittable = await makeBook({ volumes: '6' });
   const setEditor = await html(`/admin/books/${splittable.id}`);
-  /* "First volume" and "Last volume" became "First" and "Last": the same
-     builder has to describe six separate books by one author, where calling
-     them volumes of one work would be wrong. */
-  for (const head of ['Name of the part', '>First<', '>Last<']) {
-    t.ok(setEditor.includes(head), `the parts grid labels ${head}`);
+  /* Every field is labelled on every part, so nothing depends on a header row
+     scrolled out of view. "From volume" and "To volume" are back: the owner
+     found bare "First" and "Last" harder to follow, and the set field now says
+     outright that a bundle of separate books counts each book as a volume. */
+  for (const head of ['Name in the shop', 'From volume', 'To volume', 'separate books']) {
+    t.ok(setEditor.includes(head), `the parts builder labels ${head}`);
   }
+  t.ok((setEditor.match(/>From volume</g) ?? []).length === 8, 'on each of the eight parts');
   const placeholders = [...setEditor.matchAll(/name="part_\d_name"[^>]*placeholder="([^"]*)"/g)]
     .map((m) => m[1]);
   t.ok(placeholders.length === 8 && new Set(placeholders).size === 1,
