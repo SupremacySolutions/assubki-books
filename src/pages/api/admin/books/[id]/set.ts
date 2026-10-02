@@ -39,7 +39,17 @@ function readPart(form: FormData, i: number, volumes: number) {
   const priceRaw = String(form.get(`part_${i}_price`) ?? '').trim();
 
   if (!name && !fromRaw && !toRaw && !priceRaw) return 'empty' as const;
-  if (!name || !fromRaw || !toRaw || !priceRaw) return null;
+  /*
+   * Why a row was refused, not merely that it was.
+   *
+   * Every one of these used to be the same `null`, and every `null` became the
+   * same message: "one of those rows is half filled in". So an owner who typed
+   * a part covering volumes 1 to 6 of a four volume set was told a row was
+   * half filled in, which it was not, and given no hint of what was actually
+   * wrong. Three different mistakes wearing one sentence is how this came to
+   * be reported as an error that makes no sense.
+   */
+  if (!name || !fromRaw || !toRaw || !priceRaw) return 'half' as const;
 
   const from = Number.parseInt(fromRaw, 10);
   const to = Number.parseInt(toRaw, 10);
@@ -47,11 +57,11 @@ function readPart(form: FormData, i: number, volumes: number) {
   // Refused rather than clamped: a part that runs past the end of the set, or
   // backwards, is a typo, and quietly correcting it would put a listing on the
   // shop front that nobody meant.
-  if (!(Number.isInteger(from) && Number.isInteger(to))) return null;
-  if (!(from >= 1 && to >= from && to <= volumes)) return null;
+  if (!(Number.isInteger(from) && Number.isInteger(to))) return 'range' as const;
+  if (!(from >= 1 && to >= from && to <= volumes)) return 'range' as const;
 
   const pence = Math.round(Number(priceRaw.replace(/[^0-9.]/g, '')) * 100);
-  if (!Number.isFinite(pence) || pence < 0) return null;
+  if (!Number.isFinite(pence) || pence < 0) return 'price' as const;
 
   return { name: name.slice(0, 200), from, to, pence };
 }
@@ -206,15 +216,16 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
       const match = key.match(/^adopt_(\d+)$/);
       if (!match || form.get(key) === null) continue;
       const partId = Number(match[1]);
-      if (!offered.has(partId)) return fail('parts');
+      if (!offered.has(partId)) return fail('stranger');
       const from = Number.parseInt(String(form.get(`from_${partId}`) ?? ''), 10);
       const to = Number.parseInt(String(form.get(`to_${partId}`) ?? ''), 10);
-      // Refused rather than guessed, the same as the builder's own rows.
-      if (!(Number.isInteger(from) && Number.isInteger(to))) return fail('parts');
-      if (!(from >= 1 && to >= from && to <= volumes)) return fail('parts');
+      // Refused rather than guessed, the same as the builder's own rows - and
+      // named the same way, so "which volumes" is answered rather than hinted.
+      if (!(Number.isInteger(from) && Number.isInteger(to))) return fail('range');
+      if (!(from >= 1 && to >= from && to <= volumes)) return fail('range');
       adopted.push({ id: partId, from, to });
     }
-    if (adopted.length === 0) return fail('parts');
+    if (adopted.length === 0) return fail('nonepicked');
 
     // Everything the set can supply comes from the whole set's own stock: it is
     // the count of complete sets on the shelf, which is what a volume count is.
@@ -325,9 +336,14 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
   const sets = Math.max(0, Math.min(999, Math.round(Number(form.get('sets')) || 0)));
 
   const rows = [0, 1, 2, 3].map((i) => readPart(form, i, volumes));
-  if (rows.some((r) => r === null)) return fail('parts');
-  const parts = rows.filter((r): r is Exclude<typeof r, null | 'empty'> => r !== 'empty');
-  if (parts.length === 0) return fail('parts');
+  /* Whichever is wrong, said by name. `noparts` is its own answer: "half
+     filled in" made no sense at all when every row was empty. */
+  const wrong = rows.find((r) => r === 'half' || r === 'range' || r === 'price');
+  if (wrong) return fail(wrong);
+  const parts = rows.filter(
+    (r): r is Exclude<typeof r, 'empty' | 'half' | 'range' | 'price'> => typeof r === 'object',
+  );
+  if (parts.length === 0) return fail('noparts');
 
   /*
    * Header, pool and part listings in one transaction - see the note on the

@@ -3008,7 +3008,11 @@ async function integrity() {
     action: 'create', volumes: '4', sets: '1',
     part_0_name: 'Too far', part_0_from: '3', part_0_to: '9', part_0_price: '5.00',
   });
-  t.ok(offEnd.location.includes('e=parts'), 'a part reaching past the last volume is refused');
+  /* `e=range`, not `e=parts`: the refusals used to share one code and so one
+     sentence, and a part running past the end of the set was reported to the
+     owner as a row that was half filled in. */
+  t.ok(offEnd.location.includes('e=range'),
+    'a part reaching past the last volume is refused as a range, not as a half-filled row');
 
   /*
    * Cleaned up by hand, and this is why: the builder creates a listing per
@@ -3029,8 +3033,35 @@ async function integrity() {
     action: 'create', volumes: '4', sets: '1',
     part_0_name: 'Missing its price', part_0_from: '1', part_0_to: '2',
   });
-  t.ok(halfFilled.location.includes('e=parts'),
+  t.ok(halfFilled.location.includes('e=half'),
     'and a half-filled row is refused rather than quietly dropped');
+
+  /*
+   * Each mistake answered in its own words.
+   *
+   * These three shared a code, and so shared the sentence "one of those rows
+   * is half filled in" - told to an owner whose rows were complete, and to an
+   * owner who had filled in nothing at all. That is what made this feature
+   * read as broken.
+   */
+  const backwards = await admin(`/api/admin/books/${(await makeBook()).id}/set`, {
+    action: 'create', volumes: '4', sets: '1',
+    part_0_name: 'Backwards', part_0_from: '3', part_0_to: '2', part_0_price: '5.00',
+  });
+  t.ok(backwards.location.includes('e=range'), 'a part that ends before it starts says so');
+
+  const noRows = await admin(`/api/admin/books/${(await makeBook()).id}/set`, {
+    action: 'create', volumes: '4', sets: '1',
+  });
+  t.ok(noRows.location.includes('e=noparts'),
+    'and filling in no rows at all is not called a half-filled row');
+
+  /* An unknown code used to render nothing: the page reloaded, said neither
+     what had happened nor that anything had, and the owner saw a button that
+     appeared to do nothing. */
+  const editor = await html(`/admin/books/${other.id}?e=somethingnew`);
+  t.ok(/Nothing was changed/i.test(visibleText(editor)),
+    'a refusal the page has no words for still says that nothing happened');
 
   /*
    * The portal had no limit on password guesses at all, against a portal that
