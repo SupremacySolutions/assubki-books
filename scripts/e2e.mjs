@@ -840,9 +840,12 @@ async function sales() {
   await db("INSERT INTO book_sets (id, name, volumes) VALUES (9400, 'E2E pool', 4)");
   await db(`INSERT INTO book_set_stock (set_id, volume, have)
             VALUES (9400,1,1),(9400,2,1),(9400,3,1),(9400,4,1)`);
-  await db(`INSERT INTO books (slug,title,price_pence,stock,reserved,status,set_id,set_from,set_to)
-            VALUES ('e2epool-full','E2E pool full',3200,1,0,'live',9400,1,4),
-                   ('e2epool-a','E2E pool 1-2',1700,1,0,'live',9400,1,2)`);
+  // `set_part` is set as the builder sets it: the row covering the whole set is
+  // the listing, the narrower one is a part of it. A fixture that left it at the
+  // default would stand for a set the application cannot produce.
+  await db(`INSERT INTO books (slug,title,price_pence,stock,reserved,status,set_id,set_from,set_to,set_part)
+            VALUES ('e2epool-full','E2E pool full',3200,1,0,'live',9400,1,4,0),
+                   ('e2epool-a','E2E pool 1-2',1700,1,0,'live',9400,1,2,1)`);
   const whole = await one("SELECT id FROM books WHERE slug = 'e2epool-full'");
   const part = await one("SELECT id FROM books WHERE slug = 'e2epool-a'");
 
@@ -1201,6 +1204,51 @@ async function listings() {
   }
   t.ok(unguarded.length === 0,
     `every books query knows about the bin${unguarded.length ? ` (${unguarded.join(' | ')})` : ''}`);
+
+  /*
+   * And every query that *lists* books knows a part of a set is not one.
+   *
+   * The same defence as the bin's, for the same reason: a new listing query that
+   * forgets puts every part of every set back in the catalogue, and nothing
+   * would fail until somebody noticed the shop offering one book four times.
+   *
+   * Narrower than the bin rule, because most books queries are not listings.
+   * What has to carry it is anything that builds a browsable set of rows, which
+   * in practice is `src/lib/db.ts` plus the portal's own list - so those are
+   * read, and the handful of reads inside them that are deliberately about parts
+   * or about explicit ids are named here with their reason.
+   */
+  const PART_EXEMPT = [
+    ['BOOK_SELECT', 'a fragment with no WHERE; every caller adds one'],
+    ['setOptions', 'exists to read the parts'],
+    ['setOptionsForOwner', 'the portal reading the parts to edit them'],
+    ['booksByIds', 'explicit ids from a basket or an order, which must still sell a part'],
+    ['bookBySlug', "a part's own address keeps working rather than 404ing a bookmark"],
+    ['applySetAvailability', 'pools the set, and is given the rows already'],
+    ['legacySlug', 'one row by its old WordPress address'],
+    // Its WHERE comes from `bookListWhere`, which carries the rule for every
+    // filter at once - the same exemption the bin rule makes, for the same query.
+    ['listBooksAdmin', 'interpolates bookListWhere, which carries the rule'],
+  ];
+  const listingSources = ['src/lib/db.ts', 'src/lib/admin-db.ts'];
+  const partless = [];
+  for (const rel of listingSources) {
+    const source = readFileSync(new URL('../' + rel, import.meta.url).pathname, 'utf8');
+    // Each exported query, split on the declaration so a literal is attributed
+    // to the function it sits in rather than to the file.
+    for (const chunk of source.split(/\nexport (?:async )?function /).slice(1)) {
+      const name = chunk.slice(0, chunk.indexOf('(')).trim();
+      if (PART_EXEMPT.some(([n]) => n === name)) continue;
+      for (const literal of chunk.match(STRINGS) ?? []) {
+        if (!/\b(?:FROM|JOIN)\s+books\b/i.test(literal)) continue;
+        if (!/\bstatus\s*=\s*'live'|FILTER_SQL|\$\{where\}/.test(literal)) continue;
+        if (/set_part|NOT_A_PART/.test(literal)) continue;
+        partless.push(`${rel}:${name}`);
+      }
+    }
+  }
+  t.ok(partless.length === 0,
+    `every listing query knows a part is not a listing${partless.length ? ` (${[...new Set(partless)].join(' | ')})` : ''}`);
 
   const book = await makeBook();
   const page = await html(`/admin/books/${book.id}`);
@@ -2920,10 +2968,10 @@ async function integrity() {
   await db(`INSERT INTO book_sets (id, name, volumes) VALUES (9100, 'E2E set', 4)`);
   await db(`INSERT INTO book_set_stock (set_id, volume, have)
             VALUES (9100,1,3),(9100,2,3),(9100,3,3),(9100,4,3)`);
-  await db(`INSERT INTO books (slug,title,price_pence,stock,reserved,status,set_id,set_from,set_to)
-            VALUES ('e2eset-full','E2E full set',3200,3,0,'live',9100,1,4),
-                   ('e2eset-a','E2E volumes 1-2',1700,3,0,'live',9100,1,2),
-                   ('e2eset-b','E2E volumes 3-4',1700,3,0,'live',9100,3,4)`);
+  await db(`INSERT INTO books (slug,title,price_pence,stock,reserved,status,set_id,set_from,set_to,set_part)
+            VALUES ('e2eset-full','E2E full set',3200,3,0,'live',9100,1,4,0),
+                   ('e2eset-a','E2E volumes 1-2',1700,3,0,'live',9100,1,2,1),
+                   ('e2eset-b','E2E volumes 3-4',1700,3,0,'live',9100,3,4,1)`);
 
   const setAvail = async () => {
     const rows = await db(
@@ -3000,6 +3048,153 @@ async function integrity() {
   );
   t.ok(shelf.length === 4 && shelf.every((r) => r.have === 3),
     'and every volume starts at the number of complete sets held');
+
+
+  /*
+   * A part is not a listing.
+   *
+   * Parts stay ordinary `books` rows so that holds, the ledger, cancellation and
+   * the expiry sweep need know nothing about sets - but the shop offers them
+   * behind the parent's own picker, so putting each one in the catalogue as well
+   * was the same choice said three times. `set_part` is what marks them, and
+   * every query that lists books has to respect it.
+   */
+  const partRows = await db(
+    `SELECT id, slug, title, set_part AS p, set_from AS f, set_to AS t FROM books
+      WHERE set_id = (SELECT set_id FROM books WHERE id = ${setBook.id})
+      ORDER BY set_from, set_to`,
+  );
+  t.ok(partRows.filter((r) => r.p === 1).length === 2 && partRows.filter((r) => r.p === 0).length === 1,
+    'the two parts are marked as parts and the whole is not');
+
+  const wholeRow = partRows.find((r) => r.p === 0);
+  const aPart = partRows.find((r) => r.p === 1);
+
+  // The catalogue, its search, and the count the home page prints.
+  const cat = await html('/catalogue?q=' + encodeURIComponent('First half'));
+  t.ok(!cat.includes(`/book/${aPart.slug}`), 'a part does not appear in the catalogue or its search');
+  // Searched by its own title, which makeBook makes unique. "E2E" matches every
+  // fixture in the run, so whether this one landed on page one was luck.
+  const wholePage = await html(`/catalogue?q=${encodeURIComponent(wholeRow.title)}`);
+  t.ok(wholePage.includes(`/book/${wholeRow.slug}`), 'while the listing it belongs to does');
+
+  // The sitemap, so Google is not given several addresses for one thing to buy.
+  const sitemap = await html('/sitemap.xml');
+  t.ok(!sitemap.includes(`/book/${aPart.slug}<`), 'a part is left out of the sitemap');
+  t.ok(sitemap.includes(`/book/${wholeRow.slug}<`), 'and the listing is in it');
+
+  // The owner's own list, where three rows for one work also gave two of them an
+  // Edit screen whose Identity and Photos belong to the parent.
+  const adminList = await html('/admin/books?q=' + encodeURIComponent('First half'));
+  t.ok(!adminList.includes(`/admin/books/${aPart.id}"`), 'a part is not listed in the portal either');
+
+  // But it is still buyable, which is the whole point of leaving it a row.
+  /*
+   * The picker labels each way of buying by the volumes it covers rather than by
+   * the name the owner typed; the name is what the basket and the order line
+   * carry. Asserted as it is, not as it might read better - a test that wants a
+   * different design fails on working code.
+   */
+  const pickerPage = visibleText(await html(`/book/${wholeRow.slug}`));
+  t.ok(pickerPage.includes('This set can be bought as'), 'the listing offers a picker');
+  t.ok(pickerPage.includes('Volumes 1-2') && pickerPage.includes('Volumes 3-4')
+       && pickerPage.includes('Volumes 1-4'),
+    'and every part is in it, beside the complete set');
+  t.ok((await get(`/book/${aPart.slug}`)).status === 200,
+    "and a part's own address still resolves rather than 404ing a bookmark");
+
+  /*
+   * Editing the parts, which used to mean taking the set apart and building it
+   * again - archiving every part listing and stranding its cover and channel
+   * post on rows nothing links to.
+   */
+  const renamed = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts',
+    [`edit_${aPart.id}_name`]: 'Volumes one and two',
+    [`edit_${aPart.id}_from`]: '1',
+    [`edit_${aPart.id}_to`]: '2',
+    [`edit_${aPart.id}_price`]: '19.50',
+  });
+  t.ok(renamed.status === 302 && !renamed.location.includes('e='),
+    `a part can be renamed and repriced in place (${renamed.location})`);
+  const after = await one(`SELECT title, price_pence AS p FROM books WHERE id = ${aPart.id}`);
+  t.ok(after.title === 'Volumes one and two' && after.p === 1950,
+    `and the change is what was typed (${after.title} / ${after.p})`);
+
+  // Adding one without rebuilding, which was the other half of the problem.
+  const addedPart = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts',
+    part_0_name: 'Just volume four', part_0_from: '4', part_0_to: '4', part_0_price: '9.00',
+  });
+  t.ok(addedPart.status === 302 && !addedPart.location.includes('e='),
+    `a part can be added to a live set (${addedPart.location})`);
+  const grown = await db(
+    `SELECT set_part AS p FROM books
+      WHERE set_id = (SELECT set_id FROM books WHERE id = ${setBook.id})`,
+  );
+  t.ok(grown.filter((r) => r.p === 1).length === 3, 'and it is a part, not a fourth listing');
+
+  // A range the set does not have is refused on the edit path too, not only when
+  // building - one reader for both, so a rule cannot hold in one and not the other.
+  const badEdit = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts',
+    [`edit_${aPart.id}_name`]: 'Too far', [`edit_${aPart.id}_from`]: '1',
+    [`edit_${aPart.id}_to`]: '9', [`edit_${aPart.id}_price`]: '19.50',
+  });
+  t.ok(badEdit.location.includes('e=range'), 'an edit past the end of the set is refused');
+
+  /*
+   * What a customer is holding cannot be moved or withdrawn. The hold is a claim
+   * on particular volumes of the pool; re-ranging it would move the claim to
+   * volumes nobody reserved, and taking the part down would withdraw copies that
+   * are promised.
+   */
+  const heldOrder = await placeOrder(aPart.id, 'collection');
+  const movedWhileHeld = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts',
+    [`edit_${aPart.id}_name`]: 'Volumes one and two', [`edit_${aPart.id}_from`]: '2',
+    [`edit_${aPart.id}_to`]: '3', [`edit_${aPart.id}_price`]: '19.50',
+  });
+  t.ok(movedWhileHeld.location.includes('e=heldrange'),
+    'the volumes a held part covers cannot be changed');
+  const repricedWhileHeld = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts',
+    [`edit_${aPart.id}_name`]: 'Volumes one and two', [`edit_${aPart.id}_from`]: '1',
+    [`edit_${aPart.id}_to`]: '2', [`edit_${aPart.id}_price`]: '21.00',
+  });
+  t.ok(repricedWhileHeld.status === 302 && !repricedWhileHeld.location.includes('e='),
+    'but its price still can, because an order keeps what it was sold at');
+  const takenDown = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts', [`remove_${aPart.id}`]: '1',
+  });
+  t.ok(takenDown.location.includes('e=heldpart'), 'and a held part cannot be taken down');
+
+  await admin(`/api/admin/orders/${heldOrder.ref}/status`, { status: 'cancelled' });
+  created.orders = created.orders.filter((r) => r !== heldOrder.ref);
+
+  // Freed, it comes down - archived rather than deleted, so an order that bought
+  // it keeps a row to point at and the stock ledger is not cascaded away.
+  const nowDown = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts', [`remove_${aPart.id}`]: '1',
+  });
+  t.ok(nowDown.status === 302 && !nowDown.location.includes('e='),
+    `a part with nothing held comes down (${nowDown.location})`);
+  const gone = await one(`SELECT status, set_id AS s, set_part AS p FROM books WHERE id = ${aPart.id}`);
+  t.ok(gone.status === 'archived' && gone.s === null && gone.p === 0,
+    'it is archived and detached rather than deleted');
+
+  // Taking the last one down is not an edit but a decision to stop selling in
+  // parts, which has its own button and puts the pool back on the listing.
+  const stillUp = await db(
+    `SELECT id FROM books
+      WHERE set_id = (SELECT set_id FROM books WHERE id = ${setBook.id}) AND set_part = 1`,
+  );
+  const emptyAll = await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts',
+    ...Object.fromEntries(stillUp.map((r) => [`remove_${r.id}`, '1'])),
+  });
+  t.ok(emptyAll.location.includes('e=lastpart'),
+    'removing every part is refused and sent to "stop selling in parts"');
 
   // A part that runs off the end of the set is a typo, and is refused rather
   // than clamped - a quietly corrected listing would go on the shop front.
@@ -3779,6 +3974,33 @@ async function integrity() {
         AND b.id > 226`,
   );
   t.ok(drift.length === 0, 'the ledger agrees with reserved on every fixture');
+
+  /*
+   * `set_part` is stored rather than derived, so something has to check it has
+   * not drifted from the ranges it stands for.
+   *
+   * It is written down because the derivation is not cheap: "is this row the
+   * whole set?" needs `book_sets.volumes`, and a correlated subquery for it on
+   * the catalogue's hot path is the shape of thing that once spent 95% of this
+   * database's read budget. The trade is only sound while the two agree, and
+   * this is what makes a path that sets one and forgets the other fail here
+   * rather than quietly put a part back in the shop.
+   */
+  const mislabelled = await db(
+    `SELECT b.id FROM books b JOIN book_sets s ON s.id = b.set_id
+      WHERE b.deleted_at IS NULL
+        AND b.set_part != (CASE WHEN b.set_from = 1 AND b.set_to = s.volumes THEN 0 ELSE 1 END)`,
+  );
+  t.ok(mislabelled.length === 0,
+    `every set member's set_part matches the volumes it covers${mislabelled.length ? ` (${mislabelled.map((r) => r.id).join(', ')})` : ''}`);
+
+  // And nothing outside a set claims to be part of one, which would hide an
+  // ordinary listing from the whole shop with nothing to explain why.
+  const orphanParts = await db(
+    `SELECT id FROM books WHERE set_part = 1 AND set_id IS NULL AND deleted_at IS NULL`,
+  );
+  t.ok(orphanParts.length === 0,
+    `no listing is marked a part of a set it does not belong to${orphanParts.length ? ` (${orphanParts.map((r) => r.id).join(', ')})` : ''}`);
 }
 
 // ---------------------------------------------------------------------------

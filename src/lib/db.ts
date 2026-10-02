@@ -106,6 +106,28 @@ const db = () => env.DB;
 export const NOT_DELETED = 'b.deleted_at IS NULL';
 export const NOT_DELETED_BARE = 'deleted_at IS NULL';
 
+/**
+ * A part of a set is not a listing, and must not be browsed as one.
+ *
+ * Parts are ordinary `books` rows - deliberately, so that holds, the ledger,
+ * cancellation and the expiry sweep never had to learn what a set is. The cost
+ * was that a four-volume work split three ways became four entries in the
+ * catalogue, four in search and four in the owner's list, while the book page
+ * already offered every one of them behind a single picker.
+ *
+ * So the rule is the same shape as the bin's: every query that *lists* books
+ * says this itself, and the suite refuses a new one that forgets. Three kinds of
+ * query are exempt, and each for a reason worth knowing:
+ *
+ *   - `setOptions`, which exists to read the parts;
+ *   - `booksByIds`, which is handed explicit ids by the basket and an order, and
+ *     must go on selling a part to somebody who picked one;
+ *   - `bookBySlug`, so a part's own address keeps working rather than 404ing
+ *     somebody who bookmarked or was sent it.
+ */
+export const NOT_A_PART = 'b.set_part = 0';
+export const NOT_A_PART_BARE = 'set_part = 0';
+
 const BOOK_SELECT = `
   SELECT b.id, b.slug, b.title, b.title_ar, b.title_ur, b.language, b.shipment_id,
          b.price_pence, b.stock, b.reserved, b.volumes, b.multibuy,
@@ -205,7 +227,7 @@ async function readCategoryCounts(): Promise<ShelfCounts> {
            FROM book_categories bc
            JOIN categories c ON c.id = bc.category_id
            JOIN books b ON b.id = bc.book_id AND b.status = 'live'
-                            AND b.deleted_at IS NULL`,
+                            AND b.deleted_at IS NULL AND b.set_part = 0`,
       )
       .all<{ path: string; bookId: number; language: BookLanguage }>(),
   ]);
@@ -411,7 +433,7 @@ async function readPublisherIndex(): Promise<PublisherIndex> {
          FROM books b
          LEFT JOIN book_categories bc ON bc.book_id = b.id
          LEFT JOIN categories c ON c.id = bc.category_id
-        WHERE b.status = 'live' AND ${NOT_DELETED}
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND ${NOT_A_PART}
           AND TRIM(COALESCE(b.publisher, '')) != ''`,
     )
     .all<{ id: number; name: string; language: BookLanguage; path: string | null }>();
@@ -449,7 +471,8 @@ export async function publisherSpellings(): Promise<PublisherCount[]> {
     .prepare(
       `SELECT TRIM(publisher) AS name, COUNT(*) AS count
          FROM books
-        WHERE ${NOT_DELETED_BARE} AND TRIM(COALESCE(publisher, '')) != ''
+        WHERE ${NOT_DELETED_BARE} AND ${NOT_A_PART_BARE}
+          AND TRIM(COALESCE(publisher, '')) != ''
         GROUP BY TRIM(publisher)
         ORDER BY count DESC, name COLLATE NOCASE`,
     )
@@ -473,7 +496,7 @@ export async function canonicalPublisher(typed: string | null, bookId: number | 
     .prepare(
       `SELECT TRIM(publisher) AS name, COUNT(*) AS n
          FROM books
-        WHERE ${NOT_DELETED_BARE} AND id != ?
+        WHERE ${NOT_DELETED_BARE} AND ${NOT_A_PART_BARE} AND id != ?
           AND TRIM(publisher) = ? COLLATE NOCASE
         GROUP BY TRIM(publisher)
         ORDER BY n DESC
@@ -679,7 +702,7 @@ export interface ListResult {
 export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   const perPage = opts.perPage ?? 24;
   const page = Math.max(1, opts.page ?? 1);
-  const where: string[] = [`b.status = 'live'`, NOT_DELETED];
+  const where: string[] = [`b.status = 'live'`, NOT_DELETED, NOT_A_PART];
   const binds: unknown[] = [];
   let from = opts.withDetails ? BOOK_SELECT.replace('SELECT b.id,', 'SELECT b.publisher, b.description_html, b.id,') : BOOK_SELECT;
 
@@ -918,7 +941,7 @@ export async function relatedBooks(bookId: number, limit = 6): Promise<BookRow[]
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.status = 'live' AND ${NOT_DELETED} AND b.id != ?1
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND ${NOT_A_PART} AND b.id != ?1
           AND b.id IN (SELECT bc.book_id FROM book_categories bc
                         WHERE bc.category_id IN
                           (SELECT category_id FROM book_categories WHERE book_id = ?1))
@@ -942,7 +965,7 @@ export async function shelfBooks(limit = 18): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.status = 'live' AND ${NOT_DELETED}
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND ${NOT_A_PART}
           AND (b.stock - b.reserved) > 0 AND i.image_key IS NOT NULL
         ORDER BY b.created_at DESC, b.id DESC LIMIT ?`,
     )
@@ -973,7 +996,7 @@ export async function saleBookCount(): Promise<number> {
          FROM books b
          JOIN sale_items si ON si.book_id = b.id
               AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')
-        WHERE b.status = 'live' AND ${NOT_DELETED}`,
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND ${NOT_A_PART}`,
     )
     .first<{ n: number }>();
   return row?.n ?? 0;
@@ -983,7 +1006,8 @@ export async function saleBooks(limit = 10): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.status = 'live' AND ${NOT_DELETED} AND si.percent_off IS NOT NULL
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND ${NOT_A_PART}
+          AND si.percent_off IS NOT NULL
         ORDER BY si.percent_off DESC, b.title COLLATE NOCASE
         LIMIT ?`,
     )
@@ -1038,7 +1062,8 @@ export async function saleBooksFor(saleId: number, limit = 10): Promise<BookRow[
         "AND si.sale_id = (SELECT id FROM sales WHERE status = 'live')",
         'AND si.sale_id = ?1',
       )}
-        WHERE b.status = 'live' AND ${NOT_DELETED} AND si.percent_off IS NOT NULL
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND ${NOT_A_PART}
+          AND si.percent_off IS NOT NULL
         ORDER BY si.percent_off * b.price_pence DESC, b.title COLLATE NOCASE
         LIMIT ?2`,
     )
@@ -1142,7 +1167,7 @@ export async function setBooks(limit = 10): Promise<BookRow[]> {
   const { results } = await db()
     .prepare(
       `${BOOK_SELECT}
-        WHERE b.status = 'live' AND (b.stock - b.reserved) > 0
+        WHERE b.status = 'live' AND ${NOT_A_PART} AND (b.stock - b.reserved) > 0
           AND b.volumes > 1 AND i.image_key IS NOT NULL
         ORDER BY b.volumes DESC, b.created_at DESC LIMIT ?`,
     )
@@ -1183,7 +1208,7 @@ export async function backInStock(limit = 10): Promise<BookRow[]> {
                   AND reason NOT IN ('listing created', 'stocktake')
                   AND at > ?
                 GROUP BY book_id) r ON r.book_id = b.id
-        WHERE b.status = 'live' AND ${NOT_DELETED}
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND ${NOT_A_PART}
           AND (b.stock - b.reserved) > 0 AND i.image_key IS NOT NULL
         ORDER BY r.back DESC LIMIT ?`,
     )
@@ -1306,7 +1331,8 @@ export async function catalogueStats(): Promise<{ titles: number; inStock: numbe
     .prepare(
       `SELECT COUNT(*) AS titles,
               SUM(CASE WHEN (stock - reserved) > 0 THEN 1 ELSE 0 END) AS inStock
-         FROM books WHERE status = 'live' AND ${NOT_DELETED_BARE}`,
+         FROM books WHERE status = 'live' AND ${NOT_DELETED_BARE}
+                             AND ${NOT_A_PART_BARE}`,
     )
     .first<{ titles: number; inStock: number }>();
   return { titles: row?.titles ?? 0, inStock: row?.inStock ?? 0 };

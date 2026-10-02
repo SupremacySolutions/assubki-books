@@ -153,11 +153,21 @@ node scripts/migrate-from-woo.mjs  # rewrites migrations/0002_seed.sql
   out which of the edge handling, the thresholds or the model was at fault -
   not for training: that would need hand-painted correct masks and a GPU, and a
   handful of examples would overfit.
-- **A set sold in parts is several ordinary listings, not one clever one.**
-  Each way of buying it is its own `books` row linked by `set_id`, so holds,
-  the ledger, cancellation and the expiry sweep never learned about sets. Only
-  two things know: `applySetAvailability` in lib/db reads it, and the payment
-  branch of orders/[ref]/status decrements it.
+- **A set sold in parts is one listing; its parts are rows nobody browses.**
+  Each way of buying it is still its own `books` row - that is what keeps holds,
+  the ledger, cancellation and the expiry sweep from ever learning what a set
+  is - but a part carries `set_part = 1` and every query that *lists* books
+  excludes it. Before that, a four-volume work split three ways was four entries
+  in the catalogue, four in search, four in the sitemap and four in the owner's
+  list, while the book page already offered all four behind one picker. The
+  parts are managed from the parent's own page, where they can be renamed,
+  repriced, re-ranged, added and taken down while the set goes on selling; a
+  name or price may change at any time because `order_items` snapshots both, and
+  the volumes a part covers are fixed while a customer is holding it. The
+  listings suite refuses a new listing query that forgets the rule, and the
+  integrity suite checks `set_part` still agrees with the ranges. Only two
+  things read the pool: `applySetAvailability` in lib/db, and the payment branch
+  of orders/[ref]/status, which decrements it.
 - **Set stock is a count per volume, not a number of sets.** Sell volumes 1-2
   out of three sets and you hold two complete sets *and three* of volumes 3-4;
   no single number says both. Availability of an option is the smallest count
