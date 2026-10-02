@@ -21,6 +21,16 @@ const book = bookId ? await getBookAdmin(bookId) : null;
 
 // The other options, when this listing is already part of a set.
 const siblings = book?.set_id ? await setOptionsForOwner(book.set_id) : [];
+/* The set as a whole: how many volumes it has, which listing is the complete
+   set, and how many of the others are parts. A part's own `volumes` is the
+   size of that part, so the total is read off the widest range instead. */
+const setTotal = siblings.reduce((n, o) => Math.max(n, o.set_to ?? 0), 0);
+const wholeId = siblings.find((o) => o.set_from === 1 && o.set_to === setTotal)?.id ?? null;
+const partCount = siblings.filter((o) => o.id !== wholeId).length;
+/* The builder starts from the volume count already saved, when there is one
+   worth splitting. Worked out here because a `>` inside a tag's attribute is
+   where the source check for stray builder fields stops reading. */
+const builderVolumes = (book?.volumes ?? 0) > 1 ? book!.volumes : '';
 
 /* Listings that already exist and look like parts of this one. Only worth
    asking about for a listing that says it has volumes and is not yet a set. */
@@ -1143,79 +1153,113 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
               */}
             {siblings.length > 0 ? (
               <>
-                <div class="flex items-center gap-2.5 mb-3">
-                  <span class="rounded-[var(--radius-pill)] bg-[var(--color-navy)]/10 px-3 py-1 text-[12.5px] font-medium text-[var(--color-navy)]">
-                    {siblings.length} {siblings.length === 1 ? 'part' : 'parts'} live
-                  </span>
-                  <span class="text-[13px] text-[var(--color-ink-faint)]">
-                    {book.volumes} volumes altogether
-                  </span>
-                </div>
-
-                <p class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3">
-                  Each of these is its own listing with its own price and cover. The shelf count is
-                  shared between them.
+                {/*
+                  * Already split: every listing in the set, side by side.
+                  *
+                  * The list used to say "3 parts live" counting the complete
+                  * set as a part, and named each row by its range even when the
+                  * part was a book with a title of its own. A table with the
+                  * price and what each can still sell answers the questions
+                  * the owner opens this to ask.
+                  */}
+                <h3 class="text-[24px] text-[var(--color-navy-deep)] mb-1.5">
+                  Sold whole and in {partCount} {partCount === 1 ? 'part' : 'parts'}
+                </h3>
+                <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed mb-5 max-w-[62ch]">
+                  All {siblings.length} listings sell from the same shelf of {setTotal}-volume sets.
+                  Each has its own price and cover. Open one to change it.
                 </p>
 
-                <ul class="space-y-1.5 mb-4">
-                  {siblings.map((o) => (
-                    <li class="flex items-baseline justify-between gap-3 text-[13.5px]">
-                      <a
-                        href={`/admin/books/${o.id}`}
-                        class:list={[
-                          'truncate',
-                          o.id === book.id ? 'font-medium' : 'text-[var(--color-navy)] underline underline-offset-2',
-                        ]}
-                      >
-                        {o.set_from === o.set_to ? `Volume ${o.set_from}` : `Volumes ${o.set_from}-${o.set_to}`}
-                        {o.id === book.id ? ' (this one)' : ''}
-                      </a>
-                      <span class="text-[var(--color-ink-faint)] shrink-0 tabular-nums">
-                        {o.available} left
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div class="rounded-[10px] border border-[var(--color-rule-soft)] overflow-hidden">
+                  <div class="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_5rem_5rem] gap-3 px-4 py-2.5 bg-[var(--color-paper-raised)] text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
+                    <span>Listing</span>
+                    <span class="hidden sm:block">Volumes</span>
+                    <span class="text-right">Price</span>
+                    <span class="text-right">Can sell</span>
+                  </div>
+                  {siblings.map((o) => {
+                    const whole = o.id === wholeId;
+                    const range = o.set_from === o.set_to ? `${o.set_from}` : `${o.set_from}-${o.set_to}`;
+                    return (
+                      <div class="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_5rem_5rem] gap-3 items-center px-4 py-3 border-t border-[var(--color-rule-faint)] text-[14px]">
+                        <span class="flex items-center gap-2.5 min-w-0 flex-wrap">
+                          {setTotal <= 24 && (
+                            <span class="hidden sm:flex gap-0.5" aria-hidden="true">
+                              {Array.from({ length: setTotal }, (_, v) => (
+                                <span
+                                  class:list={[
+                                    'w-2.5 h-[18px] rounded-[2px] border',
+                                    v + 1 >= (o.set_from ?? 0) && v + 1 <= (o.set_to ?? 0)
+                                      ? 'bg-[var(--color-navy)] border-[var(--color-navy)]'
+                                      : 'bg-white border-[var(--color-rule)]',
+                                  ]}
+                                />
+                              ))}
+                            </span>
+                          )}
+                          {o.id === book.id ? (
+                            <span class="font-medium truncate">{whole ? 'Complete set' : o.title}</span>
+                          ) : (
+                            <a href={`/admin/books/${o.id}`} class="font-medium truncate text-[var(--color-navy)] underline underline-offset-2">
+                              {whole ? 'Complete set' : o.title}
+                            </a>
+                          )}
+                          {o.id === book.id && (
+                            <span class="rounded-[var(--radius-pill)] bg-[var(--color-wash-soft)] px-2 py-0.5 text-[11.5px] text-[var(--color-navy)]">
+                              This listing
+                            </span>
+                          )}
+                        </span>
+                        <span class="hidden sm:block tabular-nums text-[var(--color-ink-soft)]">{range}</span>
+                        <span class="text-right tabular-nums font-semibold">{price(o.price_pence)}</span>
+                        <span class="text-right tabular-nums font-semibold">{o.available}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p class="mt-2.5 mb-5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                  Each listing shows how many it can still sell from the shelf. Selling a part uses
+                  those volumes up, so the complete set goes down with it.
+                </p>
 
                 <div class="bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[10px] p-4">
-                  <p class="text-[13px] font-medium mb-2">A delivery has come in</p>
-                  <div class="flex items-end gap-2">
-                    <label class="block">
-                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
-                        Complete sets on the shelf
-                      </span>
-                      <input
-                        type="number"
-                        name="sets"
-                        min="0"
-                        max="999"
-                        required
-                        form="restockForm"
-                        class="field !py-2 !text-[14px] !w-40"
-                      />
-                    </label>
-                    <button type="submit" form="restockForm" class="btn btn-ghost !py-2 !text-[13.5px]">
-                      Update
+                  <p class="text-[14px] font-medium">After a delivery or a recount</p>
+                  <p class="mt-0.5 mb-3 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                    Count the complete sets on the shelf and put the number here. Every volume is set
+                    to it, and each listing works out what it can sell.
+                  </p>
+                  <label for="restockSets" class="block text-[13px] font-medium mb-1.5">
+                    Complete sets on the shelf now
+                  </label>
+                  <div class="flex flex-wrap items-center gap-2.5">
+                    <input
+                      id="restockSets"
+                      type="number"
+                      name="sets"
+                      min="0"
+                      max="999"
+                      required
+                      form="restockForm"
+                      class="field h-11 !py-0 !text-[15px] !w-40 tabular-nums"
+                    />
+                    <button type="submit" form="restockForm" class="btn btn-ghost h-11 !py-0 !text-[14px]">
+                      Update the shelf
                     </button>
                   </div>
-                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                    Sets every volume to that number and every part recalculates from it. A half sold
-                    on its own already came off the volumes it contained.
-                  </p>
                 </div>
 
-                <div class="mt-4 pt-4 border-t border-[var(--color-rule-faint)]">
+                <div class="mt-5 pt-5 border-t border-[var(--color-rule-faint)] flex flex-wrap items-center gap-x-4 gap-y-2">
                   <button
                     type="submit"
                     form="unsplitForm"
-                    class="rounded-[var(--radius-pill)] border border-[var(--color-outstock)]/40 px-4 py-2 text-[13.5px] text-[var(--color-outstock)] hover:bg-[var(--color-outstock)]/5 transition-colors"
+                    class="shrink-0 h-11 rounded-[var(--radius-pill)] border border-[var(--color-outstock)]/40 px-4 text-[14px] text-[var(--color-outstock)] hover:bg-[var(--color-outstock)]/5 transition-colors"
                     data-confirm="Stop selling this set in parts? The part listings come down. The complete set stays, and orders that already contain a part keep their record."
                   >
                     Stop selling in parts
                   </button>
-                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                    The part listings come down and the complete set stays. Orders that already
-                    contain a part keep their record.
+                  <p class="text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                    The part listings come down. The complete set stays, and past orders keep their
+                    record.
                   </p>
                 </div>
               </>
@@ -1229,19 +1273,38 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                   Empty for a single book: it needs more than one volume in the set. Put the number
                   of volumes in “Volumes in the set” above and this becomes the part builder.
                 </p>
-                <div data-parts-builder hidden={partsEmpty}>
+                <div data-parts-builder hidden={partsEmpty} data-set-price={book.price_pence}>
                 {/*
-                  * The example sits above the grid and uses the same four
-                  * columns, so each value is under the header it belongs to.
-                  * It does not scroll away and does not vanish on focus, which
-                  * is what a placeholder does exactly when it is needed.
+                  * Three steps, in the order the owner thinks of them: what the
+                  * set is, which parts to sell, and what that will put on the
+                  * shop.
+                  *
+                  * It used to open on two paragraphs and two worked examples
+                  * before the first field, then eight identical rows whose
+                  * placeholders read like rows already filled in. The rules
+                  * those paragraphs explained are now said where they apply: a
+                  * part that runs past the set says so on that part, a gap or an
+                  * overlap is described under the preview, and the shared shelf
+                  * is shown with the owner's own numbers instead of an example.
+                  *
+                  * With scripting off every row renders and the form posts as
+                  * before; the preview, shortcuts and add/remove are extras.
                   */}
+                <h3 class="text-[24px] text-[var(--color-navy-deep)] mb-1.5">
+                  Sell this set whole, or in parts
+                </h3>
+                <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed mb-6 max-w-[62ch]">
+                  This listing stays as the complete set, with its cover and description. Each part
+                  you add becomes a listing of its own with its own price, sold from the same shelf.
+                </p>
+
                 {candidates.length > 0 && (
-                  <div class="mb-5 pb-5 border-b border-[var(--color-rule-faint)]">
-                    <p class="text-[13px] font-medium mb-1">These look like parts of this set</p>
-                    <p class="text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed mb-3">
+                  <div class="mb-6 pb-6 border-b border-[var(--color-rule-faint)]">
+                    <p class="text-[14px] font-medium mb-1">These look like parts of this set</p>
+                    <p class="text-[13px] text-[var(--color-ink-faint)] leading-relaxed mb-3">
                       Already in the catalogue with their own covers and descriptions. Linking them
-                      keeps all of that - nothing is created and nothing comes down.
+                      keeps all of that - nothing is created and nothing comes down. Or build new
+                      parts below.
                     </p>
 
                     <div class="grid grid-cols-2 gap-3 mb-3">
@@ -1265,7 +1328,7 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
 
                     <div class="grid grid-cols-[auto_1fr_3.6rem_3.6rem] gap-2 pb-1.5 mb-1.5 border-b border-[var(--color-rule-soft)]">
                       <span />
-                      {['Listing', 'First', 'Last'].map((h) => (
+                      {['Listing', 'From', 'To'].map((h) => (
                         <span class="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
                           {h}
                         </span>
@@ -1298,163 +1361,241 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                   </div>
                 )}
 
-                {/*
-                  * Said in the order a person needs it: what they end up with,
-                  * then the one thing that surprises them.
-                  *
-                  * "Drawing on one shared count" was the whole idea in four
-                  * words of jargon, and the shared pile is exactly the part
-                  * that catches people out - sell half a set and you have half
-                  * a set left, not a whole one.
-                  */}
-                <div class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed mb-3 space-y-1.5">
-                  <p>
-                    Sell the whole set, and pieces of it, from the same shelf. This listing stays as
-                    the complete set and keeps its cover and description; each part you name below
-                    becomes a listing of its own, with its own price.
-                  </p>
-                  <p>
-                    <strong class="text-[var(--color-ink)]">They all come out of the same pile.</strong>
-                    {' '}If you have three sets and somebody buys volumes 1-2 on their own, two
-                    complete sets are left and the odd volumes stay sellable. You keep one number on
-                    the shelf, not one per part.
-                  </p>
-                </div>
+                <input type="hidden" name="action" value="create" form="partsForm" />
 
-                <div class="bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[10px] p-3 mb-4">
-                  <p class="text-[12px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)] mb-2">
-                    For example
-                  </p>
-                  <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 text-[13px]">
-                    <span class="text-[var(--color-ink)]">Volumes 1-2</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">1</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">2</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">17.00</span>
-                    <span class="text-[var(--color-ink)]">Volumes 3-4</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">3</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">4</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">17.00</span>
-                  </div>
-                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                    A four volume work, also sold as either half.
-                  </p>
-
-                  {/*
-                    * The second shape, which had no example and no words.
-                    *
-                    * Six separate books by one author, sold singly or as the
-                    * six, is not a work split into parts - but it is the same
-                    * arrangement underneath, and an owner holding exactly that
-                    * had no way to tell it was. Numbering them 1 to 6 is just
-                    * how the parts are told apart; nothing claims they are
-                    * volumes of one book.
-                    */}
-                  <p class="mt-3 pt-3 border-t border-[var(--color-rule-faint)] text-[12px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)] mb-2">
-                    Or separate books sold together
-                  </p>
-                  <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 text-[13px]">
-                    <span class="text-[var(--color-ink)]">Al-Wasit</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">1</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">1</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">5.00</span>
-                    <span class="text-[var(--color-ink)]">Al-Mukhtasar</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">2</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">2</span>
-                    <span class="tabular-nums text-[var(--color-ink)]">5.00</span>
-                  </div>
-                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                    Six books by one author, each on its own row with the same first and last
-                    number, at £5 each - and this listing priced at £28 for all six. The numbers
-                    only tell the parts apart; nothing says they are volumes of one work.
-                  </p>
-
-                  <p class="mt-3 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                    Either way, every first and last has to be inside the set - with six altogether,
-                    a part cannot run to 7. Parts may overlap or leave gaps; that is your shelf, not
-                    a mistake. Up to eight parts.
-                  </p>
-                </div>
-
-                <div class="space-y-3">
-                  <input type="hidden" name="action" value="create" form="partsForm" />
-
-                  <div class="grid grid-cols-2 gap-3">
-                    <label class="block">
-                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
-                        Volumes altogether
-                      </span>
-                      <input type="number" name="volumes" min="2" max="200" required
-                        placeholder="4" form="partsForm" class="field !py-2 !text-[14px]" />
-                    </label>
-                    <label class="block">
-                      <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
-                        Complete sets on the shelf
-                      </span>
-                      <input type="number" name="sets" min="0" max="999" required
-                        placeholder="3" form="partsForm" class="field !py-2 !text-[14px]" />
-                    </label>
-                  </div>
-
-                  {/* Headers that stay. The only labelling used to be placeholder
-                      text, which disappears the moment anyone types into it. */}
+                <div class="space-y-8">
+                  {/* 1. The complete set */}
                   <div>
-                    <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 pb-1.5 mb-1.5 border-b border-[var(--color-rule-soft)]">
-                      {['Name of the part', 'First', 'Last', 'Price'].map((h) => (
-                        <span class="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
-                          {h}
-                        </span>
-                      ))}
+                    <div class="flex items-start gap-3 mb-4">
+                      <span class="shrink-0 grid place-items-center w-[26px] h-[26px] rounded-full bg-[var(--color-wash-soft)] text-[13px] font-semibold text-[var(--color-navy)]">1</span>
+                      <div>
+                        <h4 class="font-[family-name:var(--font-body)] text-[16px] leading-[26px] text-[var(--color-ink)]">The complete set</h4>
+                        <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">How big one set is, and how many you have.</p>
+                      </div>
                     </div>
 
-                    <div class="space-y-1.5">
+                    <div class="grid sm:grid-cols-2 gap-4 sm:pl-[38px]">
+                      <div>
+                        <label for="partsVolumes" class="block text-[13.5px] font-medium mb-1.5">
+                          Volumes in one complete set
+                        </label>
+                        <div class="flex items-center h-11 rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white focus-within:border-[var(--color-navy)]">
+                          <button type="button" data-bump="-1" aria-label="One volume fewer" hidden
+                            class="shrink-0 grid place-items-center w-11 h-11 text-[var(--color-navy)]">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10" /></svg>
+                          </button>
+                          <input id="partsVolumes" type="number" name="volumes" min="2" max="200" required
+                            value={builderVolumes} form="partsForm"
+                            class="w-full min-w-0 h-full bg-transparent border-0 outline-none px-3 text-[15px] font-semibold tabular-nums" />
+                          <button type="button" data-bump="1" aria-label="One volume more" hidden
+                            class="shrink-0 grid place-items-center w-11 h-11 text-[var(--color-navy)]">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10M8 3v10" /></svg>
+                          </button>
+                        </div>
+                        <p data-volumes-hint class="mt-1.5 text-[12.5px] leading-relaxed text-[var(--color-ink-faint)]">
+                          A bundle of separate books? Count each book as one volume, numbered 1, 2, 3
+                          and on.
+                        </p>
+                      </div>
+                      <div>
+                        <label for="partsSets" class="block text-[13.5px] font-medium mb-1.5">
+                          Complete sets you have
+                        </label>
+                        <div class="flex items-center h-11 rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white focus-within:border-[var(--color-navy)]">
+                          <button type="button" data-bump="-1" aria-label="One set fewer" hidden
+                            class="shrink-0 grid place-items-center w-11 h-11 text-[var(--color-navy)]">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10" /></svg>
+                          </button>
+                          <input id="partsSets" type="number" name="sets" min="0" max="999" required
+                            value={book.stock} form="partsForm"
+                            class="w-full min-w-0 h-full bg-transparent border-0 outline-none px-3 text-[15px] font-semibold tabular-nums" />
+                          <button type="button" data-bump="1" aria-label="One set more" hidden
+                            class="shrink-0 grid place-items-center w-11 h-11 text-[var(--color-navy)]">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10M8 3v10" /></svg>
+                          </button>
+                        </div>
+                        <p class="mt-1.5 text-[12.5px] leading-relaxed text-[var(--color-ink-faint)]">
+                          One count for everything. You never count the parts separately.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div data-set-picture hidden class="mt-4 sm:ml-[38px] p-3.5 bg-[var(--color-paper-raised)] border border-[var(--color-rule-faint)] rounded-[10px]">
+                      <p data-set-caption class="text-[12.5px] text-[var(--color-ink-faint)] mb-2.5"></p>
+                      <div data-set-spines class="flex flex-wrap items-center gap-1" aria-hidden="true"></div>
+                    </div>
+                  </div>
+
+                  {/* 2. The parts */}
+                  <div>
+                    <div class="flex items-start gap-3 mb-4">
+                      <span class="shrink-0 grid place-items-center w-[26px] h-[26px] rounded-full bg-[var(--color-wash-soft)] text-[13px] font-semibold text-[var(--color-navy)]">2</span>
+                      <div>
+                        <h4 class="font-[family-name:var(--font-body)] text-[16px] leading-[26px] text-[var(--color-ink)]">Parts you’ll also sell separately</h4>
+                        <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                          Say which volumes go in each part and what it costs. The name fills itself
+                          in from the volumes - change it to a title if you like.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div data-parts-quick hidden class="sm:pl-[38px] mb-3 flex flex-wrap items-center gap-2">
+                      <span class="mr-1 text-[12.5px] text-[var(--color-ink-faint)]">Quick start</span>
+                      <button type="button" data-preset="halves"
+                        class="h-11 px-4 rounded-[var(--radius-pill)] border border-[var(--color-rule)] bg-white text-[13.5px] font-medium text-[var(--color-navy)] hover:border-[var(--color-navy)]">
+                        Two halves
+                      </button>
+                      <button type="button" data-preset="each"
+                        class="h-11 px-4 rounded-[var(--radius-pill)] border border-[var(--color-rule)] bg-white text-[13.5px] font-medium text-[var(--color-navy)] hover:border-[var(--color-navy)]">
+                        Each volume on its own
+                      </button>
+                    </div>
+
+                    <div class="sm:pl-[38px] space-y-3">
                       {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-                        <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 items-center">
-                          <input
-                            type="text"
-                            name={`part_${i}_name`}
-                            maxlength="200"
-                            placeholder="Volumes 1-2"
-                            form="partsForm"
-                            class="field !py-1.5 !text-[13.5px]"
-                          />
-                          <input type="number" name={`part_${i}_from`} min="1" max="200"
-                            placeholder="1" form="partsForm"
-                            class="field !py-1.5 !text-[13.5px] !px-2 tabular-nums" />
-                          <input type="number" name={`part_${i}_to`} min="1" max="200"
-                            placeholder="2" form="partsForm"
-                            class="field !py-1.5 !text-[13.5px] !px-2 tabular-nums" />
-                          {/* The £ lives inside the field shell, so the border,
-                              background and radius stay one object. */}
-                          <div class="flex items-center rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white focus-within:border-[var(--color-navy)]">
-                            <span class="pl-2.5 text-[13.5px] text-[var(--color-ink-faint)]">£</span>
-                            <input
-                              type="text"
-                              name={`part_${i}_price`}
-                              inputmode="decimal"
-                              placeholder="0.00"
-                              form="partsForm"
-                              class="w-full bg-transparent border-0 outline-none py-1.5 pl-1 pr-2 text-[13.5px] tabular-nums"
-                            />
+                        <div data-part={i} class="rounded-[10px] border border-[var(--color-rule-soft)] bg-white px-4 pt-2 pb-4">
+                          <div class="flex items-center justify-between gap-3 min-h-11 mb-2">
+                            <div class="flex items-center gap-3 min-w-0 flex-wrap">
+                              <span data-part-label class="text-[11px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
+                                Part {i + 1}
+                              </span>
+                              <span data-part-spines class="flex gap-0.5" aria-hidden="true"></span>
+                              <span data-part-summary class="text-[13.5px] font-medium text-[var(--color-ink-faint)]"></span>
+                            </div>
+                            <button type="button" data-part-remove hidden aria-label={`Remove part ${i + 1}`}
+                              class="shrink-0 -mr-2 h-11 px-3 inline-flex items-center gap-1.5 rounded-[var(--radius-field)] text-[13px] text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)]">
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+                              Remove
+                            </button>
                           </div>
+                          <div class="grid grid-cols-2 sm:grid-cols-[6rem_6rem_minmax(0,1fr)_8rem] gap-2.5">
+                            <label class="block">
+                              <span class="block text-[12.5px] text-[var(--color-ink-soft)] mb-1">From volume</span>
+                              <input type="number" name={`part_${i}_from`} min="1" max="200"
+                                placeholder="1" form="partsForm"
+                                class="field h-11 !py-0 !text-[15px] tabular-nums" />
+                            </label>
+                            <label class="block">
+                              <span class="block text-[12.5px] text-[var(--color-ink-soft)] mb-1">To volume</span>
+                              <input type="number" name={`part_${i}_to`} min="1" max="200"
+                                placeholder="2" form="partsForm"
+                                class="field h-11 !py-0 !text-[15px] tabular-nums" />
+                            </label>
+                            <label class="block col-span-2 sm:col-span-1">
+                              <span class="block text-[12.5px] text-[var(--color-ink-soft)] mb-1">Name in the shop</span>
+                              <input
+                                type="text"
+                                name={`part_${i}_name`}
+                                maxlength="200"
+                                placeholder="e.g. Volumes 1-2, or a book’s title"
+                                form="partsForm"
+                                class="field h-11 !py-0 !text-[15px]"
+                              />
+                            </label>
+                            <label class="block col-span-2 sm:col-span-1">
+                              <span class="block text-[12.5px] text-[var(--color-ink-soft)] mb-1">Price</span>
+                              {/* The £ lives inside the field shell, so the border,
+                                  background and radius stay one object. */}
+                              <span class="flex items-center h-11 rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white focus-within:border-[var(--color-navy)]">
+                                <span class="pl-3 text-[15px] text-[var(--color-ink-faint)]">£</span>
+                                <input
+                                  type="text"
+                                  name={`part_${i}_price`}
+                                  inputmode="decimal"
+                                  placeholder="0.00"
+                                  form="partsForm"
+                                  class="w-full min-w-0 h-full bg-transparent border-0 outline-none pl-1 pr-3 text-[15px] tabular-nums"
+                                />
+                              </span>
+                            </label>
+                          </div>
+                          <p data-part-error hidden class="mt-3 flex items-start gap-2 text-[13.5px] leading-relaxed text-[var(--color-outstock)]">
+                            <svg class="shrink-0 mt-0.5" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.8v3.6M8 11.2v.01" /></svg>
+                            <span data-part-message></span>
+                          </p>
                         </div>
                       ))}
+
+                      <button type="button" data-part-add hidden
+                        class="w-full h-12 px-4 flex items-center justify-between rounded-[10px] border border-dashed border-[var(--color-rule)] bg-[var(--color-paper-raised)] text-[14px] font-medium text-[var(--color-navy)] hover:border-[var(--color-navy)]">
+                        <span class="inline-flex items-center gap-2">
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10M8 3v10" /></svg>
+                          Add another part
+                        </span>
+                        <span data-part-count class="text-[12.5px] font-normal text-[var(--color-ink-faint)]"></span>
+                      </button>
+                      <p data-part-full hidden class="text-[12.5px] text-[var(--color-ink-faint)]">
+                        That is the most: eight parts.
+                      </p>
+                      <p data-parts-static class="text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                        Leave a part empty if you need fewer - empty ones are skipped. Every part has
+                        to sit inside the set: with six volumes, none can go up to 7.
+                      </p>
                     </div>
-
-                    <p id="partsError" hidden role="alert"
-                      class="mt-2 flex items-start gap-1.5 text-[12.5px] text-[var(--color-outstock)]">
-                      <span aria-hidden="true">!</span><span data-parts-message></span>
-                    </p>
-
-                    <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                      Leave rows blank if you need fewer. One volume on its own is fine - put the
-                      same number in both.
-                    </p>
                   </div>
 
-                  <button type="submit" form="partsForm" id="buildParts"
-                    class="btn btn-primary !py-2 !text-[13.5px]">
-                    Build the parts
-                  </button>
+                  {/* 3. What it will put on the shop. Worked out as the owner
+                      types, so it needs scripting; without it the paragraph
+                      after it says the same thing in general terms. */}
+                  <div data-parts-check hidden>
+                    <div class="flex items-start gap-3 mb-4">
+                      <span class="shrink-0 grid place-items-center w-[26px] h-[26px] rounded-full bg-[var(--color-wash-soft)] text-[13px] font-semibold text-[var(--color-navy)]">3</span>
+                      <div>
+                        <h4 class="font-[family-name:var(--font-body)] text-[16px] leading-[26px] text-[var(--color-ink)]">Check what goes on the shop</h4>
+                        <p class="text-[13.5px] text-[var(--color-ink-faint)] leading-relaxed">Nothing is listed until you press the button below.</p>
+                      </div>
+                    </div>
+
+                    <div class="sm:ml-[38px] space-y-3">
+                      <div class="rounded-[10px] border border-[var(--color-rule-soft)] overflow-hidden">
+                        <div class="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_5rem_4.5rem] gap-3 px-4 py-2.5 bg-[var(--color-paper-raised)] text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
+                          <span>Listing</span>
+                          <span class="hidden sm:block">Volumes</span>
+                          <span class="text-right">Price</span>
+                          <span class="text-right">On sale</span>
+                        </div>
+                        <div data-check-rows></div>
+                        <p data-check-empty class="px-4 py-3 border-t border-[var(--color-rule-faint)] text-[13.5px] text-[var(--color-ink-faint)]">
+                          Your parts appear here as you fill them in.
+                        </p>
+                      </div>
+
+                      <div data-check-notes class="space-y-1.5"></div>
+
+                      <div class="p-4 bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[10px]">
+                        <p class="text-[13.5px] font-semibold mb-1">How the shelf count works</p>
+                        <p data-shelf-lead class="text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed"></p>
+                        <div data-shelf-rows hidden class="mt-2.5 px-3 py-2.5 bg-white border border-[var(--color-rule-faint)] rounded-[8px] space-y-1.5"></div>
+                        <p data-shelf-after hidden class="mt-2.5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                          The volumes they did not buy stay on the shelf and carry on selling. After a
+                          delivery you change one number: the complete sets.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <p data-parts-static class="text-[13px] text-[var(--color-ink-soft)] leading-relaxed">
+                    <strong class="text-[var(--color-ink)]">They all come out of the same pile.</strong>
+                    {' '}If you have three sets and somebody buys volumes 1-2 on their own, two
+                    complete sets are left and the other volumes stay sellable.
+                  </p>
+
+                  <div class="pt-5 border-t border-[var(--color-rule-faint)]">
+                    <p id="partsError" hidden role="alert"
+                      class="mb-3 flex items-start gap-2 text-[13.5px] leading-relaxed text-[var(--color-outstock)]">
+                      <svg class="shrink-0 mt-0.5" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.8v3.6M8 11.2v.01" /></svg>
+                      <span data-parts-message></span>
+                    </p>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <button type="submit" form="partsForm" id="buildParts"
+                        class="btn btn-primary h-11 !py-0 !text-[14.5px]">
+                        Create the parts
+                      </button>
+                      <p data-parts-foot class="text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                        Nothing goes on the shop until you press this. You can stop selling in parts
+                        later.
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 </div>
               </>
@@ -1593,7 +1734,11 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
     book && (
       <>
         <form id="telegramForm" method="post" action={`/api/admin/books/${book.id}/telegram`} />
-        <form id="restockForm" method="post" action={`/api/admin/books/${book.id}/set`} />
+        {/* It said nothing about what it wanted, so the endpoint answered "That
+            form did not say what it wanted to do" and the count never moved. */}
+        <form id="restockForm" method="post" action={`/api/admin/books/${book.id}/set`}>
+          <input type="hidden" name="action" value="restock" />
+        </form>
         <form id="partsForm" method="post" action={`/api/admin/books/${book.id}/set`} />
         <form id="adoptForm" method="post" action={`/api/admin/books/${book.id}/set`}>
           <input type="hidden" name="action" value="adopt" />
@@ -1617,88 +1762,376 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
         // posting only once there is nothing outstanding.
         // ------------------------------------------------------------------
         /*
-         * A half-filled part row is refused, never guessed at. Filling in a
-         * missing price or inferring a range would put a listing on the shop
-         * front at a number nobody chose.
+         * Sold in parts: the builder.
          *
-         * The server refuses it too - this only saves a round trip and names
-         * the row, which a redirect with ?e=parts cannot.
+         * A half-filled part is refused, never guessed at. Filling in a missing
+         * price or inferring a range would put a listing on the shop front at a
+         * number nobody chose. The server refuses it too - this only saves the
+         * round trip, and says what is wrong on the part that has it, which a
+         * redirect with ?e=parts cannot.
+         *
+         * The rest is help the form works without: the name filled in from the
+         * volumes, parts added one at a time instead of eight rows at once, two
+         * shortcuts, and a preview of what the shop will list worked out from
+         * the owner's own numbers rather than a made-up example.
          */
-        const partsForm = document.querySelector('#partsForm');
-        const partsError = document.querySelector('#partsError');
-        const buildBtn = document.querySelector('#buildParts');
+        (() => {
+          const builder = document.querySelector('[data-parts-builder]');
+          const partsForm = document.querySelector('#partsForm');
+          const partsError = document.querySelector('#partsError');
+          const buildBtn = document.querySelector('#buildParts');
+          if (!builder || !partsForm || !partsError || !buildBtn) return;
 
-        function checkParts() {
-          if (!partsError || !buildBtn) return true;
-          let problem = null;
-          for (let i = 0; i < 8 && !problem; i++) {
-            const cells = ['name', 'from', 'to', 'price'].map((k) =>
-              document.querySelector('[name="part_' + i + '_' + k + '"]'),
+          const KEYS = ['from', 'to', 'name', 'price'];
+          const DRAWN = 24;
+          const ERR = '!border-[var(--color-outstock)]';
+          const BIG = 'w-[26px] h-[38px] rounded-[3px] bg-[var(--color-navy)] text-white text-[12px] font-semibold tabular-nums flex items-end justify-center pb-1';
+          const MINI = 'w-3.5 h-[22px] rounded-[2px] border';
+          const ON = 'bg-[var(--color-navy)] border-[var(--color-navy)]';
+          const OFF = 'bg-white border-[var(--color-rule)]';
+          const INFO = '<svg class="shrink-0 mt-0.5" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 4.8v.01"/></svg>';
+
+          const volumesEl = builder.querySelector('[name="volumes"][form="partsForm"]');
+          const setsEl = builder.querySelector('[name="sets"][form="partsForm"]');
+          const cards = [...builder.querySelectorAll('[data-part]')];
+          const addBtn = builder.querySelector('[data-part-add]');
+          const setPrice = Number(builder.dataset.setPrice) || 0;
+          /* Set once the owner presses the button: from then on a part that is
+             only unfinished says so too, not just one that is wrong. */
+          let tried = false;
+
+          const input = (card, k) => card.querySelector('[name$="_' + k + '"]');
+          const money = (pence) => '£' + (pence / 100).toFixed(2);
+          const span = (from, to) => (from === to ? 'Volume ' + from : 'Volumes ' + from + '-' + to);
+          const runs = (list) => {
+            const out = [];
+            for (const n of list) {
+              const last = out.at(-1);
+              if (last && last[1] === n - 1) last[1] = n;
+              else out.push([n, n]);
+            }
+            return out.map(([a, b]) => (a === b ? String(a) : a + '-' + b)).join(', ');
+          };
+          const el = (tag, cls, text) => {
+            const node = document.createElement(tag);
+            if (cls) node.className = cls;
+            if (text !== undefined) node.textContent = text;
+            return node;
+          };
+
+          function total() {
+            const n = Number.parseInt(volumesEl.value, 10);
+            return n >= 2 && n <= 200 ? n : 0;
+          }
+          function sets() {
+            return Math.max(0, Math.min(999, Number.parseInt(setsEl.value, 10) || 0));
+          }
+          function range(card) {
+            const from = Number.parseInt(input(card, 'from').value, 10);
+            const to = Number.parseInt(input(card, 'to').value, 10);
+            return from >= 1 && to >= from ? { from, to } : null;
+          }
+
+          /* What one part says, or what is wrong with it. `quiet` is only
+             "not filled in yet": shown once the owner moves on from that part
+             or presses the button, never while they are halfway through it. */
+          function read(card, vols) {
+            const v = {};
+            for (const k of KEYS) v[k] = input(card, k).value.trim();
+            if (!KEYS.some((k) => v[k])) return { blank: true, bad: [] };
+            const from = Number.parseInt(v.from, 10);
+            const to = Number.parseInt(v.to, 10);
+            if (v.from && v.to) {
+              if (!(from >= 1)) return { error: 'A part starts at volume 1 or later.', bad: ['from'] };
+              if (!(to >= from)) {
+                return { error: '“To volume” is lower than “From volume”. Put the lower number first.', bad: ['from', 'to'] };
+              }
+              if (vols && to > vols) {
+                return { error: 'This set has ' + vols + ' volumes, so a part cannot go up to volume ' + to + '.', bad: ['to'] };
+              }
+            }
+            const missing = KEYS.filter((k) => !v[k]);
+            if (missing.length) {
+              const words = { from: 'the first volume', to: 'the last volume', name: 'a name', price: 'a price' };
+              const said = missing.map((k) => words[k]);
+              const list = said.length > 1 ? said.slice(0, -1).join(', ') + ' and ' + said.at(-1) : said[0];
+              return { error: 'Add ' + list + ', or remove this part. Nothing is guessed.', bad: missing, quiet: true };
+            }
+            const pence = Math.round(Number(v.price.replace(/[^0-9.]/g, '')) * 100);
+            if (!Number.isFinite(pence) || pence < 0) {
+              return { error: 'Write the price as a number, like 17.00.', bad: ['price'] };
+            }
+            return { ok: true, from, to, pence, name: v.name, bad: [] };
+          }
+
+          function spines(holder, count, paintOne) {
+            while (holder.childElementCount > count) holder.lastElementChild.remove();
+            while (holder.childElementCount < count) holder.append(document.createElement('span'));
+            [...holder.children].forEach((node, i) => paintOne(node, i + 1));
+          }
+
+          function listing(name, tag, vols, cost, have) {
+            const row = el('div', 'grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_5rem_4.5rem] gap-3 items-center px-4 py-3 border-t border-[var(--color-rule-faint)] text-[14px]');
+            const who = el('span', 'flex items-center gap-2 min-w-0 flex-wrap');
+            who.append(
+              el('span', 'font-medium truncate', name),
+              el('span', tag === 'New'
+                ? 'rounded-[var(--radius-pill)] px-2 py-0.5 text-[11.5px] bg-[var(--color-instock)]/10 text-[var(--color-instock)]'
+                : 'rounded-[var(--radius-pill)] px-2 py-0.5 text-[11.5px] bg-[var(--color-wash-soft)] text-[var(--color-navy)]', tag),
             );
-            const filled = cells.map((el) => (el && el.value.trim() ? 1 : 0));
-            const count = filled.reduce((a, b) => a + b, 0);
-            if (count === 0 || count === 4) {
-              for (const el of cells) el && el.classList.remove('!border-[var(--color-outstock)]');
-              continue;
-            }
-            const missing = ['a name', 'a first volume', 'a last volume', 'a price'];
-            const first = filled.indexOf(0);
-            problem = 'Row ' + (i + 1) + ' needs ' + missing[first] +
-              '. We will not guess one - fill it in or clear the row.';
-            for (const [n, el] of cells.entries()) {
-              if (!el) continue;
-              el.classList.toggle('!border-[var(--color-outstock)]', filled[n] === 0);
-            }
+            row.append(
+              who,
+              el('span', 'hidden sm:block tabular-nums text-[var(--color-ink-soft)]', vols),
+              el('span', 'text-right tabular-nums font-semibold', cost),
+              el('span', 'text-right tabular-nums text-[var(--color-ink-soft)]', String(have)),
+            );
+            return row;
           }
 
-          /*
-           * And whether the volumes it covers exist.
-           *
-           * This used to check only that a row was filled in, so a part
-           * covering volumes 1 to 6 of a four volume set passed here and was
-           * refused by the server - which then called it half filled in. The
-           * owner saw a sentence about a row they had completed.
-           */
-          const total = Number((document.querySelector('[name="volumes"][form="partsForm"]') || {}).value) || 0;
-          for (let i = 0; i < 8 && !problem; i++) {
-            const fromEl = document.querySelector('[name="part_' + i + '_from"]');
-            const toEl = document.querySelector('[name="part_' + i + '_to"]');
-            if (!fromEl || !toEl || !fromEl.value.trim() || !toEl.value.trim()) continue;
-            const from = Number(fromEl.value);
-            const to = Number(toEl.value);
-            const bad = to < from
-              ? 'ends before it starts'
-              : total && to > total
-                ? 'runs past volume ' + total
-                : from < 1
-                  ? 'starts before volume 1'
-                  : null;
-            if (!bad) {
-              fromEl.classList.remove('!border-[var(--color-outstock)]');
-              toEl.classList.remove('!border-[var(--color-outstock)]');
-              continue;
-            }
-            problem = 'Row ' + (i + 1) + ' ' + bad + '.';
-            fromEl.classList.toggle('!border-[var(--color-outstock)]', from < 1 || to < from);
-            toEl.classList.add('!border-[var(--color-outstock)]');
+          function note(text) {
+            const p = el('p', 'flex items-start gap-2 text-[13px] leading-relaxed text-[var(--color-ink-soft)]');
+            p.innerHTML = INFO;
+            p.append(el('span', '', text));
+            return p;
           }
-          partsError.hidden = !problem;
-          if (problem) partsError.querySelector('[data-parts-message]').textContent = problem;
-          buildBtn.classList.toggle('opacity-50', Boolean(problem));
-          return !problem;
-        }
 
-        if (partsForm) {
-          for (let i = 0; i < 8; i++) {
-            for (const k of ['name', 'from', 'to', 'price']) {
-              const el = document.querySelector('[name="part_' + i + '_' + k + '"]');
-              el && el.addEventListener('input', checkParts);
+          /* Everything on screen, from the fields. Returns whether the parts
+             can be built as they stand. */
+          function paint() {
+            const vols = total();
+            const have = sets();
+            const shown = cards.filter((c) => !c.hidden);
+
+            // 1. The set, drawn as numbered spines.
+            builder.querySelector('[data-set-picture]').hidden = !vols;
+            builder.querySelector('[data-set-caption]').textContent = vols
+              ? 'One complete set: ' + vols + ' volumes' + (vols > DRAWN ? ' (the first ' + DRAWN + ' drawn)' : '')
+              : '';
+            spines(builder.querySelector('[data-set-spines]'), Math.min(vols, DRAWN), (node, n) => {
+              node.className = BIG;
+              node.textContent = String(n);
+            });
+            const volsBad = !vols && (tried || volumesEl.value.trim() !== '');
+            volumesEl.parentElement.classList.toggle(ERR, volsBad);
+            volumesEl.setAttribute('aria-invalid', String(volsBad));
+
+            // 2. Each part: what it covers, and what is wrong with it.
+            let firstShown = null;
+            let blocked = !vols;
+            const valid = [];
+            for (const card of cards) {
+              const r = read(card, vols);
+              const span_ = range(card);
+              const fits = span_ && (!vols || span_.to <= vols);
+              const summary = card.querySelector('[data-part-summary]');
+              summary.textContent = fits ? span(span_.from, span_.to) + (vols ? ' of ' + vols : '') : 'Choose the volumes';
+              summary.classList.toggle('text-[var(--color-ink)]', Boolean(fits));
+              summary.classList.toggle('text-[var(--color-ink-faint)]', !fits);
+              const strip = card.querySelector('[data-part-spines]');
+              strip.hidden = !vols || vols > DRAWN;
+              spines(strip, vols && vols <= DRAWN ? vols : 0, (node, n) => {
+                node.className = MINI + ' ' + (fits && n >= span_.from && n <= span_.to ? ON : OFF);
+              });
+
+              const show = Boolean(r.error) && (!r.quiet || tried || card.dataset.touched === '1');
+              for (const k of KEYS) {
+                const field = input(card, k);
+                const bad = show && r.bad.includes(k);
+                (k === 'price' ? field.parentElement : field).classList.toggle(ERR, bad);
+                field.setAttribute('aria-invalid', String(bad));
+              }
+              card.classList.toggle(ERR, show);
+              card.querySelector('[data-part-error]').hidden = !show;
+              card.querySelector('[data-part-message]').textContent = show ? r.error : '';
+              if (r.error) blocked = true;
+              if (show && !firstShown) firstShown = 'Part ' + (shown.indexOf(card) + 1) + ': ' + r.error;
+              if (r.ok) valid.push(r);
             }
+            if (!valid.length) blocked = true;
+
+            shown.forEach((card, k) => {
+              card.querySelector('[data-part-label]').textContent = 'Part ' + (k + 1);
+              card.querySelector('[data-part-remove]').setAttribute('aria-label', 'Remove part ' + (k + 1));
+            });
+            addBtn.hidden = shown.length >= cards.length;
+            builder.querySelector('[data-part-full]').hidden = shown.length < cards.length;
+            builder.querySelector('[data-part-count]').textContent = shown.length + ' of ' + cards.length;
+            builder.querySelector('[data-parts-quick]').hidden = !vols;
+            builder.querySelector('[data-preset="each"]').hidden = vols > cards.length;
+
+            // 3. What goes on the shop, and what one sale does to the shelf.
+            builder.querySelector('[data-check-rows]').replaceChildren(
+              listing('Complete set', 'This listing', vols ? '1-' + vols : '-', money(setPrice), have),
+              ...valid.map((r) => listing(r.name, 'New', r.from === r.to ? String(r.from) : r.from + '-' + r.to, money(r.pence), have)),
+            );
+            builder.querySelector('[data-check-empty]').hidden = valid.length > 0;
+
+            const notes = [];
+            if (vols && valid.length) {
+              const count = new Array(vols + 1).fill(0);
+              for (const r of valid) for (let n = r.from; n <= Math.min(r.to, vols); n++) count[n]++;
+              const gaps = [];
+              const twice = [];
+              for (let n = 1; n <= vols; n++) {
+                if (count[n] === 0) gaps.push(n);
+                else if (count[n] > 1) twice.push(n);
+              }
+              if (gaps.length === 1) {
+                notes.push('Volume ' + runs(gaps) + ' is not in any part, so it only sells with the complete set. That is fine if you meant it.');
+              } else if (gaps.length) {
+                notes.push('Volumes ' + runs(gaps) + ' are not in any part, so they only sell with the complete set. That is fine if you meant it.');
+              }
+              if (twice.length === 1) {
+                notes.push('Volume ' + runs(twice) + ' is in more than one part. That is allowed: whichever part sells first uses it up.');
+              } else if (twice.length) {
+                notes.push('Volumes ' + runs(twice) + ' are in more than one part. That is allowed: whichever part sells first uses them up.');
+              }
+            }
+            builder.querySelector('[data-check-notes]').replaceChildren(...notes.map(note));
+
+            const lead = builder.querySelector('[data-shelf-lead]');
+            const shelf = builder.querySelector('[data-shelf-rows]');
+            const after = builder.querySelector('[data-shelf-after]');
+            const sold = valid[0];
+            shelf.hidden = after.hidden = !sold || have === 0;
+            if (!sold) {
+              lead.textContent = 'Add a part above and this shows what one sale does to the count.';
+            } else if (have === 0) {
+              lead.textContent = 'With no complete sets on the shelf, every listing here shows as sold out until you add some.';
+            } else {
+              lead.textContent = 'You have ' + have + ' complete ' + (have === 1 ? 'set' : 'sets') +
+                '. Say a customer buys “' + sold.name + '” on its own. Afterwards:';
+              const change = (label, drops) => {
+                const row = el('div', 'flex justify-between gap-3 text-[13.5px]');
+                row.append(
+                  el('span', 'min-w-0 truncate text-[var(--color-ink-soft)]', label),
+                  drops
+                    ? el('span', 'shrink-0 tabular-nums font-semibold', have + ' → ' + (have - 1))
+                    : el('span', 'shrink-0 tabular-nums text-[var(--color-ink-faint)]', have + ' → ' + have + ', no change'),
+                );
+                return row;
+              };
+              shelf.replaceChildren(
+                change('Complete set', true),
+                ...valid.map((r) => change(r.name, r.from <= sold.to && r.to >= sold.from)),
+              );
+            }
+
+            // The button, and the one thing standing in its way.
+            let message = firstShown;
+            if (!vols && (tried || volumesEl.value.trim() !== '')) {
+              message = 'Put how many volumes are in one set: between 2 and 200.';
+            } else if (!message && tried && !valid.length) {
+              message = 'Add at least one part, with its volumes and a price.';
+            }
+            partsError.hidden = !message;
+            partsError.querySelector('[data-parts-message]').textContent = message || '';
+            buildBtn.textContent = valid.length > 1
+              ? 'Create ' + valid.length + ' part listings'
+              : valid.length === 1 ? 'Create 1 part listing' : 'Create the parts';
+            buildBtn.classList.toggle('opacity-50', blocked);
+            buildBtn.setAttribute('aria-disabled', String(blocked));
+            return !blocked;
           }
-          partsForm.addEventListener('submit', (event) => {
-            if (!checkParts()) event.preventDefault();
+
+          for (const card of cards) {
+            const name = input(card, 'name');
+            name.dataset.auto = name.value.trim() ? '0' : '1';
+            card.addEventListener('input', (event) => {
+              if (event.target === name) {
+                name.dataset.auto = name.value.trim() ? '0' : '1';
+              } else if (event.target !== input(card, 'price') && name.dataset.auto === '1') {
+                const r = range(card);
+                name.value = r ? span(r.from, r.to) : '';
+              }
+              paint();
+            });
+            card.addEventListener('focusout', (event) => {
+              if (card.contains(event.relatedTarget)) return;
+              card.dataset.touched = '1';
+              paint();
+            });
+            card.querySelector('[data-part-remove]').addEventListener('click', () => {
+              for (const k of KEYS) input(card, k).value = '';
+              name.dataset.auto = '1';
+              delete card.dataset.touched;
+              const others = cards.filter((c) => c !== card && !c.hidden);
+              if (others.length) card.hidden = true;
+              paint();
+              (others.length ? addBtn : input(card, 'from')).focus();
+            });
+          }
+
+          addBtn.addEventListener('click', () => {
+            const next = cards.find((c) => c.hidden);
+            if (!next) return;
+            next.hidden = false;
+            paint();
+            input(next, 'from').focus();
           });
-        }
+
+          for (const btn of builder.querySelectorAll('[data-preset]')) {
+            btn.addEventListener('click', () => {
+              const vols = total();
+              if (!vols) return;
+              const busy = cards.some((c) => KEYS.some((k) => input(c, k).value.trim()));
+              if (busy && !window.confirm('Replace the parts you have filled in?')) return;
+              const ranges = [];
+              if (btn.dataset.preset === 'halves') {
+                const half = Math.ceil(vols / 2);
+                ranges.push([1, half], [half + 1, vols]);
+              } else {
+                for (let n = 1; n <= Math.min(vols, cards.length); n++) ranges.push([n, n]);
+              }
+              cards.forEach((card, i) => {
+                const r = ranges[i];
+                input(card, 'from').value = r ? String(r[0]) : '';
+                input(card, 'to').value = r ? String(r[1]) : '';
+                input(card, 'name').value = r ? span(r[0], r[1]) : '';
+                input(card, 'name').dataset.auto = '1';
+                input(card, 'price').value = '';
+                delete card.dataset.touched;
+                card.hidden = !r && i > 0;
+              });
+              paint();
+              input(cards[0], 'price').focus();
+            });
+          }
+
+          for (const btn of builder.querySelectorAll('[data-bump]')) {
+            btn.hidden = false;
+            btn.addEventListener('click', () => {
+              const field = btn.parentElement.querySelector('input');
+              const min = Number(field.min);
+              const max = Number(field.max);
+              const now = Number.parseInt(field.value, 10);
+              const from = Number.isFinite(now) ? now : min - (field === volumesEl ? 1 : 0);
+              field.value = String(Math.max(min, Math.min(max, from + Number(btn.dataset.bump))));
+              if (field === volumesEl) volumesEl.dataset.own = '1';
+              field.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+          }
+
+          volumesEl.addEventListener('input', paint);
+          setsEl.addEventListener('input', paint);
+          partsForm.addEventListener('submit', (event) => {
+            tried = true;
+            if (paint()) return;
+            event.preventDefault();
+            const first = builder.querySelector('[aria-invalid="true"]') ||
+              input(cards.find((c) => !c.hidden) || cards[0], 'from');
+            first.focus();
+          });
+
+          // Scripting is on, so the extras appear and the eight rows become one
+          // to start with - more are a button away.
+          for (const node of builder.querySelectorAll('[data-part-remove], [data-parts-check]')) node.hidden = false;
+          for (const node of builder.querySelectorAll('[data-parts-static]')) node.hidden = true;
+          cards.forEach((card, i) => {
+            if (i > 0 && !KEYS.some((k) => input(card, k).value.trim())) card.hidden = true;
+          });
+          paint();
+        })();
 
         const bookForm = document.querySelector('#bookForm');
         const saveBtn = document.querySelector('#saveBtn');
@@ -2198,8 +2631,13 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
         'Waiting on a volume count. Put the number of volumes in \u201CVolumes in the set\u201D above and the builder opens here.';
 
       /* The builder's own volume field, which the owner should not have to
-         fill in twice with the same number. */
-      const echo = builder.querySelector('input[name="volumes"]');
+         fill in twice with the same number. Named by its form: the "link
+         these" block above it has a volume field of its own, and used to be
+         the one this found. */
+      const echo = builder.querySelector('input[name="volumes"][form="partsForm"]');
+      echo?.addEventListener('input', (event) => {
+        if (event.isTrusted) echo.dataset.own = '1';
+      });
 
       function paint() {
         const n = Number(volumes.value);
@@ -2213,9 +2651,14 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
         panel.classList.toggle('bg-white', splittable);
         panel.classList.toggle('border-[var(--color-rule-soft)]', splittable);
 
-        /* Only while it is untouched - overwriting a number the owner typed
-           into the builder itself would be worse than asking for it twice. */
-        if (splittable && echo && !echo.value) echo.value = String(Math.round(n));
+        /* Only while the owner has not typed there - overwriting a number
+           they put into the builder itself would be worse than asking for it
+           twice. The event lets the builder redraw for the new count. */
+        const count = String(Math.round(n));
+        if (splittable && echo && echo.dataset.own !== '1' && echo.value !== count) {
+          echo.value = count;
+          echo.dispatchEvent(new Event('input', { bubbles: true }));
+        }
       }
 
       volumes.addEventListener('input', paint);
