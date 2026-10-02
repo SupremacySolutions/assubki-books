@@ -1247,7 +1247,7 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                     <div class="grid grid-cols-2 gap-3 mb-3">
                       <label class="block">
                         <span class="block text-[12.5px] text-[var(--color-ink-faint)] mb-1">
-                          Volumes altogether
+                          Books or volumes in the set
                         </span>
                         <input type="number" name="volumes" min="2" max="200" required
                           value={book.volumes ?? ''} form="adoptForm"
@@ -1336,9 +1336,42 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                     <span class="tabular-nums text-[var(--color-ink)]">17.00</span>
                   </div>
                   <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-                    A four volume set, also sold as either half. Every first and last volume has to
-                    be inside the set - with four volumes altogether, a part cannot run to 6. Parts
-                    may overlap or leave gaps; that is your shelf, not a mistake.
+                    A four volume work, also sold as either half.
+                  </p>
+
+                  {/*
+                    * The second shape, which had no example and no words.
+                    *
+                    * Six separate books by one author, sold singly or as the
+                    * six, is not a work split into parts - but it is the same
+                    * arrangement underneath, and an owner holding exactly that
+                    * had no way to tell it was. Numbering them 1 to 6 is just
+                    * how the parts are told apart; nothing claims they are
+                    * volumes of one book.
+                    */}
+                  <p class="mt-3 pt-3 border-t border-[var(--color-rule-faint)] text-[12px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)] mb-2">
+                    Or separate books sold together
+                  </p>
+                  <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 text-[13px]">
+                    <span class="text-[var(--color-ink)]">Al-Wasit</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">1</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">1</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">5.00</span>
+                    <span class="text-[var(--color-ink)]">Al-Mukhtasar</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">2</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">2</span>
+                    <span class="tabular-nums text-[var(--color-ink)]">5.00</span>
+                  </div>
+                  <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                    Six books by one author, each on its own row with the same first and last
+                    number, at £5 each - and this listing priced at £28 for all six. The numbers
+                    only tell the parts apart; nothing says they are volumes of one work.
+                  </p>
+
+                  <p class="mt-3 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+                    Either way, every first and last has to be inside the set - with six altogether,
+                    a part cannot run to 7. Parts may overlap or leave gaps; that is your shelf, not
+                    a mistake. Up to eight parts.
                   </p>
                 </div>
 
@@ -1366,7 +1399,7 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                       text, which disappears the moment anyone types into it. */}
                   <div>
                     <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 pb-1.5 mb-1.5 border-b border-[var(--color-rule-soft)]">
-                      {['Name of the part', 'First volume', 'Last volume', 'Price'].map((h) => (
+                      {['Name of the part', 'First', 'Last', 'Price'].map((h) => (
                         <span class="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
                           {h}
                         </span>
@@ -1374,7 +1407,7 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                     </div>
 
                     <div class="space-y-1.5">
-                      {[0, 1, 2, 3].map((i) => (
+                      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
                         <div class="grid grid-cols-[1fr_.8fr_.8fr_1fr] gap-1.5 items-center">
                           <input
                             type="text"
@@ -1598,7 +1631,7 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
         function checkParts() {
           if (!partsError || !buildBtn) return true;
           let problem = null;
-          for (let i = 0; i < 4 && !problem; i++) {
+          for (let i = 0; i < 8 && !problem; i++) {
             const cells = ['name', 'from', 'to', 'price'].map((k) =>
               document.querySelector('[name="part_' + i + '_' + k + '"]'),
             );
@@ -1627,7 +1660,7 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
            * owner saw a sentence about a row they had completed.
            */
           const total = Number((document.querySelector('[name="volumes"][form="partsForm"]') || {}).value) || 0;
-          for (let i = 0; i < 4 && !problem; i++) {
+          for (let i = 0; i < 8 && !problem; i++) {
             const fromEl = document.querySelector('[name="part_' + i + '_from"]');
             const toEl = document.querySelector('[name="part_' + i + '_to"]');
             if (!fromEl || !toEl || !fromEl.value.trim() || !toEl.value.trim()) continue;
@@ -1656,7 +1689,7 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
         }
 
         if (partsForm) {
-          for (let i = 0; i < 4; i++) {
+          for (let i = 0; i < 8; i++) {
             for (const k of ['name', 'from', 'to', 'price']) {
               const el = document.querySelector('[name="part_' + i + '_' + k + '"]');
               el && el.addEventListener('input', checkParts);

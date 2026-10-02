@@ -3056,6 +3056,34 @@ async function integrity() {
   t.ok(noRows.location.includes('e=noparts'),
     'and filling in no rows at all is not called a half-filled row');
 
+  /*
+   * Six parts, because six is the case that turned up.
+   *
+   * Four rows was enough for a work split into halves or quarters, which is
+   * what this was built for. An owner with six separate books by one author,
+   * sold singly or as the six, had the listing and no way to describe it: the
+   * fifth and sixth rows did not exist, and nothing said so.
+   */
+  const six = await makeBook();
+  const sixParts = {
+    action: 'create', volumes: '6', sets: '3',
+    ...Object.fromEntries([0, 1, 2, 3, 4, 5].flatMap((i) => [
+      [`part_${i}_name`, `Book ${i + 1}`],
+      [`part_${i}_from`, String(i + 1)],
+      [`part_${i}_to`, String(i + 1)],
+      [`part_${i}_price`, '5.00'],
+    ])),
+  };
+  const sixBuilt = await admin(`/api/admin/books/${six.id}/set`, sixParts);
+  t.ok(sixBuilt.location.includes('saved=1'), 'six separate books can be built into one set');
+  const made = await one(
+    `SELECT (SELECT COUNT(*) FROM books WHERE set_id = b.set_id AND id <> b.id) AS parts,
+            (SELECT volumes FROM book_sets WHERE id = b.set_id) AS volumes
+       FROM books b WHERE b.id = ${six.id}`,
+  );
+  t.ok(made.parts === 6 && made.volumes === 6,
+    `all six become listings of their own (${made.parts} parts of ${made.volumes})`);
+
   /* An unknown code used to render nothing: the page reloaded, said neither
      what had happened nor that anything had, and the owner saw a button that
      appeared to do nothing. */
@@ -3709,13 +3737,16 @@ async function integrity() {
    */
   const splittable = await makeBook({ volumes: '6' });
   const setEditor = await html(`/admin/books/${splittable.id}`);
-  for (const head of ['Name of the part', 'First volume', 'Last volume']) {
-    t.ok(setEditor.includes(head), `the parts grid labels "${head}"`);
+  /* "First volume" and "Last volume" became "First" and "Last": the same
+     builder has to describe six separate books by one author, where calling
+     them volumes of one work would be wrong. */
+  for (const head of ['Name of the part', '>First<', '>Last<']) {
+    t.ok(setEditor.includes(head), `the parts grid labels ${head}`);
   }
   const placeholders = [...setEditor.matchAll(/name="part_\d_name"[^>]*placeholder="([^"]*)"/g)]
     .map((m) => m[1]);
-  t.ok(placeholders.length === 4 && new Set(placeholders).size === 1,
-    'and all four rows are the same shape');
+  t.ok(placeholders.length === 8 && new Set(placeholders).size === 1,
+    'and all eight rows are the same shape');
 
   const notifySource = readFileSync('src/lib/notify.ts', 'utf8');
   t.ok(/catch \(err\)[^]{0,240}recordNotifyFailure/.test(notifySource),
