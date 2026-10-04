@@ -83,10 +83,13 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
   if (!Number.isInteger(id)) return new Response('Bad request', { status: 400 });
 
   const book = await env.DB.prepare(
-    'SELECT id, slug, title, status, set_id FROM books WHERE id = ?',
+    'SELECT id, slug, title, status, set_id, set_part FROM books WHERE id = ?',
   )
     .bind(id)
-    .first<{ id: number; slug: string; title: string; status: string; set_id: number | null }>();
+    .first<{
+      id: number; slug: string; title: string; status: string;
+      set_id: number | null; set_part: number;
+    }>();
   if (!book) return new Response('No such listing', { status: 404 });
 
   const form = await readForm(request);
@@ -317,6 +320,16 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
    */
   if (action === 'parts') {
     if (!book.set_id) return fail('notaset');
+    /*
+     * Only from the listing, never from one of its parts.
+     *
+     * The read below asks for "every part of this set except the row this page
+     * is", which is the right question from the listing and the wrong one from a
+     * part: it would leave that part out of its own edit and treat the rest as
+     * the whole picture. The portal no longer offers the panel on a part's page,
+     * and this is what makes that true of the endpoint as well.
+     */
+    if (book.set_part) return fail('notthelisting');
 
     const set = await env.DB.prepare('SELECT volumes FROM book_sets WHERE id = ?')
       .bind(book.set_id)
