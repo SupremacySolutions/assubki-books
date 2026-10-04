@@ -4,6 +4,9 @@ import Admin from '../../../layouts/Admin.astro';
 import PoundInput from '../../../components/PoundInput.astro';
 import CoverReview from '../../../components/CoverReview.astro';
 import { getBookAdmin, partCandidates } from '../../../lib/admin-db';
+/* The endpoint is the authority on how many new part rows one save carries;
+   importing it stops this page quietly offering two of an eight-row form. */
+import { MAX_PARTS } from '../../api/admin/books/[id]/set';
 import { allCategories, categoryCounts, publisherSpellings, setOptionsForOwner } from '../../../lib/db';
 import { imageUrl, price, stripTags, truncate, htmlToPlainText } from '../../../lib/format';
 import { botConfigured, plainCaption } from '../../../lib/telegram';
@@ -1375,39 +1378,71 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                   * whole thing again, which archives every part listing and
                   * strands its cover and channel post.
                   */}
-                <details class="mt-3">
+                <details class="mt-3" data-add-parts>
                   <summary class="text-[14px] text-[var(--color-navy)] cursor-pointer">
                     Add another way to buy it
                   </summary>
-                  <div class="mt-3 grid gap-2.5">
-                    {Array.from({ length: 2 }, (_, i) => (
-                      <div class="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_4.25rem_4.25rem_6rem] rounded-[10px] border border-dashed border-[var(--color-rule)] p-3">
+                  <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed max-w-[62ch]">
+                    As many as you like, {MAX_PARTS} at a time - save and the section is empty again
+                    for more. A new part gets its own photo, description and shelves once it is
+                    saved: the picture button appears beside it, the same as the others.
+                  </p>
+                  <div class="mt-3 grid gap-1.5">
+                    {Array.from({ length: MAX_PARTS }, (_, i) => (
+                      /* Two to begin with and the rest revealed by the button
+                         below, because eight empty rows is a form that looks
+                         like work. Every one of them posts, so the endpoint and
+                         this agree on `MAX_PARTS` by importing the same one. */
+                      <div
+                        data-add-row
+                        hidden={i >= 2}
+                        class="grid gap-2 items-center rounded-[8px] border border-dashed border-[var(--color-rule)] px-3 py-2
+                               grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] sm:grid-cols-[minmax(0,1fr)_3.5rem_3.5rem_5rem]"
+                      >
                         <input
-                          type="text" name={`part_${i}_name`} form="partsForm"
-                          placeholder="e.g. Volumes 5-6" maxlength="200"
+                          type="text" name={`part_${i}_name`} form="partsForm" maxlength="200"
+                          placeholder="What to call it" aria-label="What to call the new part"
                           class="field !py-1.5 !text-[14px]"
                         />
                         <input
                           type="number" min="1" max={setTotal} name={`part_${i}_from`} form="partsForm"
-                          placeholder="1" class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                          placeholder="1" aria-label="First volume"
+                          class="field !py-1.5 !text-[14px] !px-1.5 tabular-nums text-center"
                         />
                         <input
                           type="number" min="1" max={setTotal} name={`part_${i}_to`} form="partsForm"
-                          placeholder={String(setTotal)} class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                          placeholder={String(setTotal)} aria-label="Last volume"
+                          class="field !py-1.5 !text-[14px] !px-1.5 tabular-nums text-center"
                         />
                         <input
                           type="text" inputmode="decimal" name={`part_${i}_price`} form="partsForm"
-                          placeholder="17.00" class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
+                          placeholder="0.00" aria-label="Price"
+                          class="field !py-1.5 !text-[14px] !px-1.5 tabular-nums text-center"
                         />
                       </div>
                     ))}
                   </div>
+                  <button
+                    type="button"
+                    data-add-row-more
+                    class="mt-2 text-[13px] text-[var(--color-navy)] underline underline-offset-2 hover:opacity-80"
+                  >
+                    One more row
+                  </button>
                 </details>
 
                 <div class="mt-4 flex flex-wrap items-center gap-3">
                   <button type="submit" form="partsForm" class="btn btn-primary !py-2 !text-[14px]">
                     Save the parts
                   </button>
+                  {/* Said out loud, because the panel looks like six small things
+                      that each save themselves and it is one form that saves
+                      together - a rename, a reprice, a × and a new row all go on
+                      this press and none of them before it. */}
+                  <p class="w-full text-[13px] text-[var(--color-ink-soft)] leading-relaxed">
+                    Nothing changes until you press this - renames, prices, anything marked × and
+                    any new rows all save together.
+                  </p>
                   <p class="text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
                     A name or price can change at any time - an order already placed keeps what it
                     was sold at. Which volumes a part covers is fixed while a customer is holding
@@ -2863,6 +2898,37 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
 
       volumes.addEventListener('input', paint);
       paint();
+    })();
+  </script>
+
+  {/*
+    * One more blank row at a time, in the panel that edits a set already
+    * selling.
+    *
+    * Every row the endpoint reads is in the markup; this only decides how many
+    * of them are on screen, so the form works exactly the same with the script
+    * never running - the first two rows are visible without it.
+    */}
+  <script is:inline nonce={Astro.locals.cspNonce}>
+    (() => {
+      const section = document.querySelector('[data-add-parts]');
+      if (!section) return;
+      const rows = [...section.querySelectorAll('[data-add-row]')];
+      const more = section.querySelector('[data-add-row-more]');
+      if (!rows.length || !more) return;
+      const next = () => rows.find((row) => row.hidden);
+      const settle = () => {
+        const remaining = rows.filter((row) => row.hidden).length;
+        more.hidden = remaining === 0;
+        more.textContent = remaining === 1 ? 'One more row' : `One more row (${remaining} left)`;
+      };
+      more.addEventListener('click', () => {
+        const row = next();
+        if (row) row.hidden = false;
+        settle();
+        row?.querySelector('input')?.focus();
+      });
+      settle();
     })();
   </script>
 

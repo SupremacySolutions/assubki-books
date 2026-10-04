@@ -3231,6 +3231,62 @@ async function integrity() {
   t.ok(fromThePart.location.includes('e=notthelisting'),
     'and the endpoint refuses an edit posted from a part rather than its listing');
 
+  /*
+   * The add rows the page offers and the rows the endpoint reads are the same
+   * number. They were not: the panel rendered two while `MAX_PARTS` read eight,
+   * so six of the form's capacity was invisible and the owner reasonably read
+   * the two as the limit.
+   */
+  const addPanel = await html(`/admin/books/${setBook.id}`);
+  const addRows = (addPanel.match(/name="part_\d_name"/g) ?? []).length;
+  t.ok(addRows === 8, `the panel offers every row the endpoint reads (${addRows} of 8)`);
+  t.ok(addPanel.includes('Nothing changes until you press this'),
+    'and says plainly that one press saves the lot');
+
+  /*
+   * Eight at a time is not a cap on the set, which is what the copy now
+   * promises - so it is proven rather than assumed: a save of eight, then
+   * another, leaves the set holding more than one form can carry.
+   */
+  const partsNow = async () => (await one(
+    `SELECT COUNT(*) AS n FROM books
+      WHERE set_id = (SELECT set_id FROM books WHERE id = ${setBook.id})
+        AND set_part = 1 AND status = 'live'`,
+  )).n;
+  const rowsFor = (tag, n) => Object.fromEntries(
+    Array.from({ length: n }, (_, i) => i).flatMap((i) => [
+      [`part_${i}_name`, `${tag} ${i}`],
+      [`part_${i}_from`, '1'], [`part_${i}_to`, '2'],
+      [`part_${i}_price`, '10.00'],
+    ]),
+  );
+
+  const before = await partsNow();
+  const fullForm = await admin(`/api/admin/books/${setBook.id}/set`, { action: 'parts', ...rowsFor('Bundle', 8) });
+  t.ok(fullForm.status === 302 && !fullForm.location.includes('e='),
+    `a full form of eight new parts saves (${fullForm.location})`);
+  const afterEight = await partsNow();
+  t.ok(afterEight === before + 8, `all eight land, not just the first rows (${before} -> ${afterEight})`);
+
+  const secondForm = await admin(`/api/admin/books/${setBook.id}/set`, { action: 'parts', ...rowsFor('More', 3) });
+  t.ok(secondForm.status === 302 && !secondForm.location.includes('e='), 'and a second save adds more');
+  const afterMore = await partsNow();
+  t.ok(afterMore === afterEight + 3 && afterMore > 8,
+    `so the set is not capped at the rows one form holds (${afterMore} parts)`);
+
+  // Put it back to what the rest of the suite expects to find.
+  const surplus = await db(
+    `SELECT id FROM books
+      WHERE set_id = (SELECT set_id FROM books WHERE id = ${setBook.id})
+        AND set_part = 1 AND status = 'live'
+        AND (title LIKE 'Bundle %' OR title LIKE 'More %')`,
+  );
+  await admin(`/api/admin/books/${setBook.id}/set`, {
+    action: 'parts',
+    ...Object.fromEntries(surplus.map((r) => [`remove_${r.id}`, '1'])),
+  });
+  t.ok((await partsNow()) === before, 'and they can all be taken down again');
+
   // A part that runs off the end of the set is a typo, and is refused rather
   // than clamped - a quietly corrected listing would go on the shop front.
   const other = await makeBook();
