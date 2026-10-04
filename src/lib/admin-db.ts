@@ -563,6 +563,14 @@ export interface AdminBookDetail extends AdminBookRow {
   volumes: number | null;
   isbn: string | null;
   set_id: number | null;
+  /**
+   * Whether this row is one of another listing's parts.
+   *
+   * Carried here so the edit page knows which of the two it is: the listing,
+   * which owns the panel where the parts are managed, or a part, which is
+   * reached *from* that panel and has only its own identity and photos to edit.
+   */
+  set_part: number;
   set_from: number | null;
   set_to: number | null;
   telegram_note: string | null;

@@ -36,6 +36,15 @@ const partCount = siblings.filter((o) => o.id !== wholeId).length;
  */
 const parts = siblings.filter((o) => o.id !== wholeId);
 const wholeAvailable = siblings.find((o) => o.id === wholeId)?.available ?? 0;
+/*
+ * This page is either the listing or one of its parts, and they need different
+ * screens. The listing owns the panel where the parts are managed; a part has
+ * only its own identity, photo, description and shelves to edit, and showing it
+ * the panel invited editing the set from a row that is inside it - with itself
+ * missing from the list, since the panel lists the *other* parts.
+ */
+const isPart = Boolean(book?.set_part);
+const parentListing = isPart ? siblings.find((o) => o.id === wholeId) ?? null : null;
 /* The builder starts from the volume count already saved, when there is one
    worth splitting. Worked out here because a `>` inside a tag's attribute is
    where the source check for stray builder fields stops reading. */
@@ -112,6 +121,8 @@ const SET_REFUSALS: Record<string, string> = {
   lastpart:
     'That would leave the set with no parts, which is not an edit but a decision to stop selling in parts - use that button instead, so the shelf count goes back onto this listing.',
   nochange: 'Nothing was changed, so nothing was saved.',
+  notthelisting:
+    'The parts are managed on the listing they belong to, not on a part. Open that listing and edit them there, beside each other.',
   volumes: 'A set needs between 2 and 200 volumes.',
   badaction: 'That form did not say what it wanted to do. Reload the page and try again.',
 };
@@ -1167,7 +1178,40 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
               * `partsForm` posts its own volume count anyway, so nothing here
               * needed the saved value except the decision to show it.
               */}
-            {siblings.length > 0 ? (
+            {isPart ? (
+              /*
+                * A part, reached from its listing's panel. It is not sold on its
+                * own in the catalogue, so the thing to say is where it belongs
+                * and where the rest of it is edited.
+                */
+              <div class="bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)] rounded-[10px] p-4 max-w-[62ch]">
+                <p class="text-[14px] leading-relaxed">
+                  This is one way of buying{' '}
+                  {parentListing ? (
+                    <a
+                      href={`/admin/books/${parentListing.id}`}
+                      class="text-[var(--color-navy)] underline underline-offset-2 font-medium"
+                    >{parentListing.title}</a>
+                  ) : 'another listing'}
+                  {book.set_from !== null && (
+                    <>
+                      {' '}- {book.set_from === book.set_to
+                        ? `volume ${book.set_from}`
+                        : `volumes ${book.set_from}-${book.set_to}`} of {setTotal}
+                    </>
+                  )}.
+                </p>
+                <p class="mt-2 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                  It does not appear in the catalogue by itself - customers choose it from that
+                  listing's page. Its photo, description and shelves are edited here, on this page.
+                  Its name, the volumes it covers, its price, and whether it is offered at all are
+                  set on the listing, beside the other parts.
+                </p>
+                <p class="mt-3 text-[13px] text-[var(--color-ink-faint)]">
+                  Shelf stock comes from the set's own count, so there is nothing to restock here.
+                </p>
+              </div>
+            ) : siblings.length > 0 ? (
               <>
                 {/*
                   * Already split: every listing in the set, side by side.
@@ -1183,8 +1227,10 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                 </h3>
                 <p class="text-[14px] text-[var(--color-ink-soft)] leading-relaxed mb-5 max-w-[62ch]">
                   This is the only listing in the shop. The parts below are ways to buy it, offered
-                  on its page behind one picker, and they all sell from the same shelf of
-                  {setTotal}-volume sets. Change a name or a price here and save.
+                  on its page behind one picker, and they all sell from the same shelf of{' '}
+                  {setTotal}-volume sets. Change a name, the volumes it covers or a price here and
+                  save. Each part keeps its own photo, description and shelves - open it with the
+                  picture button to edit those.
                 </p>
 
                 {/*
@@ -1212,81 +1258,112 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                   </span>
                 </div>
 
-                {/* Each part, editable in place. The four boxes are the same four
-                    the builder offers, read by the same function on the way in. */}
-                <div class="grid gap-2.5">
+                {/* One row of captions for the lot, rather than four above every
+                    part. With six parts that was twenty-four labels saying the
+                    same four words. */}
+                <div class="hidden sm:grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem_5rem_4rem_4.5rem] gap-2 px-3 pb-1.5 text-[10.5px] font-semibold tracking-[0.12em] uppercase text-[var(--color-ink-faint)]">
+                  <span>What it is called</span>
+                  <span class="text-center">First</span>
+                  <span class="text-center">Last</span>
+                  <span class="text-center">Price</span>
+                  <span class="text-right">Can sell</span>
+                  <span></span>
+                </div>
+
+                <div class="grid gap-1.5">
                   {parts.map((o) => (
-                    <div class="rounded-[10px] border border-[var(--color-rule-soft)] p-3">
-                      <div class="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_4.25rem_4.25rem_6rem]">
-                        <label class="block">
-                          <span class="block text-[11px] tracking-[0.1em] uppercase text-[var(--color-ink-faint)] mb-1">
-                            What it is called
-                          </span>
-                          <input
-                            type="text"
-                            name={`edit_${o.id}_name`}
-                            value={o.title}
-                            maxlength="200"
-                            form="partsForm"
-                            class="field !py-1.5 !text-[14px]"
-                          />
-                        </label>
-                        <label class="block">
-                          <span class="block text-[11px] tracking-[0.1em] uppercase text-[var(--color-ink-faint)] mb-1">
-                            First
-                          </span>
-                          <input
-                            type="number" min="1" max={setTotal}
-                            name={`edit_${o.id}_from`} value={o.set_from ?? ''}
-                            form="partsForm"
-                            class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
-                          />
-                        </label>
-                        <label class="block">
-                          <span class="block text-[11px] tracking-[0.1em] uppercase text-[var(--color-ink-faint)] mb-1">
-                            Last
-                          </span>
-                          <input
-                            type="number" min="1" max={setTotal}
-                            name={`edit_${o.id}_to`} value={o.set_to ?? ''}
-                            form="partsForm"
-                            class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
-                          />
-                        </label>
-                        <label class="block">
-                          <span class="block text-[11px] tracking-[0.1em] uppercase text-[var(--color-ink-faint)] mb-1">
-                            Price
-                          </span>
-                          <input
-                            type="text" inputmode="decimal"
-                            name={`edit_${o.id}_price`}
-                            value={(o.price_pence / 100).toFixed(2)}
-                            form="partsForm"
-                            class="field !py-1.5 !text-[14px] !px-2 tabular-nums"
-                          />
-                        </label>
-                      </div>
-                      <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px]">
-                        <span class="text-[var(--color-ink-faint)] tabular-nums">
-                          Can sell {o.available}
-                        </span>
+                    <div
+                      class="group grid gap-2 items-center rounded-[8px] border border-[var(--color-rule-soft)] px-3 py-2
+                             grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] sm:grid-cols-[minmax(0,1fr)_3.5rem_3.5rem_5rem_4rem_4.5rem]
+                             has-[:checked]:border-[var(--color-outstock)]/50 has-[:checked]:bg-[var(--color-outstock)]/5"
+                    >
+                      <input
+                        type="text" name={`edit_${o.id}_name`} value={o.title} maxlength="200"
+                        form="partsForm" aria-label="What this part is called"
+                        class="field !py-1.5 !text-[14px] has-[:checked]:line-through"
+                      />
+                      <input
+                        type="number" min="1" max={setTotal} name={`edit_${o.id}_from`}
+                        value={o.set_from ?? ''} form="partsForm" aria-label="First volume"
+                        class="field !py-1.5 !text-[14px] !px-1.5 tabular-nums text-center"
+                      />
+                      <input
+                        type="number" min="1" max={setTotal} name={`edit_${o.id}_to`}
+                        value={o.set_to ?? ''} form="partsForm" aria-label="Last volume"
+                        class="field !py-1.5 !text-[14px] !px-1.5 tabular-nums text-center"
+                      />
+                      <input
+                        type="text" inputmode="decimal" name={`edit_${o.id}_price`}
+                        value={(o.price_pence / 100).toFixed(2)} form="partsForm" aria-label="Price"
+                        class="field !py-1.5 !text-[14px] !px-1.5 tabular-nums text-center"
+                      />
+                      <span class="text-right text-[13px] tabular-nums text-[var(--color-ink-soft)]">
+                        {o.available}
                         {o.reserved > 0 && (
-                          <span class="rounded-[var(--radius-pill)] bg-[var(--color-brass)]/15 px-2 py-0.5 text-[11.5px] text-[var(--color-brass-deep)]">
-                            {o.reserved} held - volumes locked
+                          <span
+                            class="block text-[11px] text-[var(--color-brass-deep)]"
+                            title={`${o.reserved} held by a customer, so the volumes this covers are fixed until their order is finished`}
+                          >
+                            {o.reserved} held
                           </span>
                         )}
-                        <label class="ml-auto flex items-center gap-2 cursor-pointer text-[var(--color-outstock)]">
+                      </span>
+
+                      {/*
+                        * Its own page, which is where the photo, the description
+                        * and the categories live.
+                        *
+                        * The parts used to be rows in the main listing index and
+                        * that link was how the owner reached them. Taking them
+                        * out of the index took the route with it, so it belongs
+                        * here now - the four boxes to the left are the whole of
+                        * what this panel can edit.
+                        */}
+                      <span class="flex items-center justify-end gap-1">
+                        <a
+                          href={`/admin/books/${o.id}`}
+                          title="Photo, description and shelves for this part"
+                          aria-label={`Open ${o.title}`}
+                          class="grid place-items-center w-7 h-7 rounded-[6px] border border-[var(--color-rule)] text-[var(--color-navy)] hover:border-[var(--color-navy)] hover:bg-[var(--color-wash-soft)] transition-colors"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                            <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5"
+                              stroke="currentColor" stroke-width="1.3" />
+                            <circle cx="5.75" cy="6.25" r="1.1" fill="currentColor" />
+                            <path d="M2.4 11.6 6 8.4l2.3 2 2-1.7 3.1 2.9" stroke="currentColor"
+                              stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        </a>
+                        {/*
+                          * A checkbox, because the change is saved with the rest
+                          * of the form rather than the moment it is pressed - but
+                          * drawn as a button, since "Take this part down" spelled
+                          * out on every row was the widest thing in the panel.
+                          * The row strikes itself through when it is armed, so
+                          * what the tick means is visible without the sentence.
+                          */}
+                        <label
+                          title="Take this part down when you save"
+                          class:list={[
+                            'grid place-items-center w-7 h-7 rounded-[6px] border transition-colors',
+                            o.reserved > 0
+                              ? 'border-[var(--color-rule)] opacity-35 cursor-not-allowed'
+                              : 'border-[var(--color-rule)] text-[var(--color-ink-faint)] cursor-pointer hover:border-[var(--color-outstock)] hover:text-[var(--color-outstock)] has-[:checked]:border-[var(--color-outstock)] has-[:checked]:bg-[var(--color-outstock)] has-[:checked]:text-white',
+                          ]}
+                        >
                           <input
-                            type="checkbox"
-                            name={`remove_${o.id}`}
-                            value="1"
-                            form="partsForm"
-                            disabled={o.reserved > 0}
-                            class="w-4 h-4 accent-[var(--color-outstock)] disabled:opacity-40"
+                            type="checkbox" name={`remove_${o.id}`} value="1" form="partsForm"
+                            disabled={o.reserved > 0} class="sr-only peer"
                           />
-                          <span class:list={[o.reserved > 0 && 'opacity-40']}>Take this part down</span>
+                          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6"
+                              stroke-linecap="round" />
+                          </svg>
+                          <span class="sr-only">
+                            Take {o.title} down{o.reserved > 0 ? ' (a customer is holding it)' : ''}
+                          </span>
                         </label>
-                      </div>
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -1333,7 +1410,8 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                   </button>
                   <p class="text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
                     A name or price can change at any time - an order already placed keeps what it
-                    was sold at. Which volumes a part covers is fixed while a customer is holding it.
+                    was sold at. Which volumes a part covers is fixed while a customer is holding
+                    it, and so is taking it down: the × is greyed out until their order is finished.
                   </p>
                 </div>
 

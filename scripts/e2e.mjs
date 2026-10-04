@@ -3196,6 +3196,41 @@ async function integrity() {
   t.ok(emptyAll.location.includes('e=lastpart'),
     'removing every part is refused and sent to "stop selling in parts"');
 
+  /*
+   * A part's photo, description and shelves are still reachable.
+   *
+   * Taking the parts out of the listing index took away the link that was how
+   * the owner opened one, and the panel's four boxes cannot edit a photo. So the
+   * panel carries the link itself, and a part's own page says where it belongs
+   * rather than offering the panel again - which from a part would have listed
+   * the *other* parts and quietly left that one out of its own edit.
+   */
+  const panel = await html(`/admin/books/${setBook.id}`);
+  const livingParts = await db(
+    `SELECT id FROM books
+      WHERE set_id = (SELECT set_id FROM books WHERE id = ${setBook.id})
+        AND set_part = 1 AND status = 'live'`,
+  );
+  t.ok(livingParts.length > 0 && livingParts.every((r) => panel.includes(`/admin/books/${r.id}"`)),
+    'the panel links to every part, which is where its photo is edited');
+
+  const partPage = await html(`/admin/books/${livingParts[0].id}`);
+  t.ok(partPage.includes('This is one way of buying'),
+    "a part's own page says which listing it belongs to");
+  t.ok(!partPage.includes('Save the parts'),
+    'and does not offer the panel that manages the set');
+  t.ok(partPage.includes('Photos'), 'while still offering its own photos');
+
+  const fromThePart = await admin(`/api/admin/books/${livingParts[0].id}/set`, {
+    action: 'parts',
+    [`edit_${livingParts[0].id}_name`]: 'Edited from the wrong page',
+    [`edit_${livingParts[0].id}_from`]: '1',
+    [`edit_${livingParts[0].id}_to`]: '2',
+    [`edit_${livingParts[0].id}_price`]: '1.00',
+  });
+  t.ok(fromThePart.location.includes('e=notthelisting'),
+    'and the endpoint refuses an edit posted from a part rather than its listing');
+
   // A part that runs off the end of the set is a typo, and is refused rather
   // than clamped - a quietly corrected listing would go on the shop front.
   const other = await makeBook();
