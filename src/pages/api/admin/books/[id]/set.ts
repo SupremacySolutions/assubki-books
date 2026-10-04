@@ -35,11 +35,17 @@ export const prerender = false;
 /** How many part rows the builder offers, and this reads. */
 export const MAX_PARTS = 8;
 
-function readPart(form: FormData, i: number, volumes: number) {
-  const name = String(form.get(`part_${i}_name`) ?? '').trim();
-  const fromRaw = String(form.get(`part_${i}_from`) ?? '').trim();
-  const toRaw = String(form.get(`part_${i}_to`) ?? '').trim();
-  const priceRaw = String(form.get(`part_${i}_price`) ?? '').trim();
+/*
+ * Named by a field prefix rather than a row number, because the same four boxes
+ * are now read in two places: the builder's blank rows (`part_0…`) and the row
+ * belonging to a part that already exists (`edit_<id>…`). One reader, so a rule
+ * about ranges or prices cannot hold on a new part and not on an edited one.
+ */
+function readPart(form: FormData, prefix: string, volumes: number) {
+  const name = String(form.get(`${prefix}_name`) ?? '').trim();
+  const fromRaw = String(form.get(`${prefix}_from`) ?? '').trim();
+  const toRaw = String(form.get(`${prefix}_to`) ?? '').trim();
+  const priceRaw = String(form.get(`${prefix}_price`) ?? '').trim();
 
   if (!name && !fromRaw && !toRaw && !priceRaw) return 'empty' as const;
   /*
@@ -275,7 +281,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
       statements.push(
         env.DB.prepare(
           `UPDATE books SET set_id = ${setOf}, set_from = ?2, set_to = ?3, volumes = ?4,
-                            stock = MAX(stock, ?5), updated_at = unixepoch()
+                            stock = MAX(stock, ?5), set_part = 1, updated_at = unixepoch()
             WHERE id = ?6 AND set_id IS NULL`,
         ).bind(id, part.from, part.to, part.to - part.from + 1, sets, part.id),
       );
@@ -285,6 +291,187 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     forgetCategoryCounts();
   forgetHomeRows();
   await syncChannelSoon(locals, new URL(request.url).origin, [id]);
+    return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
+  }
+
+  // --------------------------------------------------------------------- parts
+  /*
+   * Changing the parts of a set that is already selling.
+   *
+   * Everything before this was one-way: build the parts, or take them all down
+   * and start again. A price that needed correcting, a part the owner wanted to
+   * stop offering, a range typed wrong - each of them meant unsplitting, which
+   * archives every part listing, strands its cover and its channel post, and
+   * leaves the set to be rebuilt from nothing. So in practice the parts were
+   * whatever they were on the day they were created.
+   *
+   * What may change freely is what the shop *says*: a part's name and its price.
+   * Neither reaches an order already placed - `order_items` snapshots the title
+   * and the price at checkout precisely so a later edit cannot rewrite what was
+   * agreed.
+   *
+   * What may not change under a customer is which volumes a part covers. A hold
+   * is a claim on particular volumes of the pool, and moving the range would
+   * move the claim to volumes nobody reserved. Same for withdrawing a part
+   * somebody is holding. Both are refused by name rather than silently allowed.
+   */
+  if (action === 'parts') {
+    if (!book.set_id) return fail('notaset');
+
+    const set = await env.DB.prepare('SELECT volumes FROM book_sets WHERE id = ?')
+      .bind(book.set_id)
+      .first<{ volumes: number }>();
+    if (!set) return fail('notaset');
+    const volumes = set.volumes;
+
+    /*
+     * The parts as they stand, with what each is holding.
+     *
+     * Read here rather than trusted from the form: the form says which id it
+     * means, and nothing more about it may be taken on the form's word - a
+     * hand-made POST naming a part of somebody else's set would otherwise be
+     * edited by this.
+     */
+    const { results: existing } = await env.DB.prepare(
+      `SELECT id, title, price_pence, set_from, set_to, reserved
+         FROM books
+        WHERE set_id = ?1 AND id <> ?2 AND set_part = 1 AND deleted_at IS NULL
+          AND status <> 'archived'
+        ORDER BY set_from, id`,
+    )
+      .bind(book.set_id, id)
+      .all<{ id: number; title: string; price_pence: number; set_from: number; set_to: number; reserved: number }>();
+    const byId = new Map(existing.map((p) => [p.id, p]));
+
+    const statements: D1PreparedStatement[] = [];
+    let remaining = existing.length;
+
+    // ----- the parts that already exist ------------------------------------
+    for (const part of existing) {
+      if (form.get(`remove_${part.id}`) !== null) {
+        // A part somebody is holding cannot be withdrawn: the copies are
+        // promised, and the order that promised them still points here.
+        if (part.reserved > 0) return fail('heldpart');
+        /*
+         * Archived rather than deleted, exactly as unsplit does it. An order
+         * that bought this part keeps a row to point at - `order_items` holds
+         * the title and price, but the link back is what the portal reads to
+         * show what was sold, and deleting it would take the stock ledger with
+         * it.
+         */
+        statements.push(
+          env.DB.prepare(
+            `UPDATE books SET status = 'archived', set_id = NULL, set_from = NULL,
+                              set_to = NULL, set_part = 0, stock = 0,
+                              updated_at = unixepoch()
+              WHERE id = ?1 AND set_id = ?2 AND reserved = 0`,
+          ).bind(part.id, book.set_id),
+        );
+        remaining -= 1;
+        continue;
+      }
+
+      const row = readPart(form, `edit_${part.id}`, volumes);
+      if (row === 'empty') continue;            // untouched by this form
+      if (typeof row === 'string') return fail(row);
+
+      // Moving the range under a live hold would move the claim to volumes
+      // nobody reserved. The name and the price are free to change.
+      if ((row.from !== part.set_from || row.to !== part.set_to) && part.reserved > 0) {
+        return fail('heldrange');
+      }
+
+      statements.push(
+        env.DB.prepare(
+          `UPDATE books SET title = ?3, price_pence = ?4, set_from = ?5, set_to = ?6,
+                            volumes = ?7, updated_at = unixepoch()
+            WHERE id = ?1 AND set_id = ?2
+              AND (reserved = 0 OR (set_from = ?5 AND set_to = ?6))`,
+        ).bind(part.id, book.set_id, row.name, row.pence, row.from, row.to, row.to - row.from + 1),
+      );
+    }
+
+    // ----- parts being added ----------------------------------------------
+    const added = Array.from({ length: MAX_PARTS }, (_, i) => readPart(form, `part_${i}`, volumes));
+    const wrongNew = added.find((r) => r === 'half' || r === 'range' || r === 'price');
+    if (wrongNew) return fail(wrongNew);
+    const fresh = added.filter(
+      (r): r is Exclude<typeof r, 'empty' | 'half' | 'range' | 'price'> => typeof r === 'object',
+    );
+
+    if (fresh.length) {
+      /*
+       * A new part starts with the shelf it is being sold from.
+       *
+       * `stock` on a set member is not what decides availability - the pool is -
+       * but `books` carries CHECK (reserved <= stock), so a part inserted with
+       * nothing could never be held at all. The create path writes the same
+       * number for the same reason.
+       */
+      const pool = await env.DB.prepare(
+        'SELECT COALESCE(MIN(have), 0) AS sets FROM book_set_stock WHERE set_id = ?',
+      )
+        .bind(book.set_id)
+        .first<{ sets: number }>();
+
+      /*
+       * Slugs have to be free, and `books.slug` is UNIQUE.
+       *
+       * A range that was offered before and withdrawn leaves an archived row
+       * holding `…-1-2`, so reusing the obvious name would abort the whole
+       * batch on a constraint. Taken names are read once and a suffix added.
+       */
+      const { results: taken } = await env.DB.prepare(
+        'SELECT slug FROM books WHERE slug LIKE ?1',
+      )
+        .bind(`${slugify(book.slug)}-%`)
+        .all<{ slug: string }>();
+      const used = new Set(taken.map((t) => t.slug));
+      const freeSlug = (from: number, to: number) => {
+        const base = `${slugify(book.slug)}-${from}-${to}`.slice(0, 110);
+        let candidate = base;
+        for (let n = 2; used.has(candidate); n++) candidate = `${base}-${n}`;
+        used.add(candidate);
+        return candidate;
+      };
+
+      for (const p of fresh) {
+        statements.push(
+          env.DB.prepare(
+            `INSERT INTO books (slug, title, price_pence, stock, reserved, status,
+                                set_id, set_from, set_to, volumes, set_part)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 1)`,
+          ).bind(
+            freeSlug(p.from, p.to),
+            p.name,
+            p.pence,
+            pool?.sets ?? 0,
+            book.status,
+            book.set_id,
+            p.from,
+            p.to,
+            p.to - p.from + 1,
+          ),
+        );
+        remaining += 1;
+      }
+    }
+
+    if (!statements.length) return fail('nochange');
+    /*
+     * Removing the last part is not an edit.
+     *
+     * It is "stop selling in parts", which has its own button, puts the pool
+     * back onto the listing's own stock and tidies the set away. Letting this
+     * do it instead would leave a set header with one listing attached and a
+     * per-volume pool nothing reads.
+     */
+    if (remaining < 1) return fail('lastpart');
+
+    await env.DB.batch(statements);
+    forgetCategoryCounts();
+    forgetHomeRows();
+    await syncChannelSoon(locals, new URL(request.url).origin, [id]);
     return new Response(null, { status: 302, headers: { Location: `${back}?saved=1` } });
   }
 
@@ -311,7 +498,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE books SET status = 'archived', set_id = NULL, set_from = NULL, set_to = NULL,
-                          updated_at = unixepoch()
+                          set_part = 0, updated_at = unixepoch()
           WHERE set_id = ? AND id <> ?`,
       ).bind(book.set_id, id),
       // The whole set keeps selling, now on a count of its own.
@@ -348,7 +535,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
    * exist. Eight covers that with room spare, and an empty row still costs
    * nothing.
    */
-  const rows = Array.from({ length: MAX_PARTS }, (_, i) => readPart(form, i, volumes));
+  const rows = Array.from({ length: MAX_PARTS }, (_, i) => readPart(form, `part_${i}`, volumes));
   /* Whichever is wrong, said by name. `noparts` is its own answer: "half
      filled in" made no sense at all when every row was empty. */
   const wrong = rows.find((r) => r === 'half' || r === 'range' || r === 'price');
@@ -399,8 +586,8 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     statements.push(
       env.DB.prepare(
         `INSERT INTO books (slug, title, price_pence, stock, reserved, status,
-                            set_id, set_from, set_to, volumes)
-         VALUES (?2, ?3, ?4, ?5, 0, ?6, ${setOf}, ?7, ?8, ?9)`,
+                            set_id, set_from, set_to, volumes, set_part)
+         VALUES (?2, ?3, ?4, ?5, 0, ?6, ${setOf}, ?7, ?8, ?9, 1)`,
       ).bind(
         id,
         `${slugify(book.slug)}-${p.from}-${p.to}`.slice(0, 120),
