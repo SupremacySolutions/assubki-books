@@ -139,6 +139,33 @@ async function publicCatalogue() {
 
   const book = await html('/book/al-nahw-al-wadih');
   t.ok(book.includes('og:image'), 'book page carries an OG image');
+
+  /*
+   * A book's own language, where a search engine reads titles.
+   *
+   * The shop carries an Arabic title for most of what it sells and showed it
+   * on the page - but the title tag, the share title and the description were
+   * English, so the only Arabic Google had was a paragraph and a line of
+   * structured data. Searching the exact Arabic title of a book this shop
+   * stocks returned nine other shops and not this one.
+   */
+  const arTitled = await one(
+    `SELECT slug, title_ar FROM books
+      WHERE status='live' AND deleted_at IS NULL
+        AND title_ar IS NOT NULL AND TRIM(title_ar) <> '' LIMIT 1`,
+  );
+  if (arTitled?.slug) {
+    const page = await html(`/book/${arTitled.slug}`);
+    const head = page.slice(0, page.indexOf('</head>'));
+    const title = (head.match(/<title>([^<]*)<\/title>/) ?? [])[1] ?? '';
+    t.ok(title.includes(arTitled.title_ar),
+      'a book with an Arabic title carries it in the title tag, not only in the body');
+    const og = (head.match(/property="og:title" content="([^"]*)"/) ?? [])[1] ?? '';
+    t.ok(og.includes(arTitled.title_ar), 'and in the title it is shared under');
+    const desc = (head.match(/name="description" content="([^"]*)"/) ?? [])[1] ?? '';
+    t.ok(desc.includes(arTitled.title_ar),
+      'and once in the description, which is the line under the result');
+  }
   t.ok(book.includes('application/ld+json'), 'book page carries structured data');
   t.ok(book.includes('On the same shelf'), 'book page shows related titles');
 
