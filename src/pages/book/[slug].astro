@@ -51,7 +51,25 @@ const told = ({
  *
  * Left off when the field is empty rather than rendering a dangling dash.
  */
-const pageTitle = book.author?.trim() ? `${book.title} - ${book.author.trim()}` : book.title;
+/*
+ * The Arabic title belongs in here, not only in the body.
+ *
+ * The shop carries both and showed both on the page - but the title tag, the
+ * heading, the share title and the description were all English, so the only
+ * Arabic Google had was a paragraph and a line of structured data. Searching
+ * the exact Arabic title of a book this shop stocks returned nine others and
+ * not this one, two of them UK shops with the Arabic in their own title tags.
+ *
+ * English first, because that is what the tab and the share card have always
+ * read as and most of the shop's customers type. What matters for matching is
+ * that the Arabic is in the element at all; Google truncates the display long
+ * before it stops reading.
+ */
+const nativeTitle = book.title_ar ?? book.title_ur;
+
+const pageTitle = [book.title, nativeTitle, book.author?.trim() || null]
+  .filter(Boolean)
+  .join(' - ');
 
 const off = book.sale_percent ?? 0;
 const nowPence = off > 0 ? Math.round((book.price_pence * (100 - off)) / 100) : book.price_pence;
@@ -98,12 +116,20 @@ const plain = stripTags(book.description_html);
  * the same pair decides the language it is filed under - so reading them in
  * the same order here keeps the heading and the filter telling one story.
  */
-const nativeTitle = book.title_ar ?? book.title_ur;
 
 // This is the description Telegram shows when the owner posts the link, so it
 // has to stand alone: what the book is, then price and availability.
 const shareDescription = truncate(
-  plain || `${book.title}${nativeTitle ? ` - ${nativeTitle}` : ''}`,
+  /*
+   * And in here, once, when the description does not already say it. This is
+   * the line under the result as well as the one Telegram shows, so a reader
+   * who searched in Arabic can see their own words in the answer.
+   */
+  plain
+    ? nativeTitle && !plain.includes(nativeTitle)
+      ? `${nativeTitle} - ${plain}`
+      : plain
+    : `${book.title}${nativeTitle ? ` - ${nativeTitle}` : ''}`,
   160,
 );
 
