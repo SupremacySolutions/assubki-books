@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { listBooks } from '../lib/db';
 import { salePrice } from '../lib/sales';
 import { imageUrl, stripTags, truncate, SITE } from '../lib/format';
+import { cachedRead } from '../lib/read-cache';
 
 export const prerender = false;
 
@@ -30,9 +31,37 @@ export const prerender = false;
  * the full canonical link to the book, and it does not change when a title is
  * edited.
  */
-export const GET: APIRoute = async ({ site, url }) => {
-  const origin = (site ?? new URL(url.origin)).origin;
+/*
+ * Built once an hour, not once a request.
+ *
+ * This is the most expensive read in the shop - the whole catalogue with its
+ * details in one go, about 2,500 D1 rows a call - and it is unauthenticated by
+ * design, because everything in it is already public on the shop. Those two
+ * facts together are the problem: at 2,500 rows a request, two thousand
+ * requests would spend the whole day's allowance and D1 would start refusing
+ * every query, which is how the shop went down twice in September.
+ *
+ * `Cache-Control` alone does not fix it. A Worker's response is not edge-cached
+ * by default, so that header only ever reached the client. This is cached where
+ * `read-cache` caches the shelf counts, so a thousand requests in a minute cost
+ * what one costs.
+ *
+ * A day, deliberately, and the arithmetic is the reason. The site that reads
+ * this re-crawls every two days, so a daily rebuild is already twice as fresh
+ * as anything they collect - an hourly one would spend twenty-four reads
+ * producing twenty-three answers nobody comes for. `updated` says when it was
+ * built, so a reader can see the age rather than assume it.
+ *
+ * The staleness that costs anything is stock: a book that sells out still reads
+ * as available until the next rebuild. That is tolerable because the link goes
+ * to the shop's own page, which tells the truth - a comparison site sends
+ * somebody to the listing, it does not sell on their behalf. A price or a
+ * stock change that must travel faster than a day should clear this key
+ * rather than shorten the window for everybody.
+ */
+const TTL_SECONDS = 86_400;
 
+async function buildCatalogue(origin: string) {
   /*
    * The whole catalogue, not a page of it. `withDetails` is what carries the
    * author and the publisher; without it this would publish a blank where the
@@ -64,28 +93,37 @@ export const GET: APIRoute = async ({ site, url }) => {
     };
   });
 
+  return {
+    /* Said out loud so whoever reads this knows what they have, how old it is,
+       and where to ask when something looks wrong. `updated` is when the
+       catalogue was read, not when it was served - which is the honest answer
+       now that the answer is kept for an hour. */
+    shop: SITE.name,
+    url: origin,
+    updated: new Date().toISOString(),
+    currency: 'GBP',
+    count: items.length,
+    books: items,
+  };
+}
+
+export const GET: APIRoute = async ({ site, url }) => {
+  const origin = (site ?? new URL(url.origin)).origin;
+
+  /* Keyed on the origin: the absolute links inside are built from it, so a
+     copy made for one hostname must not be served for another. */
+  const payload = await cachedRead(`catalogue-json:${origin}`, TTL_SECONDS, () =>
+    buildCatalogue(origin),
+  );
+
   return new Response(
-    JSON.stringify(
-      {
-        /* Said out loud so whoever reads this knows what they have, how old it
-           is, and where to ask when something looks wrong. */
-        shop: SITE.name,
-        url: origin,
-        updated: new Date().toISOString(),
-        currency: 'GBP',
-        count: items.length,
-        books: items,
-      },
-      null,
-      2,
-    ),
+    JSON.stringify(payload, null, 2),
     {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        /* An hour, like the sitemap and the product feed beside it. These sites
-           re-crawl daily at most; this only stops one of them pulling the whole
-           catalogue over and over in a minute. */
-        'Cache-Control': 'public, max-age=3600',
+        /* For the client. The copy that actually protects the database is the
+           one `cachedRead` keeps above. */
+        'Cache-Control': `public, max-age=${TTL_SECONDS}`,
         /* Read by other sites by definition, so say so rather than making
            somebody proxy it. */
         'Access-Control-Allow-Origin': '*',
