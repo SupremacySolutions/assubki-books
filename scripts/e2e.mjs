@@ -274,9 +274,24 @@ async function publicCatalogue() {
    * catalogue is actually read, so a second request carrying the same stamp is
    * proof the database was not touched again.
    */
-  const again = await (await get('/catalogue.json')).json();
+  /* A different query string so no HTTP cache in front can answer for the
+     Worker - the store is keyed on the origin, so it still applies. */
+  const secondRes = await get('/catalogue.json?again=1');
+  const again = await secondRes.json();
   t.ok(again.updated === catalogue.updated,
     'asking twice reads the database once, so nobody can spend the day\'s rows on it');
+  /*
+   * And says so, because the first attempt at this did not.
+   *
+   * It was cached through the Cache API, the local suite went green, and in
+   * production two requests three seconds apart came back with different
+   * `updated` stamps - `cache.put` resolves the same whether it kept the body
+   * or dropped it. Matching stamps prove the answer was reused; this proves it
+   * came out of the store, which is the thing that can be checked against the
+   * live site afterwards.
+   */
+  t.ok(secondRes.headers.get('x-catalogue') === 'stored',
+    `and says it came from the store, so a silent failure cannot look like a hit (${secondRes.headers.get('x-catalogue')})`);
 
   const robots = await html('/robots.txt');
   t.ok(robots.includes('Disallow: /admin'), 'robots keeps crawlers out of the portal');

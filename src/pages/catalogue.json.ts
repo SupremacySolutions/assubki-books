@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { listBooks } from '../lib/db';
 import { salePrice } from '../lib/sales';
 import { imageUrl, stripTags, truncate, SITE } from '../lib/format';
-import { cachedRead } from '../lib/read-cache';
+import { env } from 'cloudflare:workers';
 
 export const prerender = false;
 
@@ -32,32 +32,35 @@ export const prerender = false;
  * edited.
  */
 /*
- * Built once an hour, not once a request.
+ * Built once a day, not once a request, and kept in R2.
  *
  * This is the most expensive read in the shop - the whole catalogue with its
  * details in one go, about 2,500 D1 rows a call - and it is unauthenticated by
  * design, because everything in it is already public on the shop. Those two
- * facts together are the problem: at 2,500 rows a request, two thousand
- * requests would spend the whole day's allowance and D1 would start refusing
- * every query, which is how the shop went down twice in September.
+ * facts together are the problem: at that price, two thousand requests spend
+ * the whole day's allowance and D1 starts refusing every query, which is how
+ * the shop went down twice in September.
  *
- * `Cache-Control` alone does not fix it. A Worker's response is not edge-cached
- * by default, so that header only ever reached the client. This is cached where
- * `read-cache` caches the shelf counts, so a thousand requests in a minute cost
- * what one costs.
+ * It was cached first, through `read-cache`, and in production that did
+ * nothing: two requests three seconds apart came back with different `updated`
+ * stamps. `cache.put` "resolves to undefined regardless of whether the cache
+ * successfully stored the response", so a store that declines a 271KB body
+ * looks exactly like one that took it - which is why the local test passed
+ * while the live site still read the database every single time. Everything
+ * else kept through `read-cache` is a handful of numbers.
  *
- * A day, deliberately, and the arithmetic is the reason. The site that reads
- * this re-crawls every two days, so a daily rebuild is already twice as fresh
- * as anything they collect - an hourly one would spend twenty-four reads
- * producing twenty-three answers nobody comes for. `updated` says when it was
- * built, so a reader can see the age rather than assume it.
+ * So it is stored rather than cached. R2 says whether it kept something, keeps
+ * it for every data centre rather than only the one that built it, and is
+ * already bound here for the covers. One build a day for the whole world,
+ * instead of one per data centre per hour, and no silent failure mode.
  *
- * The staleness that costs anything is stock: a book that sells out still reads
- * as available until the next rebuild. That is tolerable because the link goes
- * to the shop's own page, which tells the truth - a comparison site sends
- * somebody to the listing, it does not sell on their behalf. A price or a
- * stock change that must travel faster than a day should clear this key
- * rather than shorten the window for everybody.
+ * A day because the site that reads this re-crawls every two days: a daily
+ * build is already twice as fresh as anything they collect, and an hourly one
+ * would spend reads producing answers nobody comes for. The staleness that
+ * costs anything is stock - a book that sells out still reads as available
+ * until the next build - and that is tolerable because the link goes to the
+ * shop's own page, which tells the truth. A comparison site sends somebody to
+ * the listing; it does not sell on their behalf.
  */
 const TTL_SECONDS = 86_400;
 
@@ -97,7 +100,7 @@ async function buildCatalogue(origin: string) {
     /* Said out loud so whoever reads this knows what they have, how old it is,
        and where to ask when something looks wrong. `updated` is when the
        catalogue was read, not when it was served - which is the honest answer
-       now that the answer is kept for an hour. */
+       now that the answer is kept for a day. */
     shop: SITE.name,
     url: origin,
     updated: new Date().toISOString(),
@@ -107,22 +110,63 @@ async function buildCatalogue(origin: string) {
   };
 }
 
+interface UploadEnv {
+  UPLOADS?: R2Bucket;
+}
+
+/* Keyed on the origin: the absolute links inside are built from it, so a copy
+   made for one hostname must never be served for another. */
+const storedAt = (origin: string) =>
+  `catalogue/${origin.replace(/^https?:\/\//, '')}.json`;
+
 export const GET: APIRoute = async ({ site, url }) => {
   const origin = (site ?? new URL(url.origin)).origin;
+  const bucket = (env as unknown as UploadEnv).UPLOADS;
+  const key = storedAt(origin);
 
-  /* Keyed on the origin: the absolute links inside are built from it, so a
-     copy made for one hostname must not be served for another. */
-  const payload = await cachedRead(`catalogue-json:${origin}`, TTL_SECONDS, () =>
-    buildCatalogue(origin),
-  );
+  let body: string | null = null;
+  let served: 'stored' | 'built' | 'unstored' = 'built';
+
+  if (bucket) {
+    try {
+      const kept = await bucket.get(key);
+      if (kept) {
+        const age = (Date.now() - kept.uploaded.getTime()) / 1000;
+        if (age < TTL_SECONDS) {
+          body = await kept.text();
+          served = 'stored';
+        }
+      }
+    } catch {
+      /* A bucket that cannot be read costs a build, not a page. */
+    }
+  }
+
+  if (body === null) {
+    body = JSON.stringify(await buildCatalogue(origin), null, 2);
+    if (!bucket) served = 'unstored';
+    else {
+      try {
+        await bucket.put(key, body, {
+          httpMetadata: { contentType: 'application/json; charset=utf-8' },
+        });
+      } catch {
+        /* The answer is in hand; failing to keep it costs the next build. */
+      }
+    }
+  }
 
   return new Response(
-    JSON.stringify(payload, null, 2),
+    body,
     {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        /* For the client. The copy that actually protects the database is the
-           one `cachedRead` keeps above. */
+        /* Whether this answer came out of the store or cost a database read.
+           The Cache API version failed silently and looked fine from outside;
+           this one says which happened. */
+        'X-Catalogue': served,
+        /* For the client. The copy that actually protects the database is
+           the one kept in R2 above. */
         'Cache-Control': `public, max-age=${TTL_SECONDS}`,
         /* Read by other sites by definition, so say so rather than making
            somebody proxy it. */
