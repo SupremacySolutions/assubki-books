@@ -264,6 +264,20 @@ async function publicCatalogue() {
       'a book in a sale is listed at what it actually costs today');
   }
 
+  /*
+   * And it is built once, not once a request.
+   *
+   * This is the most expensive read in the shop and it is unauthenticated by
+   * design. At ~2,500 rows a call, two thousand requests would spend the whole
+   * day's D1 allowance and the shop would start refusing every query - which is
+   * how it went down twice in September. `updated` is stamped when the
+   * catalogue is actually read, so a second request carrying the same stamp is
+   * proof the database was not touched again.
+   */
+  const again = await (await get('/catalogue.json')).json();
+  t.ok(again.updated === catalogue.updated,
+    'asking twice reads the database once, so nobody can spend the day\'s rows on it');
+
   const robots = await html('/robots.txt');
   t.ok(robots.includes('Disallow: /admin'), 'robots keeps crawlers out of the portal');
   t.ok(robots.includes('Disallow: /order'), 'robots keeps crawlers off order pages');
