@@ -91,29 +91,51 @@ const closed = await maintenanceNotice();
             View shop
           </a>
         </div>
-        <nav class="flex items-end gap-1 -mb-px" aria-label="Portal">
-          {
-            NAV.map((item) => (
-              <a
-                href={item.href}
-                class:list={[
-                  'px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors',
-                  active(item.href)
-                    ? 'border-[var(--color-wash)] text-white font-medium'
-                    : 'border-transparent text-[var(--color-wash)]/70 hover:text-white',
-                ]}
-              >
-                {item.label}
-              </a>
-            ))
-          }
+        {/*
+          * Two parts: a strip of tabs that scrolls, and "More" pinned beside it.
+          *
+          * The tabs used to sit in a plain row with nothing to contain them.
+          * On a phone they need about 540px and the row has 350, so they spilled
+          * out and stretched the whole page: the browser widened the viewport to
+          * fit, the portal slid sideways, and the navy header stopped short of
+          * the white page beside it. The strip now scrolls on its own and the
+          * page stays the width of the phone.
+          *
+          * "More" is outside the strip on purpose. A scroll container clips
+          * whatever hangs out of it, so a menu opened from inside the strip
+          * would be cut off at its bottom edge - which is the whole menu.
+          */}
+        <nav class="flex items-end -mb-px -mx-5 md:mx-0" aria-label="Portal">
+          <div
+            data-portal-tabs
+            class="flex items-end gap-1 min-w-0 flex-1 md:flex-initial overflow-x-auto overscroll-x-contain pl-5 md:pl-0
+                   [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {
+              NAV.map((item) => (
+                <a
+                  href={item.href}
+                  aria-current={active(item.href) ? 'page' : undefined}
+                  class:list={[
+                    'shrink-0 px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors',
+                    active(item.href)
+                      ? 'border-[var(--color-wash)] text-white font-medium'
+                      : 'border-transparent text-[var(--color-wash)]/70 hover:text-white',
+                  ]}
+                >
+                  {item.label}
+                </a>
+              ))
+            }
+          </div>
+
 
           {/*
             * A disclosure, not a scripted menu: it opens with the keyboard,
             * works with scripting off, and closes itself when the link inside
             * it loads the next page.
             */}
-          <details class="relative shrink-0" name="portal-more">
+          <details class="relative shrink-0 pr-5 md:pr-0" name="portal-more">
             <summary
               class:list={[
                 'cursor-pointer list-none select-none px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors',
@@ -126,10 +148,14 @@ const closed = await maintenanceNotice();
               <span aria-hidden="true" class="ml-1 text-[11px]">&#9662;</span>
               <span class="sr-only">{openHere ? ' - more portal pages' : 'portal pages'}</span>
             </summary>
-            <div class="absolute left-0 top-full z-30 mt-1 min-w-[11rem] rounded-[var(--radius-panel)] border border-[var(--color-rule-soft)] bg-white py-1 shadow-lg">
+            {/* Hung from the right edge rather than the left. "More" is the last
+                thing on the bar, so a menu opening rightwards from it ran off
+                the side of a phone and widened the page by itself. */}
+            <div class="absolute right-5 md:right-0 top-full z-30 mt-1 min-w-[11rem] rounded-[var(--radius-panel)] border border-[var(--color-rule-soft)] bg-white py-1 shadow-lg">
               {MORE.map((item) => (
                 <a
                   href={item.href}
+                  aria-current={active(item.href) ? 'page' : undefined}
                   class:list={[
                     'block px-4 py-2 text-[14.5px] whitespace-nowrap',
                     active(item.href)
@@ -143,6 +169,40 @@ const closed = await maintenanceNotice();
             </div>
           </details>
         </nav>
+
+        {/*
+          * Brings the open tab into view.
+          *
+          * Every tab is a page load, and a fresh page starts scrolled to the
+          * left - so choosing Shipments or Pre-orders on a phone left the tab
+          * you had just chosen off the edge, and you had to scroll the bar to
+          * find where you were.
+          *
+          * After the nav rather than inside it, and that placement is the fix
+          * for the first attempt: run straight after the strip, it measured
+          * the strip before "More" had been read, when the strip still had the
+          * whole width to itself - so it centred against a box 100px wider than
+          * the one that was left once "More" arrived, and the tab ended up
+          * clipped behind it. Measured with getBoundingClientRect against the
+          * strip's own visible box, so nothing depends on which ancestor is
+          * positioned; and again once the fonts are in, because the portal's
+          * typeface is wider than the fallback it is measured in first.
+          */}
+        <script is:inline nonce={Astro.locals.cspNonce}>
+          (() => {
+            const strip = document.querySelector('[data-portal-tabs]');
+            const here = strip?.querySelector('[aria-current="page"]');
+            if (!strip || !here) return;
+            const centre = () => {
+              if (strip.scrollWidth <= strip.clientWidth) return;
+              const box = strip.getBoundingClientRect();
+              const tab = here.getBoundingClientRect();
+              strip.scrollLeft += (tab.left + tab.width / 2) - (box.left + box.width / 2);
+            };
+            centre();
+            document.fonts?.ready.then(centre);
+          })();
+        </script>
       </div>
     </header>
 
