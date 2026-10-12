@@ -26,6 +26,15 @@ export interface CategoryNode extends Category {
 
 export interface BookRow {
   publisher?: string | null;
+  /*
+   * Only with `withDetails`, like the publisher beside it.
+   *
+   * It was missing from that projection, so anything built from `listBooks`
+   * had no author at all - including the product feed, which is what a
+   * catalogue site reads when it lists the shop. Author is one of the three
+   * things people search those sites by, and the shop was publishing a blank.
+   */
+  author?: string | null;
   description_html?: string | null;
   id: number;
   slug: string;
@@ -704,7 +713,9 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   const page = Math.max(1, opts.page ?? 1);
   const where: string[] = [`b.status = 'live'`, NOT_DELETED, NOT_A_PART];
   const binds: unknown[] = [];
-  let from = opts.withDetails ? BOOK_SELECT.replace('SELECT b.id,', 'SELECT b.publisher, b.description_html, b.id,') : BOOK_SELECT;
+  let from = opts.withDetails
+    ? BOOK_SELECT.replace('SELECT b.id,', 'SELECT b.publisher, b.author, b.description_html, b.id,')
+    : BOOK_SELECT;
 
   const match = opts.q ? ftsQuery(opts.q) : null;
   if (match) {

@@ -205,6 +205,65 @@ async function publicCatalogue() {
   t.ok(bookTrail?.itemListElement?.at(-1)?.name?.length > 0,
     'ending at the book itself');
 
+  /*
+   * The catalogue, for the sites that list shops side by side.
+   *
+   * They read a shop by scraping it, because most Islamic bookshops are
+   * Shopify and `/products.json` is already there. This one is not, so it says
+   * the same thing plainly instead - and the price and stock here have to be
+   * the ones the shop itself shows, or a comparison site advertises a price
+   * the shop will not honour.
+   */
+  const feedRes = await get('/catalogue.json');
+  t.ok(feedRes.status === 200, 'the catalogue feed responds');
+  t.ok((feedRes.headers.get('content-type') ?? '').includes('application/json'),
+    'as JSON, so nobody has to parse a page for it');
+  t.ok(feedRes.headers.get('access-control-allow-origin') === '*',
+    'and reachable from another site, which is the whole point of it');
+  const catalogue = await feedRes.json();
+
+  const live = await one(
+    `SELECT COUNT(*) AS n FROM books
+      WHERE status='live' AND deleted_at IS NULL AND set_from IS NULL`,
+  );
+  t.ok(catalogue.count === catalogue.books.length, 'it counts what it carries');
+  t.ok(catalogue.books.length > 0 && catalogue.books.length <= live.n,
+    `every live title is in it (${catalogue.books.length} of ${live.n})`);
+  t.ok(catalogue.books.every((b) => b.url?.startsWith('http') && b.title && b.currency === 'GBP'),
+    'each one has the absolute link they re-crawl against, a title and a currency');
+  t.ok(catalogue.books.every((b) => typeof b.price === 'number' && b.price >= 0
+                           && typeof b.instock === 'boolean'),
+    'with a price as a number and stock as a yes or no');
+
+  /*
+   * Author was the gap. `withDetails` carried the publisher and not the author,
+   * so everything built on `listBooks` published a blank where one of the three
+   * things people search these sites by should be.
+   */
+  const authored = await one(
+    `SELECT title, author FROM books
+      WHERE status='live' AND deleted_at IS NULL AND TRIM(COALESCE(author,'')) <> '' LIMIT 1`,
+  );
+  if (authored?.title) {
+    const row = catalogue.books.find((b) => b.title === authored.title);
+    t.ok(row?.author === authored.author.trim(),
+      'a book with an author publishes it, rather than a blank');
+  }
+
+  /* The sale price, not the shelf price - the same function the card uses. */
+  const onSale = await one(
+    `SELECT b.slug, b.price_pence, si.percent_off AS off FROM books b
+       JOIN sale_items si ON si.book_id = b.id
+       JOIN sales s ON s.id = si.sale_id AND s.status = 'live'
+      WHERE b.status='live' AND b.deleted_at IS NULL LIMIT 1`,
+  );
+  if (onSale?.slug) {
+    const row = catalogue.books.find((b) => b.url.endsWith(`/book/${onSale.slug}`));
+    const expected = Math.round((onSale.price_pence * (100 - onSale.off)) / 100) / 100;
+    t.ok(row && Math.abs(row.price - expected) < 0.005,
+      'a book in a sale is listed at what it actually costs today');
+  }
+
   const robots = await html('/robots.txt');
   t.ok(robots.includes('Disallow: /admin'), 'robots keeps crawlers out of the portal');
   t.ok(robots.includes('Disallow: /order'), 'robots keeps crawlers off order pages');
