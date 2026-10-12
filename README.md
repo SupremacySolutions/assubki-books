@@ -376,3 +376,29 @@ The live shop is served at https://assubkibooks.co.uk. Custom-domain routing is
 managed in Cloudflare, outside this repository's `wrangler.jsonc`; the absence
 of a `routes` array does not mean a deployment leaves the live shop untouched.
 Deploy the sweeper as well when changing its shared notification or stock code.
+
+Four hostnames are attached to the Worker as Custom Domains, all in the same
+Cloudflare account: `assubkibooks.co.uk`, `www.assubkibooks.co.uk`,
+`assubkibooks.com` and `www.assubkibooks.com` (the `.com` added 12 October 2026,
+bought through Cloudflare Registrar). Only the first serves pages. Every other
+hostname - and `workers.dev` - is sent there with a 301 by the canonical-host
+check at the top of `src/middleware.ts`, keeping the path and query string, so
+an old `.com` link to a book lands on that book. Nothing in code names the
+`.com`; any hostname that is not the canonical one is redirected.
+
+**Do not add a domain with `wrangler deploy --domain`, or by adding a `routes`
+array to `wrangler.jsonc`.** Wrangler publishes custom domains as a complete set
+and detaches any it was not given, so listing only the new one takes the live
+shop offline. Add one in the dashboard (Worker > Settings > Domains & Routes),
+or with the additive API call, which attaches a single hostname and touches
+nothing else:
+
+```bash
+curl -X PUT "https://api.cloudflare.com/client/v4/accounts/<account>/workers/domains" \
+  -H "Authorization: Bearer $(npx wrangler auth token | tail -1)" \
+  -H "Content-Type: application/json" \
+  --data '{"environment":"production","hostname":"<host>","service":"assubki-books","zone_id":"<zone>"}'
+```
+
+`GET` the same path with `?service=assubki-books` lists what is attached; read it
+before and after.

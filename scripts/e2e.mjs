@@ -1365,6 +1365,27 @@ async function listings() {
   t.ok(partless.length === 0,
     `every listing query knows a part is not a listing${partless.length ? ` (${[...new Set(partless)].join(' | ')})` : ''}`);
 
+  /*
+   * The portal's tab bar on a phone.
+   *
+   * Five tabs need about 540px and a phone gives the bar 350, and they used to
+   * sit in a plain row with nothing containing them: they spilled out and
+   * stretched the whole page, so the portal slid sideways and every page load
+   * started scrolled to the left with the open tab off the edge. This suite
+   * cannot measure layout, so it holds the structure that prevents it - the
+   * fix was verified in a phone-sized Chrome against the compiled build.
+   */
+  const shell = await html('/admin/preorders');
+  const strip = shell.match(/<div[^>]*data-portal-tabs[^>]*>/)?.[0] ?? '';
+  t.ok(/overflow-x-auto/.test(strip), 'the portal tabs scroll inside their own strip rather than widening the page');
+  t.ok(/<a[^>]*href="\/admin\/preorders"[^>]*aria-current="page"|<a[^>]*aria-current="page"[^>]*href="\/admin\/preorders"/.test(shell),
+    'the open tab is marked as the current page, which is what the bar scrolls to');
+  const stripEnd = shell.indexOf('</div>', shell.indexOf('data-portal-tabs'));
+  const more = shell.indexOf('name="portal-more"');
+  t.ok(more > stripEnd, '"More" sits outside the scrolling strip, where its menu cannot be clipped');
+  t.ok(/strip\.scrollLeft \+=/.test(shell) && shell.indexOf('strip.scrollLeft') > more,
+    'and the bar is scrolled to the open tab after the whole bar is built, not before "More" exists');
+
   const book = await makeBook();
   const page = await html(`/admin/books/${book.id}`);
   t.ok(page.includes('Test Author'), 'author is saved');
