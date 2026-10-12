@@ -1366,6 +1366,60 @@ async function listings() {
     `every listing query knows a part is not a listing${partless.length ? ` (${[...new Set(partless)].join(' | ')})` : ''}`);
 
   /*
+   * Every table the catalogue reads has to move its version.
+   *
+   * Customer pages answer from a cache keyed by `catalogue_version`, and that is
+   * only correct while a write to anything the catalogue reads bumps it. The
+   * triggers in migration 0051 do - for the tables read on the day they were
+   * written. A query added to db.ts against a new table would be cached with
+   * nothing to say it had gone stale, and would stay wrong until the entry
+   * expired hours later. So the tables are read off db.ts itself, and each one
+   * must carry the triggers.
+   */
+  const dbSource = readFileSync(new URL('../src/lib/db.ts', import.meta.url).pathname, 'utf8');
+  const readTables = [...new Set([...dbSource.matchAll(/\b(?:FROM|JOIN)\s+([a-z_]+)/g)].map((m) => m[1]))]
+    .filter((name) => !['json_each', 'books_fts', 'catalogue_version'].includes(name));
+  const triggered = new Set((await db(
+    `SELECT DISTINCT tbl_name AS t FROM sqlite_master
+      WHERE type = 'trigger' AND sql LIKE '%catalogue_version%'`,
+  )).map((r) => r.t));
+  const unwatched = readTables.filter((name) => !triggered.has(name));
+  t.ok(readTables.length >= 6 && unwatched.length === 0,
+    `every table the catalogue reads moves its version (${readTables.length} read${unwatched.length ? `; missing triggers: ${unwatched.join(', ')}` : ''})`);
+
+  /*
+   * And the property the last catalogue cache failed on.
+   *
+   * It was shelved on 25 September because a change made outside the
+   * application - a manual SQL fix, a migration - stayed invisible for five
+   * minutes, and this suite caught it. Here the change is made exactly that
+   * way, by SQL straight at the database with no hook to tell anybody, and the
+   * catalogue is asked again at once.
+   */
+  const fresh = await makeBook({ title: `E2E cache ${Date.now()}` });
+  const freshRow = await one(`SELECT slug, title FROM books WHERE id = ${fresh.id}`);
+  const seenFirst = await html(`/catalogue?q=${encodeURIComponent(freshRow.title)}`);
+  t.ok(seenFirst.includes(`/book/${freshRow.slug}`), 'a new listing is in the catalogue');
+  const seenAgain = await html(`/catalogue?q=${encodeURIComponent(freshRow.title)}`);
+  t.ok(seenAgain.includes(`/book/${freshRow.slug}`), 'and the same page asked twice gives the same answer');
+
+  const before = (await one('SELECT n FROM catalogue_version WHERE id = 1')).n;
+  const retitled = `${freshRow.title} retitled by hand`;
+  await db(`UPDATE books SET title = '${retitled.replace(/'/g, "''")}' WHERE id = ${fresh.id}`);
+  const after = (await one('SELECT n FROM catalogue_version WHERE id = 1')).n;
+  t.ok(after > before, `a write made by hand moves the catalogue's version (${before} -> ${after})`);
+  const bookPage = await html(`/book/${freshRow.slug}`);
+  t.ok(bookPage.includes('retitled by hand'),
+    'and the book page shows it on the very next view, with nothing in the application told');
+  const listing = await html(`/catalogue?q=${encodeURIComponent('retitled by hand')}`);
+  t.ok(listing.includes(`/book/${freshRow.slug}`), 'so does the catalogue search');
+
+  // A price is the change a customer would most mind seeing late.
+  await db(`UPDATE books SET price_pence = 4321 WHERE id = ${fresh.id}`);
+  t.ok((await html(`/book/${freshRow.slug}`)).includes('43.21'),
+    'a price changed by hand is the price on the page at once');
+
+  /*
    * The portal's tab bar on a phone.
    *
    * Five tabs need about 540px and a phone gives the bar 350, and they used to

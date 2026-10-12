@@ -8,7 +8,7 @@
 
 import { env } from 'cloudflare:workers';
 import { tidyPublisher } from './publishers';
-import { cachedRead, writeCachedRead } from './read-cache';
+import { catalogueDb, catalogueVersion, forgetCatalogueVersion } from './read-cache';
 
 export interface Category {
   id: number;
@@ -90,7 +90,18 @@ export interface BookDetail extends BookRow {
   categories: Category[];
 }
 
-const db = () => env.DB;
+/*
+ * Every read in this file goes through the catalogue cache.
+ *
+ * It answers from a cache keyed by the catalogue's version - one row, bumped by
+ * a trigger on every write to every table read here - so a page view costs that
+ * row instead of the thousands a listing or a shelf roll-up reads. The SQL below
+ * is unchanged and is still the only statement of what the catalogue is; the
+ * cache stores its answers and nothing else. See read-cache.ts.
+ *
+ * This file only reads. That is what makes it safe to route through a cache.
+ */
+const db = () => catalogueDb(env.DB);
 
 /**
  * A listing in the bin is not in the shop.
@@ -182,10 +193,16 @@ async function readCategories(): Promise<Category[]> {
   return results;
 }
 
-let categoriesCache: { at: number; value: Category[] } | null = null;
-let categoriesDirty = false;
-const CATEGORIES_KEY = 'all-categories';
-const CATEGORIES_TTL_MS = 60_000;
+/*
+ * Remembered against the catalogue's version rather than for a minute.
+ *
+ * It used to be a minute in memory and a minute in the data centre's cache, and
+ * the minute was the cost: the read ran about once a minute all day - 1,416
+ * times on 12 October - because a minute was how long an edit took to reach
+ * everybody. The version moves the instant anything changes, so this is reused
+ * exactly as long as it is still true.
+ */
+let categoriesCache: { version: number; value: Category[] } | null = null;
 
 /**
  * The shelves themselves, cached like the counts of what is on them.
@@ -196,17 +213,10 @@ const CATEGORIES_TTL_MS = 60_000;
  * as the counts, so a new shelf appears at once.
  */
 export async function allCategories(): Promise<Category[]> {
-  const now = Date.now();
-  if (categoriesDirty) {
-    categoriesDirty = false;
-    const value = await readCategories();
-    categoriesCache = { at: now, value };
-    void writeCachedRead(CATEGORIES_KEY, CATEGORIES_TTL_MS / 1000, value);
-    return value;
-  }
-  if (categoriesCache && now - categoriesCache.at < CATEGORIES_TTL_MS) return categoriesCache.value;
-  const value = await cachedRead(CATEGORIES_KEY, CATEGORIES_TTL_MS / 1000, readCategories);
-  categoriesCache = { at: now, value };
+  const version = await catalogueVersion();
+  if (categoriesCache?.version === version) return categoriesCache.value;
+  const value = await readCategories();
+  categoriesCache = { version, value };
   return value;
 }
 
@@ -296,57 +306,20 @@ export interface ShelfCounts {
   urdu: Map<number, number>;
 }
 
-let countsCache: { at: number; value: ShelfCounts } | null = null;
+let countsCache: { version: number; value: ShelfCounts } | null = null;
 
 /*
- * Set when something changed, cleared by the next read.
+ * The shelf roll-up is remembered against the catalogue's version.
  *
- * A change cannot simply delete the shared entry: the delete is asynchronous
- * and the read that follows does not wait for it, so the reader finds the entry
- * it just asked to be rid of. Instead the next read goes to the database and
- * writes its answer through, which leaves no window at all.
+ * It was a minute in memory and a minute in the data centre's cache, and the
+ * minute was chosen for freshness - an edit could not reach other data centres
+ * faster than an entry expired. That minute was also a floor: 728 runs on 12
+ * October at 2,014 rows each, 1.47M rows, about once a minute however few
+ * people were looking. The version moves the instant a book or a shelf changes,
+ * so the roll-up is now reused precisely as long as it is still true and
+ * recomputed only when it is not.
  */
-let countsDirty = false;
-let publishersDirty = false;
 
-/**
- * How long a shelf count may be out of date on a customer's page.
- *
- * A minute, as it always was. It was briefly five, to squeeze the read bill
- * during the outages of 24-25 September - but the cause of those turned out to
- * be AI crawlers, and blocking them at the edge cut the traffic by 85%. The
- * saving that mattered here was never the longer window; it was that the answer
- * now outlives the isolate, and a minute gets almost all of that. Freshness is
- * worth more than the remainder.
- */
-const COUNTS_TTL_MS = 60_000;
-
-/** The key both layers agree on, so forgetting one forgets the other. */
-const COUNTS_KEY = 'shelf-counts';
-
-/*
- * `ShelfCounts` is four `Map`s, which JSON does not survive, so they travel as
- * entry arrays. Written out rather than reached for generically: the shape is
- * fixed, and a clever round-trip here would be a silent way to lose a count.
- */
-type PackedCounts = Record<keyof ShelfCounts, [number, number][]>;
-
-const packCounts = (value: ShelfCounts): PackedCounts => ({
-  any: [...value.any],
-  english: [...value.english],
-  arabic: [...value.arabic],
-  urdu: [...value.urdu],
-});
-
-const unpackCounts = (raw: unknown): ShelfCounts => {
-  const packed = raw as PackedCounts;
-  return {
-    any: new Map(packed.any),
-    english: new Map(packed.english),
-    arabic: new Map(packed.arabic),
-    urdu: new Map(packed.urdu),
-  };
-};
 
 /**
  * A shelf's book count.
@@ -358,26 +331,10 @@ const unpackCounts = (raw: unknown): ShelfCounts => {
  * every customer in the same data centre.
  */
 export async function categoryCounts(fresh = false): Promise<ShelfCounts> {
-  if (fresh || countsDirty) {
-    const wasDirty = countsDirty;
-    countsDirty = false;
-    const value = await readCategoryCounts();
-    countsCache = { at: Date.now(), value };
-    /* A change repairs the shared entry; a portal read just reads. */
-    if (wasDirty) void writeCachedRead(COUNTS_KEY, COUNTS_TTL_MS / 1000, value, packCounts);
-    return value;
-  }
-
-  const now = Date.now();
-  if (countsCache && now - countsCache.at < COUNTS_TTL_MS) return countsCache.value;
-  const value = await cachedRead(
-    COUNTS_KEY,
-    COUNTS_TTL_MS / 1000,
-    readCategoryCounts,
-    packCounts,
-    unpackCounts,
-  );
-  countsCache = { at: now, value };
+  const version = await catalogueVersion();
+  if (!fresh && countsCache?.version === version) return countsCache.value;
+  const value = await readCategoryCounts();
+  countsCache = { version, value };
   return value;
 }
 
@@ -392,9 +349,10 @@ export async function categoryCounts(fresh = false): Promise<ShelfCounts> {
 export function forgetCategoryCounts(): void {
   countsCache = null;
   publishersCache = null;
-  countsDirty = true;
-  publishersDirty = true;
-  categoriesDirty = true;
+  categoriesCache = null;
+  // The trigger has already moved the version; this instance must not reuse the
+  // one it read a moment before the edit.
+  forgetCatalogueVersion();
 }
 
 // ---------------------------------------------------------------------------
@@ -516,22 +474,8 @@ export async function canonicalPublisher(typed: string | null, bookId: number | 
   return existing?.name ?? name;
 }
 
-let publishersCache: { at: number; value: PublisherIndex } | null = null;
-
-/** Matches the shelf counts: this is forgotten with them and reads like them. */
-const PUBLISHERS_TTL_MS = 60_000;
-const PUBLISHERS_KEY = 'publisher-index';
-
-/* `spelling` is a Map, so it travels as entries. `books` is already plain. */
-const packPublishers = (value: PublisherIndex) => ({
-  books: value.books,
-  spelling: [...value.spelling],
-});
-
-const unpackPublishers = (raw: unknown): PublisherIndex => {
-  const packed = raw as { books: PublishedBook[]; spelling: [string, string][] };
-  return { books: packed.books, spelling: new Map(packed.spelling) };
-};
+/** Remembered against the catalogue's version, like the shelf counts. */
+let publishersCache: { version: number; value: PublisherIndex } | null = null;
 
 /**
  * The publishers worth offering where the customer is standing, A-Z.
@@ -547,23 +491,9 @@ export async function publisherCounts(
   language: BookLanguage | null = null,
   categoryPath: string | null = null,
 ): Promise<PublisherCount[]> {
-  const now = Date.now();
-  if (publishersDirty) {
-    publishersDirty = false;
-    const value = await readPublisherIndex();
-    publishersCache = { at: now, value };
-    void writeCachedRead(PUBLISHERS_KEY, PUBLISHERS_TTL_MS / 1000, value, packPublishers);
-  } else if (!publishersCache || now - publishersCache.at >= PUBLISHERS_TTL_MS) {
-    publishersCache = {
-      at: now,
-      value: await cachedRead(
-        PUBLISHERS_KEY,
-        PUBLISHERS_TTL_MS / 1000,
-        readPublisherIndex,
-        packPublishers,
-        unpackPublishers,
-      ),
-    };
+  const version = await catalogueVersion();
+  if (publishersCache?.version !== version) {
+    publishersCache = { version, value: await readPublisherIndex() };
   }
   const { books, spelling } = publishersCache.value;
   const tally = new Map<string, number>();
@@ -1108,21 +1038,18 @@ export interface HomeRow {
   total: number;
 }
 
-let homeRowsCache: { at: number; value: HomeRow[] } | null = null;
+let homeRowsCache: { version: number; value: HomeRow[] } | null = null;
 
 export async function homeRows(perRow = 10): Promise<HomeRow[]> {
-  const now = Date.now();
   /*
-   * Five minutes, not the house minute.
-   *
-   * These three shelves are the most expensive thing the busiest page asks
-   * for - a category listing reads about 1,300 rows to return ten books, and
-   * the front page wants three of them. Sixty seconds is the right default for
-   * a number somebody is watching change; nobody is watching the Hadith shelf
-   * for a book that appeared four minutes ago, and `forgetHomeRows` still
-   * clears it the moment the owner edits anything.
+   * The front page's three shelves, reused for as long as the catalogue has not
+   * changed rather than for five minutes. They were the most expensive thing
+   * the busiest page asks for, and the five minutes was a compromise between
+   * the read bill and the owner's new book not appearing; the version removes
+   * the need to compromise.
    */
-  if (homeRowsCache && now - homeRowsCache.at < 300_000) return homeRowsCache.value;
+  const version = await catalogueVersion();
+  if (homeRowsCache?.version === version) return homeRowsCache.value;
 
   /*
    * The totals come from the counts the page has already paid for.
@@ -1155,13 +1082,14 @@ export async function homeRows(perRow = 10): Promise<HomeRow[]> {
     }),
   );
 
-  homeRowsCache = { at: now, value };
+  homeRowsCache = { version, value };
   return value;
 }
 
 /** Called after a listing changes, so the owner sees their own edit at once. */
 export function forgetHomeRows(): void {
   homeRowsCache = null;
+  forgetCatalogueVersion();
 }
 
 /**

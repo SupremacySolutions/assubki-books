@@ -1,3 +1,5 @@
+import { env } from 'cloudflare:workers';
+
 /**
  * Reads whose answer outlives the isolate that worked it out.
  *
@@ -140,4 +142,116 @@ export async function writeCachedRead<T>(
   } catch {
     /* best effort: the caller already has the answer */
   }
+}
+
+// ---------------------------------------------------------------------------
+// The catalogue, keyed by its version
+// ---------------------------------------------------------------------------
+
+
+/**
+ * How long the catalogue's answers may sit in a data centre's cache.
+ *
+ * Hours rather than the minute the entries above live, and the difference is
+ * the whole fix. A minute was chosen for freshness - an edit could not reach
+ * other data centres any faster - and it set a floor of one D1 read per entry
+ * per minute all day long. With the version in every key, freshness no longer
+ * depends on expiry at all, so this only decides how long an abandoned
+ * version's entries take to be cleared away.
+ */
+const CATALOGUE_TTL_SECONDS = 6 * 60 * 60;
+
+/**
+ * How long one Worker instance may reuse the version it last read.
+ *
+ * Long enough that the half-dozen catalogue reads one page fires together share
+ * a single lookup; short enough that it is gone before any person, or any test,
+ * could make a change and then look for it. The instance that makes a change
+ * does not wait even this long - the forget hooks clear it.
+ */
+const VERSION_REUSE_MS = 250;
+
+let version: { at: number; value: Promise<number> } | null = null;
+
+/**
+ * The catalogue's version: one row, bumped by a trigger on every write to every
+ * table the catalogue is read from (migration 0051).
+ *
+ * This is what a cached page view costs. Everything else it shows comes from
+ * the cache under this number, so a change anywhere - however it was made - is
+ * seen on the next page view, in every data centre at once.
+ */
+export function catalogueVersion(): Promise<number> {
+  const now = Date.now();
+  if (version && now - version.at < VERSION_REUSE_MS) return version.value;
+  const value = env.DB.prepare('SELECT n FROM catalogue_version WHERE id = 1')
+    .first<{ n: number }>()
+    .then((row) => row?.n ?? 0);
+  version = { at: now, value };
+  // A refusal is not a version. Do not hand it to the next caller as one.
+  value.catch(() => {
+    if (version?.value === value) version = null;
+  });
+  return value;
+}
+
+/** Called by the same hooks that run after an edit, so its own instance sees it. */
+export function forgetCatalogueVersion(): void {
+  version = null;
+}
+
+/** SQL and its arguments, reduced to a key that fits any URL. */
+async function keyFor(kind: string, sql: string, args: unknown[]): Promise<string> {
+  const text = `${kind}\n${sql}\n${JSON.stringify(args)}`;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** A cached catalogue answer: the version it belongs to, then the question. */
+async function catalogueRead<T>(kind: string, sql: string, args: unknown[], read: () => Promise<T>): Promise<T> {
+  const [v, key] = await Promise.all([catalogueVersion(), keyFor(kind, sql, args)]);
+  return cachedRead(`catalogue:v${v}:${key}`, CATALOGUE_TTL_SECONDS, read);
+}
+
+/**
+ * The statements `src/lib/db.ts` prepares, answered from the cache.
+ *
+ * Shaped like the slice of D1 that db.ts uses - `prepare`, `bind`, `all`,
+ * `first` - so the cache sits under every catalogue query without one of them
+ * changing. That is deliberate, and it is the lesson of the attempt shelved on
+ * 25 September: it answered the catalogue by reimplementing its WHERE and ORDER
+ * BY in JavaScript, and a reimplementation that drifts does not fail, it
+ * quietly shows the catalogue in the wrong order. Here the SQL stays the only
+ * statement of what the catalogue is. The cache stores its answers, keyed by
+ * the exact text and arguments, and cannot disagree with it.
+ *
+ * Read-only by construction. db.ts does not write, and there is no `run` here
+ * to tempt anybody: a write through a cache is a bug waiting for a reason.
+ */
+export interface CatalogueStatement {
+  bind(...args: unknown[]): CatalogueStatement;
+  all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
+  first<T = Record<string, unknown>>(): Promise<T | null>;
+}
+
+export function catalogueDb(d1: D1Database): { prepare(sql: string): CatalogueStatement } {
+  const statement = (sql: string, args: unknown[]): CatalogueStatement => {
+    const real = () => (args.length ? d1.prepare(sql).bind(...args) : d1.prepare(sql));
+    return {
+      bind: (...next: unknown[]) => statement(sql, next),
+      all: async <T>() => ({
+        results: await catalogueRead('all', sql, args, async () => (await real().all<T>()).results),
+      }),
+      /*
+       * Boxed, because "no such row" is an answer and `cachedRead` declines to
+       * keep a bare null - rightly, for the reads it was written for, where null
+       * means "could not find out". A slug that does not exist is not that, and
+       * under a versioned key it cannot go stale: adding the book moves the
+       * version.
+       */
+      first: async <T>() =>
+        (await catalogueRead('first', sql, args, async () => ({ row: await real().first<T>() }))).row,
+    };
+  };
+  return { prepare: (sql: string) => statement(sql, []) };
 }
