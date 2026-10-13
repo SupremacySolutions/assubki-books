@@ -1414,6 +1414,27 @@ async function listings() {
   const listing = await html(`/catalogue?q=${encodeURIComponent('retitled by hand')}`);
   t.ok(listing.includes(`/book/${freshRow.slug}`), 'so does the catalogue search');
 
+  /*
+   * The shelf filter's plan, held in place.
+   *
+   * Listing a shelf read all of `book_categories` - SQLite chose to start from
+   * the links and look up each one's shelf, because D1 keeps no statistics to
+   * tell it otherwise - and that was the largest share of the day the shop went
+   * offline. `CROSS JOIN` fixes the order. It reads like an accident and somebody
+   * will one day tidy it back to JOIN, which would put the scan back without a
+   * single test of behaviour noticing, since the answer is identical. So the
+   * plan is what is asserted.
+   */
+  const shelfSql = (dbSource.match(/b\.id IN \(SELECT bc\.book_id FROM categories c[\s\S]*?'\/%'\)/) ?? [''])[0];
+  t.ok(/CROSS JOIN book_categories/.test(shelfSql), 'the shelf filter starts from the shelves');
+  const plan = (await db(
+    `EXPLAIN QUERY PLAN SELECT b.id FROM books b WHERE b.status = 'live' AND b.id IN (
+       SELECT bc.book_id FROM categories c CROSS JOIN book_categories bc ON bc.category_id = c.id
+        WHERE c.path = 'hadith' OR c.path LIKE 'hadith' || '/%')`,
+  )).map((r) => r.detail).join(' | ');
+  t.ok(/SEARCH bc USING (COVERING )?INDEX idx_bookcats_category/.test(plan) && !/SCAN bc\b/.test(plan),
+    `and reaches a shelf's links by index rather than reading them all (${plan})`);
+
   // A price is the change a customer would most mind seeing late.
   await db(`UPDATE books SET price_pence = 4321 WHERE id = ${fresh.id}`);
   t.ok((await html(`/book/${freshRow.slug}`)).includes('43.21'),

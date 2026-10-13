@@ -657,9 +657,27 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
   if (opts.categoryPath) {
     // A parent shows everything beneath it: /catalogue/syllabus includes
     // Dars Nizami and Maktab.
+    /*
+     * Categories first, and `CROSS JOIN` is what says so.
+     *
+     * Written as a plain JOIN, SQLite chose to read every row of
+     * `book_categories` and look up each one's shelf to see whether it matched
+     * - the whole table, every time, to list one shelf. That was 1,650-1,950
+     * rows per listing in production, and with the count and the filtered
+     * counts beside it, the largest share of the day the shop went offline.
+     *
+     * The index to do better already existed (`idx_bookcats_category`); the
+     * planner just would not start from the shelves without statistics to tell
+     * it to, and D1 has none. In SQLite `CROSS JOIN` fixes the order to the one
+     * written - the thirty-odd shelves, then only the matching shelf's links by
+     * that index - which it keeps whether or not anybody runs ANALYZE. Same
+     * rows, same order: 313-700 rows instead, measured against the live data.
+     *
+     * Do not tidy it back to JOIN. The listings suite checks the plan.
+     */
     where.push(
-      `b.id IN (SELECT bc.book_id FROM book_categories bc
-                  JOIN categories c ON c.id = bc.category_id
+      `b.id IN (SELECT bc.book_id FROM categories c
+                  CROSS JOIN book_categories bc ON bc.category_id = c.id
                  WHERE c.path = ? OR c.path LIKE ? || '/%')`,
     );
     binds.push(opts.categoryPath, opts.categoryPath);
