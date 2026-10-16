@@ -27,6 +27,8 @@ export interface Dashboard {
   reservations: number;
   /** How many of those are still waiting to be confirmed. */
   reservationsToConfirm: number;
+  /** Of those, the ones whose week to reply has run out - flagged, not closed. */
+  reservationsLapsed: number;
   oldestWaitingHours: number | null;
   awaitingPayment: number;
   awaitingPence: number;
@@ -108,7 +110,9 @@ async function read(days: number): Promise<Dashboard> {
     ),
     /* The other half, on the same terms `reservationCount` uses. */
     env.DB.prepare(
-      `SELECT COUNT(*) AS open, SUM(CASE WHEN status = 'requested' THEN 1 ELSE 0 END) AS toConfirm
+      `SELECT COUNT(*) AS open, SUM(CASE WHEN status = 'requested' THEN 1 ELSE 0 END) AS toConfirm,
+              SUM(CASE WHEN status IN ('requested','awaiting_payment') AND lapsed_at IS NOT NULL
+                       THEN 1 ELSE 0 END) AS lapsed
          FROM orders
         WHERE shipment_id IS NOT NULL
           AND status IN ('requested','awaiting_payment','paid','dispatched')`,
@@ -234,6 +238,7 @@ async function read(days: number): Promise<Dashboard> {
     lapsed: Number(w.lapsed ?? 0),
     reservations: Number(rv.open ?? 0),
     reservationsToConfirm: Number(rv.toConfirm ?? 0),
+    reservationsLapsed: Number(rv.lapsed ?? 0),
     oldestWaitingHours: w.oldest ? Math.floor((now - Number(w.oldest)) / 3600) : null,
     awaitingPayment: Number(w.awaiting ?? 0),
     awaitingPence: Number(w.awaitingPence ?? 0),

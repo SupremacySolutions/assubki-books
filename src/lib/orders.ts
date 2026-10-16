@@ -11,7 +11,7 @@ import { whenText } from './incoming';
 import { sellable } from './availability';
 import { salePrice, orderDiscount, totals } from './sales';
 import { parseOffers, multibuySaving, lineTotal as lineTotalOf } from './multibuy';
-import { expireOrders, flagLapsedHolds } from './stock-release';
+import { flagLapsedHolds, flagLapsedReservations } from './stock-release';
 import type { AddressParts } from './address';
 
 export const HOLD_HOURS = 48;
@@ -107,7 +107,9 @@ function randomToken(): string {
  */
 export async function expireStaleHolds(): Promise<number> {
   await flagLapsedHolds(env.DB);
-  return (await expireOrders(env.DB)).orders;
+  await flagLapsedReservations(env.DB);
+  /* Nothing is expired any more, holds or reservations - the owner decides. */
+  return 0;
 }
 
 export async function createCheckout(input: OrderInput): Promise<CreatedOrder[]> {

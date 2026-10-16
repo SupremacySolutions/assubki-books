@@ -236,7 +236,13 @@ const hoursLeft = order.expires_at
  * copies - the sweep flags it and leaves it alone - so this is the one thing on
  * the page that has to be impossible to miss.
  */
-const lapsed = order.status === 'requested' && order.lapsed_at !== null;
+const lapsed = order.status === 'requested' && order.lapsed_at !== null && !order.pay_by;
+/* A reservation's week ran out. Flagged, never cancelled - the card below says
+   so and offers the week; this only changes the line under the name. */
+const replyLapsed =
+  ['requested', 'awaiting_payment'].includes(order.status) &&
+  order.lapsed_at !== null &&
+  Boolean(order.pay_by);
 const lapsedDays = order.lapsed_at
   ? Math.floor((Date.now() - order.lapsed_at * 1000) / 86_400_000)
   : 0;
@@ -317,6 +323,8 @@ const shortWhen = (at: number) =>
  */
 const summary = lapsed
   ? `Hold ran out ${lapsedWhen}`
+  : replyLapsed
+    ? `Week to reply ran out ${lapsedWhen}`
   : answeringCancel
     ? 'They asked to cancel'
     : order.completed_at
@@ -1313,8 +1321,8 @@ const [strip, ...demotedFlags] = flags;
               {replyBy!.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
             </strong>.
             {daysLeft > 0
-              ? ' After that the copies go back on the shelf on their own.'
-              : ' The sweep will release them at its next run.'}
+              ? ' If they have not answered by then, this order is flagged for you. Nothing is cancelled on its own.'
+              : ' Nothing has been cancelled: the copies stay held under this order until you give them another week or cancel it.'}
           </p>
           {/* The same button on its own card, as it has always been - a
               reservation's week is not the shelf hold's 48 hours. */}

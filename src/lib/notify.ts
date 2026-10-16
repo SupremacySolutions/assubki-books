@@ -82,7 +82,7 @@ function customerPlaced(input: PlacedInput) {
 
   const closing = {
     held: `We hold these copies until ${escapeHtml(expires ?? '')}. If we have not heard from you by then the hold lapses and the books return to the shelf - nothing is charged and there is nothing to cancel. No payment is taken on our website at any point.`,
-    reserved: 'Your reservation does not run out while you wait - it stands until the delivery arrives, however long that takes. We will write the moment it is in, and from then you have seven days to reply before the copies go back on the shelf. No payment is taken on our website at any point.',
+    reserved: 'Your reservation does not run out while you wait - it stands until the delivery arrives, however long that takes. We will write the moment it is in, and from then we ask you to reply within seven days so we can keep them for you. No payment is taken on our website at any point.',
     mixed: 'Your whole order goes out in one parcel once everything has arrived, so nothing is sent before then. The reservation does not run out while you wait, and we will write the moment the delivery is in - from then you have seven days to reply. No payment is taken on our website at any point.',
   }[kind];
 
@@ -192,7 +192,7 @@ function ownerPlaced(input: PlacedInput) {
        ${
          ownerWaiting.length > 0
            ? 'This order has no 48-hour hold - a reservation stands until the delivery lands, and the seven days to reply start from then.'
-           : 'Stock is held for 48 hours from now, then released automatically.'
+           : 'Stock is held for 48 hours from now. After that the order is flagged for you, not cancelled - the copies stay held until you confirm, extend or cancel it.'
        }
      </p>`,
   );
