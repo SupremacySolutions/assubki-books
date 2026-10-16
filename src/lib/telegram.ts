@@ -645,3 +645,95 @@ export async function fetchFile(
 export function webhookSecret(): string | null {
   return cfg().TELEGRAM_WEBHOOK_SECRET ?? null;
 }
+
+/**
+ * Where Telegram is delivering the bot's messages, and whether it is managing.
+ *
+ * Written after six weeks in which it was not. On 31 August the site began
+ * redirecting every hostname but the real one, which was right - the old
+ * `workers.dev` address served the portal around every rule bound to the
+ * domain - but the webhook was still registered at that old address. Telegram
+ * does not follow redirects, so every `/start`, message and payment screenshot
+ * from then on failed with a 301, and Telegram kept them for a day before
+ * throwing them away. No customer ever connected a chat. Nothing in the shop
+ * could tell, because the failure happened entirely on Telegram's side.
+ *
+ * Telegram does keep score, so this asks. `null` means it could not be asked -
+ * no token, a dry run, or Telegram not answering - which is not the same as
+ * healthy and is not reported as such.
+ */
+export interface WebhookHealth {
+  url: string;
+  expected: string;
+  pending: number;
+  lastError: string | null;
+  lastErrorAt: number | null;
+  problems: string[];
+}
+
+export async function webhookHealth(origin: string): Promise<WebhookHealth | null> {
+  const token = cfg().TELEGRAM_BOT_TOKEN;
+  // A dry run must not reach Telegram, and a read is still a call.
+  if (!token || dryRun()) return null;
+
+  let info: {
+    url?: string;
+    pending_update_count?: number;
+    last_error_date?: number;
+    last_error_message?: string;
+  };
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    const data = (await res.json()) as { ok: boolean; result?: typeof info };
+    if (!data.ok || !data.result) return null;
+    info = data.result;
+  } catch {
+    return null;
+  }
+
+  const expected = `${origin}/api/telegram/webhook`;
+  const url = info.url ?? '';
+  const pending = info.pending_update_count ?? 0;
+  const lastErrorAt = info.last_error_date ?? null;
+  const lastError = info.last_error_message ?? null;
+
+  const problems: string[] = [];
+  if (!url) problems.push('The bot is not connected to the shop at all.');
+  else if (url !== expected) problems.push(`The bot is sending its messages to ${url}, not to this shop.`);
+  /* A day, because that is how long Telegram keeps what it could not deliver:
+     an error older than that has either cleared or already cost everything it
+     was going to. */
+  if (lastErrorAt && Date.now() / 1000 - lastErrorAt < 86_400) {
+    problems.push(`Telegram could not deliver a message: ${lastError ?? 'no reason given'}.`);
+  }
+  /* A handful in flight is normal. A queue means deliveries are failing and
+     Telegram is holding them - for a day, then they are gone. */
+  if (pending > 10) problems.push(`${pending} messages are waiting to be delivered.`);
+
+  return { url, expected, pending, lastError, lastErrorAt, problems };
+}
+
+/**
+ * Registers the webhook at this shop's address, keeping anything queued.
+ *
+ * `drop_pending_updates` is deliberately false. Whatever is waiting is a
+ * customer who pressed Start or sent a screenshot and heard nothing; delivering
+ * it late is the whole point of repairing the connection.
+ */
+export async function repointWebhook(origin: string): Promise<string | null> {
+  const secret = webhookSecret();
+  if (!secret) return 'The webhook secret is not set, so the bot cannot be connected safely.';
+  let failure: string | null = null;
+  const done = await call<boolean>(
+    'setWebhook',
+    {
+      url: `${origin}/api/telegram/webhook`,
+      secret_token: secret,
+      drop_pending_updates: false,
+    },
+    (description) => {
+      failure = description;
+    },
+  );
+  return done ? null : (failure ?? 'Telegram did not answer.');
+}

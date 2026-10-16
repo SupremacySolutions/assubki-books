@@ -3751,6 +3751,32 @@ async function integrity() {
     'the portal nav lists Health once');
 
   /*
+   * The bot, as Telegram sees it.
+   *
+   * From 31 August to 16 October every customer message to the bot failed on
+   * Telegram's side: the webhook pointed at the old workers.dev address, which
+   * the shop had started redirecting, and Telegram does not follow redirects.
+   * No order was ever connected and nothing in the portal could tell. Here the
+   * bot runs dry, so Telegram cannot be asked - and the page must say that
+   * rather than report a connection it has not checked.
+   */
+  t.ok(healthText.includes('Telegram bot'), 'the health page has a panel for the Telegram bot');
+  t.ok(healthText.includes('could not be asked') && !healthText.includes('Receiving messages'),
+    'and when Telegram cannot be asked it says so, rather than claiming all is well');
+
+  const repair = await admin('/api/admin/telegram/webhook');
+  t.ok(repair.status === 303 && repair.location.includes('telegram=fixed'),
+    'the owner can reconnect the bot from the health page');
+  t.ok(visibleText(await html('/admin/health?telegram=fixed')).includes('Reconnected'),
+    'and is told it worked');
+
+  const outsider = await fetch(`${SITE}/api/admin/telegram/webhook`, {
+    method: 'POST', headers: { ...ORIGIN }, redirect: 'manual',
+  });
+  t.ok(outsider.status !== 303 || !(outsider.headers.get('location') ?? '').includes('telegram=fixed'),
+    'and nobody signed out can re-point the bot');
+
+  /*
    * Ten tabs had outgrown the bar, so five stay and the rest sit behind one
    * disclosure. What matters is that nothing was lost on the way: every page
    * in the portal is still reachable from every page in the portal.
