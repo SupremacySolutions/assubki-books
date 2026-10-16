@@ -3764,6 +3764,31 @@ async function integrity() {
   t.ok(healthText.includes('could not be asked') && !healthText.includes('Receiving messages'),
     'and when Telegram cannot be asked it says so, rather than claiming all is well');
 
+  /*
+   * Email against Resend's free allowance - 100 a day, 3,000 a month - past
+   * which every send is refused until it resets. Set the day's count directly,
+   * since the suite runs email dry and sends nothing real.
+   */
+  const mailDay = new Date().toISOString().slice(0, 10);
+  const mailBefore = await one(`SELECT sent, refused FROM email_usage WHERE day='${mailDay}'`);
+  await db(`INSERT INTO email_usage (day, sent, refused) VALUES ('${mailDay}', 80, 0)
+              ON CONFLICT(day) DO UPDATE SET sent = 80, refused = 0`);
+  const mailBusy = await html('/admin/health');
+  t.ok(visibleText(mailBusy).includes('Email') && /data-email-used="80"/.test(mailBusy) && visibleText(mailBusy).includes('of 100'),
+    'the health page shows emails sent today against the daily limit');
+  t.ok(!visibleText(mailBusy).includes('Email has stopped'), 'and does not cry wolf at 80');
+
+  await db(`INSERT INTO settings (key, value, updated_at) VALUES ('resend_quota_refused', 'daily_quota_exceeded', unixepoch())
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()`);
+  t.ok(visibleText(await html('/admin/health')).includes('Email has stopped'),
+    'and says plainly when Resend has refused a send for being over the limit');
+  await db(`UPDATE settings SET updated_at = unixepoch() - 2 * 86400 WHERE key = 'resend_quota_refused'`);
+  t.ok(!visibleText(await html('/admin/health')).includes('Email has stopped'),
+    'but not once that limit has reset');
+  await db(`DELETE FROM settings WHERE key = 'resend_quota_refused'`);
+  if (mailBefore?.sent !== undefined) await db(`UPDATE email_usage SET sent=${mailBefore.sent}, refused=${mailBefore.refused} WHERE day='${mailDay}'`);
+  else await db(`DELETE FROM email_usage WHERE day='${mailDay}'`);
+
   const repair = await admin('/api/admin/telegram/webhook');
   t.ok(repair.status === 303 && repair.location.includes('telegram=fixed'),
     'the owner can reconnect the bot from the health page');
@@ -3803,8 +3828,11 @@ async function integrity() {
    */
   t.ok(!healthText.includes('NaN') && !healthText.includes('undefined'),
     'the health page never renders a missing figure as NaN or undefined');
-  t.ok(healthText.includes('Traffic today') || !healthText.includes('Each visitor'),
-    'the traffic panel is either whole or absent, never partly drawn');
+  /* The traffic panel was removed on 16 October: it needed a zone-analytics
+     permission the token never had, so it only ever showed an error. The
+     crawler link below is where traffic is actually visible. */
+  t.ok(!healthText.includes('Traffic today') && !healthText.includes('Each visitor'),
+    'the traffic panel that never worked is gone');
 
   /*
    * The tile has to agree with the page it opens.
