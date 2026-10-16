@@ -160,7 +160,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
   </div>
 
   {/* What needs the owner today, before anything historical. */}
-  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
     <a
       href="/admin/orders?status=requested"
       class:list={[
@@ -232,6 +232,29 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
           : d.reservationsToConfirm > 0
             ? `${d.reservationsToConfirm} to confirm`
             : 'all confirmed'}
+      </p>
+    </a>
+
+    {/*
+      * Customers waiting on an answer. Opens the newest conversation rather
+      * than a list: answering it takes it off this count, and the next tap
+      * lands on the one after.
+      */}
+    <a
+      href={d.unread.newest ? `/admin/orders/${d.unread.newest.ref}#thread` : '/admin/orders'}
+      class:list={[
+        'block bg-white border rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors',
+        d.unread.messages > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule)]',
+      ]}
+    >
+      <p class="eyebrow">Messages</p>
+      <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.unread.messages}</p>
+      <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
+        {d.unread.newest === null
+          ? 'nothing unread'
+          : d.unread.orders === 1
+            ? `unread from ${d.unread.newest.name}`
+            : `across ${d.unread.orders} orders, newest from ${d.unread.newest.name}`}
       </p>
     </a>
 

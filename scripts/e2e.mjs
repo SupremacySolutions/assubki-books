@@ -4862,10 +4862,17 @@ async function messages() {
   const list = await html('/admin/orders');
   t.ok(list.includes(order.ref) && /unread\s+message/.test(list), 'the orders list carries an unread badge');
 
+  // The dashboard is the page the owner opens every day, so it says so too -
+  // and its tile goes straight to the newest conversation, not to a list.
+  const home = await html('/admin');
+  t.ok(home.includes(`/admin/orders/${order.ref}#thread`), 'the dashboard tile opens the newest unread thread');
+
   const portal = await html(`/admin/orders/${order.ref}`);
   t.ok(portal.includes('second volume in stock'), 'the owner reads it beside the books');
   counters = await one(`SELECT unread_for_owner AS owner FROM orders WHERE id = ${row.id}`);
   t.ok(counters.owner === 0, 'and opening the order marks it read');
+  t.ok(!(await html('/admin')).includes(`/admin/orders/${order.ref}#thread`),
+    'and reading it takes it off the dashboard straight away');
 
   // --- the owner answers ----------------------------------------------------
   const reply = await admin(`/api/admin/orders/${order.ref}/message`, {

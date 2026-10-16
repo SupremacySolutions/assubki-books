@@ -137,7 +137,9 @@ export const POST: APIRoute = async ({ request }) => {
     if (imageKey) {
       await (env as unknown as UploadEnv).UPLOADS?.delete(imageKey).catch(() => {});
     }
-    return refuse('empty', THREAD.failed);
+    // There was something to save, so the only refusal left is the hourly cap,
+    // reached by a burst that all passed the check above together.
+    return refuse('rate', THREAD.tooMany, 429);
   }
 
   /*

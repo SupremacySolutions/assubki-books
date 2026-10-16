@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { forgetDashboard } from './dashboard';
 
 /**
  * The conversation on an order.
@@ -176,6 +177,9 @@ export async function postMessage(input: PostInput): Promise<number | null> {
   ]);
 
   const row = (inserted.results as { id: number }[] | undefined)?.[0];
+  // The dashboard counts unanswered messages, so a new one should show there
+  // now rather than after the minute its cache would otherwise keep.
+  if (row && input.sender === 'customer') forgetDashboard();
   return row?.id ?? null;
 }
 
@@ -227,6 +231,8 @@ export async function markRead(
   )
     .bind(orderId, throughId, from)
     .run();
+  // Reading a thread is what takes it off the dashboard's tile.
+  if (side === 'owner') forgetDashboard();
 }
 
 /** Trimmed, capped, and empty-means-nothing rather than empty-means-blank. */
