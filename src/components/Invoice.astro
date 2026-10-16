@@ -1,0 +1,165 @@
+---
+/*
+ * The invoice, the same for the customer and the owner.
+ *
+ * One component on purpose. The two copies of an invoice must never disagree,
+ * and two templates would - the first time a line was added to one of them.
+ */
+import { price } from '../lib/format';
+import { invoiceDate, type Invoice } from '../lib/invoice';
+
+interface Props {
+  invoice: Invoice;
+  /** Where the "back" link in the bar goes. */
+  back: string;
+  backLabel: string;
+}
+const { invoice: inv, back, backLabel } = Astro.props;
+
+const heading = inv.state === 'paid' ? 'Receipt' : 'Invoice';
+const stamp =
+  inv.state === 'paid'
+    ? `Paid${inv.paidAt ? ` ${invoiceDate(inv.paidAt)}` : ''}`
+    : inv.state === 'void'
+      ? 'Cancelled - nothing to pay'
+      : inv.state === 'pending'
+        ? 'Not confirmed yet'
+        : 'Payment due';
+---
+
+<div class="print:hidden sticky top-0 z-10 bg-white border-b border-[var(--color-rule-soft)]">
+  <div class="max-w-[46rem] mx-auto px-4 py-3 flex items-center justify-between gap-3">
+    <a href={back} class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2">
+      &larr; {backLabel}
+    </a>
+    <button type="button" id="printInvoice" class="btn btn-primary !py-2 !text-[14px]">
+      Print or save as PDF
+    </button>
+  </div>
+</div>
+
+<main
+  class="max-w-[46rem] mx-auto my-6 sm:my-10 print:my-0 bg-white px-4 sm:px-10 py-8 sm:py-10 print:p-0 border border-[var(--color-rule-soft)] print:border-0 rounded-[var(--radius-panel)] print:rounded-none text-[14.5px] text-[var(--color-ink)]"
+  data-invoice={inv.number}
+>
+  {inv.state === 'pending' && (
+    <p class="mb-6 p-3 rounded-[6px] bg-[var(--color-paper)] text-[13.5px] text-[var(--color-ink-soft)]">
+      This order has not been confirmed yet, so postage and the final total are still to come. A
+      full invoice is ready as soon as the shop sends your total.
+    </p>
+  )}
+
+  <header class="flex flex-wrap justify-between gap-6">
+    <div>
+      <p class="text-[22px] font-semibold leading-tight">{inv.shop.name}</p>
+      <p class="mt-2 text-[13.5px] leading-relaxed text-[var(--color-ink-soft)]">
+        {inv.shop.address.map((line) => <>{line}<br /></>)}
+        {inv.shop.email}<br />
+        {inv.shop.phone}<br />
+        {inv.shop.url}
+      </p>
+    </div>
+    <div class="text-right">
+      <h1 class="text-[26px] font-semibold leading-none">{heading}</h1>
+      <dl class="mt-3 text-[13.5px] grid grid-cols-[auto_auto] gap-x-4 gap-y-1 justify-end">
+        <dt class="text-[var(--color-ink-faint)]">Number</dt>
+        <dd class="tabular-nums font-medium">{inv.number}</dd>
+        <dt class="text-[var(--color-ink-faint)]">Date</dt>
+        <dd>{invoiceDate(inv.issuedAt)}</dd>
+      </dl>
+      <p
+        class:list={[
+          'mt-3 inline-block px-2.5 py-1 rounded-[4px] text-[12.5px] font-semibold uppercase tracking-wide border',
+          inv.state === 'paid'
+            ? 'text-[var(--color-instock)] border-[var(--color-instock)]'
+            : inv.state === 'void'
+              ? 'text-[var(--color-outstock)] border-[var(--color-outstock)]'
+              : 'text-[var(--color-ink-soft)] border-[var(--color-rule)]',
+        ]}
+        data-invoice-state={inv.state}
+      >
+        {stamp}
+      </p>
+    </div>
+  </header>
+
+  <section class="mt-8">
+    <p class="eyebrow mb-1.5">{inv.state === 'paid' ? 'Received from' : 'Bill to'}</p>
+    <p class="font-medium">{inv.customer.name}</p>
+    {inv.customer.address && (
+      <p class="whitespace-pre-line text-[var(--color-ink-soft)]">{inv.customer.address}</p>
+    )}
+    <p class="text-[var(--color-ink-soft)]">{inv.customer.email}</p>
+    {inv.customer.phone && <p class="text-[var(--color-ink-soft)]">{inv.customer.phone}</p>}
+    <p class="mt-1 text-[13px] text-[var(--color-ink-faint)]">
+      {inv.collection ? 'Collected from the shop' : 'Sent by post'}
+    </p>
+  </section>
+
+  <table class="mt-8 w-full border-collapse text-[14px]">
+    <thead>
+      <tr class="border-b border-[var(--color-ink)] text-left">
+        <th class="py-2 pr-3 font-semibold">Item</th>
+        <th class="py-2 px-3 font-semibold text-right">Qty</th>
+        <th class="py-2 px-3 font-semibold text-right whitespace-nowrap">Unit price</th>
+        <th class="py-2 pl-3 font-semibold text-right">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {inv.lines.map((l) => (
+        <tr class="border-b border-[var(--color-rule-soft)] align-top">
+          <td class="py-2.5 pr-3">
+            <span dir="auto">{l.title}</span>
+            {l.multibuyPence > 0 && (
+              <span class="block text-[12.5px] text-[var(--color-ink-faint)]">
+                Multi-buy saving {price(l.multibuyPence)}
+              </span>
+            )}
+          </td>
+          <td class="py-2.5 px-3 text-right tabular-nums">{l.qty}</td>
+          <td class="py-2.5 px-3 text-right tabular-nums">{price(l.unitPence)}</td>
+          <td class="py-2.5 pl-3 text-right tabular-nums">{price(l.amountPence)}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <dl class="mt-4 ml-auto max-w-[18rem] grid grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-[14px]">
+    {inv.discountPence > 0 && (
+      <>
+        <dt class="text-[var(--color-ink-soft)]">Items</dt>
+        <dd class="text-right tabular-nums">{price(inv.linesPence)}</dd>
+        <dt class="text-[var(--color-ink-soft)]">Discount</dt>
+        <dd class="text-right tabular-nums">-{price(inv.discountPence)}</dd>
+      </>
+    )}
+    <dt class="text-[var(--color-ink-soft)]">Subtotal</dt>
+    <dd class="text-right tabular-nums">{price(inv.subtotalPence)}</dd>
+    {inv.state !== 'pending' && !inv.collection && (
+      <>
+        <dt class="text-[var(--color-ink-soft)]">Postage</dt>
+        <dd class="text-right tabular-nums">{price(inv.postagePence)}</dd>
+      </>
+    )}
+    <dt class="pt-2 mt-1 border-t border-[var(--color-ink)] font-semibold">
+      {inv.state === 'paid' ? 'Total paid' : inv.state === 'pending' ? 'Total so far' : 'Total'}
+    </dt>
+    <dd class="pt-2 mt-1 border-t border-[var(--color-ink)] text-right tabular-nums font-semibold" data-invoice-total={inv.totalPence}>
+      {price(inv.totalPence)}
+    </dd>
+  </dl>
+
+  <footer class="mt-10 pt-4 border-t border-[var(--color-rule-soft)] text-[12.5px] leading-relaxed text-[var(--color-ink-faint)]">
+    {inv.state === 'due' && (
+      <p>Payment details are on your order page and in the message the shop sent you.</p>
+    )}
+    <p>
+      Questions about this {heading.toLowerCase()}? Email {inv.shop.email} quoting {inv.number}.
+    </p>
+    <p class="mt-1">Thank you for your order. جزاكم الله خيرا</p>
+  </footer>
+</main>
+
+<script is:inline nonce={Astro.locals.cspNonce}>
+  document.getElementById('printInvoice')?.addEventListener('click', () => window.print());
+</script>

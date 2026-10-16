@@ -3784,7 +3784,7 @@ async function integrity() {
   const bar = await html('/admin/settings');
   for (const where of ['/admin', '/admin/orders', '/admin/books', '/admin/shipments',
                        '/admin/preorders', '/admin/shelves', '/admin/sales',
-                       '/admin/requests', '/admin/health', '/admin/settings']) {
+                       '/admin/requests', '/admin/invoices', '/admin/health', '/admin/settings']) {
     t.ok(bar.includes(`href="${where}"`), `the portal nav still reaches ${where}`);
   }
   t.ok(bar.includes('<details'), 'with the overflow as a disclosure, which needs no scripting');
@@ -7806,6 +7806,86 @@ async function preorders() {
   }
 }
 
+async function invoices() {
+  const t = suite('30. Invoices');
+
+  /*
+   * One document for the customer and the owner, read from what the order
+   * recorded rather than worked out again. The sums are the order's own:
+   * lines after multi-buy, less the discount, is the subtotal; plus postage is
+   * the total. An invoice that disagrees with the order page is worse than no
+   * invoice, so every figure here is checked against the database.
+   */
+  const book = await makeBook({ stock: '3' });
+  const order = await placeOrder(book.id, 'delivery', { name: '=HYPERLINK("http://x","Mikail")' });
+  const custUrl = `/order/invoice?ref=${order.ref}&t=${order.token}`;
+
+  // Before the shop confirms there is no postage and so no real invoice.
+  const early = await html(custUrl);
+  t.ok(early.includes('data-invoice-state="pending"') && early.includes('Not confirmed yet'),
+    'before confirmation the invoice says it is not ready rather than guessing postage');
+  t.ok(!(await html(`/order?ref=${order.ref}&t=${order.token}`)).includes('/order/invoice?'),
+    'and the order page does not offer one yet');
+
+  await admin(`/api/admin/orders/${order.ref}/confirm`, { postage: '3.95' });
+  const row = await one(
+    `SELECT subtotal_pence AS s, COALESCE(discount_pence,0) AS d, postage_pence AS p, total_pence AS t
+       FROM orders WHERE ref='${order.ref}'`);
+  const lines = await one(
+    `SELECT COALESCE(SUM(price_pence_snapshot*qty - multibuy_pence),0) AS n
+       FROM order_items WHERE order_id=(SELECT id FROM orders WHERE ref='${order.ref}')`);
+  t.ok(lines.n - row.d === row.s && row.s + row.p === row.t,
+    'the order\'s own figures add up: lines less discount is the subtotal, plus postage the total');
+
+  const due = await html(custUrl);
+  const shownTotal = Number(/data-invoice-total="(\d+)"/.exec(due)?.[1]);
+  t.ok(shownTotal === row.t, `the customer's invoice shows the order's total (${shownTotal} = ${row.t})`);
+  t.ok(due.includes('data-invoice-state="due"') && due.includes('Payment due'),
+    'and says payment is due');
+  t.ok(due.includes(order.ref) && due.includes('Postage'), 'numbered with the order reference, postage included');
+  t.ok(/noindex/.test(due), 'and is never indexed');
+  t.ok((await html(`/order?ref=${order.ref}&t=${order.token}`)).includes('View or print your invoice'),
+    'once there is a total, the order page links to it');
+
+  const guessed = await get(`/order/invoice?ref=${order.ref}&t=${'0'.repeat(32)}`);
+  t.ok(guessed.status === 404, 'a wrong token gets nothing, so an invoice is as private as the order');
+
+  const ownerCopy = await html(`/admin/orders/${order.ref}/invoice`);
+  t.ok(Number(/data-invoice-total="(\d+)"/.exec(ownerCopy)?.[1]) === row.t,
+    'the owner\'s copy is the same document with the same total');
+  t.ok((await html(`/admin/orders/${order.ref}`)).includes(`/admin/orders/${order.ref}/invoice`),
+    'and the order page in the portal links to it');
+
+  await admin(`/api/admin/orders/${order.ref}/status`, { status: 'paid' });
+  const paid = await html(custUrl);
+  t.ok(paid.includes('data-invoice-state="paid"') && paid.includes('Receipt') && paid.includes('Total paid'),
+    'once paid it becomes a receipt');
+
+  /*
+   * The month, for the accounts.
+   */
+  const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit' })
+    .format(new Date()).slice(0, 7);
+  const monthPage = visibleText(await html(`/admin/invoices?month=${month}`));
+  t.ok(monthPage.includes(order.ref), 'the month\'s invoices list it');
+
+  const csv = await get(`/admin/invoices.csv?month=${month}`);
+  t.ok(csv.status === 200 && (csv.headers.get('content-type') ?? '').includes('text/csv'),
+    'and the month downloads as a spreadsheet');
+  const csvText = await csv.text();
+  const csvRow = csvText.split('\r\n').find((l) => l.startsWith(order.ref)) ?? '';
+  t.ok(csvRow.includes((row.t / 100).toFixed(2)) && csvRow.includes('Paid'),
+    'with the total in pounds a spreadsheet can add, and whether it was paid');
+  t.ok(csvRow.includes(`"'=HYPERLINK(""http://x"",""Mikail"")"`),
+    'and a name typed as a formula is written as text, not run');
+  t.ok((await get('/admin/invoices.csv?month=nonsense')).status === 400, 'a malformed month is refused');
+
+  const outsider = await fetch(`${SITE}/admin/invoices.csv?month=${month}`, { redirect: 'manual' });
+  t.ok(outsider.status !== 200, 'and nobody signed out can download it');
+  const outsiderInvoice = await fetch(`${SITE}/admin/orders/${order.ref}/invoice`, { redirect: 'manual' });
+  t.ok(outsiderInvoice.status !== 200, 'or open the owner\'s copy');
+}
+
 const SUITES = [
   ['catalogue', publicCatalogue, true], ['legacy', legacyUrls, false],
   ['validation', validation, true], ['stock', stockAndHolds, true],
@@ -7832,6 +7912,7 @@ const SUITES = [
   ['requests', bookRequests, true],
   ['multibuy', multibuy, true],
   ['preorders', preorders, true],
+  ['invoices', invoices, true],
   ['integrity', integrity, true],
 ];
 

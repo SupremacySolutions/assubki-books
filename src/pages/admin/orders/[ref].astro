@@ -467,7 +467,17 @@ const [strip, ...demotedFlags] = flags;
             {portalLabel(order.status, order.fulfilment, isCash)}
           </span>
         </div>
-        <p class="mt-0.5 text-[13px] text-[var(--color-ink-faint)]">{summary}</p>
+        <p class="mt-0.5 text-[13px] text-[var(--color-ink-faint)]">
+          {summary}
+          {/* The same document the customer can open from their order. Opens
+              in a new tab so printing it does not lose this page. */}
+          <span aria-hidden="true"> · </span>
+          <a
+            href={`/admin/orders/${order.ref}/invoice`}
+            target="_blank"
+            class="text-[var(--color-navy)] hover:underline underline-offset-2"
+          >{['paid', 'dispatched', 'completed'].includes(order.status) ? 'Receipt' : 'Invoice'}</a>
+        </p>
       </div>
 
       <div class="flex items-center gap-3 shrink-0">

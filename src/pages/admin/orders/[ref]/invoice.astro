@@ -1,0 +1,25 @@
+---
+/*
+ * The owner's copy - the same document the customer sees, from the portal.
+ *
+ * Behind the portal login like everything under `/admin/`. Printed for the
+ * shop's own records, or saved and sent to a customer who asks for one by
+ * email rather than opening their order link.
+ */
+import Document from '../../../../layouts/Document.astro';
+import Invoice from '../../../../components/Invoice.astro';
+import { getOrderByRef, getOrderItems } from '../../../../lib/admin-db';
+import { invoiceFor } from '../../../../lib/invoice';
+
+export const prerender = false;
+
+const ref = String(Astro.params.ref ?? '').toUpperCase();
+const order = await getOrderByRef(ref);
+if (!order) return new Response('No such order', { status: 404 });
+const items = await getOrderItems(order.id);
+const invoice = invoiceFor({ ...order, items });
+---
+
+<Document title={`${invoice.state === 'paid' ? 'Receipt' : 'Invoice'} ${invoice.number}`}>
+  <Invoice invoice={invoice} back={`/admin/orders/${encodeURIComponent(order.ref)}`} backLabel={`Back to ${order.ref}`} />
+</Document>

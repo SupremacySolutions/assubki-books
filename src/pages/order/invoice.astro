@@ -1,0 +1,30 @@
+---
+/*
+ * The customer's invoice, behind the same link as their order page.
+ *
+ * Reached with the order's reference and its token, exactly like `/order`,
+ * so whoever can see the order can print it and nobody else can. There is no
+ * account to sign into and there should not need to be one for a receipt.
+ */
+import Document from '../../layouts/Document.astro';
+import Invoice from '../../components/Invoice.astro';
+import { getOrder } from '../../lib/orders';
+import { invoiceFor } from '../../lib/invoice';
+
+export const prerender = false;
+
+const ref = (Astro.url.searchParams.get('ref') ?? '').trim().toUpperCase();
+const token = (Astro.url.searchParams.get('t') ?? '').trim();
+const order = ref && token ? await getOrder(ref, token) : null;
+if (!order) return new Response('That invoice could not be found.', { status: 404 });
+
+const invoice = invoiceFor(order);
+---
+
+<Document title={`${invoice.state === 'paid' ? 'Receipt' : 'Invoice'} ${invoice.number} - ${invoice.shop.name}`}>
+  <Invoice
+    invoice={invoice}
+    back={`/order?ref=${encodeURIComponent(order.ref)}&t=${encodeURIComponent(token)}`}
+    backLabel="Back to your order"
+  />
+</Document>
