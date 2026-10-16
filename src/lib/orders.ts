@@ -408,6 +408,9 @@ export interface OrderView {
   telegram_chat_id: string | null;
   postage_pence: number | null;
   total_pence: number | null;
+  /** Taken off the lines before the subtotal. The invoice shows it as its own line. */
+  discount_pence: number;
+  phone: string | null;
   confirmed_at: number | null;
   paid_at: number | null;
   dispatched_at: number | null;
@@ -566,6 +569,7 @@ export async function getOrder(ref: string, token: string): Promise<OrderView | 
   const order = await env.DB.prepare(
     `SELECT id, ref, status, customer_name, email, fulfilment, address, notes,
             subtotal_pence, postage_pence, total_pence, created_at, expires_at, pay_by,
+            COALESCE(discount_pence, 0) AS discount_pence, phone,
             shipment_id, split_group,
             confirmed_at, paid_at, dispatched_at, completed_at, tracking_number,
             postage_provider, postage_service, telegram, cancel_note,

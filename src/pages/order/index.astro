@@ -702,6 +702,18 @@ if (offerTelegram && telegramLink) {
                 <span class="text-[15px] font-medium">{paidFor ? 'Total paid' : 'Total to pay'}</span>
                 <span class="price text-[20px]">{price(order.total_pence)}</span>
               </div>
+              {/* Only once there is a total: before the shop confirms, there is
+                  no postage and so nothing that could honestly be called an
+                  invoice. */}
+              <p class="mt-3 text-right text-[14px]">
+                <a
+                  href={`/order/invoice?ref=${encodeURIComponent(order.ref)}&t=${encodeURIComponent(token)}`}
+                  target="_blank"
+                  class="text-[var(--color-navy)] hover:underline underline-offset-2"
+                >
+                  {paidFor ? 'View or print your receipt' : 'View or print your invoice'}
+                </a>
+              </p>
             </>
           )}
           {/* The shop's own reason, when it gave one. Without it a cancellation

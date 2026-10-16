@@ -1,0 +1,117 @@
+---
+/*
+ * A month of invoices, for the shop's records.
+ *
+ * Every order gets its own invoice from its own page. This is the other view
+ * an accountant asks for: one month, every invoice in it, what was paid and
+ * what is still owed, and a spreadsheet of the lot.
+ */
+import Admin from '../../layouts/Admin.astro';
+import { price } from '../../lib/format';
+import { invoiceDate } from '../../lib/invoice';
+import {
+  currentMonth,
+  invoicesForMonth,
+  invoiceStateOf,
+  monthBounds,
+} from '../../lib/invoice-month';
+
+export const prerender = false;
+
+const asked = Astro.url.searchParams.get('month') ?? '';
+const month = monthBounds(asked) ? asked : currentMonth();
+const rows = (await invoicesForMonth(month)) ?? [];
+
+const live = rows.filter((r) => invoiceStateOf(r) !== 'void');
+const paidPence = live.filter((r) => invoiceStateOf(r) === 'paid').reduce((n, r) => n + r.total_pence, 0);
+const owedPence = live.filter((r) => invoiceStateOf(r) === 'due').reduce((n, r) => n + r.total_pence, 0);
+const postagePence = live.reduce((n, r) => n + r.postage_pence, 0);
+
+const [y, m] = month.split('-').map(Number);
+const label = new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-GB', {
+  month: 'long', year: 'numeric', timeZone: 'UTC',
+});
+const shift = (by: number) => {
+  const d = new Date(Date.UTC(y, m - 1 + by, 15));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+const isCurrent = month === currentMonth();
+---
+
+<Admin title="Invoices">
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-2">
+      <a href={`/admin/invoices?month=${shift(-1)}`} class="btn btn-ghost !py-1.5 !text-[13.5px]" aria-label="Previous month">&larr;</a>
+      <h2 class="text-[20px] font-semibold min-w-[11rem] text-center">{label}</h2>
+      {!isCurrent && (
+        <a href={`/admin/invoices?month=${shift(1)}`} class="btn btn-ghost !py-1.5 !text-[13.5px]" aria-label="Next month">&rarr;</a>
+      )}
+    </div>
+    <a href={`/admin/invoices.csv?month=${month}`} class="btn btn-primary !py-2 !text-[14px]">
+      Download spreadsheet (CSV)
+    </a>
+  </div>
+
+  <div class="grid gap-3 sm:grid-cols-3 mb-6">
+    <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+      <p class="eyebrow">Paid</p>
+      <p class="mt-2 text-[24px] font-semibold leading-none tabular-nums" data-month-paid={paidPence}>{price(paidPence)}</p>
+    </div>
+    <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+      <p class="eyebrow">Still owed</p>
+      <p class="mt-2 text-[24px] font-semibold leading-none tabular-nums">{price(owedPence)}</p>
+    </div>
+    <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+      <p class="eyebrow">Of which postage</p>
+      <p class="mt-2 text-[24px] font-semibold leading-none tabular-nums">{price(postagePence)}</p>
+    </div>
+  </div>
+
+  {rows.length === 0 ? (
+    <p class="text-[14.5px] text-[var(--color-ink-soft)]">
+      No orders were confirmed in {label}. An invoice is dated the day the total is sent.
+    </p>
+  ) : (
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-x-auto">
+      <table class="w-full text-[14px] border-collapse">
+        <thead>
+          <tr class="text-left border-b border-[var(--color-rule)] text-[var(--color-ink-faint)]">
+            <th class="px-4 py-2.5 font-medium">Invoice</th>
+            <th class="px-4 py-2.5 font-medium">Date</th>
+            <th class="px-4 py-2.5 font-medium">Customer</th>
+            <th class="px-4 py-2.5 font-medium text-right">Total</th>
+            <th class="px-4 py-2.5 font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const state = invoiceStateOf(r);
+            return (
+              <tr class="border-b border-[var(--color-rule-soft)] last:border-0">
+                <td class="px-4 py-2.5">
+                  <a href={`/admin/orders/${r.ref}/invoice`} class="text-[var(--color-navy)] hover:underline underline-offset-2 tabular-nums">{r.ref}</a>
+                </td>
+                <td class="px-4 py-2.5 whitespace-nowrap">{invoiceDate(r.confirmed_at)}</td>
+                <td class="px-4 py-2.5">{r.customer_name}</td>
+                <td class="px-4 py-2.5 text-right tabular-nums">{price(r.total_pence)}</td>
+                <td
+                  class:list={[
+                    'px-4 py-2.5',
+                    state === 'paid' && 'text-[var(--color-instock)]',
+                    state === 'void' && 'text-[var(--color-ink-faint)] line-through',
+                  ]}
+                >
+                  {state === 'paid' ? 'Paid' : state === 'void' ? 'Cancelled' : 'Owed'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  )}
+  <p class="mt-4 text-[12.5px] text-[var(--color-ink-faint)]">
+    Each invoice is dated the day the total was sent to the customer. Cancelled orders stay in the
+    list, marked, so no invoice number goes missing from the run.
+  </p>
+</Admin>

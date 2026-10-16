@@ -1,0 +1,31 @@
+---
+/*
+ * A page meant to be printed or saved as a PDF, not browsed.
+ *
+ * No header, footer, splash or search: an invoice that prints with the shop's
+ * navigation across the top of it is a screenshot of a website, not a
+ * document. The site's stylesheet is kept so the type and colours are the
+ * shop's own, and the bar with the Print button disappears on paper.
+ */
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {/* Private to whoever holds the link. */}
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body class="bg-[var(--color-paper)] print:bg-white">
+    <slot />
+  </body>
+</html>
