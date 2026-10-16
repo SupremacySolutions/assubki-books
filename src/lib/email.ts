@@ -84,6 +84,59 @@ async function clearFailure(): Promise<void> {
 }
 
 /**
+ * Counts the send, and keeps whatever Resend said about the allowance.
+ *
+ * The free plan stops at 100 emails a day and 3,000 a month, and past either
+ * it refuses everything - order confirmations, payment details, arrival
+ * notices - until the limit resets. The shop's key is send-only (correctly:
+ * a leaked key can then do nothing but send), so it cannot ask Resend how much
+ * is left. Two things are recorded instead, for the Health page:
+ *
+ * - The shop's own count per UTC day, which is when Resend's daily allowance
+ *   resets. Always available.
+ * - Resend's `x-resend-daily-quota` and `x-resend-monthly-quota` headers, the
+ *   amount already used, when a response carries them. Authoritative - they
+ *   count anything else sending on the same Resend account too.
+ *
+ * A quota refusal is kept separately so the page can say plainly that email
+ * has stopped, rather than leaving it to the generic last-error line.
+ *
+ * Never allowed to break a send: every step is wrapped.
+ */
+async function recordUsage(accepted: boolean, res: Response | null, errorName?: string): Promise<void> {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const statements = [
+      env.DB.prepare(
+        `INSERT INTO email_usage (day, sent, refused) VALUES (?1, ?2, ?3)
+         ON CONFLICT(day) DO UPDATE SET sent = sent + ?2, refused = refused + ?3`,
+      ).bind(day, accepted ? 1 : 0, accepted ? 0 : 1),
+    ];
+    const daily = res?.headers.get('x-resend-daily-quota');
+    const monthly = res?.headers.get('x-resend-monthly-quota');
+    if (daily || monthly) {
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO settings (key, value, updated_at) VALUES ('resend_quota', ?, unixepoch())
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()`,
+        ).bind(JSON.stringify({ daily: daily ? Number(daily) : null, monthly: monthly ? Number(monthly) : null })),
+      );
+    }
+    if (errorName === 'daily_quota_exceeded' || errorName === 'monthly_quota_exceeded') {
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO settings (key, value, updated_at) VALUES ('resend_quota_refused', ?, unixepoch())
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()`,
+        ).bind(errorName),
+      );
+    }
+    await env.DB.batch(statements);
+  } catch {
+    /* never let health-reporting break a send path */
+  }
+}
+
+/**
  * Whether sends are pretend.
  *
  * The test suite places a dozen orders a run and each one emails twice, which
@@ -130,16 +183,20 @@ export async function deliver(msg: Message): Promise<boolean> {
       const body = await res.text();
       console.error(`[email] resend rejected → ${msg.to}:`, res.status, body);
       let reason = `${res.status}: ${body}`;
+      let errorName: string | undefined;
       try {
-        const parsed = JSON.parse(body) as { message?: string };
+        const parsed = JSON.parse(body) as { message?: string; name?: string };
         if (parsed.message) reason = parsed.message;
+        errorName = parsed.name;
       } catch {
         /* keep the raw body */
       }
       await recordFailure(reason);
+      await recordUsage(false, res, errorName);
       return false;
     }
     await clearFailure();
+    await recordUsage(true, res);
     return true;
   } catch (err) {
     console.error(`[email] send threw → ${msg.to}:`, err);
