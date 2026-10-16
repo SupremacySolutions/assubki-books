@@ -1,5 +1,7 @@
 /**
- * Releases stock from order requests the owner never acted on.
+ * The shop's quarter-hourly sweep. Its name is older than what it does: it
+ * no longer releases stock from anything - holds and reservations that run out
+ * are flagged for the owner, who decides.
  *
  * A request holds its copies for 48 hours so payment can be arranged over
  * Telegram without someone else taking the same book. If nothing happens in
@@ -15,7 +17,7 @@
  * catalogue's *displayed* availability honest between orders.
  */
 
-import { expireOrders, flagLapsedHolds } from '../../src/lib/stock-release';
+import { flagLapsedHolds, flagLapsedReservations } from '../../src/lib/stock-release';
 import { pruneSearches } from '../../src/lib/searches';
 import { pruneAlerts, drainStockAlerts } from '../../src/lib/stock-alerts';
 import { purgeDeletedBooks } from '../../src/lib/book-deletion';
@@ -48,30 +50,22 @@ export async function markLapsedHolds(db: D1Database): Promise<number> {
 }
 
 /**
- * Reservations that were never answered after the books landed.
+ * Reservations that were never answered after the books landed - flagged for
+ * the owner, never cancelled.
  *
- * Keyed on `pay_by` and never on `expires_at`, which matters more than it
- * looks. `confirm.ts` does not clear `expires_at`, so every order sitting in
- * awaiting_payment still carries the stale forty-eight hour value it was
- * created with, long in the past - sweeping that column across both statuses
- * would expire every live confirmed order in the shop the first time this ran.
- * `pay_by` is set only when a delivery lands, so nothing that predates
- * shipments carries one.
+ * Named `expireUnpaidReservations` until 16 October, when it still released
+ * the copies and closed the order. That closed two confirmed orders on 13
+ * October with payment details already sent. It now does what the shelf holds
+ * do: marks the order so the portal puts it in front of the owner, who gives
+ * them another week or cancels.
  *
- * `requested` and `awaiting_payment` both, because the clock starts when the
- * box arrives and the owner may not have sent a total yet. The claim has
- * already been converted to an ordinary hold by then, so releasing it returns
- * the copies to the shelf and writes the ledger row - which is the point: the
- * whole reason for the deadline is that the copies become sellable again.
- *
- * The `NOT EXISTS` is a guard rather than a nicety. An order that has since
- * acquired a fresh claim on a later delivery is waiting again, and must not be
- * released for not answering about the last one.
+ * Still keyed on `pay_by` and never `expires_at` - `confirm.ts` leaves the
+ * stale forty-eight hour value on every confirmed order - and still skips an
+ * order with a fresh claim on a later delivery or an arrival notice nobody
+ * managed to send. See `RESERVATION_DUE`.
  */
-export async function expireUnpaidReservations(
-  db: D1Database,
-): Promise<{ orders: number; copies: number }> {
-  return expireOrders(db);
+export async function flagUnpaidReservations(db: D1Database): Promise<number> {
+  return flagLapsedReservations(db);
 }
 
 /**
@@ -198,7 +192,7 @@ export async function sweepProofs(
  * silently, until the next quarter hour - and then threw again. That is the
  * worst possible failure for the two that matter most. A customer whose books
  * have landed is told by `drainArrivalNotices`, and a reservation that nobody
- * answered is released by `expireUnpaidReservations`; both sit behind other
+ * answered is flagged by `flagUnpaidReservations`; both sit behind other
  * work that has nothing to do with either.
  *
  * So a stage that fails is logged loudly and the rest still run. It does not
@@ -219,12 +213,10 @@ export default {
     const lapsed = await stage('flag lapsed holds', () => markLapsedHolds(env.DB));
     if (lapsed) console.log(`${lapsed} hold(s) ran out and are waiting on the owner`);
 
-    const unpaid = await stage('expire unpaid reservations', () =>
-      expireUnpaidReservations(env.DB),
+    const unpaid = await stage('flag unanswered reservations', () =>
+      flagUnpaidReservations(env.DB),
     );
-    if (unpaid?.orders) {
-      console.log(`released ${unpaid.copies} cop(ies) from ${unpaid.orders} unanswered reservation(s)`);
-    }
+    if (unpaid) console.log(`${unpaid} reservation(s) ran out and are waiting on the owner`);
 
     /*
      * Telling people their shipment landed, a few at a time.
@@ -381,7 +373,7 @@ export default {
      * other writes to customers.
      */
     const lapsed = await markLapsedHolds(env.DB);
-    const unpaid = await expireUnpaidReservations(env.DB);
+    const unpaid = await flagUnpaidReservations(env.DB);
     const told = await drainArrivalNotices(env.DB, SITE.url);
     const alerts = await drainStockAlerts(env.DB, SITE.url);
     const channel = await syncChannelStock(null, SITE.url, env.DB);

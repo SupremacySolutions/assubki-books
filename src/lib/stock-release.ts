@@ -79,10 +79,8 @@ export function releaseHold(
  * order is an obvious thing rather than a quiet one, which is what
  * `lapsedOrders` and the banner on the order page are for.
  *
- * Reservations are untouched by this and still expire on their own - see
- * `expireOrders` below. Their deadline is a promise to the next person in the
- * queue for a book that has just landed, not a guess at how long the owner
- * needs to answer an email.
+ * Reservations follow the same rule since 16 October - see
+ * `flagLapsedReservations` below.
  */
 export async function flagLapsedHolds(db: D1Database): Promise<number> {
   const { results } = await db
@@ -96,33 +94,32 @@ export async function flagLapsedHolds(db: D1Database): Promise<number> {
 }
 
 /**
- * One bounded, atomic sweep; future runs pick up the next page.
+ * Reservations whose week to reply has run out, marked rather than cancelled.
  *
- * Reservations only. It took a `reservation` flag while shelf holds ended the
- * same way, and the flag is gone rather than defaulted: the false branch would
- * have been "expire every unpaid order", with the deadline check living in the
- * caller's choice of guard rather than in the query. That is a footgun aimed at
- * the whole order table, and there is no longer any caller who wants it.
+ * This used to cancel them: release the copies, set `status='expired'`, done -
+ * and on 13 October it closed two orders the owner had confirmed a week
+ * earlier, with payment details already sent. Shelf holds stopped working that
+ * way after an order was swept out from under a conversation; reservations
+ * kept the old behaviour because their deadline was thought of as a promise to
+ * the next person in the queue. In practice the owner is the one who knows
+ * whether somebody is about to pay, and a sweep cannot.
+ *
+ * So it is the same rule as `flagLapsedHolds`: the deadline still passes and
+ * the owner is told, and the order keeps its status, its lines and **its held
+ * copies** until a person gives them another week or cancels.
+ *
+ * `lapsed_at IS NULL` makes it idempotent, as for holds. Bounded at a hundred
+ * a run like every other sweep; the next run takes the rest.
  */
-export async function expireOrders(
-  db: D1Database,
-): Promise<{ orders: number; copies: number }> {
-  const guard = RESERVATION_DUE;
+export const RESERVATION_LAPSED = `${RESERVATION_DUE} AND o.lapsed_at IS NULL`;
+
+export async function flagLapsedReservations(db: D1Database): Promise<number> {
   const { results } = await db
-    .prepare(`SELECT o.id FROM orders o WHERE ${guard} ORDER BY o.id LIMIT 100`)
+    .prepare(
+      `UPDATE orders SET lapsed_at=unixepoch(), updated_at=unixepoch()
+        WHERE id IN (SELECT o.id FROM orders o WHERE ${RESERVATION_LAPSED} ORDER BY o.id LIMIT 100)
+        RETURNING id`,
+    )
     .all<{ id: number }>();
-  if (!results.length) return { orders: 0, copies: 0 };
-  const ids = results.map((r) => r.id);
-  const done = await db.batch([
-    ...releaseOrders(ids, 'reservation not paid', db, guard),
-    db
-      .prepare(
-        `UPDATE orders SET status='expired',updated_at=unixepoch()
-      WHERE orders.id IN (SELECT value FROM json_each(?)) AND (${guard.replaceAll('o.', 'orders.')}) RETURNING id,
-      (SELECT COALESCE(SUM(qty),0) FROM order_items WHERE order_id=orders.id) AS copies`,
-      )
-      .bind(JSON.stringify(ids)),
-  ]);
-  const expired = done[3].results as { id: number; copies: number }[];
-  return { orders: expired.length, copies: expired.reduce((n, r) => n + r.copies, 0) };
+  return results.length;
 }

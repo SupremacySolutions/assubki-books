@@ -54,7 +54,7 @@ async function tellByEmail(notice: QueuedNotice, origin: string): Promise<boolea
        have arrived, and your copies are set aside in your name.</p>
     <p>See your order for the latest total and payment instructions. ${
       by
-        ? `Please let us know by <strong>${escapeHtml(by)}</strong> - after that the copies go back on the shelf and the reservation is cancelled.`
+        ? `Please let us know by <strong>${escapeHtml(by)}</strong> so we can keep them for you.`
         : 'Please let us know within seven days.'
     }</p>
     <p>If you need longer, or would rather not go ahead, just reply and tell us.</p>
@@ -87,7 +87,7 @@ async function tellByTelegram(notice: QueuedNotice, origin: string): Promise<boo
       '',
       esc(
         by
-          ? `See your order for payment details. Please let us know by ${by} - after that the copies go back on the shelf.`
+          ? `See your order for payment details. Please let us know by ${by} so we can keep them for you.`
           : 'See your order for payment details. Please let us know within seven days.',
       ),
       '',

@@ -6333,6 +6333,50 @@ async function shipments() {
     'an unanswered reservation is what the sweep selects once its week is up');
 
   /*
+   * And the sweep flags it - it does not close it.
+   *
+   * It used to release the copies and set the order to `expired`. On 13
+   * October that closed two orders the owner had confirmed a week earlier,
+   * with payment details already sent. Reservations now follow the shelf
+   * holds: the week still runs out and the owner is told, but the order keeps
+   * its status and its copies until a person gives them another week or
+   * cancels. This runs the real sweep, through checkout, rather than asserting
+   * what a query would select.
+   */
+  const lapseBefore = await one(
+    `SELECT o.status, COALESCE(SUM(b.reserved),0) AS held FROM orders o
+       JOIN order_items i ON i.order_id=o.id JOIN books b ON b.id=i.book_id
+      WHERE o.id=${order.id}`);
+  const unsentNotices = await db(
+    `SELECT id FROM shipment_notices WHERE order_id=${order.id} AND sent_at IS NULL`);
+  await db(`UPDATE shipment_notices SET sent_at=unixepoch() WHERE order_id=${order.id} AND sent_at IS NULL`);
+  const sweepTrigger = await makeBook({ stock: '1' });
+  await placeOrder(sweepTrigger.id, 'collection'); // checkout runs the sweep first
+  const lapseAfter = await one(
+    `SELECT o.status, o.lapsed_at, COALESCE(SUM(b.reserved),0) AS held FROM orders o
+       JOIN order_items i ON i.order_id=o.id JOIN books b ON b.id=i.book_id
+      WHERE o.id=${order.id}`);
+  t.ok(lapseAfter.lapsed_at !== null, 'a reservation whose week is up is flagged for the owner');
+  t.ok(lapseAfter.status === lapseBefore.status && lapseAfter.status !== 'expired',
+    `and keeps its status rather than being closed (${lapseAfter.status})`);
+  t.ok(lapseAfter.held === lapseBefore.held,
+    'and its copies stay held until a person decides otherwise');
+  const nothingReleased = await one(
+    `SELECT COUNT(*) AS n FROM stock_ledger WHERE order_id=${order.id} AND reason='reservation not paid'`);
+  t.ok(nothingReleased.n === 0, 'the sweep writes no release to the ledger');
+  t.ok(/past the week to reply/.test(visibleText(await html('/admin'))),
+    'the dashboard warns about it');
+  t.ok(/week to reply ran out/.test(visibleText(await html('/admin/orders?kind=reservations'))),
+    'and so does the reservations list');
+  const lapsedPage = visibleText(await html(`/admin/orders/${first.ref}`));
+  t.ok(lapsedPage.includes('Nothing has been cancelled') && lapsedPage.includes('Give them another week'),
+    'and the order page says nothing was cancelled, with the week on offer');
+  if (unsentNotices.length) {
+    await db(`UPDATE shipment_notices SET sent_at=NULL
+               WHERE id IN (${unsentNotices.map((r) => r.id).join(',')})`);
+  }
+
+  /*
    * Another week.
    *
    * Without it the owner's only answer to "can I have a few more days" is to

@@ -272,7 +272,7 @@ const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1f
       else if (short > 0) lines.push(`${plural(short, 'title', 'titles')} came up short`);
       if (filled > 0)
         lines.push(
-          'customers whose books are all here get seven days to reply before their copies go back on the shelf',
+          'customers whose books are all here get seven days to reply - anyone who has not is flagged for you, never cancelled',
         );
       body.textContent = lines.length
         ? `${lines.join('; ')}.`

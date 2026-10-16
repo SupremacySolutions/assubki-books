@@ -188,7 +188,8 @@ function facts(o: (typeof orders)[number]): string[] {
         <ul class="space-y-2.5">
           {queue.map((o) => {
             const waited = hours(o.created_at);
-            const isLapsed = o.status === 'requested' && o.lapsed_at !== null;
+            const isLapsed =
+              ['requested', 'awaiting_payment'].includes(o.status) && o.lapsed_at !== null;
             const left = o.status === 'requested' && !isLapsed ? until(o.expires_at) : null;
             return (
               <li class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden hover:border-[var(--color-navy)] transition-colors">
@@ -244,7 +245,7 @@ function facts(o: (typeof orders)[number]): string[] {
                           still holding its copies until somebody says otherwise. */}
                       {isLapsed && (
                         <p class="text-[13px] font-medium text-[var(--color-outstock)]">
-                          hold ran out
+                          {o.pay_by ? 'week to reply ran out' : 'hold ran out'}
                         </p>
                       )}
                     </div>

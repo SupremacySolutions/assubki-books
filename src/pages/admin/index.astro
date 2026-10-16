@@ -210,13 +210,22 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       href="/admin/orders?kind=reservations"
       class:list={[
         'block bg-white border rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors',
-        d.reservationsToConfirm > 0
-          ? 'border-[var(--color-navy)] border-l-[3px]'
-          : 'border-[var(--color-rule)]',
+        d.reservationsLapsed > 0
+          ? 'border-[var(--color-outstock)] border-l-[3px]'
+          : d.reservationsToConfirm > 0
+            ? 'border-[var(--color-navy)] border-l-[3px]'
+            : 'border-[var(--color-rule)]',
       ]}
     >
       <p class="eyebrow">Reservations</p>
       <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.reservations}</p>
+      {/* Overdue and still holding copies, so it gets its own line - the same
+          treatment the 48-hour holds get in the tile beside it. */}
+      {d.reservationsLapsed > 0 && (
+        <p class="mt-1.5 text-[12.5px] font-medium text-[var(--color-outstock)]">
+          {d.reservationsLapsed} past the week to reply
+        </p>
+      )}
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
         {d.reservations === 0
           ? 'none waiting on a delivery'
