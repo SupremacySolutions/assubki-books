@@ -373,7 +373,20 @@ export const POST: APIRoute = async ({ request }) => {
       return new Response('ok');
     }
 
-    await postMessage({ orderId: bound.id, sender: 'customer', via: 'telegram', body });
+    /*
+     * Nothing saved means nothing to tell the owner about. The cap is enforced
+     * again inside the insert, so a burst that got past the check above can
+     * still be declined there - and a notification for it would send the owner
+     * to a thread with no such message in it.
+     */
+    const saved = await postMessage({ orderId: bound.id, sender: 'customer', via: 'telegram', body });
+    if (saved === null) {
+      await sendMessage(
+        chat,
+        esc('That is a lot of messages at once. Please give the shop a moment to catch up.'),
+      );
+      return new Response('ok');
+    }
     await notifyNewMessage({
       orderId: bound.id,
       ref: bound.ref,

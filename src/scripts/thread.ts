@@ -81,8 +81,24 @@ if (root) {
     return id;
   };
 
+  /*
+   * How far the *server* has brought this page, which is not the same thing as
+   * the newest message on it.
+   *
+   * A message this page sends is drawn straight from the send's own reply, and
+   * it can be newer than one from the other side that the poll has not fetched
+   * yet. Asking from the newest id on the page then skipped that one: the
+   * owner answers, the customer sends something of their own before the next
+   * poll, and the owner's answer stayed invisible - and unread - until a
+   * reload. So the cursor moves only on what the page was given by the server,
+   * on render or by the poll, and a send never moves it. The overlap that
+   * leaves is the page's own message coming back once, which `append`
+   * already ignores.
+   */
+  let cursor = newest();
+
   /** The poll address with its cursor, whichever side's route it is. */
-  const asked = () => `${pollUrl}${pollUrl!.includes('?') ? '&' : '?'}since=${newest()}`;
+  const asked = () => `${pollUrl}${pollUrl!.includes('?') ? '&' : '?'}since=${cursor}`;
 
   const check = async () => {
     if (checking || document.visibilityState !== 'visible') return;
@@ -99,7 +115,10 @@ if (root) {
         return;
       }
       if (Array.isArray(data.messages) && data.messages.length) {
-        for (const message of data.messages) append(message);
+        for (const message of data.messages) {
+          append(message);
+          cursor = Math.max(cursor, message.id);
+        }
       }
     } catch {
       /* offline or blocked: leave the page exactly as it is */

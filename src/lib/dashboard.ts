@@ -65,6 +65,20 @@ export interface Dashboard {
    * object's minute of cache.
    */
   requests: number;
+  /**
+   * Customers waiting on an answer.
+   *
+   * The owner hears about each message on Telegram or by email, but a
+   * notification read on a phone and forgotten left nothing on the page they
+   * open every day - the only other sign was a badge in the orders list, on
+   * whichever half and tab the order happened to sit in. `newest` is where the
+   * tile goes, so one tap lands on the conversation rather than on a list.
+   */
+  unread: {
+    messages: number;
+    orders: number;
+    newest: { ref: string; name: string } | null;
+  };
   /** The catalogue worklist - listings missing something. */
   backlog: {
     noImage: number; thinImage: number; noDescription: number; noCategory: number;
@@ -80,7 +94,7 @@ async function read(days: number): Promise<Dashboard> {
   const from = now - days * DAY;
   const previousFrom = from - days * DAY;
 
-  const [waiting, reserved, money, daily, splits, best, low, repeat, shelves, work, misses, requests] =
+  const [waiting, reserved, money, daily, splits, best, low, repeat, shelves, work, misses, requests, unread] =
     await env.DB.batch([
     /*
      * Everything the owner might need to act on, counted in one pass.
@@ -223,6 +237,17 @@ async function read(days: number): Promise<Dashboard> {
     // costs no extra round trip and inherits the 60-second cache.
     missesQuery(days),
     requestCountQuery(),
+    /*
+     * Every order, both halves and every status: a message is unanswered
+     * whichever tab its order is on, and one that came in before an order
+     * closed is still somebody who was not answered. The newest first, so the
+     * tile opens whoever wrote last.
+     */
+    env.DB.prepare(
+      `SELECT ref, customer_name AS name, unread_for_owner AS n
+         FROM orders WHERE unread_for_owner > 0
+        ORDER BY last_message_at DESC, id DESC`,
+    ),
   ]);
 
   const w = (waiting.results[0] ?? {}) as Record<string, number | null>;
@@ -282,6 +307,14 @@ async function read(days: number): Promise<Dashboard> {
       return { terms: String(row.terms), times: Number(row.times), lastAt: Number(row.lastAt) };
     }),
     requests: Number((requests.results[0] as { n?: number } | undefined)?.n ?? 0),
+    unread: (() => {
+      const rows = unread.results as { ref: string; name: string; n: number }[];
+      return {
+        messages: rows.reduce((sum, r) => sum + Number(r.n), 0),
+        orders: rows.length,
+        newest: rows[0] ? { ref: String(rows[0].ref), name: String(rows[0].name) } : null,
+      };
+    })(),
     byShelf: shelves.results.map((r) => {
       const row = r as Record<string, unknown>;
       return { name: String(row.name), pence: Number(row.pence) };
