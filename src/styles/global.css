@@ -182,10 +182,27 @@
     border-radius: var(--radius-pill);
     border: 1px solid transparent;
     cursor: pointer;
-    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    /* Taps are taps: no grey flash over the pill, and no wait while the
+       browser decides whether a second tap is coming to zoom. */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      box-shadow 0.22s ease,
+      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .btn:active {
     transform: translateY(1px) scale(0.985);
+    transition-duration: 0.06s;
+  }
+  /* A button that is working - a form posting, a file uploading - says so with
+     the cursor and stops answering, rather than inviting a second press. */
+  .btn[aria-busy='true'] {
+    cursor: progress;
+    opacity: 0.75;
+    pointer-events: none;
   }
 
   .page-transition {
@@ -244,7 +261,27 @@
     background: var(--color-navy);
     color: #fff;
   }
-  .btn-primary:hover { background: var(--color-navy-hover); }
+  /* The lift is for a pointer that hovers. On a touchscreen :hover sticks
+     after the tap, and a button left floating above the page looks pressed
+     and unreleased. */
+  @media (hover: hover) {
+    .btn-primary:hover:not(:disabled) {
+      background: var(--color-navy-hover);
+      box-shadow: 0 6px 16px -8px rgb(24 68 133 / 0.65);
+      transform: translateY(-1px);
+    }
+    .btn-ghost:hover {
+      box-shadow: 0 4px 12px -8px rgb(16 24 40 / 0.35);
+      transform: translateY(-1px);
+    }
+    /* Pressing has to win over the lift, or the button floats under the
+       click instead of going down. */
+    .btn-primary:hover:active,
+    .btn-ghost:hover:active {
+      transform: translateY(1px) scale(0.985);
+      box-shadow: none;
+    }
+  }
   .btn-primary:disabled {
     background: var(--color-rule);
     color: var(--color-ink-faint);
@@ -281,7 +318,19 @@
     border-color: var(--color-outstock);
   }
 
-  .field:focus { border-color: var(--color-navy); outline-offset: 0; }
+  .field {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  @media (hover: hover) {
+    .field:hover:not(:focus):not([aria-invalid='true']) { border-color: #c9c4b9; }
+  }
+  /* A soft ring as well as the border, so the box being typed in is found at
+     a glance on a form of a dozen. */
+  .field:focus {
+    border-color: var(--color-navy);
+    outline-offset: 0;
+    box-shadow: 0 0 0 3px rgb(24 68 133 / 0.12);
+  }
 
   /*
    * Safari on iOS zooms the whole page in when you focus a control whose text
@@ -504,7 +553,67 @@
     background: var(--color-rule);
   }
 
+  /*
+   * A panel that is one big link - the dashboard tiles, an order row - rises
+   * a little under the pointer, so it reads as something to press rather than
+   * a box of figures. Hover-capable pointers only, for the same reason as the
+   * buttons.
+   */
+  .lift {
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.25s ease,
+      transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (hover: hover) {
+    .lift:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px -14px rgb(16 24 40 / 0.3);
+    }
+  }
+  .lift:active {
+    transform: scale(0.99);
+    transition-duration: 0.06s;
+  }
+
+  /*
+   * A row of tabs that scrolls sideways on a phone.
+   *
+   * Clipped mid-word at the edge, the last tab looked like a rendering fault,
+   * and nothing said the row moved. The edge that has more beyond it fades,
+   * and only that edge: scripts/scroll-hint.ts sets the two attributes from
+   * the scroll position, and without it neither edge fades - the row is just
+   * a row.
+   */
+  .scroll-hint {
+    --fade-l: 0px;
+    --fade-r: 0px;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
+    scrollbar-width: none;
+  }
+  .scroll-hint::-webkit-scrollbar { display: none; }
+  .scroll-hint[data-more-left] { --fade-l: 28px; }
+  .scroll-hint[data-more-right] { --fade-r: 28px; }
+
+  /* The order's progress bars draw in from the left, one after another, so
+     the strip reads as how far the order has come rather than as five
+     coloured lines. Done once on arrival; nothing loops. */
+  .journey-fill {
+    transform-origin: left;
+    animation: journey-fill 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(0.15s + var(--step, 0) * 0.09s);
+  }
+  @keyframes journey-fill {
+    from { transform: scaleX(0); }
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .journey-fill { animation: none; }
+    .lift,
+    .lift:hover,
+    .lift:active { transform: none; transition: none; }
     .js .reveal,
     .js .reveal.is-visible {
       opacity: 1;

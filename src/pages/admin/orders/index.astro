@@ -124,7 +124,7 @@ function facts(o: (typeof orders)[number]): string[] {
     <a
       href="/admin/orders"
       class:list={[
-        'px-3.5 py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors',
+        'px-3.5 py-2 sm:py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors duration-200',
         kind === 'shop'
           ? 'bg-[var(--color-ink)] text-white border-[var(--color-ink)]'
           : 'bg-white border-[var(--color-rule-soft)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
@@ -133,7 +133,7 @@ function facts(o: (typeof orders)[number]): string[] {
     <a
       href="/admin/orders?kind=reservations"
       class:list={[
-        'px-3.5 py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors',
+        'px-3.5 py-2 sm:py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors duration-200',
         kind === 'reservation'
           ? 'bg-[var(--color-ink)] text-white border-[var(--color-ink)]'
           : 'bg-white border-[var(--color-rule-soft)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
@@ -147,7 +147,7 @@ function facts(o: (typeof orders)[number]): string[] {
         <a
           href={`/admin/orders${keep({ status: tab.key })}`}
           class:list={[
-            'px-3.5 py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors',
+            'px-3.5 py-2 sm:py-1.5 rounded-[var(--radius-pill)] text-[13.5px] border transition-colors duration-200',
             status === tab.key || (!status && !tab.key)
               ? 'bg-[var(--color-navy)] text-white border-[var(--color-navy)]'
               : 'bg-white border-[var(--color-rule-soft)] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)]',
@@ -192,14 +192,21 @@ function facts(o: (typeof orders)[number]): string[] {
               ['requested', 'awaiting_payment'].includes(o.status) && o.lapsed_at !== null;
             const left = o.status === 'requested' && !isLapsed ? until(o.expires_at) : null;
             return (
-              <li class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden hover:border-[var(--color-navy)] transition-colors">
+              <li class="lift bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden hover:border-[var(--color-navy)]">
                 {/* The whole bar is the link. It used to be a card with one
                     small button in the corner, so the obvious thing to click
                     did nothing - and the settled list below was already a
                     single anchor, so the page taught two different rules. */}
-                <a href={`/admin/orders/${o.ref}`} class="flex hover:bg-[var(--color-paper)]">
+                <a href={`/admin/orders/${o.ref}`} class="group flex hover:bg-[var(--color-paper)] transition-colors">
                   <span class:list={['w-1.5 shrink-0', spineFor(o)]} aria-hidden="true" />
-                  <div class="flex-1 min-w-0 flex flex-wrap items-center gap-x-5 gap-y-2 p-4">
+                  {/*
+                    * Two rows on a phone - who and how much, then how long and
+                    * what to do - and one row from md up. On a phone the flex row
+                    * wrapped wherever it ran out, which left the price floating
+                    * mid-card and the action on a line of its own. The grid
+                    * placements are ignored once the container is flex again.
+                    */}
+                  <div class="flex-1 min-w-0 grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 p-4 md:flex md:flex-wrap md:gap-x-5">
                     <div class="min-w-0 flex-1 basis-[15rem]">
                       <p class="text-[15.5px] font-medium truncate">
                         {o.customer_name}
@@ -231,8 +238,8 @@ function facts(o: (typeof orders)[number]): string[] {
                       </p>
                     </div>
 
-                    <div class="text-right shrink-0">
-                      <p class="eyebrow !text-[10px]">Waiting {waited}h</p>
+                    <div class="row-start-2 col-start-1 md:text-right shrink-0">
+                      <p class="eyebrow !text-[10px]">{waited < 1 ? 'Just in' : `Waiting ${waited}h`}</p>
                       {left !== null && (
                         <p class:list={[
                           'text-[13px] tabular-nums',
@@ -250,7 +257,7 @@ function facts(o: (typeof orders)[number]): string[] {
                       )}
                     </div>
 
-                    <span class="price text-[16px] shrink-0 w-[5.5rem] text-right">
+                    <span class="row-start-1 col-start-2 price text-[16px] shrink-0 md:w-[5.5rem] text-right">
                       {price(o.total_pence ?? o.subtotal_pence)}
                     </span>
 
@@ -258,7 +265,7 @@ function facts(o: (typeof orders)[number]): string[] {
                         button inside a link is not a button anyone can use. */}
                     <span
                       class:list={[
-                        'shrink-0 text-[14px] font-medium w-[4.5rem] text-right',
+                        'row-start-2 col-start-2 shrink-0 text-[14px] font-medium md:w-[4.5rem] text-right transition-transform duration-200 group-hover:translate-x-0.5',
                         o.status === 'requested' ? 'text-[var(--color-navy)]' : 'text-[var(--color-ink-faint)]',
                       ]}
                     >
@@ -277,10 +284,10 @@ function facts(o: (typeof orders)[number]): string[] {
           <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold mb-3">
             Settled and closed
           </h2>
-          <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
+          <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)] overflow-hidden">
             {settled.map((o) => (
               <li>
-                <a href={`/admin/orders/${o.ref}`} class="flex items-center gap-4 px-4 py-3 hover:bg-[var(--color-paper)]">
+                <a href={`/admin/orders/${o.ref}`} class="flex items-center gap-3 sm:gap-4 px-4 py-3 hover:bg-[var(--color-paper)] transition-colors">
                   <div class="min-w-0 flex-1">
                     <p class="text-[14.5px] font-medium truncate">
                       {o.customer_name}

@@ -999,7 +999,9 @@ if (offerTelegram && telegramLink) {
               should not be pushed onto a web page. Below the thread rather
               than beside it, so the box on the page is the obvious first move
               and this is the alternative for people who prefer it. */}
-          <div class="mt-4 flex flex-wrap items-start gap-3">
+          {/* Centred under the centred paragraph above them; flush left they
+              looked dropped from somewhere else on a phone. */}
+          <div class="mt-4 flex flex-wrap items-start justify-center gap-3">
             <MessageUs subject={`Order ${order.ref}`} />
             <a href="/catalogue" class="btn btn-ghost">Keep browsing</a>
           </div>

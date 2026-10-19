@@ -279,8 +279,10 @@ const carrier =
           return (
             <li>
               <span
+                style={`--step: ${i}`}
                 class:list={[
                   'block h-1 rounded-full',
+                  (step.done || isCurrent) && 'journey-fill',
                   step.done
                     ? 'bg-[var(--color-instock)]'
                     : isCurrent

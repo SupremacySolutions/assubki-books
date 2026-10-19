@@ -79,21 +79,21 @@ const isCatalogue = path.startsWith('/catalogue');
         <a
           href="/about"
           class:list={[
-            'hidden sm:block px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)]',
+            'hidden sm:block px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] transition-colors',
             path === '/about' ? 'text-[var(--color-navy)] font-medium' : 'text-[var(--color-ink-soft)]',
           ]}>About</a
         >
         <a
           href="/catalogue"
           class:list={[
-            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)]',
+            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] transition-colors',
             isCatalogue ? 'text-[var(--color-navy)] font-medium' : 'text-[var(--color-ink-soft)]',
           ]}>Catalogue</a
         >
         <a
           href="/shipments"
           class:list={[
-            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)]',
+            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] transition-colors',
             path.startsWith('/shipments')
               ? 'text-[var(--color-navy)] font-medium'
               : 'text-[var(--color-ink-soft)]',
@@ -102,7 +102,7 @@ const isCatalogue = path.startsWith('/catalogue');
         <a
           href="/preorders"
           class:list={[
-            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] whitespace-nowrap',
+            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] transition-colors whitespace-nowrap',
             path.startsWith('/preorders')
               ? 'text-[var(--color-navy)] font-medium'
               : 'text-[var(--color-ink-soft)]',
@@ -111,7 +111,7 @@ const isCatalogue = path.startsWith('/catalogue');
         <a
           href="/order"
           class:list={[
-            'hidden lg:block px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] whitespace-nowrap',
+            'hidden lg:block px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] transition-colors whitespace-nowrap',
             path.startsWith('/order') ? 'text-[var(--color-navy)] font-medium' : 'text-[var(--color-ink-soft)]',
           ]}>Look up order</a
         >
@@ -135,11 +135,11 @@ const isCatalogue = path.startsWith('/catalogue');
       </nav>
     </div>
 
-    <nav class="-mx-5 flex items-center gap-1 overflow-x-auto border-t border-[var(--color-rule-soft)] px-5 py-2 md:hidden" aria-label="Mobile">
+    <nav class="scroll-hint -mx-5 flex items-center gap-1 overflow-x-auto overscroll-x-contain border-t border-[var(--color-rule-soft)] px-5 py-2 md:hidden" aria-label="Mobile">
       <a
         href="/about"
         class:list={[
-          'shrink-0 rounded-sm px-3 py-2 text-[14px]',
+          'shrink-0 rounded-[var(--radius-pill)] px-3.5 py-2 text-[14px] transition-colors duration-200',
           path === '/about'
             ? 'bg-[var(--color-navy)] text-white'
             : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',
@@ -148,7 +148,7 @@ const isCatalogue = path.startsWith('/catalogue');
       <a
         href="/catalogue"
         class:list={[
-          'shrink-0 rounded-sm px-3 py-2 text-[14px]',
+          'shrink-0 rounded-[var(--radius-pill)] px-3.5 py-2 text-[14px] transition-colors duration-200',
           isCatalogue
             ? 'bg-[var(--color-navy)] text-white'
             : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',
@@ -157,7 +157,7 @@ const isCatalogue = path.startsWith('/catalogue');
       <a
         href="/shipments"
         class:list={[
-          'shrink-0 rounded-sm px-3 py-2 text-[14px]',
+          'shrink-0 rounded-[var(--radius-pill)] px-3.5 py-2 text-[14px] transition-colors duration-200',
           path.startsWith('/shipments')
             ? 'bg-[var(--color-navy)] text-white'
             : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',
@@ -166,7 +166,7 @@ const isCatalogue = path.startsWith('/catalogue');
       <a
         href="/preorders"
         class:list={[
-          'shrink-0 rounded-sm px-3 py-2 text-[14px]',
+          'shrink-0 rounded-[var(--radius-pill)] px-3.5 py-2 text-[14px] transition-colors duration-200',
           path.startsWith('/preorders')
             ? 'bg-[var(--color-navy)] text-white'
             : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',
@@ -175,7 +175,7 @@ const isCatalogue = path.startsWith('/catalogue');
       <a
         href="/order"
         class:list={[
-          'shrink-0 rounded-sm px-3 py-2 text-[14px]',
+          'shrink-0 rounded-[var(--radius-pill)] px-3.5 py-2 text-[14px] transition-colors duration-200',
           path.startsWith('/order')
             ? 'bg-[var(--color-navy)] text-white'
             : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-wash-soft)]',

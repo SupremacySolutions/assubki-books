@@ -35,7 +35,7 @@ const { id, title, class: extraClass = '' } = Astro.props;
       type="button"
       data-dialog-close
       aria-label="Close"
-      class="shrink-0 -mt-1 -mr-1 p-1.5 text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] cursor-pointer"
+      class="shrink-0 -mt-2 -mr-2.5 p-2.5 rounded-full text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-wash-soft)] transition-colors cursor-pointer"
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M18 6 6 18M6 6l12 12" />
@@ -68,8 +68,54 @@ const { id, title, class: extraClass = '' } = Astro.props;
       transform: translateY(6px);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
+  /*
+   * On a phone, a sheet from the bottom edge.
+   *
+   * A box floating mid-screen put its buttons at the height of the address
+   * bar, out of thumb's reach, and the page shrank around it to a strip. A
+   * sheet keeps the actions under the thumb and reads as "this sits over the
+   * page", which is what it is. The grab bar is decoration; tapping the dim
+   * page above or pressing Close still puts it away.
+   */
+  @media (max-width: 639px) {
+    .asb-dialog {
+      width: 100%;
+      max-width: 100%;
+      margin: auto 0 0;
+      max-height: calc(100dvh - 3rem);
+      border-radius: 16px 16px 0 0;
+      border-bottom: 0;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .asb-dialog::before {
+      content: '';
+      display: block;
+      width: 36px;
+      height: 4px;
+      margin: 8px auto 0;
+      border-radius: 999px;
+      background: var(--color-rule);
+    }
     .asb-dialog[open] {
+      animation: asb-sheet-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+  }
+  @keyframes asb-sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  .asb-dialog[open]::backdrop {
+    animation: asb-backdrop-in 0.2s ease-out;
+  }
+  @keyframes asb-backdrop-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .asb-dialog[open],
+    .asb-dialog[open]::backdrop {
       animation: none;
     }
   }
