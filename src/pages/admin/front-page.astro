@@ -1,0 +1,339 @@
+---
+import Admin from '../../layouts/Admin.astro';
+import { getSetting } from '../../lib/settings';
+import { shelfTree } from '../../lib/shelves';
+import { FIXED_SECTIONS, parseLayout, shelfIdOf } from '../../lib/home-layout';
+
+/*
+ * Read straight from the database rather than through the front page's cache:
+ * the owner should see exactly what they saved, and this page is opened a few
+ * times a month.
+ */
+const [raw, tree] = await Promise.all([getSetting('home_layout'), shelfTree()]);
+
+// Each top-level shelf followed by its own children, as on the Shelves page.
+const shelves: { id: number; name: string; path: string; total: number; child: boolean }[] = [];
+for (const top of tree) {
+  shelves.push({ id: top.id, name: top.name, path: top.path, total: top.total_books, child: false });
+  for (const c of top.children) {
+    shelves.push({ id: c.id, name: c.name, path: c.path, total: c.total_books, child: true });
+  }
+}
+const shelfById = new Map(shelves.map((s) => [s.id, s]));
+
+const layout = parseLayout(raw || null, shelves).map((section) => {
+  const fixed = FIXED_SECTIONS.find((f) => f.id === section.id);
+  if (fixed) return { ...section, label: fixed.label, about: fixed.about, isShelf: false };
+  const shelf = shelfById.get(shelfIdOf(section.id)!)!;
+  return {
+    ...section,
+    label: shelf.name,
+    about: `A row of covers from this shelf · ${shelf.total} ${shelf.total === 1 ? 'title' : 'titles'}`,
+    isShelf: true,
+  };
+});
+const onPage = new Set(layout.map((s) => s.id));
+const addable = shelves.filter((s) => !onPage.has(`shelf:${s.id}`));
+
+const saved = Astro.url.searchParams.get('saved');
+const SAVED: Record<string, string> = {
+  '1': 'Front page saved. Customers see the new order straight away.',
+  added: 'Shelf row added at the bottom. Move it into place, then save.',
+  removed: 'Shelf row removed from the front page. The shelf itself is untouched.',
+};
+---
+
+<Admin title="Front page" sub="What customers see under the search box, and in what order">
+  {
+    saved && (
+      <p
+        class="mb-5 p-3 bg-[var(--color-instock)]/10 border border-[var(--color-instock)]/30 rounded-[var(--radius-field)] text-[14.5px] text-[var(--color-instock)]"
+        role="status"
+      >
+        {SAVED[saved] ?? SAVED['1']}
+      </p>
+    )
+  }
+
+  <p class="mb-6 text-[14.5px] text-[var(--color-ink-soft)] max-w-2xl leading-relaxed">
+    Drag a section by its handle, or use the arrows, to change the order. Untick one to hide it
+    without losing its place. A section with nothing in it - no shipment on the way, an empty
+    shelf - hides itself.{' '}
+    <a href="/" target="_blank" rel="noopener" class="text-[var(--color-navy)] underline underline-offset-2">
+      View the front page
+    </a>
+  </p>
+
+  <form method="post" action="/api/admin/front-page" id="layoutForm" class="max-w-3xl">
+    <ol class="space-y-2" data-layout>
+      {/* Not movable, and said so, so the owner is not left wondering why the
+          sale is missing from the list. */}
+      <li class="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-panel)] border border-dashed border-[var(--color-rule)] text-[14px] text-[var(--color-ink-faint)]">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" class="shrink-0"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+        <span><strong class="font-medium text-[var(--color-ink-soft)]">Sale</strong> - always first while one is running</span>
+      </li>
+
+      {
+        layout.map((section, i) => (
+          <li
+            data-section={section.id}
+            class:list={[
+              'layout-row flex items-center gap-2 sm:gap-3 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] pl-1.5 pr-2 sm:pr-3 py-2.5',
+              !section.show && 'is-hidden',
+            ]}
+          >
+            <input type="hidden" name="section" value={section.id} />
+            <button
+              type="button"
+              class="drag-handle hidden shrink-0 cursor-grab touch-none p-2 text-[var(--color-ink-faint)] hover:text-[var(--color-navy)]"
+              aria-label={`Drag ${section.label}`}
+              data-drag
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" />
+                <circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" />
+                <circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" />
+              </svg>
+            </button>
+
+            <label class="flex min-w-0 flex-1 items-start gap-2.5 cursor-pointer select-none py-1">
+              <input
+                type="checkbox"
+                name="show"
+                value={section.id}
+                checked={section.show}
+                class="w-4 h-4 mt-1 shrink-0 accent-[var(--color-navy)]"
+                data-show
+              />
+              <span class="min-w-0">
+                <span class="block text-[15px] font-medium">
+                  {section.label}
+                  <span class="hidden-tag ml-1.5 text-[12px] font-normal text-[var(--color-ink-faint)]">· hidden</span>
+                </span>
+                <span class="block text-[13px] text-[var(--color-ink-faint)] leading-snug">{section.about}</span>
+              </span>
+            </label>
+
+            {/* Submit buttons, so the order can be changed with scripting off;
+                the script turns them into instant moves. */}
+            <div class="flex shrink-0 items-center">
+              <button
+                type="submit"
+                name="move"
+                value={`${section.id}|up`}
+                class="move-btn p-2 rounded-full text-[var(--color-navy)] hover:bg-[var(--color-paper)] disabled:opacity-25 disabled:pointer-events-none"
+                aria-label={`Move ${section.label} up`}
+                disabled={i === 0}
+                data-move="up"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+              </button>
+              <button
+                type="submit"
+                name="move"
+                value={`${section.id}|down`}
+                class="move-btn p-2 rounded-full text-[var(--color-navy)] hover:bg-[var(--color-paper)] disabled:opacity-25 disabled:pointer-events-none"
+                aria-label={`Move ${section.label} down`}
+                disabled={i === layout.length - 1}
+                data-move="down"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              {section.isShelf && (
+                <button
+                  type="submit"
+                  name="remove"
+                  value={section.id}
+                  class="ml-0.5 p-2 rounded-full text-[var(--color-ink-faint)] hover:text-[var(--color-outstock)] hover:bg-[var(--color-paper)]"
+                  aria-label={`Remove the ${section.label} row from the front page`}
+                  title="Remove this row"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                </button>
+              )}
+            </div>
+          </li>
+        ))
+      }
+
+      <li class="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-panel)] border border-dashed border-[var(--color-rule)] text-[14px] text-[var(--color-ink-faint)]">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" class="shrink-0"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+        <span><strong class="font-medium text-[var(--color-ink-soft)]">How ordering works</strong> - always last</span>
+      </li>
+    </ol>
+
+    {
+      addable.length > 0 && (
+        <div class="mt-6 p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+          <label for="addShelf" class="block text-[14px] font-medium mb-1.5">Add a row for another shelf</label>
+          <div class="flex flex-wrap items-center gap-2">
+            <select id="addShelf" name="add" class="field !w-auto max-w-full min-w-0 flex-1">
+              {addable.map((s) => (
+                <option value={s.id}>{`${s.child ? '\u00a0\u00a0\u00a0' : ''}${s.name} (${s.total})`}</option>
+              ))}
+            </select>
+            <button type="submit" name="add_shelf" value="1" class="btn btn-ghost">Add row</button>
+          </div>
+        </div>
+      )
+    }
+
+    {/* Stays in reach at the foot of the screen while the list is long, and
+        says so when there is something to save. */}
+    <div class="save-bar sticky bottom-0 z-10 mt-6 -mx-5 md:mx-0 px-5 md:px-0 py-3 bg-[var(--color-paper)]/95 backdrop-blur border-t border-[var(--color-rule-soft)] md:border-0 flex items-center gap-3">
+      <button type="submit" class="btn btn-primary">Save front page</button>
+      <span class="text-[13.5px] text-[var(--color-ink-faint)]" data-dirty hidden>Unsaved changes</span>
+    </div>
+  </form>
+
+  <style>
+    .layout-row.is-hidden {
+      background: var(--color-paper);
+    }
+    .layout-row.is-hidden label > span {
+      opacity: 0.6;
+    }
+    .layout-row:not(.is-hidden) .hidden-tag {
+      display: none;
+    }
+    :global(.js) .drag-handle {
+      display: block;
+    }
+    .layout-row.is-dragging {
+      position: relative;
+      z-index: 5;
+      border-color: var(--color-navy);
+      box-shadow: 0 12px 28px -14px rgb(16 24 40 / 0.45);
+      cursor: grabbing;
+    }
+    .layout-row {
+      transition: box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+    }
+  </style>
+
+  <script>
+    /*
+     * Reordering on the page. The form already works without this - the arrows
+     * submit and the server moves one step - but a reload per step is a poor
+     * way to rearrange six things. Here the arrows and the drag handle move the
+     * row at once, and nothing is saved until Save.
+     *
+     * The drag is done with pointer events rather than HTML drag-and-drop,
+     * which does nothing on a phone; the handle has `touch-action: none` so a
+     * drag is not taken for a scroll.
+     */
+    const form = document.querySelector<HTMLFormElement>('#layoutForm');
+    const list = form?.querySelector<HTMLOListElement>('[data-layout]');
+    const dirtyNote = form?.querySelector<HTMLElement>('[data-dirty]');
+
+    if (form && list) {
+      let dirty = false;
+      const markDirty = () => {
+        dirty = true;
+        if (dirtyNote) dirtyNote.hidden = false;
+      };
+      const rows = () => [...list.querySelectorAll<HTMLLIElement>('li[data-section]')];
+
+      // First row cannot go up, last cannot go down.
+      const refresh = () => {
+        const all = rows();
+        all.forEach((row, i) => {
+          const up = row.querySelector<HTMLButtonElement>('[data-move="up"]');
+          const down = row.querySelector<HTMLButtonElement>('[data-move="down"]');
+          if (up) up.disabled = i === 0;
+          if (down) down.disabled = i === all.length - 1;
+        });
+      };
+
+      list.addEventListener('click', (event) => {
+        const button = (event.target as Element).closest<HTMLButtonElement>('[data-move]');
+        if (!button) return;
+        event.preventDefault();
+        const row = button.closest<HTMLLIElement>('li[data-section]');
+        if (!row) return;
+        const all = rows();
+        const at = all.indexOf(row);
+        // insertBefore rather than before()/after(): the Worker's own types
+        // claim those names for HTMLRewriter and refuse a DOM node.
+        if (button.dataset.move === 'up' && at > 0) list.insertBefore(row, all[at - 1]);
+        if (button.dataset.move === 'down' && at < all.length - 1) list.insertBefore(row, all[at + 1].nextSibling);
+        refresh();
+        markDirty();
+        // Keep the keyboard on the arrow that was pressed, unless it has just
+        // become disabled at the end of the list - then the other one.
+        const again = button.disabled
+          ? row.querySelector<HTMLButtonElement>(`[data-move="${button.dataset.move === 'up' ? 'down' : 'up'}"]`)
+          : button;
+        again?.focus();
+      });
+
+      list.addEventListener('change', (event) => {
+        const box = event.target as HTMLInputElement;
+        if (!box.matches('[data-show]')) return;
+        box.closest('li')?.classList.toggle('is-hidden', !box.checked);
+        markDirty();
+      });
+
+      list.addEventListener('pointerdown', (event) => {
+        const handle = (event.target as Element).closest<HTMLElement>('[data-drag]');
+        const row = handle?.closest<HTMLLIElement>('li[data-section]');
+        if (!handle || !row || event.button !== 0) return;
+        event.preventDefault();
+        row.classList.add('is-dragging');
+        let moved = false;
+
+        const onMove = (e: PointerEvent) => {
+          // The row under the pointer, other than the one being carried.
+          const over = rows().find((r) => {
+            if (r === row) return false;
+            const box = r.getBoundingClientRect();
+            return e.clientY >= box.top && e.clientY <= box.bottom;
+          });
+          if (!over) return;
+          const box = over.getBoundingClientRect();
+          if (e.clientY < box.top + box.height / 2) list.insertBefore(row, over);
+          else list.insertBefore(row, over.nextSibling);
+          moved = true;
+        };
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointercancel', onUp);
+          row.classList.remove('is-dragging');
+          if (moved) {
+            refresh();
+            markDirty();
+          }
+        };
+        /*
+         * Heard on the window, not the handle. Pointer capture would route the
+         * moves to the handle, but it did not hold in testing once the pointer
+         * left it, and the row then stopped following. The window hears every
+         * move wherever the pointer is.
+         */
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+      });
+
+      // The keyboard can move a row too, from the handle: arrow keys.
+      list.addEventListener('keydown', (event) => {
+        const handle = (event.target as Element).closest<HTMLElement>('[data-drag]');
+        if (!handle || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+        event.preventDefault();
+        const row = handle.closest<HTMLLIElement>('li[data-section]');
+        row?.querySelector<HTMLButtonElement>(`[data-move="${event.key === 'ArrowUp' ? 'up' : 'down'}"]`)?.click();
+        handle.focus();
+      });
+
+      // Adding or removing a shelf row submits the form, carrying the current
+      // order with it, so moves made so far are not lost.
+      form.addEventListener('submit', () => {
+        dirty = false;
+      });
+      window.addEventListener('beforeunload', (event) => {
+        if (dirty) event.preventDefault();
+      });
+    }
+  </script>
+</Admin>

@@ -9,6 +9,7 @@
 import { env } from 'cloudflare:workers';
 import { tidyPublisher } from './publishers';
 import { catalogueDb, catalogueVersion, forgetCatalogueVersion } from './read-cache';
+import { parseLayout, type HomeSection } from './home-layout';
 
 export interface Category {
   id: number;
@@ -1032,75 +1033,91 @@ export async function saleBooksFor(saleId: number, limit = 10): Promise<BookRow[
 }
 
 /**
- * The shelves the front page leads with, and how many each holds.
+ * What the front page shows under the hero, in the owner's order.
  *
- * Syllabus, hadith and fiqh, in that order, because that is the order a
- * madrasah student shops in - not the order things were added to the shop.
- * Deliberately a fixed list rather than "the biggest shelves": the front page
- * should say what the shop is for, and that does not change with stock.
- *
- * Cached like everything else the busiest page hits on every load. Three
- * `listBooks` calls are six queries - each runs its own count - and this is the
- * page where the read budget was lost once already.
+ * Read through the versioned cache like the rest of the page: the busiest page
+ * on the site should not pay a database read to learn its own shape. The
+ * triggers in migration 0053 move the version when this one setting changes, so
+ * a reorder shows on the next page view everywhere.
  */
-export const HOME_SHELVES = [
-  { path: 'syllabus', title: 'Syllabus' },
-  { path: 'hadith', title: 'Hadith' },
-  { path: 'fiqh', title: 'Fiqh' },
-] as const;
+export async function homeLayout(): Promise<HomeSection[]> {
+  const [row, cats] = await Promise.all([
+    db()
+      .prepare(`SELECT value FROM settings WHERE key = 'home_layout'`)
+      .first<{ value: string }>(),
+    allCategories(),
+  ]);
+  return parseLayout(row?.value, cats);
+}
 
 export interface HomeRow {
+  id: number;
   path: string;
   title: string;
   books: BookRow[];
   total: number;
 }
 
-let homeRowsCache: { version: number; value: HomeRow[] } | null = null;
+let homeRowsCache: { version: number; key: string; value: HomeRow[] } | null = null;
 
-export async function homeRows(perRow = 10): Promise<HomeRow[]> {
+/**
+ * The shelf rows the front page shows, and how many each holds.
+ *
+ * Which shelves, and in what order, is the owner's choice (`homeLayout`). It
+ * was a fixed syllabus, hadith and fiqh until the owner wanted new releases in
+ * front of them, and a list in the code was the wrong place for a decision about
+ * what the shop is showing this month.
+ *
+ * Cached like everything else the busiest page hits on every load. Each shelf is
+ * a `listBooks` call, and this is the page where the read budget was lost once
+ * already.
+ */
+export async function homeRows(shelfIds: number[], perRow = 10): Promise<HomeRow[]> {
   /*
-   * The front page's three shelves, reused for as long as the catalogue has not
-   * changed rather than for five minutes. They were the most expensive thing
-   * the busiest page asks for, and the five minutes was a compromise between
-   * the read bill and the owner's new book not appearing; the version removes
-   * the need to compromise.
+   * Reused for as long as the catalogue has not changed rather than for five
+   * minutes. The version removes the need to choose between the read bill and
+   * the owner's new book not appearing.
    */
   const version = await catalogueVersion();
-  if (homeRowsCache?.version === version) return homeRowsCache.value;
+  const key = shelfIds.join(',');
+  if (homeRowsCache?.version === version && homeRowsCache.key === key) return homeRowsCache.value;
 
   /*
    * The totals come from the counts the page has already paid for.
    *
    * `listBooks` runs its own COUNT beside the list, which is right on the
    * catalogue - it powers "42 titles - 38 in stock" and the pager. Here it was
-   * three extra counts of about a thousand rows each for three numbers that
+   * an extra count of about a thousand rows per shelf for numbers that
    * `categoryCounts()` has already worked out and cached, and which the shelves
-   * index further down the same page is reading anyway.
+   * index on the same page is reading anyway.
    */
   const counts = await categoryCounts();
   const cats = await allCategories();
-  const byPath = new Map(cats.map((c) => [c.path, c]));
+  const byId = new Map(cats.map((c) => [c.id, c]));
 
-  const value = await Promise.all(
-    HOME_SHELVES.map(async (shelf) => {
-      const { books } = await listBooks({
-        categoryPath: shelf.path,
-        perPage: perRow,
-        withTotal: false,
-      });
-      const cat = byPath.get(shelf.path);
-      return {
-        path: shelf.path,
-        title: shelf.title,
-        books,
-        // The home page is not language-filtered, so it wants the plain count.
-        total: cat ? (counts.any.get(cat.id) ?? 0) : 0,
-      };
-    }),
-  );
+  const value = (
+    await Promise.all(
+      shelfIds.map(async (id) => {
+        const cat = byId.get(id);
+        if (!cat) return null;
+        const { books } = await listBooks({
+          categoryPath: cat.path,
+          perPage: perRow,
+          withTotal: false,
+        });
+        return {
+          id,
+          path: cat.path,
+          title: cat.name,
+          books,
+          // The home page is not language-filtered, so it wants the plain count.
+          total: counts.any.get(cat.id) ?? 0,
+        };
+      }),
+    )
+  ).filter((row): row is HomeRow => row !== null);
 
-  homeRowsCache = { version, value };
+  homeRowsCache = { version, key, value };
   return value;
 }
 
