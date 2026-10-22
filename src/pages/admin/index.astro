@@ -62,12 +62,6 @@ const warnings = [
     `. It resets at midnight UTC.`,
 ].filter(Boolean) as string[];
 
-const CARDS = [
-  { key: 'requested', label: 'Needs your reply', href: '/admin/orders?status=requested', urgent: true },
-  { key: 'awaiting_payment', label: 'Awaiting payment', href: '/admin/orders?status=awaiting_payment', urgent: false },
-  { key: 'paid', label: 'Paid, to fulfil', href: '/admin/orders?status=paid', urgent: true },
-];
-
 // Only surface work that exists. A row reading "0 listings with no photo" is
 // not information, it is furniture.
 const jobs = [
@@ -128,7 +122,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     warnings.length > 0 && (
       <div class="mb-6 space-y-2">
         {warnings.map((w) => (
-          <p class="p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[3px] text-[14px] text-[var(--color-outstock)]">
+          <p class="p-3 bg-[var(--color-outstock)]/10 border border-[var(--color-outstock)]/30 rounded-[var(--radius-field)] text-[14px] text-[var(--color-outstock)]">
             {w}
           </p>
         ))}
@@ -136,10 +130,15 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     )
   }
 
-  <div class="reveal flex flex-wrap gap-2 mb-6" data-delay="1">
-    <a href="/admin/books/new" class="btn btn-primary">Add a listing</a>
-    <a href="/admin/books" class="btn btn-ghost">All listings</a>
-    <a href="/" class="btn btn-ghost">View the shop</a>
+  {/* On a phone the three wrapped into a ragged two-and-one. The main action
+      takes the full width there, with the other two sharing a row under it. */}
+  <div class="reveal grid grid-cols-2 gap-2 mb-6 sm:flex sm:flex-wrap" data-delay="1">
+    <a href="/admin/books/new" class="btn btn-primary col-span-2">
+      <span aria-hidden="true" class="text-[18px] leading-none -mt-px">+</span>
+      Add a listing
+    </a>
+    <a href="/admin/books" class="btn btn-ghost !px-3 sm:!px-6">All listings</a>
+    <a href="/" class="btn btn-ghost !px-3 sm:!px-6">View the shop</a>
   </div>
 
   <div class="reveal mb-8" data-delay="2">
@@ -147,29 +146,31 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     <p class="text-[14.5px] text-[var(--color-ink-soft)]">
       Last {days} days
     </p>
-    <div class="flex gap-1.5 text-[13.5px]">
+    <div class="inline-flex gap-0.5 p-0.5 rounded-[var(--radius-pill)] bg-white border border-[var(--color-rule-soft)] text-[13.5px]" role="group" aria-label="Period">
       <a
         href="/admin"
-        class:list={['px-2.5 py-1 rounded-[3px]', days === 30 ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]']}
+        aria-current={days === 30 ? 'true' : undefined}
+        class:list={['px-3.5 py-1.5 rounded-[var(--radius-pill)] transition-colors duration-200', days === 30 ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]']}
       >30 days</a>
       <a
         href="/admin?d=90"
-        class:list={['px-2.5 py-1 rounded-[3px]', days === 90 ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]']}
+        aria-current={days === 90 ? 'true' : undefined}
+        class:list={['px-3.5 py-1.5 rounded-[var(--radius-pill)] transition-colors duration-200', days === 90 ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]']}
       >90 days</a>
     </div>
   </div>
 
   {/* What needs the owner today, before anything historical. */}
-  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+  <div class="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-6">
     <a
       href="/admin/orders?status=requested"
       class:list={[
-        'block bg-white border rounded-[3px] p-4 hover:border-[var(--color-navy)] transition-colors',
-        d.toConfirm > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule)]',
+        'lift block bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
+        d.toConfirm > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule-soft)]',
       ]}
     >
       <p class="eyebrow">To confirm</p>
-      <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toConfirm}</p>
+      <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toConfirm}</p>
       {/* A lapsed hold is not "waiting", it is overdue and holding stock, so it
           gets its own line rather than being folded into the count above. */}
       {d.lapsed > 0 && (
@@ -186,16 +187,16 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
             : `oldest ${d.oldestWaitingHours}h ago`}
       </p>
     </a>
-    <a href="/admin/orders?status=awaiting_payment" class="block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors">
+    <a href="/admin/orders?status=awaiting_payment" class="lift block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]">
       <p class="eyebrow">Awaiting payment</p>
-      <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.awaitingPence)}</p>
+      <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.awaitingPence)}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
         across {d.awaitingPayment} {d.awaitingPayment === 1 ? 'order' : 'orders'}
       </p>
     </a>
-    <a href="/admin/orders?status=paid" class="block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors">
+    <a href="/admin/orders?status=paid" class="lift block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]">
       <p class="eyebrow">To post</p>
-      <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toPost}</p>
+      <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toPost}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">paid, not sent</p>
     </a>
     {/*
@@ -209,16 +210,16 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     <a
       href="/admin/orders?kind=reservations"
       class:list={[
-        'block bg-white border rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors',
+        'lift block bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
         d.reservationsLapsed > 0
           ? 'border-[var(--color-outstock)] border-l-[3px]'
           : d.reservationsToConfirm > 0
             ? 'border-[var(--color-navy)] border-l-[3px]'
-            : 'border-[var(--color-rule)]',
+            : 'border-[var(--color-rule-soft)]',
       ]}
     >
       <p class="eyebrow">Reservations</p>
-      <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.reservations}</p>
+      <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.reservations}</p>
       {/* Overdue and still holding copies, so it gets its own line - the same
           treatment the 48-hour holds get in the tile beside it. */}
       {d.reservationsLapsed > 0 && (
@@ -243,12 +244,12 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     <a
       href={d.unread.newest ? `/admin/orders/${d.unread.newest.ref}#thread` : '/admin/orders'}
       class:list={[
-        'block bg-white border rounded-[var(--radius-panel)] p-4 hover:border-[var(--color-navy)] transition-colors',
-        d.unread.messages > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule)]',
+        'lift block bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
+        d.unread.messages > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule-soft)]',
       ]}
     >
       <p class="eyebrow">Messages</p>
-      <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.unread.messages}</p>
+      <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.unread.messages}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
         {d.unread.newest === null
           ? 'nothing unread'
@@ -258,9 +259,9 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       </p>
     </a>
 
-    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
+    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4">
       <p class="eyebrow">Taken</p>
-      <p class="text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.revenuePence)}</p>
+      <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.revenuePence)}</p>
       <p class="mt-1.5 text-[12.5px]">
         {change === null ? (
           <span class="text-[var(--color-ink-faint)]">no earlier period to compare</span>
@@ -272,7 +273,77 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       </p>
     </div>
   </div>
+  </div>
 
+  {/* The orders waiting on a reply, straight under the tiles that count them.
+      They sat below every chart, which on a phone was three screens of
+      history between the owner and the one list that needs them today. */}
+  <section class="reveal mb-8" data-delay="3">
+    <div class="flex items-baseline justify-between mb-3">
+      <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold">
+        Requests waiting
+      </h2>
+      <a href="/admin/orders" class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2">
+        All orders →
+      </a>
+    </div>
+
+    {
+      pending.length === 0 ? (
+        <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
+          {totalOrders === 0
+            ? 'No orders yet. When someone sends a request it appears here and in your inbox.'
+            : 'Nothing waiting on you. New requests appear here and in your inbox.'}
+        </p>
+      ) : (
+        <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)] overflow-hidden">
+          {pending.map((o) => {
+            const isLapsed = o.lapsed_at !== null;
+            const hoursLeft = !isLapsed && o.expires_at
+              ? Math.max(0, Math.round((o.expires_at * 1000 - Date.now()) / 3_600_000))
+              : null;
+            return (
+              <li>
+                <a href={`/admin/orders/${o.ref}`} class="group flex items-center gap-3 sm:gap-4 p-4 hover:bg-[var(--color-paper)] transition-colors">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-[15px] font-medium truncate">
+                      {o.customer_name}
+                      <span class="ml-2 text-[13px] font-normal text-[var(--color-ink-faint)]">{o.ref}</span>
+                    </p>
+                    <p class="text-[13.5px] text-[var(--color-ink-faint)] truncate">
+                      {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment}
+                      {o.telegram_chat_id ? ' · on Telegram' : ''}
+                    </p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="price text-[15px]">{price(o.subtotal_pence)}</p>
+                    {hoursLeft !== null && (
+                      <p
+                        class:list={[
+                          'text-[12.5px] tabular-nums',
+                          hoursLeft <= 6 ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-faint)]',
+                        ]}
+                      >
+                        {hoursLeft}h left
+                      </p>
+                    )}
+                    {isLapsed && (
+                      <p class="text-[12.5px] font-medium text-[var(--color-outstock)]">
+                        hold ran out
+                      </p>
+                    )}
+                  </div>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      )
+    }
+  </section>
+
+  <div class="reveal mb-10" data-delay="3">
+    <h2 class="eyebrow mb-3">How the last {days} days went</h2>
   <div class="grid gap-3 lg:grid-cols-[1.9fr_1fr] mt-3">
     <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-1">Taken per day</p>
@@ -464,7 +535,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     * people come back - counted all time, because over thirty days almost
     * nobody has had the chance to.
     */}
-  <div class="grid gap-3 sm:grid-cols-3 mt-3">
+  <div class="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-3 mt-3">
     <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
       <p class="eyebrow">Orders</p>
       <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{d.orders}</p>
@@ -475,7 +546,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{price(d.averagePence)}</p>
       <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">across those orders</p>
     </div>
-    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
+    <div class="col-span-2 sm:col-span-1 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
       <p class="eyebrow">Repeat customers</p>
       <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{d.repeatPct}%</p>
       <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">have ordered more than once</p>
@@ -487,70 +558,6 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
   </p>
   </div>
 
-  <section class="reveal mb-10" data-delay="3">
-    <div class="flex items-baseline justify-between mb-3">
-      <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold">
-        Requests waiting
-      </h2>
-      <a href="/admin/orders" class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2">
-        All orders →
-      </a>
-    </div>
-
-    {
-      pending.length === 0 ? (
-        <p class="p-5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)]">
-          {totalOrders === 0
-            ? 'No orders yet. When someone sends a request it appears here and in your inbox.'
-            : 'Nothing waiting on you. New requests appear here and in your inbox.'}
-        </p>
-      ) : (
-        <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
-          {pending.map((o) => {
-            const isLapsed = o.lapsed_at !== null;
-            const hoursLeft = !isLapsed && o.expires_at
-              ? Math.max(0, Math.round((o.expires_at * 1000 - Date.now()) / 3_600_000))
-              : null;
-            return (
-              <li>
-                <a href={`/admin/orders/${o.ref}`} class="flex items-center gap-4 p-4 hover:bg-[var(--color-paper)]">
-                  <div class="min-w-0 flex-1">
-                    <p class="text-[15px] font-medium truncate">
-                      {o.customer_name}
-                      <span class="ml-2 text-[13px] font-normal text-[var(--color-ink-faint)]">{o.ref}</span>
-                    </p>
-                    <p class="text-[13.5px] text-[var(--color-ink-faint)] truncate">
-                      {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment}
-                      {o.telegram_chat_id ? ' · on Telegram' : ''}
-                    </p>
-                  </div>
-                  <div class="text-right shrink-0">
-                    <p class="price text-[15px]">{price(o.subtotal_pence)}</p>
-                    {hoursLeft !== null && (
-                      <p
-                        class:list={[
-                          'text-[12.5px] tabular-nums',
-                          hoursLeft <= 6 ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-faint)]',
-                        ]}
-                      >
-                        {hoursLeft}h left
-                      </p>
-                    )}
-                    {isLapsed && (
-                      <p class="text-[12.5px] font-medium text-[var(--color-outstock)]">
-                        hold ran out
-                      </p>
-                    )}
-                  </div>
-                </a>
-              </li>
-            );
-          })}
-        </ul>
-      )
-    }
-  </section>
-
   <section class="reveal" data-delay="4">
     <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold mb-3">
       Catalogue to tidy
@@ -558,7 +565,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
 
     {
       jobs.length === 0 ? (
-        <p class="p-5 bg-[var(--color-instock)]/8 border border-[var(--color-instock)]/25 rounded-[3px] text-[15px] text-[var(--color-instock)]">
+        <p class="p-5 bg-[var(--color-instock)]/8 border border-[var(--color-instock)]/25 rounded-[var(--radius-panel)] text-[15px] text-[var(--color-instock)]">
           Nothing to handle at the moment. Every listing has a photo, a description and a shelf,
           and all of them have been announced.
         </p>
@@ -573,10 +580,11 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
               <li>
                 <a
                   href={job.href}
-                  class="flex items-baseline gap-3 p-3.5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] hover:border-[var(--color-navy)] transition-colors"
+                  class="lift group flex items-baseline gap-3 p-3.5 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] hover:border-[var(--color-navy)]"
                 >
                   <span class="text-[22px] font-semibold tabular-nums">{job.n}</span>
-                  <span class="text-[14.5px] text-[var(--color-ink-soft)]">{job.label}</span>
+                  <span class="flex-1 text-[14.5px] text-[var(--color-ink-soft)]">{job.label}</span>
+                  <span aria-hidden="true" class="text-[var(--color-ink-faint)] transition-[transform,color] duration-200 group-hover:translate-x-0.5 group-hover:text-[var(--color-navy)]">→</span>
                 </a>
               </li>
             ))}

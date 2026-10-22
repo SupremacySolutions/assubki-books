@@ -1521,23 +1521,9 @@ const [strip, ...demotedFlags] = flags;
       });
     }
 
-    /*
-     * The ⋯ menu, which is a <details> and therefore works without any of
-     * this. All the script adds is what a menu is expected to do: shut when
-     * the next click lands somewhere else, and shut on Escape.
-     */
-    const menu = document.querySelector('[data-menu]');
-    if (menu) {
-      document.addEventListener('click', (event) => {
-        if (menu.open && !menu.contains(event.target)) menu.open = false;
-      });
-      document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && menu.open) {
-          menu.open = false;
-          menu.querySelector('summary')?.focus();
-        }
-      });
-    }
+    /* The ⋯ menu shuts on an outside click and on Escape through
+       scripts/menus.ts, which the portal layout loads for every
+       `details[data-menu]` - this one and the header's More. */
 
     const postage = document.querySelector('#postage');
     const total = document.querySelector('#total');

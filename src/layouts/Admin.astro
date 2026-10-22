@@ -77,6 +77,9 @@ const closed = await maintenanceNotice();
     <script is:inline nonce={Astro.locals.cspNonce}>
       document.documentElement.classList.add('js');
     </script>
+    {/* The shop has had one of these for a long time; the portal, which is
+        mostly long forms behind a two-row header, needs it more. */}
+    <a href="#main" class="skip">Skip to main content</a>
     <div id="pageTransition" class="page-transition is-loading" aria-hidden="true">
       <div class="page-transition-mark"><Rosette size={34} />As-Subki Books</div>
     </div>
@@ -90,7 +93,7 @@ const closed = await maintenanceNotice();
           <span class="ml-auto text-[13px] text-[var(--color-wash)]/70 truncate max-w-[45%]">
             {admin?.via === 'password' ? 'Owner workspace' : admin?.email}
           </span>
-          <a href="/" class="text-[13px] text-[var(--color-wash)] hover:text-white underline underline-offset-2">
+          <a href="/" class="shrink-0 py-1 text-[13px] text-[var(--color-wash)] hover:text-white underline underline-offset-2 transition-colors">
             View shop
           </a>
         </div>
@@ -111,8 +114,7 @@ const closed = await maintenanceNotice();
         <nav class="flex items-end -mb-px -mx-5 md:mx-0" aria-label="Portal">
           <div
             data-portal-tabs
-            class="flex items-end gap-1 min-w-0 flex-1 md:flex-initial overflow-x-auto overscroll-x-contain pl-5 md:pl-0
-                   [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            class="scroll-hint flex items-end gap-1 min-w-0 flex-1 md:flex-initial overflow-x-auto overscroll-x-contain pl-5 md:pl-0"
           >
             {
               NAV.map((item) => (
@@ -120,10 +122,10 @@ const closed = await maintenanceNotice();
                   href={item.href}
                   aria-current={active(item.href) ? 'page' : undefined}
                   class:list={[
-                    'shrink-0 px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors',
+                    'shrink-0 px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors duration-200',
                     active(item.href)
                       ? 'border-[var(--color-wash)] text-white font-medium'
-                      : 'border-transparent text-[var(--color-wash)]/70 hover:text-white',
+                      : 'border-transparent text-[var(--color-wash)]/70 hover:text-white hover:border-[var(--color-wash)]/35',
                   ]}
                 >
                   {item.label}
@@ -138,32 +140,32 @@ const closed = await maintenanceNotice();
             * works with scripting off, and closes itself when the link inside
             * it loads the next page.
             */}
-          <details class="relative shrink-0 pr-5 md:pr-0" name="portal-more">
+          <details class="portal-more group relative shrink-0 pr-5 md:pr-0" name="portal-more" data-menu>
             <summary
               class:list={[
-                'cursor-pointer list-none select-none px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors',
+                'cursor-pointer list-none select-none px-3.5 py-2.5 text-[14.5px] whitespace-nowrap border-b-2 transition-colors duration-200 [&::-webkit-details-marker]:hidden',
                 openHere
                   ? 'border-[var(--color-wash)] text-white font-medium'
-                  : 'border-transparent text-[var(--color-wash)]/70 hover:text-white',
+                  : 'border-transparent text-[var(--color-wash)]/70 hover:text-white hover:border-[var(--color-wash)]/35 group-open:text-white',
               ]}
             >
               {openHere ? openHere.label : 'More'}
-              <span aria-hidden="true" class="ml-1 text-[11px]">&#9662;</span>
+              <span aria-hidden="true" class="ml-1 inline-block text-[11px] transition-transform duration-200 group-open:rotate-180">&#9662;</span>
               <span class="sr-only">{openHere ? ' - more portal pages' : 'portal pages'}</span>
             </summary>
             {/* Hung from the right edge rather than the left. "More" is the last
                 thing on the bar, so a menu opening rightwards from it ran off
                 the side of a phone and widened the page by itself. */}
-            <div class="absolute right-5 md:right-0 top-full z-30 mt-1 min-w-[11rem] rounded-[var(--radius-panel)] border border-[var(--color-rule-soft)] bg-white py-1 shadow-lg">
+            <div class="portal-menu absolute right-5 md:right-0 top-full z-30 mt-1 min-w-[11rem] rounded-[var(--radius-panel)] border border-[var(--color-rule-soft)] bg-white py-1 shadow-lg">
               {MORE.map((item) => (
                 <a
                   href={item.href}
                   aria-current={active(item.href) ? 'page' : undefined}
                   class:list={[
-                    'block px-4 py-2 text-[14.5px] whitespace-nowrap',
+                    'block px-4 py-2.5 md:py-2 text-[14.5px] whitespace-nowrap transition-colors',
                     active(item.href)
                       ? 'font-medium text-[var(--color-navy)] bg-[var(--color-paper)]'
-                      : 'text-[var(--color-ink)] hover:bg-[var(--color-paper)]',
+                      : 'text-[var(--color-ink)] hover:bg-[var(--color-paper)] hover:text-[var(--color-navy)]',
                   ]}
                 >
                   {item.label}
@@ -217,14 +219,15 @@ const closed = await maintenanceNotice();
         </p>
       )
     }
-    <main class="page-enter mx-auto max-w-[var(--width-portal)] px-5 md:px-8 py-8">
+    <main id="main" class="page-enter mx-auto max-w-[var(--width-portal)] px-5 md:px-8 py-8">
       {
         back && (
           <a
             href={back.href}
-            class="inline-block mb-4 text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2"
+            class="group inline-flex items-center gap-1.5 mb-4 py-1 text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2"
           >
-            ← {back.label}
+            <span aria-hidden="true" class="transition-transform duration-200 group-hover:-translate-x-0.5">←</span>
+            {back.label}
           </a>
         )
       }
@@ -245,6 +248,37 @@ const closed = await maintenanceNotice();
       import '../scripts/reveal.ts';
       import '../scripts/page-transition.ts';
       import '../scripts/form-controls.ts';
+      import '../scripts/scroll-hint.ts';
+      import '../scripts/menus.ts';
     </script>
+
+    <style>
+      .skip {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        z-index: 100;
+        background: var(--color-navy);
+        color: #fff;
+        padding: 0.75rem 1.25rem;
+      }
+      .skip:focus {
+        left: 0;
+      }
+      /* The menu drops in rather than appearing, from the corner it hangs off. */
+      .portal-more[open] .portal-menu {
+        animation: portal-menu-in 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+        transform-origin: top right;
+      }
+      @keyframes portal-menu-in {
+        from {
+          opacity: 0;
+          transform: translateY(-4px) scale(0.98);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .portal-more[open] .portal-menu { animation: none; }
+      }
+    </style>
   </body>
 </html>
