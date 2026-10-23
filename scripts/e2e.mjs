@@ -5412,6 +5412,115 @@ async function frontPage() {
     stillComing.n > 0 ? front.includes('Arriving soon') : !front.includes('Arriving soon'),
     'the row is on the page exactly when something is on its way',
   );
+
+  // --- the owner's order ------------------------------------------------------
+  /*
+   * New releases lead by default, ahead of the shelf rows they replaced at the
+   * top; and the whole order below the sale is the owner's, set on the portal's
+   * Front page screen and seen on the very next page view.
+   */
+  await db(`DELETE FROM settings WHERE key = 'home_layout'`);
+  const fresh = await html('/');
+  /*
+   * Where a section's heading falls, by its <h2> alone. A shelf's name also
+   * appears in the shelves index and the navigation, so a bare ">Hadith<" can
+   * be found on a page with no Hadith row at all.
+   */
+  const pos = (page, name) => {
+    const m = new RegExp(`<h2[^>]*>\\s*${name}\\s*</h2>`).exec(page);
+    return m ? m.index : -1;
+  };
+  t.ok(pos(fresh, 'New releases') > 0, 'the front page has a new releases row');
+  t.ok(pos(fresh, 'New releases') < pos(fresh, 'Browse the shelves')
+    && pos(fresh, 'New releases') < pos(fresh, 'Syllabus'),
+    'and by default it comes first, ahead of the shelves and the syllabus');
+
+  const ids = Object.fromEntries((await db(
+    `SELECT path, id FROM categories WHERE path IN ('syllabus', 'hadith', 'fiqh')`,
+  )).map((r) => [r.path, r.id]));
+  const extra = await one(
+    `SELECT id, name FROM categories WHERE parent_id IS NULL
+        AND path NOT IN ('syllabus', 'hadith', 'fiqh')
+      ORDER BY sort LIMIT 1`,
+  );
+
+  /** A save from the portal: every section, in order, with the ticked ones. */
+  const saveLayout = async (order, shown, more = {}) => {
+    const body = new URLSearchParams();
+    for (const id of order) body.append('section', id);
+    for (const id of shown) body.append('show', id);
+    for (const [k, v] of Object.entries(more)) body.append(k, v);
+    const res = await fetch(`${SITE}/api/admin/front-page`, {
+      method: 'POST',
+      headers: { ...ORIGIN, Cookie: adminCookie(), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      redirect: 'manual',
+    });
+    return { status: res.status, location: res.headers.get('location') ?? '' };
+  };
+
+  const screen = await html('/admin/front-page');
+  t.ok(screen.includes('New releases') && screen.includes('always first while one is running'),
+    'the portal lists the sections, and says the sale is pinned first');
+
+  const fiqh = `shelf:${ids.fiqh}`;
+  const hadith = `shelf:${ids.hadith}`;
+  const syllabus = `shelf:${ids.syllabus}`;
+  const order = [fiqh, 'shelves', 'new', 'arriving', syllabus, hadith];
+  const saved = await saveLayout(order, [fiqh, 'shelves', 'new', 'arriving', syllabus]);
+  t.ok(saved.status === 303 && saved.location.includes('/admin/front-page?saved'),
+    'saving the order returns the owner to the screen');
+
+  const reordered = await html('/');
+  t.ok(pos(reordered, 'Fiqh') > 0 && pos(reordered, 'Fiqh') < pos(reordered, 'Browse the shelves')
+    && pos(reordered, 'Browse the shelves') < pos(reordered, 'New releases')
+    && pos(reordered, 'New releases') < pos(reordered, 'Syllabus'),
+    'the front page follows the new order on the very next view');
+  t.ok(pos(reordered, 'Hadith') === -1, 'and a section switched off is not drawn');
+
+  // Without scripting the arrows submit, one step at a time.
+  await saveLayout(order, order, { move: `${syllabus}|up` });
+  const stepped = await html('/');
+  t.ok(pos(stepped, 'Arriving soon') === -1 || pos(stepped, 'Syllabus') < pos(stepped, 'Arriving soon'),
+    'an arrow pressed with scripting off moves its section one place');
+  t.ok(pos(stepped, 'Hadith') > 0, 'and ticking a section back on shows it again');
+
+  if (extra.id) {
+    await saveLayout(order, order, { add: String(extra.id), add_shelf: '1' });
+    const withExtra = await html('/');
+    const books = await one(
+      `SELECT COUNT(*) AS n FROM book_categories bc JOIN books b ON b.id = bc.book_id
+        WHERE bc.category_id = ${extra.id} AND b.status = 'live' AND b.deleted_at IS NULL`,
+    );
+    t.ok(books.n === 0 || pos(withExtra, extra.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) > 0,
+      'any other shelf can be given a row of its own');
+    const kept = JSON.parse((await one(`SELECT value FROM settings WHERE key = 'home_layout'`)).value);
+    t.ok(kept.at(-1).id === `shelf:${extra.id}`, 'and the new row is put at the bottom');
+    await saveLayout(kept.map((s) => s.id), kept.map((s) => s.id), { remove: `shelf:${extra.id}` });
+    const after = JSON.parse((await one(`SELECT value FROM settings WHERE key = 'home_layout'`)).value);
+    t.ok(!after.some((s) => s.id === `shelf:${extra.id}`), 'and taken off again');
+  }
+
+  // A hand-made post cannot store what the page cannot draw.
+  await saveLayout(['bogus', 'shelf:99999999', fiqh, fiqh], [fiqh]);
+  const cleaned = JSON.parse((await one(`SELECT value FROM settings WHERE key = 'home_layout'`)).value);
+  const cleanedIds = cleaned.map((s) => s.id);
+  t.ok(!cleanedIds.includes('bogus') && !cleanedIds.includes('shelf:99999999'),
+    'unknown sections and missing shelves are dropped');
+  t.ok(cleanedIds.filter((id) => id === fiqh).length === 1
+    && ['new', 'arriving', 'shelves'].every((id) => cleanedIds.includes(id)),
+    'each section is kept once, and none of the standing ones can be lost');
+
+  const outsider = await fetch(`${SITE}/api/admin/front-page`, {
+    method: 'POST',
+    headers: { ...ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'section=new',
+    redirect: 'manual',
+  });
+  t.ok(outsider.status !== 303 || !(outsider.headers.get('location') ?? '').includes('saved'),
+    'and nobody signed out can change it');
+
+  await db(`DELETE FROM settings WHERE key = 'home_layout'`);
 }
 
 // ---------------------------------------------------------------------------

@@ -73,7 +73,10 @@ export type SettingKey =
    */
   | 'order_discount_active'
   | 'order_discount_threshold'
-  | 'order_discount_percent';
+  | 'order_discount_percent'
+  // Which sections the front page shows under the hero, and in what order -
+  // JSON, read and checked by lib/home-layout.
+  | 'home_layout';
 
 export async function getSetting(key: SettingKey, fallback = ''): Promise<string> {
   const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?')

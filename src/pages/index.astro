@@ -10,21 +10,41 @@ import {
   saleBookCount,
   arrivingBooks,
   homeRows,
+  homeLayout,
 } from '../lib/db';
+import { shelfIdOf } from '../lib/home-layout';
 import { liveSale } from '../lib/sales';
 import { classmark } from '../lib/classmarks';
 import { SITE, imageUrl, hasAddress, phoneE164 } from '../lib/format';
+
+/*
+ * What goes under the hero, in the order the owner set on the portal's Front
+ * page screen. Read first because it decides which shelves to fetch; it comes
+ * from the versioned cache, so it costs nothing on a warm page.
+ */
+const layout = (await homeLayout()).filter((section) => section.show);
+const shelfIds = layout
+  .map((section) => shelfIdOf(section.id))
+  .filter((id): id is number => id !== null);
 
 const sale = await liveSale();
 const [tree, shelf, stats, arriving, rows, onSale, onSaleTotal] = await Promise.all([
   categoryTree(),
   shelfBooks(60),
   catalogueStats(),
-  arrivingBooks(10),
-  homeRows(10),
+  layout.some((section) => section.id === 'arriving') ? arrivingBooks(10) : Promise.resolve([]),
+  homeRows(shelfIds, 10),
   sale ? saleBooks(10) : Promise.resolve([]),
   sale ? saleBookCount() : Promise.resolve(0),
 ]);
+const rowById = new Map(rows.map((row) => [row.id, row]));
+
+/*
+ * New releases are the newest in-stock listings with a cover - the same sixty
+ * the drifting shelf in the hero is drawn from, so the row costs no query of
+ * its own.
+ */
+const newest = shelf.slice(0, 10);
 const top = tree.slice(0, 8);
 /*
  * How many shelves there are in total, not how many are shown - and that means
@@ -272,67 +292,92 @@ const drifting = pretty.slice(0, 14);
     )
   }
 
-  {/* Then what is on its way. Second to the sale by the owner's choosing, and
-      shown alongside it rather than instead of it - somebody waiting on a
-      shipment should not have to hunt for it because a sale happens to be on. */}
+  {/*
+    * Then the owner's sections, in the owner's order (portal: Front page).
+    * The sale above and "How ordering works" below are not in the list: a
+    * live sale always leads, and the page always ends on how to order.
+    * A section with nothing in it - no shipment on the way, an empty shelf -
+    * draws nothing, so a switched-on section never shows as a blank heading.
+    */}
   {
-    arriving.length > 0 && (
-      <Row
-        title="Arriving soon"
-        href="/catalogue?arriving=1"
-        linkLabel="All arriving →"
-        books={arriving}
-        limit={5}
-        padding="py-8"
-      />
-    )
+    layout.map((section) => {
+      if (section.id === 'new') {
+        return (
+          <Row
+            title="New releases"
+            href="/catalogue?sort=newest"
+            linkLabel="All new →"
+            books={newest}
+            padding="py-8 md:py-10"
+          />
+        );
+      }
+      if (section.id === 'arriving') {
+        return (
+          <Row
+            title="Arriving soon"
+            href="/catalogue?arriving=1"
+            linkLabel="All arriving →"
+            books={arriving}
+            limit={5}
+            padding="py-8 md:py-10"
+          />
+        );
+      }
+      if (section.id === 'shelves') {
+        return (
+          <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-10 md:py-12 reveal">
+            <div class="flex items-baseline justify-between gap-4 pb-3.5 border-b border-[var(--color-rule-soft)]">
+              <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Browse the shelves</h2>
+              <a
+                href="/catalogue"
+                class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2 whitespace-nowrap"
+              >All {shelfCount} subjects →</a>
+            </div>
+
+            {/* Rows on hairlines, not boxes. A boxed grid gives twenty-six shelves the
+                same visual weight as twenty-six products; a ruled list reads as an
+                index, which is what it is. The classmark sits in a fixed column so the
+                codes line up down the page and can be scanned without reading. */}
+            <ul class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-10">
+              {
+                top.map((cat) => (
+                  <li class="border-b border-[var(--color-rule-faint)]">
+                    <a href={`/catalogue/${cat.path}`} class="group flex items-center gap-3 py-[13px]">
+                      <span class="w-[38px] shrink-0 text-[10.5px] font-semibold tracking-[0.12em] uppercase text-[var(--color-navy)]">
+                        {classmark(cat.slug)}
+                      </span>
+                      <span class="min-w-0 flex-1 text-[15.5px] font-medium truncate group-hover:text-[var(--color-navy)]">
+                        {cat.name}
+                      </span>
+                      <span class="shrink-0 text-[13px] text-[var(--color-ink-faint)] tabular-nums">
+                        {cat.count}
+                      </span>
+                    </a>
+                  </li>
+                ))
+              }
+            </ul>
+          </section>
+        );
+      }
+      const row = rowById.get(shelfIdOf(section.id) ?? -1);
+      return (
+        row && (
+          <Row
+            title={row.title}
+            href={`/catalogue/${row.path}`}
+            linkLabel={`All ${row.total} →`}
+            books={row.books}
+            padding="py-8 md:py-10"
+          />
+        )
+      );
+    })
   }
 
-  <section class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-12 md:py-16 reveal">
-    <div class="flex items-baseline justify-between gap-4 pb-3.5 border-b border-[var(--color-rule-soft)]">
-      <h2 class="font-[family-name:var(--font-display)] text-[26px] font-semibold">Browse the shelves</h2>
-      <a
-        href="/catalogue"
-        class="text-[14px] text-[var(--color-navy)] hover:underline underline-offset-2 whitespace-nowrap"
-      >All {shelfCount} subjects →</a>
-    </div>
-
-    {/* Rows on hairlines, not boxes. A boxed grid gives twenty-six shelves the
-        same visual weight as twenty-six products; a ruled list reads as an
-        index, which is what it is. The classmark sits in a fixed column so the
-        codes line up down the page and can be scanned without reading. */}
-    <ul class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-10">
-      {
-        top.map((cat) => (
-          <li class="border-b border-[var(--color-rule-faint)]">
-            <a href={`/catalogue/${cat.path}`} class="group flex items-center gap-3 py-[13px]">
-              <span class="w-[38px] shrink-0 text-[10.5px] font-semibold tracking-[0.12em] uppercase text-[var(--color-navy)]">
-                {classmark(cat.slug)}
-              </span>
-              <span class="min-w-0 flex-1 text-[15.5px] font-medium truncate group-hover:text-[var(--color-navy)]">
-                {cat.name}
-              </span>
-              <span class="shrink-0 text-[13px] text-[var(--color-ink-faint)] tabular-nums">
-                {cat.count}
-              </span>
-            </a>
-          </li>
-        ))
-      }
-    </ul>
-  </section>
-
-  {/* The three shelves the shop is actually for, in the order a student reads
-      them, under the index rather than above it - the index is how you get to
-      the other twelve. Two rows of covers each at the widest breakpoint. */}
-  {rows.map((row) => (
-    <Row
-      title={row.title}
-      href={`/catalogue/${row.path}`}
-      linkLabel={`All ${row.total} →`}
-      books={row.books}
-    />
-  ))}
+  {/* Room before the ordering band, which the last row used to bring itself. */}
+  <div class="pb-8" aria-hidden="true"></div>
 
   <section class="border-t border-[var(--color-rule-soft)] bg-white">
     <div class="mx-auto max-w-[var(--width-shop)] px-5 md:px-10 py-14 md:py-16 reveal">
