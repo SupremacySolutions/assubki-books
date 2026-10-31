@@ -15,7 +15,7 @@ import {
 import { shelfIdOf } from '../lib/home-layout';
 import { liveSale } from '../lib/sales';
 import { classmark } from '../lib/classmarks';
-import { SITE, imageUrl, hasAddress, phoneE164 } from '../lib/format';
+import { SITE, imageUrl, hasAddress, phoneE164, RETURN_POLICY } from '../lib/format';
 
 /*
  * What goes under the hero, in the order the owner set on the portal's Front
@@ -85,6 +85,10 @@ const org = {
   email: SITE.email,
   description: SITE.tagline,
   sameAs: [SITE.telegram],
+  // The mark Google may show beside the shop's name in results, and the card.
+  logo: `${SITE.url}/apple-touch-icon.png`,
+  image: `${SITE.url}/og.png`,
+  hasMerchantReturnPolicy: RETURN_POLICY,
   ...(SITE.phone ? { telephone: phoneE164() } : {}),
   ...(hasAddress()
     ? {

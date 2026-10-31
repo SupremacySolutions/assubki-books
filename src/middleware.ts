@@ -37,14 +37,45 @@ export const onRequest = defineMiddleware(async (context, next) => {
    * Cloudflare Access when it is switched on - is bound to a hostname, and the
    * `workers.dev` address would go on serving `/admin` around all of it.
    *
+   * Plain `http://` counts as another front door. Cloudflare hands the Worker
+   * the scheme the visitor used, and the zone does not upgrade it, so
+   * http://assubkibooks.co.uk/ served the whole shop with a canonical tag
+   * naming the http address - a second copy of every page for Google to choose
+   * between. The HSTS header only helps a browser that has already been here
+   * over https; a crawler arriving from an old link never has.
+   *
    * Development hosts are left alone so `localhost` still works.
    */
   const host = context.url.hostname;
   const canonical = 'assubkibooks.co.uk';
   const isDev = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
 
-  if (!isDev && host !== canonical) {
+  if (!isDev && (host !== canonical || context.url.protocol !== 'https:')) {
     return context.redirect(`https://${canonical}${pathname}${context.url.search}`, 301);
+  }
+
+  /*
+   * One address per page, without a trailing slash.
+   *
+   * Astro answers `/catalogue/` and `/catalogue` alike, and the canonical tag
+   * follows the address asked for, so each page had a second copy that named
+   * itself canonical. Every link the shop prints has no slash, so that is the
+   * one kept. Reads only: a form posting to a slashed address must not be
+   * turned into a GET and lose its body, and the API is never linked to.
+   */
+  if (
+    pathname.length > 1 &&
+    pathname.endsWith('/') &&
+    (context.request.method === 'GET' || context.request.method === 'HEAD') &&
+    !pathname.startsWith('/api/') &&
+    // The old WooCommerce addresses all end in a slash; they have their own
+    // redirects below and should take one hop, not two.
+    !/^\/(product|product-category|shop|my-account|cart)(\/|$)/.test(pathname)
+  ) {
+    // Leading slashes collapsed too: `//evil.example/` stripped to
+    // `//evil.example` is a protocol-relative Location, an open redirect.
+    const tidy = `/${pathname.replace(/^\/+|\/+$/g, '')}`;
+    return context.redirect(`${tidy}${context.url.search}`, 301);
   }
 
   // ---------------------------------------------------------------------

@@ -7,12 +7,13 @@ import {
   categoryTree, categoryByPath, listBooks, arrivingBooks, asLanguage, BOOK_LANGUAGES,
   publisherCounts, type Sort,
 } from '../../lib/db';
-import { buildQuery } from '../../lib/format';
+import { buildQuery, truncate } from '../../lib/format';
 import { allCategories } from '../../lib/db';
 import { shelfTrail, breadcrumbJsonLd } from '../../lib/breadcrumbs';
 import { recordMiss } from '../../lib/searches';
 import { WANTED } from '../../lib/order-status';
 import { liveSale } from '../../lib/sales';
+import { shelfRedirect } from '../../lib/shelves';
 
 const { path } = Astro.params;
 const params = Astro.url.searchParams;
@@ -31,8 +32,13 @@ const categoryPath = path ?? null;
 const category = categoryPath ? await categoryByPath(categoryPath) : null;
 
 // An unknown category path is a 404, not an empty grid - otherwise a typo
-// looks like a shop with nothing in it.
-if (categoryPath && !category) return Astro.rewrite('/404');
+// looks like a shop with nothing in it. Unless it is where a shelf used to be:
+// a renamed or moved shelf keeps its old links, query string and all.
+if (categoryPath && !category) {
+  const now = await shelfRedirect(categoryPath);
+  if (now) return Astro.redirect(`/catalogue/${now}${Astro.url.search}`, 301);
+  return Astro.rewrite('/404');
+}
 
 const q = params.get('q')?.trim() || null;
 const inStockOnly = params.get('stock') === 'in';
@@ -220,9 +226,32 @@ if (inStockOnly) {
   });
 }
 
-const title = q ? `“${q}”` : heading;
+/*
+ * The words a search result is made of.
+ *
+ * A shelf's name alone - "Hadith", "Stories" - says nothing about what kind of
+ * shop this is, and the title is the strongest thing a page has to match a
+ * search against. So a shelf whose name does not already say "books" is
+ * titled "Hadith - Islamic books", which reads naturally for every shelf the
+ * shop has, children's stories included. The heading on the page stays the
+ * shelf's own name.
+ *
+ * The description is the owner's blurb when they have written one, and
+ * otherwise a sentence built from what is true of every shelf: how many
+ * titles, how many on the shelf now, and how they reach you (the delivery page
+ * says all three ways).
+ */
+const blurb = category?.blurb?.trim() || null;
+const shelfTitle = category
+  ? /book/i.test(category.name) ? category.name : `${category.name} - Islamic books`
+  : null;
+const title = q ? `“${q}”` : (shelfTitle ?? heading);
 const description = category
-  ? `${result.total} ${category.name} titles at As-Subkī Books.`
+  ? blurb
+    ? truncate(blurb, 160)
+    : `${result.total} ${category.name} ${result.total === 1 ? 'title' : 'titles'}` +
+      `${result.inStock > 0 ? `, ${result.inStock} in stock` : ''}. ` +
+      `Islamic books posted across the UK and worldwide, or collected by arrangement.`
   : `Browse ${result.total} Islamic titles - hadith, fiqh, tafsir, Dars Nizami and Maktab syllabus sets.`;
 ---
 
@@ -459,6 +488,14 @@ const description = category
             <noscript><button type="submit" class="btn btn-ghost !py-1.5 mt-2">Apply</button></noscript>
           </form>
         </div>
+
+        {/* The first page only: on page 2 or a filtered view it is the same
+            paragraph again between the customer and the books. */}
+        {blurb && !narrowed && (
+          <p class="mt-3 max-w-[62ch] text-[15px] leading-relaxed text-[var(--color-ink-soft)]">
+            {blurb}
+          </p>
+        )}
 
         {
           chips.length > 0 && (

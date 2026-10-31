@@ -6,7 +6,7 @@
  * levels read as one flat list.
  */
 import { classmark } from '../../lib/classmarks';
-import type { ShelfNode } from '../../lib/shelves';
+import { BLURB_MAX, type ShelfNode } from '../../lib/shelves';
 
 interface Props {
   shelf: ShelfNode;
@@ -131,3 +131,27 @@ const consequences = [
     <span> · {shelf.total_books} {shelf.total_books === 1 ? 'listing' : 'listings'}</span>
   )}
 </p>
+
+<!-- The shelf page's own paragraph. Folded away because most visits here are
+     a rename or a move, and open when there is one so it is easy to check.
+     Joined to the row's form by id, so the row's one Save button saves it. -->
+<details class="mt-2 group" open={Boolean(shelf.blurb)}>
+  <summary class="cursor-pointer text-[13px] text-[var(--color-navy)] select-none w-fit">
+    {shelf.blurb ? 'Description on the shelf page' : 'Add a description for the shelf page'}
+  </summary>
+  <label for={`b${shelf.id}`} class="sr-only">Description of {shelf.name}</label>
+  <textarea
+    id={`b${shelf.id}`}
+    name="blurb"
+    form={`shelf-form-${shelf.id}`}
+    maxlength={BLURB_MAX}
+    rows="3"
+    class="field mt-2 !text-[14px] leading-relaxed"
+    placeholder={`A sentence or two about what is on the ${shelf.name} shelf and who it is for.`}
+  >{shelf.blurb ?? ''}</textarea>
+  <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">
+    Shown under the shelf's heading, and in Google under the link to it - the first 155 or so
+    characters are what Google shows, so lead with what someone would search for. Press Save on
+    the row above to keep it.
+  </p>
+</details>
