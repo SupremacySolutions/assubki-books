@@ -18,9 +18,24 @@ export interface ShelfRow {
   parent_id: number | null;
   path: string;
   sort: number;
+  /** The owner's paragraph for the shelf's page; null until one is written. */
+  blurb: string | null;
   direct_books: number;
   total_books: number;
   child_count: number;
+}
+
+/**
+ * The longest shelf blurb kept. Room for two or three sentences on the page;
+ * Google shows roughly the first 155 characters of it under the result.
+ */
+export const BLURB_MAX = 600;
+
+export async function currentBlurb(id: number): Promise<string | null> {
+  const row = await env.DB.prepare('SELECT blurb FROM categories WHERE id = ?')
+    .bind(id)
+    .first<{ blurb: string | null }>();
+  return row?.blurb ?? null;
 }
 
 export function slugifyShelf(name: string): string {
@@ -50,7 +65,7 @@ export function slugifyShelf(name: string): string {
 export async function listShelves(): Promise<ShelfRow[]> {
   const [cats, links] = await env.DB.batch([
     env.DB.prepare(
-      'SELECT id, slug, name, parent_id, path, sort FROM categories ORDER BY path',
+      'SELECT id, slug, name, parent_id, path, sort, blurb FROM categories ORDER BY path',
     ),
     env.DB.prepare('SELECT category_id, book_id FROM book_categories'),
   ]);
@@ -127,8 +142,8 @@ async function uniqueSlug(base: string, excludeId: number | null): Promise<strin
  */
 async function rebuildPaths(rootId: number): Promise<void> {
   const { results: all } = await env.DB.prepare(
-    'SELECT id, slug, parent_id FROM categories',
-  ).all<{ id: number; slug: string; parent_id: number | null }>();
+    'SELECT id, slug, parent_id, path FROM categories',
+  ).all<{ id: number; slug: string; parent_id: number | null; path: string }>();
 
   const byId = new Map(all.map((c) => [c.id, c]));
   const childrenOf = new Map<number | null, typeof all>();
@@ -157,11 +172,42 @@ async function rebuildPaths(rootId: number): Promise<void> {
   };
   walk(rootId);
 
-  await env.DB.batch(
-    updates.map((u) =>
+  /*
+   * Every address that is about to stop being one is remembered, so a link to
+   * it answers 301 rather than 404 - see `shelfRedirect`. A path that becomes
+   * live again is dropped from the list: the shelf there now is what a visitor
+   * asking for it should get.
+   */
+  const moved = updates.filter((u) => byId.get(u.id)?.path !== u.path);
+  await env.DB.batch([
+    ...updates.map((u) =>
       env.DB.prepare('UPDATE categories SET path = ? WHERE id = ?').bind(u.path, u.id),
     ),
-  );
+    ...moved.flatMap((u) => [
+      env.DB.prepare(
+        'INSERT OR REPLACE INTO shelf_redirects (old_path, category_id) VALUES (?, ?)',
+      ).bind(byId.get(u.id)!.path, u.id),
+      env.DB.prepare('DELETE FROM shelf_redirects WHERE old_path = ?').bind(u.path),
+    ]),
+  ]);
+}
+
+/**
+ * Where a shelf that used to live at `path` lives now, or null.
+ *
+ * Only asked once a path has failed to match a live shelf, so it costs nothing
+ * on an ordinary page view, and it reads the database directly rather than
+ * through the catalogue cache: it is the 404 path, and a stale answer here
+ * would be a redirect to somewhere that has itself moved.
+ */
+export async function shelfRedirect(path: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    `SELECT c.path FROM shelf_redirects r JOIN categories c ON c.id = r.category_id
+      WHERE r.old_path = ?`,
+  )
+    .bind(path)
+    .first<{ path: string }>();
+  return row && row.path !== path ? row.path : null;
 }
 
 export async function createShelf(name: string, parentId: number | null): Promise<number> {
@@ -242,6 +288,7 @@ export async function updateShelf(
   id: number,
   name: string,
   parentId: number | null,
+  blurb: string | null,
 ): Promise<ShelfError | null> {
   const shelf = await env.DB.prepare('SELECT id, slug, name, parent_id FROM categories WHERE id = ?')
     .bind(id)
@@ -276,12 +323,12 @@ export async function updateShelf(
 
   await env.DB.prepare(
     sort === undefined
-      ? 'UPDATE categories SET name = ?, slug = ?, parent_id = ? WHERE id = ?'
-      : 'UPDATE categories SET name = ?, slug = ?, parent_id = ?, sort = ? WHERE id = ?',
+      ? 'UPDATE categories SET name = ?, slug = ?, parent_id = ?, blurb = ? WHERE id = ?'
+      : 'UPDATE categories SET name = ?, slug = ?, parent_id = ?, blurb = ?, sort = ? WHERE id = ?',
   )
     .bind(...(sort === undefined
-      ? [name.trim(), nextSlug, parentId, id]
-      : [name.trim(), nextSlug, parentId, sort, id]))
+      ? [name.trim(), nextSlug, parentId, blurb, id]
+      : [name.trim(), nextSlug, parentId, blurb, sort, id]))
     .run();
 
   await rebuildPaths(id);

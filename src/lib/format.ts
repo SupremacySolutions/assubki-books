@@ -28,6 +28,26 @@ export const SITE = {
 export const phoneE164 = (): string => `+44${SITE.phone.replace(/\D/g, '').replace(/^0/, '')}`;
 
 /** Whether there is enough of an address to tell Google about. */
+/**
+ * The returns policy, as Google reads it - what /returns says, and nothing it
+ * does not. Fourteen days from delivery to say so, by post, return postage on
+ * the customer when nothing is wrong with the books, and no restocking fee.
+ * Change /returns and this together: a policy in the markup that the page does
+ * not state is the kind of mismatch Merchant Center suspends a shop for.
+ *
+ * Postage has no counterpart here on purpose. It is quoted per order, so there
+ * is no true `shippingDetails` to give.
+ */
+export const RETURN_POLICY = {
+  '@type': 'MerchantReturnPolicy',
+  applicableCountry: 'GB',
+  returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+  merchantReturnDays: 14,
+  returnMethod: 'https://schema.org/ReturnByMail',
+  returnFees: 'https://schema.org/ReturnFeesCustomerResponsibility',
+  merchantReturnLink: `${SITE.url}/returns`,
+} as const;
+
 export const hasAddress = (): boolean =>
   Boolean(SITE.address.street && SITE.address.postcode);
 

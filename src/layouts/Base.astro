@@ -33,7 +33,15 @@ const pageTitle = title ? `${title} - ${SITE.name}` : `${SITE.name} - ${SITE.tag
 // assubkibooks.co.uk - still WordPress - so the card would show a broken image.
 const origin = Astro.url.origin;
 const canonical = new URL(Astro.url.pathname, origin).toString();
-const ogImage = image ? new URL(image, origin).toString() : null;
+/*
+ * Every page shares with a picture. Only book pages had one, so the link the
+ * owner posts most - the shop itself, or a shelf - unfurled in WhatsApp and
+ * Telegram as a bare line of text. The shop's card stands in wherever a page
+ * has no picture of its own, and carries its size so the preview is drawn
+ * before the image has been fetched.
+ */
+const ogImage = new URL(image ?? '/og.png', origin).toString();
+const ogIsCard = !image;
 ---
 
 <!doctype html>
@@ -51,11 +59,23 @@ const ogImage = image ? new URL(image, origin).toString() : null;
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonical} />
-    {ogImage && <meta property="og:image" content={ogImage} />}
-    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+    <meta property="og:image" content={ogImage} />
+    {ogIsCard && (
+      <>
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content={`${SITE.name} - ${SITE.tagline}`} />
+      </>
+    )}
+    <meta property="og:locale" content="en_GB" />
+    <meta name="twitter:card" content="summary_large_image" />
 
     <meta name="theme-color" content="#184485" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    {/* For the browsers and crawlers that never read the SVG - including the
+        ones that ask for /favicon.ico by name whatever the page says. */}
+    <link rel="icon" href="/favicon.ico" sizes="32x32 48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script is:inline nonce={Astro.locals.cspNonce}>
       try {
         if (sessionStorage.getItem('asb-internal-navigation') === '1') {

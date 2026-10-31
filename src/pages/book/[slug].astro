@@ -5,7 +5,7 @@ import { shelfTrail, breadcrumbJsonLd } from '../../lib/breadcrumbs';
 import BookCard from '../../components/BookCard.astro';
 import Rosette from '../../components/Rosette.astro';
 import { bookBySlug, relatedBooks, setOptions } from '../../lib/db';
-import { price, availability, imageUrl, stripTags, truncate, SITE, buildQuery } from '../../lib/format';
+import { price, availability, imageUrl, stripTags, truncate, SITE, buildQuery, RETURN_POLICY } from '../../lib/format';
 import { delivery } from '../../lib/incoming';
 import { liveSale } from '../../lib/sales';
 import { classmark } from '../../lib/classmarks';
@@ -142,11 +142,10 @@ const shareDescription = truncate(
  * this was - the price and availability below were never eligible to appear in
  * a search result at all.
  *
- * Deliberately absent: `hasMerchantReturnPolicy` and `shippingDetails`. Both
- * earn annotations in Google's results and both would have to state a returns
- * window and a postage rate. The returns page is still a set of blanks and
- * postage is quoted per order, so there is no true value to give. A guessed one
- * would be a promise the shop has not made.
+ * The returns policy is the one /returns states (see `RETURN_POLICY`).
+ * Deliberately absent: `shippingDetails`. It would have to state a postage
+ * rate, and postage is quoted per order, so there is no true value to give. A
+ * guessed one would be a promise the shop has not made.
  */
 /*
  * The shelf this book is filed under, as a trail.
@@ -172,6 +171,13 @@ const jsonLd = {
   brand: book.publisher ? { '@type': 'Brand', name: book.publisher } : undefined,
   alternateName: nativeTitle ?? undefined,
   author: book.author ? { '@type': 'Person', name: book.author } : undefined,
+  // The language the shop files it under, as the code Google reads. A reader
+  // searching in Urdu is looking for exactly this.
+  inLanguage: ({ english: 'en', arabic: 'ar', urdu: 'ur' } as Record<string, string>)[book.language],
+  // Only once somebody has confirmed the edition - see `isbn` in db.ts. An ISBN
+  // is the one identifier Google matches a book across shops by.
+  isbn: book.isbn ?? undefined,
+  gtin13: book.isbn && /^97[89]\d{10}$/.test(book.isbn) ? book.isbn : undefined,
   publisher: book.publisher ? { '@type': 'Organization', name: book.publisher } : undefined,
   description: plain || undefined,
   // Same reasoning as the OG tags in Base.astro: follow the served host.
@@ -184,6 +190,8 @@ const jsonLd = {
     availability:
       book.available > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
     seller: { '@type': 'Organization', name: SITE.name },
+    url: new URL(`/book/${book.slug}`, Astro.url.origin).toString(),
+    hasMerchantReturnPolicy: RETURN_POLICY,
   },
 };
 ---

@@ -18,6 +18,8 @@ export interface Category {
   parent_id: number | null;
   path: string;
   sort: number;
+  /** Only read by `categoryByPath`, for the shelf page itself. */
+  blurb?: string | null;
 }
 
 export interface CategoryNode extends Category {
@@ -536,7 +538,7 @@ export async function categoryTree(language: BookLanguage | null = null): Promis
 
 export async function categoryByPath(path: string): Promise<Category | null> {
   return db()
-    .prepare('SELECT id, slug, name, parent_id, path, sort FROM categories WHERE path = ?')
+    .prepare('SELECT id, slug, name, parent_id, path, sort, blurb FROM categories WHERE path = ?')
     .bind(path)
     .first<Category>();
 }

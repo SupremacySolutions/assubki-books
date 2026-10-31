@@ -5598,6 +5598,89 @@ async function findable() {
   const stamped = (map.match(/<lastmod>/g) ?? []).length;
   t.ok(urls > 0 && urls === stamped, 'every sitemap entry says when it last changed');
   t.ok(!map.includes('<priority>'), 'and none of them pretends priority is read');
+  t.ok(['/delivery', '/returns', '/terms', '/privacy'].every((p) => map.includes(`${p}</loc>`)),
+    'the policy pages are offered too');
+  const withCover = map.match(new RegExp(`<loc>[^<]*/book/${row.slug}</loc>.*?</url>`))?.[0] ?? '';
+  t.ok(/<image:loc>[^<]*\/img\/[^<]*&amp;v=/.test(withCover),
+    'a book entry carries its cover, escaped for XML', withCover.slice(0, 200));
+
+  // --- the rest of the product markup ----------------------------------------
+  t.ok(['en', 'ar', 'ur'].includes(product.inLanguage), 'a book says what language it is in');
+  t.ok(product.offers.hasMerchantReturnPolicy?.merchantReturnDays === 14,
+    'and carries the returns policy /returns states');
+  t.ok(!product.offers.shippingDetails, 'but no postage rate, which is quoted per order');
+  t.ok(org.hasMerchantReturnPolicy?.merchantReturnDays === 14 && Boolean(org.logo),
+    'the shop names its returns policy and its logo once, site-wide');
+
+  // --- every page shares with a picture --------------------------------------
+  const homePage = await html('/');
+  t.ok(/<meta property="og:image" content="[^"]*\/og\.png"/.test(homePage),
+    'a page with no picture of its own shares the shop card');
+  t.ok(page.includes('og:image" content=') && !/og:image" content="[^"]*\/og\.png"/.test(page),
+    'and a book still shares its own cover');
+  for (const asset of ['/og.png', '/favicon.ico', '/apple-touch-icon.png']) {
+    t.ok((await get(asset)).status === 200, `${asset} is served`);
+  }
+
+  // --- one address per page --------------------------------------------------
+  const slashed = await get('/catalogue/hadith/?sort=title');
+  t.ok(slashed.status === 301 && slashed.headers.get('location') === '/catalogue/hadith?sort=title',
+    'a trailing slash is sent to the address without one, query and all',
+    `${slashed.status} ${slashed.headers.get('location')}`);
+  const sneaky = await get('//example.com/');
+  t.ok(!(sneaky.headers.get('location') ?? '').startsWith('//'),
+    'and a doubled leading slash cannot become a redirect off the site',
+    `${sneaky.status} ${sneaky.headers.get('location')}`);
+  const legacyShop = await get('/shop/');
+  t.ok(legacyShop.headers.get('location') === '/catalogue',
+    'an old WooCommerce address still takes its own single hop');
+
+  // --- a shelf page says something, and keeps its old address ----------------
+  const shelf = await one(`SELECT id, name, path, parent_id FROM categories WHERE path = 'hadith'`);
+  const bare = await html('/catalogue/hadith');
+  t.ok(bare.includes('<title>Hadith - Islamic books - '), 'a shelf is titled as books, not just a word');
+  t.ok(/<meta name="description" content="\d+ Hadith titles?(, \d+ in stock)?\. Islamic books posted/.test(bare),
+    'and described with what is true of it until the owner writes something');
+
+  const blurb = 'Hadith collections and commentaries, from the Sihah Sittah to short forty-hadith primers.';
+  await admin('/api/admin/shelves/update', {
+    id: String(shelf.id), name: shelf.name, parent: shelf.parent_id ?? '', blurb: `  ${blurb}\n `,
+  });
+  const told = await html('/catalogue/hadith');
+  t.ok(told.includes(`<meta name="description" content="${blurb}">`),
+    "the owner's blurb becomes the shelf's description");
+  t.ok(visibleText(told).includes(blurb),
+    'and is printed under the heading');
+  t.ok(!visibleText(await html('/catalogue/hadith?lang=urdu')).includes(blurb),
+    'but not again on a narrowed view');
+  // A rename from an older tab, without the field, must not wipe it.
+  await admin('/api/admin/shelves/update', { id: String(shelf.id), name: shelf.name, parent: shelf.parent_id ?? '' });
+  t.ok((await one(`SELECT blurb FROM categories WHERE id = ${shelf.id}`)).blurb === blurb,
+    'a save without the field leaves the blurb alone');
+
+  await admin('/api/admin/shelves/update', {
+    id: String(shelf.id), name: 'Hadith Books E2E', parent: shelf.parent_id ?? '', blurb,
+  });
+  const moved = await get('/catalogue/hadith?page=2');
+  t.ok(moved.status === 301 && moved.headers.get('location') === '/catalogue/hadith-books-e2e?page=2',
+    'a renamed shelf sends its old address on to the new one',
+    `${moved.status} ${moved.headers.get('location')}`);
+  const child = await one(`SELECT path FROM categories WHERE parent_id = ${shelf.id} LIMIT 1`);
+  if (child) {
+    const oldChild = child.path.replace(/^hadith-books-e2e\//, 'hadith/');
+    const hop = await get(`/catalogue/${oldChild}`);
+    t.ok(hop.status === 301 && hop.headers.get('location') === `/catalogue/${child.path}`,
+      'and so does every shelf underneath it');
+  }
+  t.ok((await get('/catalogue/never-was-a-shelf')).status === 404, 'a path that never existed is still a 404');
+
+  await admin('/api/admin/shelves/update', {
+    id: String(shelf.id), name: shelf.name, parent: shelf.parent_id ?? '', blurb: '',
+  });
+  const back = await one(`SELECT path, blurb FROM categories WHERE id = ${shelf.id}`);
+  t.ok(back.path === 'hadith' && back.blurb === null, 'renaming back restores the shelf, and an empty blurb clears it');
+  t.ok((await get('/catalogue/hadith')).status === 200, 'with its original address live again, not redirected');
+  await db(`DELETE FROM shelf_redirects`);
 
   // --- ISBNs -----------------------------------------------------------------
   const isbn = await import('../src/lib/isbn-search.ts');
