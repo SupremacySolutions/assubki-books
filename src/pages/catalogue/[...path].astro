@@ -10,7 +10,8 @@ import {
 import { buildQuery, truncate } from '../../lib/format';
 import { allCategories } from '../../lib/db';
 import { shelfTrail, breadcrumbJsonLd } from '../../lib/breadcrumbs';
-import { recordMiss } from '../../lib/searches';
+import { recordMiss, isHumanSearch } from '../../lib/searches';
+import { SESSION_COOKIE } from '../../lib/admin-auth';
 import { WANTED } from '../../lib/order-status';
 import { liveSale } from '../../lib/sales';
 import { shelfRedirect } from '../../lib/shelves';
@@ -86,11 +87,12 @@ const chosenPublisher =
  * same way `api/orders.ts` hands off its notifications, so a slow write cannot
  * hold up somebody's results.
  *
- * Some of these will be robots walking query strings. That is tolerable for a
- * signal the owner reads with their own judgement, and cheaper than building
- * bot detection for it.
+ * Only searches a person made from the shop's own search box, and not the
+ * owner's own - see `isHumanSearch`. The log was once mostly crawlers and a
+ * security scanner, which buried the customers in it. A search that came back
+ * with close spellings is not recorded either: they found something.
  */
-if (q && result.total === 0 && page === 1) {
+if (q && result.total === 0 && page === 1 && isHumanSearch(Astro.request, q, SESSION_COOKIE)) {
   const miss = recordMiss(q);
   const ctx = (Astro.locals as { cfContext?: ExecutionContext }).cfContext;
   if (ctx?.waitUntil) ctx.waitUntil(miss);
@@ -488,6 +490,13 @@ const description = category
             <noscript><button type="submit" class="btn btn-ghost !py-1.5 mt-2">Apply</button></noscript>
           </form>
         </div>
+
+        {result.closeMatch && q && (
+          <p class="mt-3 text-[14.5px] text-[var(--color-ink-soft)]" role="status">
+            Nothing is spelled exactly “{q}”, so these are the closest titles. Transliterations
+            vary - try another spelling if the one you want is not here.
+          </p>
+        )}
 
         {/* The first page only: on page 2 or a filtered view it is the same
             paragraph again between the customer and the books. */}

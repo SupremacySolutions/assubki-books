@@ -184,7 +184,10 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
           : d.oldestWaitingHours < 1
             /* "oldest 0h ago" reads as a bug rather than as good news. */
             ? 'all within the hour'
-            : `oldest ${d.oldestWaitingHours}h ago`}
+            /* Days past two: "1443h ago" had to be divided in the head. */
+            : d.oldestWaitingHours < 48
+              ? `oldest ${d.oldestWaitingHours}h ago`
+              : `oldest ${Math.floor(d.oldestWaitingHours / 24)} days ago`}
       </p>
     </a>
     <a href="/admin/orders?status=awaiting_payment" class="lift block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]">
@@ -492,22 +495,33 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
   <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4 mt-3">
     <p class="eyebrow mb-1">Looked for, not found</p>
     <p class="text-[12.5px] text-[var(--color-ink-faint)] mb-3 leading-relaxed">
-      Searches that returned nothing, most asked first. Some will be robots; the rest are
-      customers telling you what to stock.
+      What customers searched the shop for and found nothing, most asked first - each one a book
+      somebody wanted. Robots and your own searches are left out, and spellings of one title are
+      counted together.
     </p>
     {d.misses.length > 0 ? (
-      <ul class="grid gap-x-6 gap-y-1.5 sm:grid-cols-2 text-[13px]">
+      /* One column on a phone, sized to the screen rather than to the longest
+         search: a column sized to its content let one long search push the
+         whole dashboard wider than the phone. */
+      <ul class="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 text-[13px]">
         {d.misses.map((m) => (
-          <li class="flex justify-between gap-3">
-            {/* Straight to the catalogue search, so the owner can see for
-                themselves what the customer saw. */}
-            <a
-              href={`/catalogue?q=${encodeURIComponent(m.terms)}`}
-              class="truncate text-[var(--color-navy)] hover:underline underline-offset-2"
-            >{m.terms}</a>
-            <span class="tabular-nums shrink-0 text-[var(--color-ink-faint)]">
-              {m.times}{m.times === 1 ? '' : '×'}
-            </span>
+          <li class="min-w-0">
+            <div class="flex items-baseline justify-between gap-3">
+              {/* Straight to the catalogue search, so the owner can see for
+                  themselves what the customer saw. */}
+              <a
+                href={`/catalogue?q=${encodeURIComponent(m.terms)}`}
+                class="min-w-0 truncate text-[var(--color-navy)] hover:underline underline-offset-2"
+              >{m.terms}</a>
+              <span class="tabular-nums shrink-0 text-[var(--color-ink-faint)]">
+                {m.times}{m.times === 1 ? '' : '×'}
+              </span>
+            </div>
+            {m.also && m.also.length > 0 && (
+              <p class="truncate text-[12px] text-[var(--color-ink-faint)]">
+                also as {m.also.join(', ')}
+              </p>
+            )}
           </li>
         ))}
       </ul>
@@ -515,6 +529,27 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       <p class="text-[13.5px] text-[var(--color-ink-faint)]">
         Every search in this period found something.
       </p>
+    )}
+    {/* Set aside rather than hidden: worth knowing that a want was met. */}
+    {d.answered.length > 0 && (
+      <details class="mt-3 pt-3 border-t border-[var(--color-rule-faint)] text-[13px]">
+        <summary class="cursor-pointer text-[var(--color-ink-soft)] select-none">
+          {d.answered.length} earlier {d.answered.length === 1 ? 'search now finds' : 'searches now find'} a book
+        </summary>
+        <ul class="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+          {d.answered.map((m) => (
+            <li class="min-w-0 flex items-baseline justify-between gap-3">
+              <a
+                href={`/catalogue?q=${encodeURIComponent(m.terms)}`}
+                class="min-w-0 truncate text-[var(--color-navy)] hover:underline underline-offset-2"
+              >{m.terms}</a>
+              <span class="tabular-nums shrink-0 text-[var(--color-ink-faint)]">
+                {m.times}{m.times === 1 ? '' : '×'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
     )}
     {/* The half of this that can actually be answered. A miss is anonymous; a
         request has somebody waiting on the other end of it. */}
