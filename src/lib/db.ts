@@ -10,6 +10,7 @@ import { env } from 'cloudflare:workers';
 import { tidyPublisher } from './publishers';
 import { catalogueDb, catalogueVersion, forgetCatalogueVersion } from './read-cache';
 import { parseLayout, type HomeSection } from './home-layout';
+import { closest, foldWords, type Folded } from './fuzzy';
 
 export interface Category {
   id: number;
@@ -567,6 +568,39 @@ export function ftsQuery(raw: string): string | null {
   return words.map((w, i) => (i === words.length - 1 ? `"${w}"*` : `"${w}"`)).join(' AND ');
 }
 
+let foldedCache: { version: number; value: Folded[] } | null = null;
+
+/**
+ * Every live title, folded for `closest` - read once per catalogue version.
+ *
+ * Titles in every script and the author, because a search is as often for
+ * "Ibn Abidin" as for "Radd al-Muhtar". Not the description: it is most of
+ * the bytes, and a loose match against prose finds everything. Through the
+ * versioned cache like the rest of the catalogue, and only asked for when an
+ * exact search has already come back empty.
+ */
+async function foldedTitles(): Promise<Folded[]> {
+  const version = await catalogueVersion();
+  if (foldedCache?.version === version) return foldedCache.value;
+  const { results } = await db()
+    .prepare(
+      `SELECT b.id, b.title, b.title_ar, b.title_ur, b.author FROM books b
+        WHERE b.status = 'live' AND ${NOT_DELETED} AND ${NOT_A_PART}`,
+    )
+    .all<{ id: number; title: string; title_ar: string | null; title_ur: string | null; author: string | null }>();
+  const value = results.map((r) => ({
+    id: r.id,
+    words: foldWords([r.title, r.title_ar, r.title_ur, r.author].filter(Boolean).join(' ')),
+  }));
+  foldedCache = { version, value };
+  return value;
+}
+
+/** The live books a search most probably meant, best first. See `lib/fuzzy`. */
+export async function closeMatches(q: string, limit = 48): Promise<number[]> {
+  return closest(q, await foldedTitles(), limit);
+}
+
 // ---------------------------------------------------------------------------
 // Listing
 // ---------------------------------------------------------------------------
@@ -629,6 +663,11 @@ export interface ListOptions {
   sort?: Sort;
   page?: number;
   perPage?: number;
+  /**
+   * Only these books, best first - the close-spelling matches a search fell
+   * back to. Not for callers: `listBooks` fills it in itself.
+   */
+  ids?: number[];
 }
 
 export interface ListResult {
@@ -639,6 +678,11 @@ export interface ListResult {
   page: number;
   pages: number;
   perPage: number;
+  /**
+   * The search found nothing as typed, and these are its closest spellings
+   * instead - so the page can say so rather than pretend they matched.
+   */
+  closeMatch?: boolean;
 }
 
 export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
@@ -655,6 +699,12 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
     from += ' JOIN books_fts f ON f.rowid = b.id';
     where.push('books_fts MATCH ?');
     binds.push(match);
+  }
+
+  const chosen = opts.ids?.length ? JSON.stringify(opts.ids) : null;
+  if (chosen) {
+    where.push('b.id IN (SELECT value FROM json_each(?))');
+    binds.push(chosen);
   }
 
   if (opts.categoryPath) {
@@ -714,9 +764,16 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
 
   const whereSql = ` WHERE ${where.join(' AND ')}`;
 
-  const sort = opts.sort ?? (match ? 'relevance' : 'title');
+  const sort = opts.sort ?? (match || chosen ? 'relevance' : 'title');
+  // Close matches arrive already ranked; their order is their position.
+  const orderBinds: unknown[] = [];
+  if (sort === 'relevance' && !match && chosen) orderBinds.push(chosen);
   const orderBy = {
-    relevance: match ? 'f.rank' : 'b.title COLLATE NOCASE',
+    relevance: match
+      ? 'f.rank'
+      : chosen
+        ? '(SELECT j.key FROM json_each(?) j WHERE j.value = b.id)'
+        : 'b.title COLLATE NOCASE',
     title: 'b.title COLLATE NOCASE',
     /*
      * The price on the card, not the price on the row.
@@ -800,11 +857,27 @@ export async function listBooks(opts: ListOptions = {}): Promise<ListResult> {
           (needsSale ? saleJoin : '') +
           `${whereSql}${order} LIMIT ? OFFSET ?`,
       )
-      .bind(...binds, perPage, (page - 1) * perPage)
+      .bind(...binds, ...orderBinds, perPage, (page - 1) * perPage)
       .all<{ id: number }>(),
   ]);
 
   const ids = pageIds.results.map((r) => r.id);
+
+  /*
+   * Nothing as typed: try the spellings.
+   *
+   * Only once the exact search has come back empty, so a precise answer is
+   * never crowded out by a loose one, and with every other filter kept - a
+   * close match for "kuduri" on the Fiqh shelf is still on the Fiqh shelf.
+   */
+  const empty = wantsTotal ? (countRow?.n ?? 0) === 0 : !ids.length && page === 1;
+  if (match && empty && opts.q) {
+    const near = await closeMatches(opts.q);
+    if (near.length) {
+      return { ...(await listBooks({ ...opts, q: null, ids: near })), closeMatch: true };
+    }
+  }
+
   let rows: BookRow[] = [];
   if (ids.length) {
     const { results } = await db()
