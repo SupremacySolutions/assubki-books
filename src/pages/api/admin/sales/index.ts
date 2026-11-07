@@ -1,3 +1,4 @@
+        // One line under the name, edited in a text box: line breaks fold to spaces.
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { forgetSale } from '../../../../lib/sales';
@@ -21,7 +22,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   if (action === 'create') {
     const name = String(form.get('name') ?? '').trim().slice(0, 120);
-    const blurb = String(form.get('blurb') ?? '').trim().slice(0, 300) || null;
+    const blurb = String(form.get('blurb') ?? '').replace(/\s+/g, ' ').trim().slice(0, 300) || null;
     if (!name) return back('/admin/sales?e=name');
 
     const made = await env.DB.prepare(
@@ -38,7 +39,7 @@ export const POST: APIRoute = async ({ request }) => {
     await env.DB.prepare('UPDATE sales SET name = ?, blurb = ? WHERE id = ?')
       .bind(
         String(form.get('name') ?? '').trim().slice(0, 120) || 'Sale',
-        String(form.get('blurb') ?? '').trim().slice(0, 300) || null,
+        String(form.get('blurb') ?? '').replace(/\s+/g, ' ').trim().slice(0, 300) || null,
         id,
       )
       .run();
