@@ -36,11 +36,14 @@ const PER_PASS = 20;
  *
  * Unlike an arrival notice, which holds somebody's copies until it is read and
  * so must never stop trying, a pre-order update goes stale: "the books have
- * arrived" is not worth sending three days late. Six goes with the backoff
- * doubling from fifteen minutes covers about sixteen hours - long enough to
- * outlast a day's allowance resetting at midnight.
+ * arrived" is not worth sending three days late. The backoff doubles from
+ * fifteen minutes, so eight goes put the last about thirty-two hours after the
+ * first. That always reaches past the next midnight UTC, when Resend's daily
+ * allowance resets, so a list that ran out of allowance in the morning still
+ * goes out - as the portal tells the owner it will. Six would give up after
+ * under eight hours, before the reset.
  */
-export const GIVE_UP_AFTER = 6;
+export const GIVE_UP_AFTER = 8;
 
 /** What the form starts with. The owner changes it to suit the news. */
 export function defaultMail(p: Pick<Preorder, 'title'>): { subject: string; message: string } {
