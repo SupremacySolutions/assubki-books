@@ -21,7 +21,19 @@ import { lineTotal } from './multibuy';
 import { env } from 'cloudflare:workers';
 import type { CreatedOrder } from './orders';
 import { price, SITE } from './format';
-import { deliver, ownerAddress, shell, button, itemRows, escapeHtml, noReply, noReplyText } from './email';
+import {
+  deliver,
+  ownerAddress,
+  shell,
+  button,
+  textLink,
+  itemRows,
+  escapeHtml,
+  noReply,
+  noReplyText,
+  contactFooter,
+  contactFooterText,
+} from './email';
 import { sendMessage, sendMessageId, optInLink, esc, botConfigured, mdLink } from './telegram';
 import {
   statusMessage,
@@ -117,7 +129,7 @@ function customerPlaced(input: PlacedInput) {
      ${input.notes ? `<p style="margin:12px 0 0;font-size:14px;color:#4a5568">Your note: ${escapeHtml(input.notes)}</p>` : ''}
      ${telegramBlock}
      ${button(link, 'View your request')}
-     <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
+     <p style="margin:20px 0 0;font-size:13.5px;color:#636b7a;line-height:1.6">
        ${closing}
      </p>
      ${noReply(link)}`,
@@ -188,7 +200,7 @@ function ownerPlaced(input: PlacedInput) {
          : ''
      }
      ${button(`${origin}/admin/orders/${order.ref}`, 'Confirm and send payment details')}
-     <p style="margin:18px 0 0;font-size:13.5px;color:#8b93a1">
+     <p style="margin:18px 0 0;font-size:13.5px;color:#636b7a">
        ${
          ownerWaiting.length > 0
            ? 'This order has no 48-hour hold - a reservation stands until the delivery lands, and the seven days to reply start from then.'
@@ -337,7 +349,7 @@ function confirmedEmail(input: ConfirmedInput) {
        }</p>
      </div>
      ${button(link, 'View your order')}
-     <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
+     <p style="margin:20px 0 0;font-size:13.5px;color:#636b7a;line-height:1.6">
        ${
          cash
            ? 'No payment is taken on our website. Message us to agree a time and the books will be waiting.'
@@ -506,7 +518,7 @@ export async function notifyOrderAmended(
          ? `<p style="margin:0 0 18px;font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(note)}</p>`
          : ''
      }
-     <p style="margin:0 0 10px;font-size:13px;color:#8b93a1;text-transform:uppercase;letter-spacing:.06em">What is on your order now</p>
+     <p style="margin:0 0 10px;font-size:13px;color:#636b7a;text-transform:uppercase;letter-spacing:.06em">What is on your order now</p>
      ${itemRows(
        input.items,
        input.subtotalPence,
@@ -651,7 +663,7 @@ export async function notifyBooksAdded(
          ? `<p style="margin:0 0 18px;font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(note)}</p>`
          : ''
      }
-     <p style="margin:0 0 10px;font-size:13px;color:#8b93a1;text-transform:uppercase;letter-spacing:.06em">What is on your order now</p>
+     <p style="margin:0 0 10px;font-size:13px;color:#636b7a;text-transform:uppercase;letter-spacing:.06em">What is on your order now</p>
      ${itemRows(
        input.items,
        input.subtotalPence,
@@ -748,7 +760,7 @@ export async function notifyGroupStarted(input: {
      <p style="margin:0 0 6px;font-size:14px;font-weight:600">Your own link - keep this one</p>
      <p style="margin:0 0 18px;font-size:13.5px;color:#4a5568;word-break:break-all">${escapeHtml(input.organiserLink)}</p>
      ${button(input.organiserLink, 'Open your group basket')}
-     <p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
+     <p style="margin:20px 0 0;font-size:13.5px;color:#636b7a;line-height:1.6">
        Nothing is held or charged while a group basket is being filled. The books are only set aside
        once you send it, and it lasts a week.
      </p>
@@ -963,8 +975,14 @@ async function sendStatusChange(input: {
              ? `<p style="margin:16px 0 0;font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(note)}</p>`
              : ''
          }
-         ${copy.trackingLink ? button(copy.trackingLink, 'Track this parcel') : ''}
-         ${button(link, 'View your order')}
+         ${
+           /* One button. Tracking is what a dispatched customer came for;
+              the order page goes under it as a plain link rather than a
+              second identical button competing with it. */
+           copy.trackingLink
+             ? button(copy.trackingLink, 'Track this parcel') + textLink(link, 'View your order')
+             : button(link, 'View your order')
+         }
          ${noReply(link)}`,
       ),
       text:
@@ -1209,7 +1227,7 @@ async function tellCustomer(input: {
       html: shell(
         'The shop has replied',
         `About order ${input.ref}`,
-        `<p style="margin:0 0 4px;font-size:13px;color:#8b93a1">${escapeHtml(SITE.name)} said</p>` +
+        `<p style="margin:0 0 4px;font-size:13px;color:#636b7a">${escapeHtml(SITE.name)} said</p>` +
           `<p style="margin:0;font-size:15px;line-height:1.6">${escapeHtml(line)}</p>` +
           button(link, 'Read it and reply') +
           noReply(link),
@@ -1290,14 +1308,17 @@ export async function sendBackInStock(
       `<p style="margin:0;font-size:15px;line-height:1.6">You asked us to tell you when
          <strong>${escapeHtml(alert.title)}</strong> came back. It is on the shelf now.</p>` +
         button(link, 'See it in the shop') +
-        `<p style="margin:20px 0 0;font-size:13.5px;color:#8b93a1;line-height:1.6">
+        `<p style="margin:20px 0 0;font-size:13.5px;color:#636b7a;line-height:1.6">
            Stock is limited and we have not held a copy for you - it is first come.
            This is the only message you will get about it; we do not keep your address
-           once it has been used.</p>`,
+           once it has been used.</p>` +
+        contactFooter('You are getting this because you asked to be told when this book was back.'),
+      `${alert.title} is on the shelf now`,
     ),
     text:
-      `${alert.title} is back in stock.\n\n${link}\n\n` +
+      `${alert.title} is back in stock at ${SITE.name}.\n\n${link}\n\n` +
       'We have not held a copy - it is first come. This is the only message you will ' +
-      'get about it, and we do not keep your address once it has been used.\n',
+      'get about it, and we do not keep your address once it has been used.' +
+      contactFooterText('You are getting this because you asked to be told when this book was back.'),
   });
 }
