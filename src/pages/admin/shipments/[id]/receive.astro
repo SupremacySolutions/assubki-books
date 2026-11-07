@@ -2,6 +2,7 @@
 import Admin from '../../../../layouts/Admin.astro';
 import { getShipment, receiveRows } from '../../../../lib/shipments';
 import { whenText } from '../../../../lib/incoming';
+import { isArabicScript } from '../../../../lib/format';
 
 const id = Number.parseInt(Astro.params.id ?? '', 10);
 const shipment = Number.isInteger(id) ? await getShipment(id) : null;
@@ -101,7 +102,7 @@ const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1f
     {claimed.map((i) => (
       <div class:list={[COLS, 'px-5 sm:px-7 py-3 border-b border-[var(--color-rule-faint)]']} data-row data-expected={i.incoming} data-claims={i.reserved_incoming}>
         <div class="min-w-0 pr-3">
-          <p dir="auto" class="ar text-[16.5px] font-medium leading-[1.5]">{i.title}</p>
+          <p dir="auto" class:list={['text-[16.5px] font-medium leading-[1.5]', isArabicScript(i.title) ? 'ar' : '!text-[15.5px]']}>{i.title}</p>
           <p class="mt-0.5 text-[12px] text-[var(--color-brass)]">
             {i.reserved_incoming} {i.reserved_incoming === 1 ? 'copy is' : 'copies are'} reserved
           </p>
@@ -139,7 +140,7 @@ const COLS = 'grid grid-cols-[minmax(0,1fr)_5rem_9rem] lg:grid-cols-[minmax(0,1f
         {rest.map((i) => (
           <div class:list={[COLS, 'px-5 sm:px-7 py-3 border-t border-[var(--color-rule-faint)]']} data-row data-expected={i.incoming} data-claims="0">
             <div class="min-w-0 pr-3">
-              <p dir="auto" class="ar text-[16.5px] font-medium leading-[1.5]">{i.title}</p>
+              <p dir="auto" class:list={['text-[16.5px] font-medium leading-[1.5]', isArabicScript(i.title) ? 'ar' : '!text-[15.5px]']}>{i.title}</p>
               <p class="mt-0.5 text-[12px] text-[var(--color-ink-faint)]">nothing reserved</p>
             </div>
             <span class="text-[14px] text-[var(--color-ink-soft)] tabular-nums">{i.incoming}</span>

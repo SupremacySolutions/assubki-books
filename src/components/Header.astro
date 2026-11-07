@@ -40,7 +40,7 @@ const isCatalogue = path.startsWith('/catalogue');
           type="search"
           name="q"
           value={q}
-          placeholder="Search by title, English or Arabic"
+          placeholder="Title in English or Arabic"
           class="field"
           autocomplete="off"
         />
@@ -55,7 +55,7 @@ const isCatalogue = path.startsWith('/catalogue');
       <a
         href="/basket"
         class:list={[
-          'md:hidden relative ml-auto inline-flex items-center gap-2 rounded-[var(--radius-pill)] px-3.5 py-2 text-[14px] font-medium shrink-0',
+          'xl:hidden relative ml-auto inline-flex items-center gap-2 rounded-[var(--radius-pill)] px-3.5 py-2 text-[14px] font-medium shrink-0',
           path.startsWith('/basket')
             ? 'bg-[var(--color-navy)] text-white'
             : 'bg-[var(--color-navy-deep)] text-white',
@@ -75,7 +75,13 @@ const isCatalogue = path.startsWith('/catalogue');
         >0</span>
       </a>
 
-      <nav class="hidden md:flex items-center gap-1 md:gap-2 ml-auto shrink-0" aria-label="Main">
+      {/* From xl only. The six links and the basket need ~650px beside the
+          name and the search box: at 768 the search box was squeezed to
+          nothing and "Basket" hung past the edge, so every page scrolled
+          sideways on a tablet, and at 1024 the search box was 40px wide.
+          Below xl the links use the pill row underneath, as on a phone, and
+          the basket stays up here. */}
+      <nav class="hidden xl:flex items-center gap-2 ml-auto shrink-0" aria-label="Main">
         <a
           href="/about"
           class:list={[
@@ -111,7 +117,7 @@ const isCatalogue = path.startsWith('/catalogue');
         <a
           href="/order"
           class:list={[
-            'hidden lg:block px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] transition-colors whitespace-nowrap',
+            'px-3 py-2 text-[14.5px] rounded-sm hover:text-[var(--color-navy)] transition-colors whitespace-nowrap',
             path.startsWith('/order') ? 'text-[var(--color-navy)] font-medium' : 'text-[var(--color-ink-soft)]',
           ]}>Look up order</a
         >
@@ -135,7 +141,7 @@ const isCatalogue = path.startsWith('/catalogue');
       </nav>
     </div>
 
-    <nav class="scroll-hint -mx-5 flex items-center gap-1 overflow-x-auto overscroll-x-contain border-t border-[var(--color-rule-soft)] px-5 py-2 md:hidden" aria-label="Mobile">
+    <nav class="scroll-hint -mx-5 md:-mx-10 flex items-center gap-1 overflow-x-auto overscroll-x-contain border-t border-[var(--color-rule-soft)] px-5 md:px-10 py-2 xl:hidden" aria-label="Mobile">
       <a
         href="/about"
         class:list={[
@@ -194,7 +200,7 @@ const isCatalogue = path.startsWith('/catalogue');
         type="search"
         name="q"
         value={q}
-        placeholder="Search by title, English or Arabic"
+        placeholder="Title in English or Arabic"
         class="field"
         autocomplete="off"
       />

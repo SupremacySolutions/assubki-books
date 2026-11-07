@@ -92,7 +92,7 @@ const closed = await maintenanceNotice();
           <span class="font-[family-name:var(--font-display)] text-[16px] font-semibold">
             Shop portal
           </span>
-          <span class="ml-auto text-[13px] text-[var(--color-wash)]/70 truncate max-w-[45%]">
+          <span class="ml-auto text-[13px] text-[var(--color-wash)]/70 truncate max-w-[45%] max-[359px]:hidden">
             {admin?.via === 'password' ? 'Owner workspace' : admin?.email}
           </span>
           <a href="/" class="shrink-0 py-1 text-[13px] text-[var(--color-wash)] hover:text-white underline underline-offset-2 transition-colors">

@@ -95,14 +95,6 @@ const marks = (book.cat_slugs ?? '')
         )
       }
 
-      {/* This book's own percentage, never the sale headline. Top-left, so it
-          never collides with the low-stock chip on the same corner - that one
-          moves right when both are showing. */}
-      {off > 0 && (
-        <span class="absolute top-2.5 left-2.5 bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-[0.08em] uppercase px-2.5 py-1 rounded-[var(--radius-pill)]">
-          {off}% off
-        </span>
-      )}
       {
         avail.state === 'out' && (
           <span
@@ -118,18 +110,27 @@ const marks = (book.cat_slugs ?? '')
           </span>
         )
       }
-      {
-        avail.state === 'low' && (
-          <span
-            class:list={[
-              'absolute top-2.5 bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-[0.08em] uppercase px-2.5 py-1 rounded-[var(--radius-pill)]',
-              off > 0 ? 'right-2.5' : 'left-2.5',
-            ]}
-          >
-            Only {book.available} left
-          </span>
-        )
-      }
+      {/*
+        * This book's own percentage (never the sale headline) and the
+        * low-stock chip share one wrapping row across the top. Pinned to
+        * opposite corners separately, they needed ~170px together, and on a
+        * phone's two-up grid the card is ~130px: "Only 1 left" sat on top of
+        * "18% off" and hid it. Now the second drops under the first.
+        */}
+      {(off > 0 || avail.state === 'low') && (
+        <div class="absolute top-2.5 inset-x-2.5 flex flex-wrap justify-between gap-1.5 pointer-events-none">
+          {off > 0 && (
+            <span class="bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-[0.08em] uppercase px-2 min-[400px]:px-2.5 py-1 rounded-[var(--radius-pill)] whitespace-nowrap">
+              {off}% off
+            </span>
+          )}
+          {avail.state === 'low' && (
+            <span class="bg-[var(--color-outstock)] text-white text-[10px] font-semibold tracking-[0.08em] uppercase px-2 min-[400px]:px-2.5 py-1 rounded-[var(--radius-pill)] whitespace-nowrap">
+              Only {book.available} left
+            </span>
+          )}
+        </div>
+      )}
     </div>
 
     <div class="pt-3.5 flex flex-1 flex-col">

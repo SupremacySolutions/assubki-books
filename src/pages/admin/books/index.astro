@@ -240,7 +240,7 @@ const windowed = () => {
         name="q"
         type="search"
         value={q ?? ''}
-        placeholder="Search title, Arabic title or slug"
+        placeholder="Title or slug"
         class="field"
       />
       <button type="submit" class="btn btn-ghost">Search</button>
@@ -360,7 +360,17 @@ const windowed = () => {
     ) : (
       <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
         {result.books.map((b) => (
-          <li class="flex items-center gap-3 p-3">
+          <li
+            class:list={[
+              /* On a phone the stock box, Save and the bin took ~200px of a
+                 ~300px row and squeezed the title to five letters ("Tafsi...").
+                 Below sm the controls drop to a second line under the title,
+                 and the box/thumbnail span both lines; from sm up the wrapper
+                 is display:contents and the row is the single line it was. */
+              'grid items-center gap-x-3 gap-y-2 p-3 sm:flex',
+              inBin ? 'grid-cols-[auto_minmax(0,1fr)]' : 'grid-cols-[auto_auto_minmax(0,1fr)]',
+            ]}
+          >
             {!inBin && (
               <input
                 type="checkbox"
@@ -369,12 +379,12 @@ const windowed = () => {
                 form="bulkForm"
                 data-bulk-row
                 aria-label={`Select ${b.title}`}
-                class="shrink-0 w-4 h-4 accent-[var(--color-navy)]"
+                class="shrink-0 w-4 h-4 accent-[var(--color-navy)] row-span-2 sm:row-span-1"
               />
             )}
             <a
               href={`/admin/books/${b.id}`}
-              class="shrink-0 w-11 h-14 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden"
+              class="shrink-0 w-11 h-14 bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden row-span-2 sm:row-span-1"
             >
               {b.image_key ? (
                 <img src={imageUrl(b.image_key, 'thumb')} alt="" class="max-h-full max-w-full object-contain" loading="lazy" />
@@ -386,7 +396,7 @@ const windowed = () => {
             </a>
 
             <div class="min-w-0 flex-1">
-              <a href={`/admin/books/${b.id}`} class="text-[15px] font-medium hover:text-[var(--color-navy)] block truncate">
+              <a href={`/admin/books/${b.id}`} class="text-[15px] font-medium leading-snug hover:text-[var(--color-navy)] break-words">
                 {b.title}
               </a>
               <p class="text-[13px] text-[var(--color-ink-faint)] flex flex-wrap gap-x-2">
@@ -420,6 +430,7 @@ const windowed = () => {
               * back, or stop waiting and destroy it now. Without that second
               * button a two-phase delete reads as the shop refusing to obey.
               */}
+            <div class="flex items-center justify-between gap-2 min-w-0 sm:contents">
             {inBin ? (
               <div class="flex items-center gap-2 shrink-0">
                 <span class="text-[12.5px] text-[var(--color-ink-faint)] tabular-nums">
@@ -487,6 +498,7 @@ const windowed = () => {
                 <path d="M10 11v5M14 11v5" />
               </svg>
             </button></>)}
+            </div>
           </li>
         ))}
       </ul>

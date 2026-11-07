@@ -184,7 +184,7 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
                 placeholder={slot.label}
                 value={settings[partLabelKey(slot.slot)] ?? ''}
                 data-draft-name={slot.slot}
-                class="field !py-1.5 !text-[14px] !w-64"
+                class="field !py-1.5 !text-[14px] !w-64 max-w-full"
               />
               <label for={partBodyKey(slot.slot)} class="block mt-3 text-[13px] text-[var(--color-ink-faint)] mb-1">
                 What it says

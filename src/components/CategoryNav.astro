@@ -50,7 +50,7 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
               >
                 <span class="flex items-center gap-2 min-w-0">
                   <span class="classmark shrink-0">{classmark(cat.slug)}</span>
-                  <span class="truncate">{cat.name}</span>
+                  <span class="min-w-0 break-words leading-snug">{cat.name}</span>
                 </span>
                 <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0">
                   {cat.count}
@@ -104,7 +104,7 @@ const isAncestor = (path: string) => !!activePath && activePath.startsWith(`${pa
                           : 'text-[var(--color-ink-soft)]',
                       ]}
                     >
-                      <span class="truncate">{child.name}</span>
+                      <span class="min-w-0 break-words leading-snug">{child.name}</span>
                       <span class="text-[12px] tabular-nums text-[var(--color-ink-faint)] shrink-0 pe-6">
                         {child.count}
                       </span>

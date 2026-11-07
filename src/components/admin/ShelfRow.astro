@@ -38,7 +38,10 @@ const consequences = [
   >
     <input type="hidden" name="id" value={shelf.id} />
 
-    <div class="flex-1 min-w-[170px]">
+    {/* 16rem, not 170px: at tablet widths the controls held the name to
+        ~180px and cut longer shelf names off mid-word. The controls now wrap
+        under the name instead of squeezing it. */}
+    <div class="flex-1 min-w-[min(100%,16rem)]">
       <label for={`n${shelf.id}`} class="sr-only">Shelf name</label>
       <input
         id={`n${shelf.id}`}

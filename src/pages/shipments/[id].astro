@@ -8,7 +8,7 @@ import {
   type PublicFilter,
 } from '../../lib/shipments';
 import { whenText } from '../../lib/incoming';
-import { price } from '../../lib/format';
+import { isArabicScript, price } from '../../lib/format';
 
 const id = Number.parseInt(Astro.params.id ?? '', 10);
 const shipment = Number.isInteger(id) ? await getShipment(id) : null;
@@ -208,7 +208,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
                 line under it, which is the wrong way round for a list where
                 the Arabic title is the only thing anybody reads. */}
             <div class="min-w-0 flex-1">
-              <p dir="auto" class="ar text-[18px] sm:text-[19px] leading-[1.55]">{item.title}</p>
+              <p dir="auto" class:list={['leading-[1.55]', isArabicScript(item.title) ? 'ar text-[18px] sm:text-[19px]' : 'text-[16px] sm:text-[17px]']}>{item.title}</p>
               <div class="mt-1.5 flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
                 <span class="font-[family-name:var(--font-display)] text-[16px] font-semibold">
                   {price(item.price_pence)}

@@ -208,7 +208,7 @@ function facts(o: (typeof orders)[number]): string[] {
                     */}
                   <div class="flex-1 min-w-0 grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 p-4 md:flex md:flex-wrap md:gap-x-5">
                     <div class="min-w-0 flex-1 basis-[15rem]">
-                      <p class="text-[15.5px] font-medium truncate">
+                      <p class="text-[15.5px] font-medium break-words">
                         {o.customer_name}
                         <span class="ml-2 text-[13px] font-normal tracking-wide text-[var(--color-ink-faint)]">
                           {o.ref}
@@ -233,7 +233,7 @@ function facts(o: (typeof orders)[number]): string[] {
                           </span>
                         )}
                       </p>
-                      <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-faint)] truncate">
+                      <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-faint)] break-words">
                         {facts(o).join(' · ')}
                       </p>
                     </div>
@@ -289,7 +289,7 @@ function facts(o: (typeof orders)[number]): string[] {
               <li>
                 <a href={`/admin/orders/${o.ref}`} class="flex items-center gap-3 sm:gap-4 px-4 py-3 hover:bg-[var(--color-paper)] transition-colors">
                   <div class="min-w-0 flex-1">
-                    <p class="text-[14.5px] font-medium truncate">
+                    <p class="text-[14.5px] font-medium break-words">
                       {o.customer_name}
                       <span class="ml-2 text-[12.5px] font-normal tracking-wide text-[var(--color-ink-faint)]">
                         {o.ref}
@@ -304,17 +304,21 @@ function facts(o: (typeof orders)[number]): string[] {
                         </span>
                       )}
                     </p>
-                    <p class="text-[13px] text-[var(--color-ink-faint)] truncate">
+                    <p class="text-[13px] text-[var(--color-ink-faint)] break-words">
                       {o.item_count} {o.item_count === 1 ? 'book' : 'books'} · {o.fulfilment} ·{' '}
                       {new Date(o.created_at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                     </p>
                   </div>
-                  <span class:list={['px-2.5 py-1 rounded-[var(--radius-pill)] text-[12px] font-medium shrink-0', TONE[o.status]]}>
-                    {portalLabel(o.status, o.fulfilment, Boolean(o.cash_payment))}
-                  </span>
-                  <span class="price text-[14.5px] shrink-0 w-[4.5rem] text-right">
-                    {price(o.total_pence ?? o.subtotal_pence)}
-                  </span>
+                  {/* Stacked under the price on a phone: side by side, the chip and
+                      price left ~130px for the name and cut the ref to "A...". */}
+                  <div class="shrink-0 flex flex-col-reverse items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
+                    <span class:list={['px-2.5 py-1 rounded-[var(--radius-pill)] text-[12px] font-medium whitespace-nowrap', TONE[o.status]]}>
+                      {portalLabel(o.status, o.fulfilment, Boolean(o.cash_payment))}
+                    </span>
+                    <span class="price text-[14.5px] sm:w-[4.5rem] text-right">
+                      {price(o.total_pence ?? o.subtotal_pence)}
+                    </span>
+                  </div>
                 </a>
               </li>
             ))}
