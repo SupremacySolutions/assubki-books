@@ -26,6 +26,7 @@ import { pruneRequests } from '../../src/lib/book-requests';
 import { prunePreorderInterest } from '../../src/lib/preorders';
 import { pruneCompletedOrders } from '../../src/lib/order-retention';
 import { drainArrivalNotices } from '../../src/lib/shipment-notify';
+import { drainPreorderMail } from '../../src/lib/preorder-mail';
 import { SITE } from '../../src/lib/format';
 import { syncChannelStock } from '../../src/lib/publish';
 
@@ -250,6 +251,18 @@ export default {
     }
 
     /*
+     * The rest of a pre-order mailing, and anything the provider refused.
+     *
+     * The owner's press sends the first batch itself; this is what finishes a
+     * long list and retries a refusal - a day's allowance used up, say - rather
+     * than leaving those people unwritten to.
+     */
+    const preorderMail = await stage('pre-order emails', () => drainPreorderMail(env.DB));
+    if (preorderMail && (preorderMail.sent || preorderMail.failed)) {
+      console.log(`sent ${preorderMail.sent} pre-order email(s), ${preorderMail.failed} to retry`);
+    }
+
+    /*
      * Channel posts out of step with the shop.
      *
      * After the releases above, so a hold that lapsed this run puts its copy
@@ -376,6 +389,7 @@ export default {
     const unpaid = await flagUnpaidReservations(env.DB);
     const told = await drainArrivalNotices(env.DB, SITE.url);
     const alerts = await drainStockAlerts(env.DB, SITE.url);
+    const preorderMail = await drainPreorderMail(env.DB);
     const channel = await syncChannelStock(null, SITE.url, env.DB);
     const groups = await expireGroupBaskets(env.DB);
     const proofs = await sweepProofs(env.DB, env.UPLOADS);
@@ -389,7 +403,7 @@ export default {
     const asked = await pruneRequests(env.DB);
     const interested = await prunePreorderInterest(env.DB);
     return Response.json({
-      lapsed, unpaid, told, alerts, channel, groups, proofs, completed, searches, destroyed, edits, asked,
+      lapsed, unpaid, told, alerts, preorderMail, channel, groups, proofs, completed, searches, destroyed, edits, asked,
       interested,
     });
   },
