@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { missesQuery, type Miss } from './searches';
+import { missesQuery, readMisses, type Miss } from './searches';
 import { requestCountQuery } from './book-requests';
 import { REPOST_AFTER_SECONDS } from './telegram';
 
@@ -56,6 +56,8 @@ export interface Dashboard {
    * somebody who came looking and left with nothing.
    */
   misses: Miss[];
+  /** Searches that once found nothing and now find a book. */
+  answered: Miss[];
   /**
    * How many people asked the shop to go and find something.
    *
@@ -258,6 +260,13 @@ async function read(days: number): Promise<Dashboard> {
   const revenuePence = Number(m.now ?? 0);
   const orders = Number(m.orders ?? 0);
 
+  const missRead = await readMisses(
+    misses.results.map((r) => {
+      const row = r as Record<string, unknown>;
+      return { terms: String(row.terms), times: Number(row.times), lastAt: Number(row.lastAt) };
+    }),
+  );
+
   return {
     toConfirm: Number(w.toConfirm ?? 0),
     lapsed: Number(w.lapsed ?? 0),
@@ -302,10 +311,8 @@ async function read(days: number): Promise<Dashboard> {
         outOfStock: Number(b.outOfStock ?? 0), lowStock: Number(b.lowStock ?? 0),
       };
     })(),
-    misses: misses.results.map((r) => {
-      const row = r as Record<string, unknown>;
-      return { terms: String(row.terms), times: Number(row.times), lastAt: Number(row.lastAt) };
-    }),
+    misses: missRead.open,
+    answered: missRead.answered,
     requests: Number((requests.results[0] as { n?: number } | undefined)?.n ?? 0),
     unread: (() => {
       const rows = unread.results as { ref: string; name: string; n: number }[];

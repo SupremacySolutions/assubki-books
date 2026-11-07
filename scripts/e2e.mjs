@@ -356,16 +356,25 @@ async function publicCatalogue() {
   await db("DELETE FROM searches WHERE terms LIKE 'e2e %'");
   const miss = `e2e ${Math.random().toString(36).slice(2, 7)} qzx`;
 
+  /*
+   * As a customer's browser sends it: from one of the shop's own pages, and
+   * without a portal session. `get` carries the test's admin cookie, which is
+   * exactly what is meant to keep a search out of the log - so these replace
+   * the headers rather than adding to them.
+   */
+  const asCustomer = { redirect: 'follow', headers: { 'Sec-Fetch-Site': 'same-origin' } };
+  const search = (q, extra = '') => get(`/catalogue?q=${encodeURIComponent(q)}${extra}`, asCustomer);
+
   // Three spellings of one thing, which must normalise to one row.
   for (const spelling of [miss, miss.toUpperCase(), `  ${miss.replace(/ /g, '-')}  `]) {
-    await get(`/catalogue?q=${encodeURIComponent(spelling)}`, { redirect: 'follow' });
+    await search(spelling);
   }
   // A pager walking an empty result must not log it again.
-  await get(`/catalogue?q=${encodeURIComponent(miss)}&page=2`, { redirect: 'follow' });
+  await search(miss, '&page=2');
   // One letter is not a search anybody typed on purpose.
-  await get('/catalogue?q=z', { redirect: 'follow' });
+  await search('z');
   // And a search that found something is not a miss.
-  await get('/catalogue?q=nahw', { redirect: 'follow' });
+  await search('nahw');
 
   const logged = await db(
     `SELECT terms, COUNT(*) AS times FROM searches WHERE terms LIKE 'e2e %' GROUP BY terms`,
@@ -378,6 +387,62 @@ async function publicCatalogue() {
   t.ok(single[0].n === 0, 'a single letter is not recorded');
   const found = await db("SELECT COUNT(*) AS n FROM searches WHERE terms = 'nahw'");
   t.ok(found[0].n === 0, 'and neither is a search that found something');
+
+  // --- only people -----------------------------------------------------------
+  //
+  // The log was once two thirds robots: a crawler fetching the search-box
+  // placeholder, a scanner posting markup. Neither is a customer.
+  const robot = `e2e robot ${Math.random().toString(36).slice(2, 7)} qzx`;
+  await get(`/catalogue?q=${encodeURIComponent(robot)}`, { redirect: 'follow', headers: {} });
+  const owner = `e2e owner ${Math.random().toString(36).slice(2, 7)} qzx`;
+  await get(`/catalogue?q=${encodeURIComponent(owner)}`, {
+    redirect: 'follow', headers: { 'Sec-Fetch-Site': 'same-origin', Cookie: adminCookie() },
+  });
+  const older = `e2e older ${Math.random().toString(36).slice(2, 7)} qzx`;
+  await get(`/catalogue?q=${encodeURIComponent(older)}`, {
+    redirect: 'follow', headers: { Referer: `${SITE}/catalogue` },
+  });
+  for (const probe of [`e2e '"><asdf alt="">-f3f3`, 'e2e %27%3E%3Casdf', '{search_term_string}',
+    'e2e 273e3c6173646620616c743d22223e2d66336633']) {
+    await search(probe);
+  }
+  const kept = (await db("SELECT terms FROM searches WHERE terms LIKE 'e2e %' OR terms LIKE 'search%'"))
+    .map((r) => r.terms);
+  t.ok(!kept.some((k) => k.startsWith('e2e robot')), 'a search fetched straight from outside the site is not logged');
+  t.ok(!kept.some((k) => k.startsWith('e2e owner')), 'nor is one made while signed in to the portal');
+  t.ok(kept.some((k) => k.startsWith('e2e older')), 'a browser that only sends a same-site Referer still counts');
+  t.ok(!kept.some((k) => /asdf|f3f3|search term|273e3c/.test(k)),
+    'markup, escapes, hex and the search-box placeholder are never logged', JSON.stringify(kept));
+
+  // --- the spellings behind the spelling --------------------------------------
+  //
+  // About a third of the searches that "found nothing" were for books on the
+  // shelf, typed in another transliteration.
+  const loose = await (await search('al nahw al waadeh')).text();
+  t.ok(loose.includes('closest titles') && loose.includes('al Nahw al Wadih'),
+    'a different transliteration finds the book, and says it is a close match');
+  t.ok((await db("SELECT COUNT(*) AS n FROM searches WHERE terms = 'al nahw al waadeh'"))[0].n === 0,
+    'and is not logged as a miss - they found it');
+  const exact = await (await search('nahw')).text();
+  t.ok(!exact.includes('closest titles'), 'an exact match never falls back');
+
+  const fuzzy = await import('../src/lib/fuzzy.ts');
+  const titles = [
+    { id: 1, words: fuzzy.foldWords('Al Aqidah al Tahawiyyah') },
+    { id: 2, words: fuzzy.foldWords('Tashil al-Zaruri li Masa’il al-Quduri') },
+    { id: 3, words: fuzzy.foldWords('Riyadhus Salihin') },
+    { id: 4, words: fuzzy.foldWords('Syntax Made Easy') },
+    { id: 5, words: fuzzy.foldWords('al Binayah Sharh al Hidayah البناية شرح الهداية') },
+    { id: 6, words: fuzzy.foldWords('Jami al-Tirmidhi') },
+  ];
+  const first = (q) => fuzzy.closest(q, titles, 1)[0];
+  t.ok(first('aqeedah tahawiyya') === 1, 'aqeedah finds aqidah');
+  t.ok(first('kuduri') === 2, 'kuduri finds quduri');
+  t.ok(first('riyadh us saliheen') === 3, 'a glued article and doubled vowels still land');
+  t.ok(first('بناية') === 5, 'an Arabic word without its article and ta marbuta still lands');
+  t.ok(first('trimizi') === 6, 'two swapped letters are one slip');
+  t.ok(first('quran made easy') === undefined, 'but a three-word search must not drop the word that matters');
+  t.ok(fuzzy.foldKey('binaya') === fuzzy.foldKey('Binayah'), 'spellings of one search share a key, for the dashboard');
 
   /*
    * The panel, not the freshness of it.
