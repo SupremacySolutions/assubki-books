@@ -224,14 +224,25 @@ export const escapeHtml = (s: string) =>
  *
  * Tables and `bgcolor` where a plain div would do, because Outlook renders
  * through Word and drops most block-level styling.
+ *
+ * The hidden first line is the inbox preview. Gmail and Apple Mail show the
+ * opening text of a message under its subject, and without this that was the
+ * letterhead - "As-Subkī Books مكتبة السبكي" on every email the shop sends,
+ * which tells the reader nothing the From line had not. It defaults to the
+ * sub-heading, which is the useful part: the reference, the total, the book.
+ *
+ * The grey used for small print throughout is #636b7a. The lighter #8b93a1 it
+ * replaced fell short of the 4.5:1 contrast small text needs, and footers are
+ * exactly what gets read on a phone in daylight.
  */
-export function shell(heading: string, sub: string, inner: string): string {
+export function shell(heading: string, sub: string, inner: string, preheader: string = sub): string {
   return `<!doctype html><html><head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="supported-color-schemes" content="light">
   </head><body style="margin:0;background:#f5f4f0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#101828">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#f5f4f0;opacity:0">${escapeHtml(preheader)}${'&nbsp;&zwnj;'.repeat(40)}</div>
   <div style="max-width:560px;margin:0 auto;padding:28px 22px">
     <div style="background:#0e2a55;color:#ffffff;padding:20px 24px 22px;border-radius:3px 3px 0 0">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
@@ -255,8 +266,8 @@ export function shell(heading: string, sub: string, inner: string): string {
     <div style="background:#fff;border:1px solid #ddd9d1;border-top:none;padding:24px;border-radius:0 0 3px 3px">
       ${inner}
     </div>
-    <p style="margin:16px 0 0;font-size:12.5px;color:#8b93a1;text-align:center">
-      <a href="${SITE.url}" style="color:#8b93a1;text-decoration:none">assubkibooks.co.uk</a>
+    <p style="margin:16px 0 0;font-size:12.5px;color:#636b7a;text-align:center">
+      <a href="${SITE.url}" style="color:#636b7a;text-decoration:none">assubkibooks.co.uk</a>
     </p>
   </div></body></html>`;
 }
@@ -280,7 +291,7 @@ export function noReply(orderLink?: string | null): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0">
     <tr><td height="1" bgcolor="#ddd9d1" style="height:1px;line-height:1px;font-size:0">&nbsp;</td></tr>
   </table>
-  <p style="margin:14px 0 0;font-size:13px;color:#8b93a1;line-height:1.6">
+  <p style="margin:14px 0 0;font-size:13px;color:#636b7a;line-height:1.6">
     This address is not monitored - replies to it are not read.
     <a href="${escapeHtml(href)}" style="color:#184485">Answer on ${escapeHtml(what)}</a>,
     where the shop will see it,
@@ -296,6 +307,39 @@ export function noReplyText(orderLink?: string | null): string {
     `Answer on your order page: ${href}\n` +
     `Or message us on Telegram: ${SITE.telegram}\n`
   );
+}
+
+/**
+ * The footer for mail that is not about an order.
+ *
+ * `noReply` points back at an order page, and a back-in-stock alert or a
+ * pre-order update has none. These still need the two things every message
+ * from an address nobody reads must say: why it arrived, and where an answer
+ * will actually be seen.
+ */
+export function contactFooter(why: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0">
+    <tr><td height="1" bgcolor="#ddd9d1" style="height:1px;line-height:1px;font-size:0">&nbsp;</td></tr>
+  </table>
+  <p style="margin:14px 0 0;font-size:13px;color:#636b7a;line-height:1.6">
+    ${escapeHtml(why)}
+    This address is not monitored - replies to it are not read.
+    Message us on <a href="${escapeHtml(SITE.telegram)}" style="color:#184485">Telegram</a>
+    with any questions.
+  </p>`;
+}
+
+/** The same thing for the plain-text part. */
+export function contactFooterText(why: string): string {
+  return (
+    `\n\n---\n${why}\nThis address is not monitored - replies to it are not read.\n` +
+    `Message us on Telegram: ${SITE.telegram}\n`
+  );
+}
+
+/** A quieter second action, for when a message already has its one button. */
+export function textLink(href: string, label: string): string {
+  return `<p style="margin:14px 0 0;font-size:14.5px"><a href="${escapeHtml(href)}" style="color:#184485">${escapeHtml(label)}</a></p>`;
 }
 
 export function button(href: string, label: string): string {
@@ -314,9 +358,9 @@ export function itemRows(
     .map(
       (i) => `<tr>
         <td style="padding:8px 0;border-bottom:1px solid #ddd9d1">${escapeHtml(i.title)}${
-          i.qty > 1 ? ` <span style="color:#8b93a1">× ${i.qty}</span>` : ''
+          i.qty > 1 ? ` <span style="color:#636b7a">× ${i.qty}</span>` : ''
         }${
-          i.multibuyPence ? `<br><span style="color:#8b93a1;font-size:13px">Multi-buy saving ${money(i.multibuyPence)}</span>` : ''
+          i.multibuyPence ? `<br><span style="color:#636b7a;font-size:13px">Multi-buy saving ${money(i.multibuyPence)}</span>` : ''
         }</td>
         <td style="padding:8px 0;border-bottom:1px solid #ddd9d1;text-align:right;white-space:nowrap">${money(
           lineTotal(i),

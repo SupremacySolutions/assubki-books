@@ -16,7 +16,7 @@
  * with its own binding and has to run this same code.
  */
 
-import { deliver, ownerAddress, shell, button, noReply, noReplyText, escapeHtml } from './email';
+import { deliver, shell, button, noReply, noReplyText, escapeHtml } from './email';
 import { sendMessage, esc, mdLink } from './telegram';
 
 /** How many to send per sweep. Small enough to stay well inside every limit. */
@@ -47,31 +47,49 @@ function wording(notice: QueuedNotice, origin: string) {
   return { link, by };
 }
 
+/*
+ * Styled and worded like every other customer email.
+ *
+ * This one used to tell people to "just reply and tell us", directly above the
+ * footer saying replies to this address are not read - and set the owner as
+ * the reply-to, the arrangement the rest of the mail was moved off so that an
+ * answer lands on the order where the shop will see it. Its paragraphs carried
+ * no styling either, so each mail app rendered them in its own default font and
+ * spacing, and the greeting sat in the blue header where the reference goes.
+ */
 async function tellByEmail(notice: QueuedNotice, origin: string): Promise<boolean> {
   const { link, by } = wording(notice, origin);
+  const p = 'margin:0 0 16px;font-size:15px;line-height:1.6';
+  const ask = by
+    ? `Please let us know by <strong>${escapeHtml(by)}</strong> so we can keep them for you.`
+    : 'Please let us know within seven days so we can keep them for you.';
   const body = `
-    <p>The books you reserved from <strong>${escapeHtml(notice.shipment_title)}</strong>
+    <p style="margin:0 0 16px;font-size:15px">السلام عليكم ${escapeHtml(notice.customer_name)},</p>
+    <p style="${p}">The books you reserved from <strong>${escapeHtml(notice.shipment_title)}</strong>
        have arrived, and your copies are set aside in your name.</p>
-    <p>See your order for the latest total and payment instructions. ${
-      by
-        ? `Please let us know by <strong>${escapeHtml(by)}</strong> so we can keep them for you.`
-        : 'Please let us know within seven days.'
-    }</p>
-    <p>If you need longer, or would rather not go ahead, just reply and tell us.</p>
+    <p style="${p}">Your order page has the latest total and how to pay. ${ask}</p>
+    <p style="margin:0;font-size:15px;line-height:1.6">If you need longer, or would rather not go ahead,
+       tell us on your order page and we will sort it out.</p>
     ${button(link, 'See your order')}
     ${noReply(link)}`;
   return deliver({
     to: notice.email,
-    replyTo: await ownerAddress(),
     subject: `Your reserved books have arrived - ${notice.ref}`,
     html: shell(
       'Your reserved books have arrived',
-      `السلام عليكم ${escapeHtml(notice.customer_name)}`,
+      `Reference ${notice.ref}`,
       body,
+      `Your copies from ${notice.shipment_title} are set aside in your name.`,
     ),
-    text: `Your reserved books from ${notice.shipment_title} have arrived and are set aside for you.${
-      by ? ` Please let us know by ${by}.` : ' Please let us know within seven days.'
-    }\n\n${link}${noReplyText(link)}`,
+    text:
+      `Your reserved books have arrived - ${notice.ref}\n\n` +
+      `السلام عليكم ${notice.customer_name},\n\n` +
+      `The books you reserved from ${notice.shipment_title} have arrived, and your copies are set aside in your name.\n\n` +
+      `Your order page has the latest total and how to pay. ${
+        by ? `Please let us know by ${by}` : 'Please let us know within seven days'
+      } so we can keep them for you.\n\n` +
+      `If you need longer, or would rather not go ahead, tell us on your order page.\n\n` +
+      `${link}${noReplyText(link)}`,
   });
 }
 

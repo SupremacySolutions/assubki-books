@@ -8013,6 +8013,42 @@ async function preorders() {
     t.ok(/who registered/i.test(list), 'and says where to find who they are');
 
     /*
+     * Writing to everyone goes from the shop, not the owner's own mail app.
+     *
+     * It used to be a `mailto:?bcc=` link - the owner's personal inbox, no
+     * letterhead, every address in a blind-copy line, and no record of who had
+     * been told. Now it is one email per person from the shop's address, in the
+     * same letterhead as order mail.
+     */
+    const portalHtml = await html(`/admin/preorders/${id}`);
+    t.ok(!portalHtml.includes('mailto:?bcc') && !/blind copy/i.test(portalHtml),
+      'the blind-copy mail link is gone');
+    t.ok(/Email everyone on this list/.test(portalHtml) && /Send to 2 people/.test(visibleText(portalHtml)),
+      'and the page offers to send it from the shop instead');
+    const preview = await html(`/admin/preorders/${id}/email-preview?subject=${encodeURIComponent('It is here')}&message=${encodeURIComponent('The books are in.')}`);
+    t.ok(preview.includes('السلام عليكم Amina') && preview.includes('You asked for 3 copies') && preview.includes('The books are in.'),
+      'the preview is the real email, greeting the first person with their own number');
+    const offSite = await admin(`/api/admin/preorders/${id}/email`, {
+      subject: 'It is here', message: 'The books are in.', link: 'https://example.com/elsewhere',
+    });
+    t.ok(offSite.location.includes('mail=link'), 'a button link off the shop’s site is refused');
+    t.ok((await one(`SELECT COUNT(*) AS n FROM preorder_mailings WHERE preorder_id=${id}`)).n === 0,
+      'and nothing is queued for it');
+    const mailed = await admin(`/api/admin/preorders/${id}/email`, {
+      subject: 'It is here', message: 'The books are in.', link: '/book/some-title',
+    });
+    t.ok(mailed.location.includes('mail=sent') && mailed.location.includes('n=2'),
+      'one press sends it to everyone on the list');
+    const mailing = await one(`SELECT id, recipients, sent, link FROM preorder_mailings WHERE preorder_id=${id}`);
+    t.ok(mailing.recipients === 2 && mailing.sent === 2, 'one email per person, recorded as sent');
+    t.ok(mailing.link === 'https://assubkibooks.co.uk/book/some-title', 'with the button pointing at the real shop');
+    t.ok((await one(`SELECT COUNT(*) AS n FROM preorder_mail_queue WHERE mailing_id=${mailing.id} AND sent_at IS NOT NULL`)).n === 2,
+      'each person’s copy is marked as gone');
+    const again = await admin(`/api/admin/preorders/${id}/email`, { subject: 'It is here', message: 'The books are in.' });
+    t.ok(again.location.includes('mail=duplicate'), 'a second press of the same message is not a second email');
+    t.ok(/2 of 2 sent/.test(visibleText(await html(`/admin/preorders/${id}`))), 'and the page shows what went');
+
+    /*
      * Nothing reaches the channel before the owner has read it.
      *
      * A new pre-order has no saved row to build a caption from, so offering to

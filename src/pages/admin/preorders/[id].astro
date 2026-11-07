@@ -7,6 +7,9 @@ import { publisherSpellings } from '../../../lib/db';
 import { imageUrl, htmlToPlainText } from '../../../lib/format';
 import { botConfigured } from '../../../lib/telegram';
 import { plainPreorderCaption } from '../../../lib/preorders';
+import { defaultMail, mailingsFor, MAX_MESSAGE, MAX_SUBJECT, GIVE_UP_AFTER } from '../../../lib/preorder-mail';
+import { emailConfigured, fromAddress } from '../../../lib/email';
+import { emailUsage, usedAgainstLimits, RESEND_DAILY_LIMIT } from '../../../lib/email-usage';
 
 const { id } = Astro.params;
 const isNew = id === 'new';
@@ -57,12 +60,37 @@ const tg = TELEGRAM[q.get('tg') ?? ''];
 const when = (at: number) =>
   new Date(at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-/* Everyone at once, blind-copied, for "the books have arrived". */
-const everyone = interest.length
-  ? `mailto:?bcc=${interest.map((i) => encodeURIComponent(i.email)).join(',')}&subject=${encodeURIComponent(
-      `${p!.title}: pre-order`,
-    )}`
-  : null;
+/*
+ * Writing to everyone on the list, from the shop's own address.
+ *
+ * This was a `mailto:?bcc=` link labelled "Email everyone (blind copy)", which
+ * opened the owner's own mail app with every address hidden in the BCC line -
+ * so it went from their personal inbox, without the shop's letterhead, and
+ * nothing recorded who had been told. Now the shop sends it, one email per
+ * person. See lib/preorder-mail.ts.
+ */
+const mailings = p ? await mailingsFor(p.id) : [];
+const draftMail = p ? defaultMail(p) : null;
+const canEmail = emailConfigured();
+const sender = fromAddress()?.match(/<([^>]+)>/)?.[1] ?? fromAddress();
+const usage = p && interest.length ? await emailUsage() : null;
+const leftToday = usage ? Math.max(0, RESEND_DAILY_LIMIT - usedAgainstLimits(usage).today) : null;
+const MAIL: Record<string, { ok: boolean; text: string }> = {
+  sent: { ok: true, text: `Sent to all ${q.get('n')} ${q.get('n') === '1' ? 'person' : 'people'}.` },
+  queued: {
+    ok: true,
+    text: `${q.get('sent')} of ${q.get('n')} sent so far. The rest go out over the next few minutes - the list below shows how it is getting on.`,
+  },
+  empty: { ok: false, text: 'Nobody is on the list, so there was nobody to email.' },
+  duplicate: { ok: false, text: 'That exact message went out a few minutes ago, so it was not sent again.' },
+  subject: { ok: false, text: `The email needs a subject, of up to ${MAX_SUBJECT} characters.` },
+  message: { ok: false, text: `The email needs a message, of up to ${MAX_MESSAGE} characters.` },
+  link: {
+    ok: false,
+    text: 'The link has to be a page on assubkibooks.co.uk - copy it from the book in the shop, or leave it blank.',
+  },
+};
+const mailNote = MAIL[q.get('mail') ?? ''];
 ---
 
 <Admin
@@ -348,9 +376,9 @@ const everyone = interest.length
     <section id="interest" class="mt-10 scroll-mt-24">
       <div class="flex flex-wrap items-baseline justify-between gap-3 mb-3">
         <h2 class="font-[family-name:var(--font-display)] text-[22px] font-semibold">Registered interest</h2>
-        {everyone && (
-          <a href={everyone} class="text-[14px] text-[var(--color-navy)] underline underline-offset-2">
-            Email everyone (blind copy)
+        {interest.length > 0 && (
+          <a href="#email" class="text-[14px] text-[var(--color-navy)] underline underline-offset-2">
+            Email everyone
           </a>
         )}
       </div>
@@ -404,6 +432,119 @@ const everyone = interest.length
               </tr>
             </tfoot>
           </table>
+        </div>
+      )}
+    </section>
+  )}
+
+  {p && (interest.length > 0 || mailings.length > 0 || mailNote) && (
+    <section id="email" class="mt-8 scroll-mt-24 grid gap-4">
+      {mailNote && (
+        <p
+          role={mailNote.ok ? 'status' : 'alert'}
+          class:list={[
+            'p-3 rounded-[3px] text-[14.5px] border',
+            mailNote.ok
+              ? 'bg-[var(--color-instock)]/10 border-[var(--color-instock)]/30 text-[var(--color-instock)]'
+              : 'bg-[var(--color-outstock)]/6 border-[var(--color-outstock)]/25 text-[var(--color-outstock)]',
+          ]}
+        >{mailNote.text}</p>
+      )}
+
+      {interest.length > 0 && draftMail && (
+        <form
+          method="post"
+          action={`/api/admin/preorders/${p.id}/email`}
+          class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5 grid gap-4"
+        >
+          <div>
+            <h3 class="text-[17px] font-semibold">Email everyone on this list</h3>
+            <p class="mt-1 text-[14px] text-[var(--color-ink-soft)] leading-relaxed">
+              Sent from <strong class="font-medium text-[var(--color-ink)]">{sender ?? 'the shop’s address'}</strong>,
+              the same address as order emails. Each person gets their own email with their name and how
+              many copies they asked for - nobody sees anyone else’s address.
+            </p>
+          </div>
+          <div>
+            <label for="mailSubject" class="block text-[14.5px] font-medium mb-1.5">Subject</label>
+            <input id="mailSubject" name="subject" required maxlength={MAX_SUBJECT} value={draftMail.subject} class="field" />
+          </div>
+          <div>
+            <label for="mailMessage" class="block text-[14.5px] font-medium mb-1.5">Message</label>
+            <textarea id="mailMessage" name="message" required rows="5" maxlength={MAX_MESSAGE} class="field"
+              >{draftMail.message}</textarea
+            >
+            <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+              Plain text. The greeting with their name, the book and their number of copies are added for you.
+            </p>
+          </div>
+          <div>
+            <label for="mailLink" class="block text-[14.5px] font-medium mb-1.5">
+              Link to the book in the shop <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
+            </label>
+            <input id="mailLink" name="link" maxlength="300" inputmode="url" placeholder="https://assubkibooks.co.uk/book/…" class="field" />
+            <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+              Paste the book’s page address once it is listed, and the email gets a “See it in the shop” button.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            {/* The confirmation sits on this button rather than the form, so
+                Preview - which submits the same fields - opens without asking. */}
+            <button
+              type="submit"
+              class="btn btn-primary"
+              disabled={!canEmail}
+              data-confirm={`Send this email to ${interest.length} ${interest.length === 1 ? 'person' : 'people'}? It goes straight out from ${sender ?? 'the shop'}.`}
+            >
+              Send to {interest.length} {interest.length === 1 ? 'person' : 'people'}
+            </button>
+            <button
+              type="submit"
+              formmethod="get"
+              formaction={`/admin/preorders/${p.id}/email-preview`}
+              formtarget="_blank"
+              formnovalidate
+              class="btn btn-ghost"
+            >Preview the email</button>
+            {canEmail && leftToday !== null && (
+              <span class="text-[13.5px] text-[var(--color-ink-soft)]">
+                Uses {interest.length} of today’s {RESEND_DAILY_LIMIT} emails · {leftToday} left today
+                {leftToday < interest.length && ' - the rest go out after midnight'}
+              </span>
+            )}
+          </div>
+          {!canEmail && (
+            <p class="text-[14px] text-[var(--color-outstock)]">Email is not configured, so nothing can be sent.</p>
+          )}
+        </form>
+      )}
+
+      {mailings.length > 0 && (
+        <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
+          <h3 class="eyebrow mb-2">Sent so far</h3>
+          <ul class="divide-y divide-[var(--color-rule-faint)]">
+            {mailings.map((m) => (
+              <li class="py-2.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[14.5px]">
+                <span class="min-w-0 break-words">“{m.subject}”</span>
+                <span
+                  class:list={[
+                    'text-[13.5px] whitespace-nowrap',
+                    m.undelivered ? 'text-[var(--color-outstock)]' : m.waiting ? 'text-[var(--color-ink-soft)]' : 'text-[var(--color-instock)]',
+                  ]}
+                >
+                  {m.sent} of {m.recipients} sent
+                  {m.waiting > 0 && ` · ${m.waiting} still to go`}
+                  {m.undelivered > 0 && ` · ${m.undelivered} could not be delivered`}
+                  {` · ${when(m.created_at)}`}
+                </span>
+                {m.undelivered > 0 && m.last_error && (
+                  <span class="basis-full text-[12.5px] text-[var(--color-ink-faint)]">
+                    Gave up after {GIVE_UP_AFTER} tries. Last reason: {m.last_error}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>
