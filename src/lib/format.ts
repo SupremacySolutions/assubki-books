@@ -141,3 +141,13 @@ export function buildQuery(
   const s = params.toString();
   return s ? `?${s}` : '';
 }
+
+/**
+ * Whether a line is written in Arabic script (Arabic, Urdu, Persian).
+ *
+ * The `.ar` style sets naskh right-to-left. A shipment's free-typed list mixes
+ * both scripts in one column, and an English title given that style fell back
+ * to Times (naskh has no Latin glyphs), right-aligned and wrapped mid-cell.
+ */
+export const isArabicScript = (text: string | null | undefined): boolean =>
+  /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/.test(text ?? '');

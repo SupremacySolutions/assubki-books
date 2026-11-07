@@ -68,7 +68,7 @@ const saved = params.get('saved');
               form="pickerFilters"
               name="q"
               value={q ?? ''}
-              placeholder="Search title or Arabic title"
+              placeholder="Title or Arabic title"
               class="flex-1 min-w-0 bg-transparent border-0 outline-none text-[14px]"
             />
             <span class="shrink-0 text-[12.5px] text-[var(--color-ink-faint)] tabular-nums">
@@ -104,7 +104,7 @@ const saved = params.get('saved');
       </div>
 
       <div class="border-x border-b border-[var(--color-rule-soft)] rounded-b-[var(--radius-panel)] bg-white overflow-hidden">
-        <div class="sale-row px-3.5 py-2 border-b border-[var(--color-rule-soft)] text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
+        <div class="sale-row sale-head px-3.5 py-2 border-b border-[var(--color-rule-soft)] text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--color-ink-faint)]">
           <span /><span />
           <span>Title</span>
           <span class="text-right">Full price</span>
@@ -122,17 +122,17 @@ const saved = params.get('saved');
               ]}
             >
               <input type="hidden" name={`present_${b.id}`} value="1" />
-              <input type="checkbox" data-tick checked={pc > 0} class="w-4 h-4 accent-[var(--color-navy)]" />
-              <span class="w-11 h-11 grid place-items-center bg-white border border-[var(--color-rule-soft)] rounded-[3px] overflow-hidden">
+              <input type="checkbox" data-tick checked={pc > 0} class="sr-tick w-4 h-4 accent-[var(--color-navy)]" />
+              <span class="sr-thumb w-11 h-11 grid place-items-center bg-white border border-[var(--color-rule-soft)] rounded-[3px] overflow-hidden">
                 {b.image_key && (
                   <img src={imageUrl(b.image_key, 'thumb')} alt="" loading="lazy" class="max-h-full max-w-full object-contain" />
                 )}
               </span>
-              <span class="min-w-0 truncate text-[14px]">{b.title}</span>
-              <span class="text-right text-[13.5px] tabular-nums text-[var(--color-ink-faint)]">
+              <span class="sr-title min-w-0 break-words leading-snug text-[14px]">{b.title}</span>
+              <span class="sr-full text-right text-[13.5px] tabular-nums text-[var(--color-ink-faint)]">
                 {price(b.price_pence)}
               </span>
-              <span class="inline-flex items-center justify-end rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white">
+              <span class="sr-off inline-flex items-center justify-end rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white">
                 <input
                   type="number"
                   name={`percent_${b.id}`}
@@ -147,7 +147,7 @@ const saved = params.get('saved');
               </span>
               <span
                 data-pay
-                class:list={['text-right text-[13.5px] tabular-nums', pc > 0 ? 'price' : 'text-[var(--color-ink-faint)]']}
+                class:list={['sr-pay text-right text-[13.5px] tabular-nums', pc > 0 ? 'price' : 'text-[var(--color-ink-faint)]']}
               >
                 {pc > 0 ? price(salePrice(b.price_pence, pc)) : 'not in the sale'}
               </span>
@@ -220,8 +220,10 @@ const saved = params.get('saved');
         <input type="hidden" name="id" value={sale.id} />
         <p class="eyebrow mb-2.5">Name and line</p>
         <input name="name" value={sale.name} maxlength="120" required class="field !py-2 !text-[14px]" />
-        <input name="blurb" value={sale.blurb ?? ''} maxlength="300" placeholder="A line beneath it (optional)"
-          class="field !py-2 !text-[14px] mt-2" />
+        {/* Up to 300 characters, so a box that shows them: a one-line input
+            hid all but the first few words of the line customers see. */}
+        <textarea name="blurb" maxlength="300" rows="3" placeholder="A line beneath it (optional)"
+          class="field !py-2 !text-[14px] mt-2 leading-relaxed resize-y">{sale.blurb ?? ''}</textarea>
         <button type="submit" class="btn btn-ghost !py-1.5 !text-[13.5px] mt-3">Save name</button>
       </form>
     </aside>
@@ -310,8 +312,35 @@ const saved = params.get('saved');
 
   .sale-row {
     display: grid;
-    grid-template-columns: 24px 44px 1fr 80px 88px 92px;
+    grid-template-columns: 24px 44px minmax(0, 1fr) 80px 88px 92px;
     gap: 12px;
     align-items: center;
+  }
+
+  /*
+   * Six columns need ~400px before the title gets any; a phone row has ~300.
+   * The title went to zero width and "They pay" hung off the right edge. On a
+   * phone the title takes the first line and the three numbers the second,
+   * with the tick and thumbnail spanning both - the header no longer lines up
+   * with anything there, so it goes.
+   */
+  @media (max-width: 639px) {
+    .sale-head {
+      display: none;
+    }
+    .sale-row {
+      grid-template-columns: 20px 40px auto 72px minmax(0, 1fr);
+      grid-template-areas:
+        'tick thumb title title title'
+        'tick thumb full off pay';
+      column-gap: 8px;
+      row-gap: 6px;
+    }
+    .sale-row .sr-tick { grid-area: tick; }
+    .sale-row .sr-thumb { grid-area: thumb; width: 40px; height: 40px; }
+    .sale-row .sr-title { grid-area: title; }
+    .sale-row .sr-full { grid-area: full; }
+    .sale-row .sr-off { grid-area: off; }
+    .sale-row .sr-pay { grid-area: pay; }
   }
 </style>

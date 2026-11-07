@@ -71,7 +71,9 @@ const counts = [
               <span class="rounded-[var(--radius-pill)] bg-[var(--color-rule)]/60 px-2.5 py-0.5 text-[12px] text-[var(--color-ink-soft)]">
                 Draft
               </span>
-              <span class="min-w-0 flex-1 text-[15px] font-medium truncate">{s.name}</span>
+              {/* A 10rem basis so the links wrap under the name on a phone,
+                  instead of squeezing it to "Dr..." beside them. */}
+              <span class="min-w-0 flex-[1_1_10rem] text-[15px] font-medium break-words">{s.name}</span>
               <span class="text-[13px] text-[var(--color-ink-faint)] shrink-0">
                 {s.books} {s.books === 1 ? 'book' : 'books'}
                 {s.books > 0 && ` · up to ${s.headline}%`}

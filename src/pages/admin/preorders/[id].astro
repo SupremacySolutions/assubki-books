@@ -98,7 +98,9 @@ const everyone = interest.length
   )}
 
   {p && (
-    <div class="mb-6 grid gap-3 sm:grid-cols-3">
+    <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {/* Two across on a phone, status underneath: stacked one per row the
+          two single numbers took a whole screen before the form began. */}
       <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
         <p class="eyebrow">Copies wanted</p>
         <p class="mt-1 text-[32px] font-semibold tabular-nums leading-none">{p.copies}</p>
@@ -107,7 +109,7 @@ const everyone = interest.length
         <p class="eyebrow">People</p>
         <p class="mt-1 text-[32px] font-semibold tabular-nums leading-none">{p.people}</p>
       </div>
-      <div class="p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
+      <div class="col-span-2 sm:col-span-1 p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)]">
         <p class="eyebrow">Status</p>
         <p class="mt-1.5 text-[17px] font-medium">
           {p.status === 'open' ? 'Open - taking interest' : p.status === 'closed' ? 'Closed' : 'Draft - not on the shop'}
@@ -230,7 +232,7 @@ const everyone = interest.length
           <label for="status" class="block text-[14.5px] font-medium mb-1.5">Visibility</label>
           <select id="status" name="status" class="field">
             <option value="draft" selected={(p?.status ?? 'open') === 'draft'}>Draft (hidden)</option>
-            <option value="open" selected={(p?.status ?? 'open') === 'open'}>Open - customers can register</option>
+            <option value="open" selected={(p?.status ?? 'open') === 'open'}>Open - taking interest</option>
             <option value="closed" selected={p?.status === 'closed'}>Closed - no more registrations</option>
           </select>
           <p class="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
@@ -360,7 +362,7 @@ const everyone = interest.length
           {p.status === 'open' ? 'Nobody has registered yet.' : 'Nobody registered.'}
         </p>
       ) : (
-        <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-x-auto">
+        <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-x-auto relative">
           <table class="w-full text-[14.5px]">
             <thead>
               <tr class="text-left text-[12.5px] text-[var(--color-ink-faint)] border-b border-[var(--color-rule-faint)]">

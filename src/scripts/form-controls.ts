@@ -95,3 +95,40 @@ window.addEventListener('pageshow', (event) => {
   for (const button of busy) button.removeAttribute('aria-busy');
   busy.clear();
 });
+
+/*
+ * A text box grows to show what is already in it.
+ *
+ * The payment wording on Settings, a book's description, a shipment's note:
+ * each opened at a fixed number of rows, and on a phone the last lines of the
+ * owner's own text sat below the box's edge with nothing to say they were
+ * there. Grows only - never shrinks under the height the markup gave it, and
+ * never taller than most of the screen, after which it scrolls as before.
+ *
+ * Fitted at load, and a box that is not laid out yet - in a tab or a closed
+ * disclosure, where it measures nothing - is fitted when it first appears.
+ */
+const fitText = (box: HTMLTextAreaElement) => {
+  if (box.getClientRects().length === 0) return;
+  const cap = Math.round(window.innerHeight * 0.6);
+  if (box.scrollHeight <= box.clientHeight || box.offsetHeight >= cap) return;
+  const style = getComputedStyle(box);
+  const edges = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+  box.style.height = `${Math.min(box.scrollHeight + edges, cap)}px`;
+};
+const boxes = document.querySelectorAll<HTMLTextAreaElement>('textarea.field:not([data-no-grow])');
+const firstSight =
+  'IntersectionObserver' in window
+    ? new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          fitText(entry.target as HTMLTextAreaElement);
+          firstSight?.unobserve(entry.target);
+        }
+      })
+    : null;
+for (const box of boxes) {
+  if (box.getClientRects().length > 0 || !firstSight) fitText(box);
+  else firstSight.observe(box);
+  box.addEventListener('input', () => fitText(box));
+}

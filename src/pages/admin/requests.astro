@@ -45,7 +45,7 @@ const done = Astro.url.searchParams.get('done');
       <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)]">
         {requests.map((r) => (
           <li class="flex flex-wrap items-start gap-x-4 gap-y-2 p-4">
-            <div class="min-w-0 flex-1">
+            <div class="min-w-0 flex-[1_1_14rem]">
               <p class="text-[15px] font-medium">{r.terms}</p>
               {r.note && (
                 <p class="mt-0.5 text-[13.5px] text-[var(--color-ink-soft)] break-words">{r.note}</p>

@@ -165,7 +165,7 @@ const drifting = pretty.slice(0, 14);
       <form action="/catalogue" method="get" class="mt-8 mx-auto max-w-xl" role="search" data-suggest>
         <label for="hero-q" class="sr-only">Search the catalogue</label>
         <div
-          class="flex items-center gap-2 bg-white rounded-[var(--radius-pill)] pl-[22px] pr-2.5 py-2.5 shadow-[var(--shadow-search)]"
+          class="flex items-center gap-1.5 min-[360px]:gap-2 bg-white rounded-[var(--radius-pill)] pl-4 min-[360px]:pl-[22px] pr-2.5 py-2.5 shadow-[var(--shadow-search)]"
         >
           <svg
             width="19"
@@ -176,7 +176,7 @@ const drifting = pretty.slice(0, 14);
             stroke-width="2"
             stroke-linecap="round"
             aria-hidden="true"
-            class="shrink-0"
+            class="shrink-0 hidden min-[360px]:block"
           >
             <circle cx="11" cy="11" r="7"></circle>
             <path d="m20 20-3.5-3.5"></path>
@@ -186,10 +186,12 @@ const drifting = pretty.slice(0, 14);
             type="search"
             name="q"
             placeholder="Try “Nahw” or “النحو”"
-            class="flex-1 min-w-0 bg-transparent border-0 outline-none text-[17px] text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)]"
+            class="flex-1 min-w-0 bg-transparent border-0 outline-none text-[16px] min-[360px]:text-[17px] text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)]"
             autocomplete="off"
           />
-          <button type="submit" class="btn btn-primary !py-2 !px-5 !text-[14.5px] shrink-0">
+          {/* Below 360px the glass and some padding give way, so the
+              example in the box is not cut off on the smallest phones. */}
+          <button type="submit" class="btn btn-primary !py-2 !px-3.5 min-[360px]:!px-5 !text-[14.5px] shrink-0">
             Search
           </button>
         </div>
@@ -351,7 +353,7 @@ const drifting = pretty.slice(0, 14);
                       <span class="w-[38px] shrink-0 text-[10.5px] font-semibold tracking-[0.12em] uppercase text-[var(--color-navy)]">
                         {classmark(cat.slug)}
                       </span>
-                      <span class="min-w-0 flex-1 text-[15.5px] font-medium truncate group-hover:text-[var(--color-navy)]">
+                      <span class="min-w-0 flex-1 text-[15.5px] font-medium leading-snug break-words group-hover:text-[var(--color-navy)]">
                         {cat.name}
                       </span>
                       <span class="shrink-0 text-[13px] text-[var(--color-ink-faint)] tabular-nums">

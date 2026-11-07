@@ -476,6 +476,9 @@ export const WANTED = {
     'We will look for it and write back. Your address is used for that and ' +
     'nothing else, and we delete it once we have dealt with it.',
   notePlaceholder: 'Anything that helps us find it - author, publisher, edition',
+  /* What shows inside the box. The sentence above is its label for screen
+     readers; inside a phone-width box it was cut off after "publisher". */
+  noteHint: 'Author, publisher, edition',
   emailPlaceholder: 'Your email address',
   added: 'Thank you - we will look for it and write to you.',
   already: 'You have already asked us about this one.',

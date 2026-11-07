@@ -160,16 +160,21 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     </div>
   </div>
 
-  {/* What needs the owner today, before anything historical. */}
+  {/* What needs the owner today, before anything historical.
+      Each tile is a two-row subgrid - label, then everything under it - so
+      where a label wraps ("Awaiting payment", two across on a phone or six
+      across on a wide screen) the figures beside it drop with it and stay
+      level, and rows where nothing wraps keep no spare line. */}
   <div class="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-6">
     <a
       href="/admin/orders?status=requested"
       class:list={[
-        'lift block bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
+        'lift grid grid-rows-subgrid row-span-2 gap-0 bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
         d.toConfirm > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule-soft)]',
       ]}
     >
       <p class="eyebrow">To confirm</p>
+      <div>
       <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toConfirm}</p>
       {/* A lapsed hold is not "waiting", it is overdue and holding stock, so it
           gets its own line rather than being folded into the count above. */}
@@ -189,18 +194,23 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
               ? `oldest ${d.oldestWaitingHours}h ago`
               : `oldest ${Math.floor(d.oldestWaitingHours / 24)} days ago`}
       </p>
+      </div>
     </a>
-    <a href="/admin/orders?status=awaiting_payment" class="lift block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]">
+    <a href="/admin/orders?status=awaiting_payment" class="lift grid grid-rows-subgrid row-span-2 gap-0 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]">
       <p class="eyebrow">Awaiting payment</p>
+      <div>
       <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.awaitingPence)}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
         across {d.awaitingPayment} {d.awaitingPayment === 1 ? 'order' : 'orders'}
       </p>
+      </div>
     </a>
-    <a href="/admin/orders?status=paid" class="lift block bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]">
+    <a href="/admin/orders?status=paid" class="lift grid grid-rows-subgrid row-span-2 gap-0 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]">
       <p class="eyebrow">To post</p>
+      <div>
       <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.toPost}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">paid, not sent</p>
+      </div>
     </a>
     {/*
       * Reservations, which the tiles beside this one deliberately leave out.
@@ -213,7 +223,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     <a
       href="/admin/orders?kind=reservations"
       class:list={[
-        'lift block bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
+        'lift grid grid-rows-subgrid row-span-2 gap-0 bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
         d.reservationsLapsed > 0
           ? 'border-[var(--color-outstock)] border-l-[3px]'
           : d.reservationsToConfirm > 0
@@ -222,6 +232,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       ]}
     >
       <p class="eyebrow">Reservations</p>
+      <div>
       <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.reservations}</p>
       {/* Overdue and still holding copies, so it gets its own line - the same
           treatment the 48-hour holds get in the tile beside it. */}
@@ -237,6 +248,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
             ? `${d.reservationsToConfirm} to confirm`
             : 'all confirmed'}
       </p>
+      </div>
     </a>
 
     {/*
@@ -247,11 +259,12 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     <a
       href={d.unread.newest ? `/admin/orders/${d.unread.newest.ref}#thread` : '/admin/orders'}
       class:list={[
-        'lift block bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
+        'lift grid grid-rows-subgrid row-span-2 gap-0 bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
         d.unread.messages > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule-soft)]',
       ]}
     >
       <p class="eyebrow">Messages</p>
+      <div>
       <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.unread.messages}</p>
       <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
         {d.unread.newest === null
@@ -260,10 +273,12 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
             ? `unread from ${d.unread.newest.name}`
             : `across ${d.unread.orders} orders, newest from ${d.unread.newest.name}`}
       </p>
+      </div>
     </a>
 
-    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4">
+    <div class="grid grid-rows-subgrid row-span-2 gap-0 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4">
       <p class="eyebrow">Taken</p>
+      <div>
       <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.revenuePence)}</p>
       <p class="mt-1.5 text-[12.5px]">
         {change === null ? (
@@ -274,6 +289,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
           </span>
         )}
       </p>
+      </div>
     </div>
   </div>
   </div>
@@ -413,7 +429,9 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     </div>
   </div>
 
-  <div class="grid gap-3 lg:grid-cols-3 mt-3">
+  {/* min-w-0 on the panels: a grid item will not shrink below its content by
+      default, and a long title pushed the column past a 320px screen. */}
+  <div class="grid gap-3 lg:grid-cols-3 mt-3 [&>*]:min-w-0">
     <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-2.5">Selling best</p>
       {d.bestSellers.length > 0 ? (
@@ -421,7 +439,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
           {d.bestSellers.map((b) => (
             <li>
               <div class="flex justify-between gap-3 text-[13px]">
-                <span class="truncate">{b.title}</span>
+                <span class="min-w-0 break-words">{b.title}</span>
                 <span class="text-[var(--color-ink-faint)] tabular-nums shrink-0">{b.qty}</span>
               </div>
               <div class="h-1.5 bg-[var(--color-paper)] rounded-full mt-1 overflow-hidden">
@@ -447,7 +465,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
           {d.byShelf.map((s) => (
             <li>
               <div class="flex justify-between gap-3 text-[13px]">
-                <span class="truncate">{s.name}</span>
+                <span class="min-w-0 break-words">{s.name}</span>
                 <span class="text-[var(--color-ink-faint)] tabular-nums shrink-0">{price(s.pence)}</span>
               </div>
               <div class="h-1.5 bg-[var(--color-paper)] rounded-full mt-1 overflow-hidden">
@@ -467,7 +485,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
         <ul class="space-y-1.5 text-[13px]">
           {d.lowStock.map((b) => (
             <li class="flex justify-between gap-3">
-              <a href={`/admin/books?q=${encodeURIComponent(b.title)}`} class="truncate text-[var(--color-navy)] hover:underline underline-offset-2">
+              <a href={`/admin/books?q=${encodeURIComponent(b.title)}`} class="min-w-0 break-words text-[var(--color-navy)] hover:underline underline-offset-2">
                 {b.title}
               </a>
               <span

@@ -1,6 +1,7 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
 import PoundInput from '../../../components/PoundInput.astro';
+import { isArabicScript } from '../../../lib/format';
 import { env } from 'cloudflare:workers';
 import {
   ADMIN_SHIPMENT_PAGE,
@@ -457,7 +458,7 @@ const EDIT_COLS =
 
       {/* One line of arithmetic instead of a paragraph of counts. */}
       <div class="mt-5 flex flex-wrap items-center gap-x-6 gap-y-4">
-        <div class="flex-1 min-w-[18rem]">
+        <div class="flex-1 min-w-[min(100%,18rem)]">
           <div class="flex h-2.5 rounded-[var(--radius-pill)] overflow-hidden bg-[var(--color-rule-faint)]">
             <div class="bg-[var(--color-brass)]" style={`width:${claimedPct}%`}></div>
             <div class="bg-[var(--color-wash)]" style={`width:${100 - claimedPct}%`}></div>
@@ -548,7 +549,7 @@ const EDIT_COLS =
           name="q"
           value={q}
           dir="auto"
-          placeholder={`Search these ${shipment.items} ${shipment.items === 1 ? 'title' : 'titles'}`}
+          placeholder="Search titles"
           class="field !py-2 !text-[14px] flex-1 min-w-0 sm:flex-none sm:w-[15rem]"
           aria-label="Search this shipment"
         />
@@ -749,13 +750,13 @@ const EDIT_COLS =
                         value={i.title}
                         maxlength="200"
                         dir="auto"
-                        class="field ar !text-[15px] !py-1.5"
+                        class:list={['field !text-[15px] !py-1.5', isArabicScript(i.title) && 'ar']}
                         aria-label="Title"
                       />
                     </Fragment>
                   ) : (
                     <Fragment>
-                      <p dir="auto" class="ar text-[17px] font-medium leading-[1.5]">{i.title}</p>
+                      <p dir="auto" class:list={['text-[17px] font-medium leading-[1.5]', isArabicScript(i.title) ? 'ar' : '!text-[15.5px]']}>{i.title}</p>
                       <p class="text-[12px] text-[var(--color-ink-faint)] mt-0.5">
                         {broken
                           ? i.problems.join(' · ')

@@ -443,13 +443,18 @@ const [strip, ...demotedFlags] = flags;
     class="sticky top-0 z-30 -mx-5 md:-mx-8 -mt-8 mb-5 px-5 md:px-8 py-3 bg-[var(--color-paper-raised)]/95 backdrop-blur border-b border-[var(--color-rule-soft)]"
   >
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <div class="min-w-0 flex-1">
+      {/* An 18rem basis rather than flex-1 from zero: with a zero basis the
+          totals and buttons beside it never wrapped, and on a phone they
+          squeezed this side to a few pixels - the customer's name vanished and
+          "Details sent 7 Nov" stood one word to a line. Now the totals drop
+          to a line of their own when the two will not fit side by side. */}
+      <div class="min-w-0 flex-[1_1_18rem]">
         <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           <a
             href="/admin/orders"
             class="text-[13.5px] text-[var(--color-navy)] hover:underline underline-offset-2 shrink-0"
           >← All orders</a>
-          <h1 class="font-[family-name:var(--font-display)] text-[20px] font-semibold truncate">
+          <h1 class="min-w-0 font-[family-name:var(--font-display)] text-[20px] leading-snug font-semibold break-words">
             {order.customer_name}
           </h1>
           <span class="shrink-0 px-2 py-0.5 rounded-full bg-white border border-[var(--color-rule-soft)] text-[12.5px] tabular-nums select-all">
@@ -480,7 +485,7 @@ const [strip, ...demotedFlags] = flags;
         </p>
       </div>
 
-      <div class="flex items-center gap-3 shrink-0">
+      <div class="flex flex-wrap items-center justify-end gap-3 min-w-0 ml-auto">
         <p class="text-right leading-tight">
           <span class="block text-[11.5px] uppercase tracking-[0.08em] text-[var(--color-ink-faint)]">
             {moneyLabel}
