@@ -891,29 +891,66 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
       >
         <h2 class="eyebrow mb-3">Photos</h2>
 
+        {/*
+          * The first photo is the cover - on the shelf, on the book's page and
+          * at the head of the Telegram album. Drag a photo to move it (on a
+          * phone, hold it first, so a swipe still scrolls the page), press
+          * "Make cover", or focus one and use the arrow keys. Each move is
+          * saved as it lands, like adding or removing a photo.
+          */}
         {
           book && book.images.length > 0 && (
-            <ul class="grid grid-cols-3 gap-2 mb-3">
-              {book!.images.map((img, i) => (
-                <li class="relative">
-                  <div class="aspect-[5/7] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
-                    <img
-                      src={imageUrl(img.image_key, 'thumb')}
-                      alt=""
-                      class:list={[i === 0 ? 'h-full w-full object-cover' : 'max-h-full max-w-full object-contain']}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    data-remove-image={img.id}
-                    class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--color-outstock)] text-white text-[12px] leading-none grid place-items-center"
-                    title="Remove this photo"
+            <Fragment>
+              {book.images.length > 1 && (
+                <p class="mb-2.5 text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+                  Drag the photos into the order you want - on a phone, hold one for a moment, then
+                  drag. The first is the cover.
+                </p>
+              )}
+              <ul id="photoGrid" class="relative grid grid-cols-3 gap-2 mb-3" aria-label="Photos, cover first">
+                {book!.images.map((img, i) => (
+                  <li
+                    class:list={['relative rounded-[2px] outline-offset-2 select-none [-webkit-touch-callout:none]', book!.images.length > 1 && 'cursor-grab']}
+                    data-photo-id={img.id}
+                    tabindex={book!.images.length > 1 ? 0 : undefined}
+                    aria-label={`Photo ${i + 1} of ${book!.images.length}${i === 0 ? ', the cover' : ''}`}
                   >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
+                    <div class="aspect-[5/7] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
+                      <img
+                        src={imageUrl(img.image_key, 'thumb')}
+                        alt=""
+                        draggable="false"
+                        class:list={[i === 0 ? 'h-full w-full object-cover' : 'max-h-full max-w-full object-contain']}
+                      />
+                    </div>
+                    <span
+                      data-cover-badge
+                      hidden={i !== 0}
+                      class="absolute left-1 bottom-1 px-1.5 py-0.5 rounded-[var(--radius-pill)] bg-[var(--color-navy)] text-white text-[10.5px] font-semibold tracking-[0.06em] uppercase pointer-events-none"
+                    >
+                      Cover
+                    </span>
+                    <button
+                      type="button"
+                      data-make-cover
+                      hidden={i === 0}
+                      class="absolute left-1 bottom-1 px-1.5 py-0.5 rounded-[var(--radius-pill)] bg-white/95 border border-[var(--color-rule)] text-[var(--color-navy)] text-[11px] font-medium hover:border-[var(--color-navy)]"
+                    >
+                      Make cover
+                    </button>
+                    <button
+                      type="button"
+                      data-remove-image={img.id}
+                      class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--color-outstock)] text-white text-[12px] leading-none grid place-items-center"
+                      title="Remove this photo"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p id="photoOrderStatus" role="status" class="-mt-1 mb-3 text-[13px] text-[var(--color-ink-soft)] empty:hidden"></p>
+            </Fragment>
           )
         }
 
@@ -1033,10 +1070,16 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
                     channel now - a preview showing only the cover would be
                     telling the owner something that is no longer true. */}
                 {book.images.length > 0 && (
-                  <div class="flex gap-1.5 overflow-x-auto mb-2 pb-1">
-                    {book.images.slice(0, 10).map((img) => (
+                  <div id="telegramPhotos" class="flex gap-1.5 overflow-x-auto mb-2 pb-1">
+                    {/* All of them, past the tenth hidden, so reordering the
+                        photos above can bring a different ten into view
+                        without reloading the page. */}
+                    {book.images.map((img, i) => (
                       <img
                         src={imageUrl(img.image_key, 'social')}
+                        data-photo-id={img.id}
+                        hidden={i >= 10}
+                        loading="lazy"
                         alt=""
                         class="h-28 w-28 shrink-0 object-contain bg-white rounded-[3px] border border-[var(--color-rule-soft)]"
                       />
@@ -2601,6 +2644,237 @@ const offerRepost = Boolean(book && book.status === 'live' && backInStock(book, 
             body.append('imageId', btn.dataset.removeImage);
             const res = await fetch('/api/admin/upload', { method: 'DELETE', body });
             if (res.ok) window.location.reload();
+          });
+        }
+
+        /*
+         * Putting the photos in order, the first being the cover.
+         *
+         * Pointer events rather than the browser's own drag and drop, which a
+         * phone does not do. A mouse picks a photo up as soon as it moves; a
+         * finger has to hold still for a moment first, because a finger that
+         * moves straight away is scrolling the page, and taking that from it
+         * would trap the owner in the photo grid. The other photos slide aside
+         * as it passes, and the order is saved when it is put down - no Save
+         * press, no reload, so nothing typed elsewhere on the page is lost.
+         */
+        const photoGrid = document.querySelector('#photoGrid');
+        if (photoGrid && photoGrid.children.length > 1) {
+          const orderStatus = document.querySelector('#photoOrderStatus');
+          const tiles = () => [...photoGrid.querySelectorAll('[data-photo-id]')];
+          const orderOf = () => tiles().map((li) => li.dataset.photoId);
+          let savedOrder = orderOf();
+          let savedCover = savedOrder[0];
+          let saving = Promise.resolve();
+          let dragging = null;
+          let pending = null;
+
+          // Badges, labels and the cover's full-bleed crop follow the order.
+          const paintOrder = () => {
+            const all = tiles();
+            all.forEach((li, i) => {
+              li.querySelector('[data-cover-badge]').hidden = i !== 0;
+              li.querySelector('[data-make-cover]').hidden = i === 0;
+              li.querySelector('img').className =
+                i === 0 ? 'h-full w-full object-cover' : 'max-h-full max-w-full object-contain';
+              li.setAttribute('aria-label', `Photo ${i + 1} of ${all.length}${i === 0 ? ', the cover' : ''}`);
+            });
+            const strip = document.querySelector('#telegramPhotos');
+            if (strip) {
+              const ids = orderOf();
+              const shots = [...strip.querySelectorAll('[data-photo-id]')];
+              ids.forEach((id, i) => {
+                const shot = shots.find((s) => s.dataset.photoId === id);
+                if (!shot) return;
+                shot.hidden = i >= 10;
+                strip.appendChild(shot);
+              });
+            }
+          };
+
+          // Puts the tiles back in a given order, for a save that failed.
+          const arrange = (ids) => {
+            const byId = new Map(tiles().map((li) => [li.dataset.photoId, li]));
+            for (const id of ids) if (byId.has(id)) photoGrid.appendChild(byId.get(id));
+            paintOrder();
+          };
+
+          // One save at a time, in the order the moves were made.
+          const saveOrder = () => {
+            const wanted = orderOf();
+            if (wanted.join() === savedOrder.join()) return;
+            orderStatus.textContent = 'Saving the order…';
+            saving = saving.then(async () => {
+              const body = new FormData();
+              body.append('order', wanted.join(','));
+              try {
+                const res = await fetch(`/api/admin/books/${bookId}/photos`, { method: 'POST', body });
+                const reply = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(reply.error || 'The order could not be saved.');
+                savedOrder = wanted;
+                if (orderOf().join() === wanted.join()) {
+                  orderStatus.textContent = wanted[0] === savedCover
+                    ? 'Order saved.'
+                    : 'Order saved, with a new cover.';
+                  savedCover = wanted[0];
+                }
+              } catch (err) {
+                arrange(savedOrder);
+                orderStatus.textContent = `${err.message || err} Nothing was changed.`;
+              }
+            });
+          };
+
+          // FLIP: note where every tile is, move, then slide each from its old
+          // spot to its new one.
+          const moveWithSlide = (change) => {
+            const before = new Map(tiles().map((li) => [li, li.getBoundingClientRect()]));
+            change();
+            for (const [li, was] of before) {
+              if (li === dragging?.tile) continue;
+              const now = li.getBoundingClientRect();
+              const dx = was.left - now.left;
+              const dy = was.top - now.top;
+              if (!dx && !dy) continue;
+              li.style.transition = 'none';
+              li.style.transform = `translate(${dx}px, ${dy}px)`;
+              requestAnimationFrame(() => {
+                li.style.transition = 'transform 160ms ease';
+                li.style.transform = '';
+              });
+            }
+          };
+
+          // Where a tile sits in the layout, ignoring any slide or drag it is
+          // part way through - measuring those made the target flicker.
+          const resting = (li) => {
+            const grid = photoGrid.getBoundingClientRect();
+            return { left: grid.left + li.offsetLeft, top: grid.top + li.offsetTop, width: li.offsetWidth, height: li.offsetHeight };
+          };
+
+          // The tile whose centre is nearest the pointer is where it goes.
+          const slotAt = (x, y) => {
+            let best = null;
+            let bestDistance = Infinity;
+            for (const li of tiles()) {
+              const r = resting(li);
+              const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
+              if (d < bestDistance) { best = li; bestDistance = d; }
+            }
+            return best;
+          };
+
+          const lift = (tile, event) => {
+            const home = resting(tile);
+            dragging = { tile, grabX: event.clientX - home.left, grabY: event.clientY - home.top };
+            tile.style.transition = 'none';
+            tile.style.zIndex = '20';
+            tile.style.cursor = 'grabbing';
+            tile.style.boxShadow = '0 10px 24px rgb(16 24 40 / 0.22)';
+            if (navigator.vibrate) navigator.vibrate(10);
+          };
+
+          const follow = (event) => {
+            const { tile, grabX, grabY } = dragging;
+            const target = slotAt(event.clientX, event.clientY);
+            if (target && target !== tile) {
+              const all = tiles();
+              const forward = all.indexOf(target) > all.indexOf(tile);
+              moveWithSlide(() => photoGrid.insertBefore(tile, forward ? target.nextSibling : target));
+              // The Cover badge moves as it goes, so the owner sees which photo
+              // will be the cover before letting go.
+              paintOrder();
+            }
+            const home = resting(tile);
+            tile.style.transform = `translate(${event.clientX - grabX - home.left}px, ${event.clientY - grabY - home.top}px) scale(1.04)`;
+          };
+
+          const drop = () => {
+            if (!dragging) return;
+            const { tile } = dragging;
+            tile.style.transition = 'transform 160ms ease, box-shadow 160ms ease';
+            tile.style.transform = '';
+            tile.style.boxShadow = '';
+            tile.style.cursor = '';
+            setTimeout(() => { tile.style.zIndex = ''; tile.style.transition = ''; }, 170);
+            dragging = null;
+            paintOrder();
+            saveOrder();
+          };
+
+          photoGrid.addEventListener('pointerdown', (event) => {
+            const tile = event.target.closest('[data-photo-id]');
+            if (!tile || event.target.closest('button') || event.button > 0 || dragging) return;
+            pending = { tile, x: event.clientX, y: event.clientY, id: event.pointerId, event };
+            if (event.pointerType === 'mouse') return;
+            // A finger: held still for a moment means "pick this up".
+            pending.timer = setTimeout(() => {
+              if (!pending) return;
+              lift(pending.tile, pending.event);
+              try { photoGrid.setPointerCapture(pending.id); } catch {}
+              pending = null;
+            }, 220);
+          });
+
+          photoGrid.addEventListener('pointermove', (event) => {
+            if (dragging) { event.preventDefault(); follow(event); return; }
+            if (!pending || event.pointerId !== pending.id) return;
+            const moved = Math.hypot(event.clientX - pending.x, event.clientY - pending.y);
+            if (pending.event.pointerType === 'mouse') {
+              if (moved < 5) return;
+              lift(pending.tile, pending.event);
+              try { photoGrid.setPointerCapture(event.pointerId); } catch {}
+              pending = null;
+              follow(event);
+            } else if (moved > 8) {
+              // The finger moved before the hold: it is scrolling.
+              clearTimeout(pending.timer);
+              pending = null;
+            }
+          });
+
+          const release = () => {
+            if (pending) { clearTimeout(pending.timer); pending = null; }
+            drop();
+          };
+          photoGrid.addEventListener('pointerup', release);
+          photoGrid.addEventListener('pointercancel', release);
+          photoGrid.addEventListener('lostpointercapture', () => { if (dragging) drop(); });
+
+          // Once a photo is picked up, the finger moves it rather than the page.
+          photoGrid.addEventListener('touchmove', (event) => {
+            if (dragging || pending) event.preventDefault();
+          }, { passive: false });
+          // A long press would otherwise open the phone's image menu.
+          photoGrid.addEventListener('contextmenu', (event) => {
+            if (dragging || pending) event.preventDefault();
+          });
+
+          for (const button of photoGrid.querySelectorAll('[data-make-cover]')) {
+            button.addEventListener('click', () => {
+              const tile = button.closest('[data-photo-id]');
+              moveWithSlide(() => photoGrid.prepend(tile));
+              paintOrder();
+              saveOrder();
+              tile.focus();
+            });
+          }
+
+          // The keyboard: arrow keys move the focused photo one place.
+          photoGrid.addEventListener('keydown', (event) => {
+            const tile = event.target.closest?.('[data-photo-id]');
+            if (!tile || event.target !== tile) return;
+            const all = tiles();
+            const at = all.indexOf(tile);
+            const to = { ArrowLeft: at - 1, ArrowUp: at - 3, ArrowRight: at + 1, ArrowDown: at + 3, Home: 0, End: all.length - 1 }[event.key];
+            if (to === undefined) return;
+            event.preventDefault();
+            const clamped = Math.max(0, Math.min(all.length - 1, to));
+            if (clamped === at) return;
+            moveWithSlide(() => photoGrid.insertBefore(tile, clamped > at ? all[clamped].nextSibling : all[clamped]));
+            paintOrder();
+            saveOrder();
+            tile.focus();
           });
         }
 

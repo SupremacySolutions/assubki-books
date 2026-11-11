@@ -6149,6 +6149,51 @@ async function channelPost() {
   t.ok(album[0] === row.id,
     'with the captioned one first, because that is what an edit has to target');
 
+  /*
+   * The owner puts the photos in order, and the first is the cover.
+   *
+   * It used to be whichever went up first, and changing it meant deleting the
+   * others and uploading them again. The page sends every photo in its new
+   * order; anything else - a photo added or removed in another tab since it
+   * loaded, or one belonging to another listing - is refused, not guessed at.
+   */
+  const ids = (await db(`SELECT id FROM book_images WHERE book_id=${book.id} ORDER BY sort, id`)).map((r) => r.id);
+  const portal = await html(`/admin/books/${book.id}`);
+  t.ok(portal.includes('id="photoGrid"') && ids.every((id) => portal.includes(`data-photo-id="${id}"`)),
+    'the listing shows its photos as tiles that can be moved');
+  t.ok(/Drag the photos into the order you want/.test(visibleText(portal)) && /Make cover/.test(visibleText(portal)),
+    'and says how, with a button for the cover as well as dragging');
+
+  const orderOf = (list) => { const f = new FormData(); f.append('order', list.join(',')); return f; };
+  // The post went out moments ago; step both clocks back so a change in the
+  // same second still reads as newer than it.
+  await db(`UPDATE books SET telegram_posted_at = telegram_posted_at - 5, updated_at = updated_at - 5 WHERE id=${book.id}`);
+  const reordered = [ids[2], ids[0], ids[1]];
+  const moved = await adminUpload(`/api/admin/books/${book.id}/photos`, orderOf(reordered));
+  t.ok(moved.status === 200 && moved.body.ok && moved.body.cover === ids[2], 'a new order is saved');
+  const sorts = await db(`SELECT id, sort FROM book_images WHERE book_id=${book.id} ORDER BY sort`);
+  t.ok(sorts.map((r) => r.id).join() === reordered.join() && sorts.map((r) => r.sort).join() === '0,1,2',
+    'numbered from nought with no gaps, so the cover is the photo at sort 0');
+  const afterMove = await html(`/admin/books/${book.id}`);
+  t.ok(afterMove.indexOf(`data-photo-id="${ids[2]}"`) < afterMove.indexOf(`data-photo-id="${ids[0]}"`),
+    'and the listing shows the new cover first');
+  const stalePost = await one(`SELECT updated_at > telegram_posted_at AS stale FROM books WHERE id=${book.id}`);
+  t.ok(stalePost.stale === 1, 'and the channel post is offered for updating, since its first photo changed');
+
+  const missing = await adminUpload(`/api/admin/books/${book.id}/photos`, orderOf([ids[0], ids[1]]));
+  t.ok(missing.status === 409, 'an order that leaves a photo out is refused');
+  const foreign = (await db(`SELECT id FROM book_images WHERE book_id <> ${book.id} LIMIT 1`))[0]?.id ?? 999999;
+  const stolen = await adminUpload(`/api/admin/books/${book.id}/photos`, orderOf([ids[0], ids[1], foreign]));
+  t.ok(stolen.status === 409, 'and so is one naming another listing’s photo');
+  const twice = await adminUpload(`/api/admin/books/${book.id}/photos`, orderOf([ids[0], ids[0], ids[1]]));
+  t.ok(twice.status === 400, 'and one naming a photo twice');
+  t.ok((await db(`SELECT id FROM book_images WHERE book_id=${book.id} ORDER BY sort`)).map((r) => r.id).join() === reordered.join(),
+    'and none of them changed anything');
+  const stranger = await fetch(`${SITE}/api/admin/books/${book.id}/photos`, {
+    method: 'POST', headers: ORIGIN, body: orderOf(ids), redirect: 'manual',
+  });
+  t.ok(stranger.status !== 200, 'and nobody signed out can reorder them');
+
   // A listing with one photo is not an album - Telegram wants two or more, so
   // this has to keep working the way it always did.
   const single = await makeBook();
