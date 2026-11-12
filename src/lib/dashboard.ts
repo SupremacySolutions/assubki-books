@@ -40,6 +40,9 @@ export interface Dashboard {
   averagePence: number;
   /** Share of customers who have ordered more than once, all time. */
   repeatPct: number;
+  /** The two numbers behind it - shown instead while there are few customers. */
+  customers: number;
+  repeatCustomers: number;
   /** One point per day, oldest first. */
   daily: { day: string; pence: number; orders: number }[];
   collection: number;
@@ -91,10 +94,68 @@ export interface Dashboard {
 /** Paid, sent, or done - an order whose money is real. */
 const EARNED = `('paid','dispatched','completed')`;
 
+/*
+ * When the money came in, which is not when the request was placed.
+ *
+ * Every figure below used to be dated by `created_at`. An order placed on the
+ * 1st and paid on the 20th then counted towards whichever window held the 1st,
+ * so "Taken in the last 30 days" quietly dropped money that had arrived inside
+ * it and kept money that had not. Cash orders are often never marked paid -
+ * they go straight from confirmed to collected - so they fall back to when the
+ * books changed hands, and only an order with neither falls back to the
+ * request itself.
+ */
+const TAKEN_AT = (o = '') =>
+  `COALESCE(${o}paid_at, ${o}completed_at, ${o}dispatched_at, ${o}created_at)`;
+
+/*
+ * One checkout, however many orders it became.
+ *
+ * A basket holding shelf books and reserved books is split into two orders
+ * sharing a `split_group`. Counted as orders, that one customer was two
+ * orders, halved the average, and - worst - made them a "repeat customer" on
+ * their first visit.
+ */
+const CHECKOUT = (o = '') => `COALESCE(${o}split_group, 'o' || ${o}id)`;
+
+/*
+ * A listing as the Listings page means it: not a box still on its way, not a
+ * part of a set (those are managed from the set), not in the bin, and on sale.
+ * The worklist tiles open that page, so they have to count the same rows - a
+ * set part was being counted here and not shown there, which is how a tile
+ * read 226 and the page behind it 225.
+ */
+const LIVE_NOT_DELETED = (b = '') =>
+  `${b}status = 'live' AND ${b}deleted_at IS NULL AND ${b}shipment_id IS NULL AND ${b}set_part = 0`;
+
+/**
+ * Seconds to add to a UTC timestamp to get the shop's own wall clock.
+ *
+ * D1 only knows UTC, so an order paid at 00:30 in June landed on the day
+ * before in the chart. One offset for the whole window is right on every day
+ * but the two a year the clocks change, and then only for one hour.
+ */
+function londonOffsetSeconds(at = new Date()): number {
+  const name = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', timeZoneName: 'shortOffset' })
+    .formatToParts(at)
+    .find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
+  const m = name.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  if (!m) return 0;
+  const secs = Number(m[2]) * 3600 + Number(m[3] ?? 0) * 60;
+  return m[1] === '-' ? -secs : secs;
+}
+
+/** Today's date on the shop's clock, as YYYY-MM-DD, `back` days ago. */
+export function shopDay(back = 0, now = Date.now()): string {
+  const at = new Date(now - back * 86_400_000);
+  return new Date(at.getTime() + londonOffsetSeconds(at) * 1000).toISOString().slice(0, 10);
+}
+
 async function read(days: number): Promise<Dashboard> {
   const now = Math.floor(Date.now() / 1000);
   const from = now - days * DAY;
   const previousFrom = from - days * DAY;
+  const offset = londonOffsetSeconds();
 
   const [waiting, reserved, money, daily, splits, best, low, repeat, shelves, work, misses, requests, unread] =
     await env.DB.batch([
@@ -135,35 +196,51 @@ async function read(days: number): Promise<Dashboard> {
     ),
     env.DB.prepare(
       `SELECT
-         SUM(CASE WHEN created_at > ?1 THEN COALESCE(total_pence, subtotal_pence) ELSE 0 END) AS now,
-         SUM(CASE WHEN created_at <= ?1 THEN COALESCE(total_pence, subtotal_pence) ELSE 0 END) AS before,
-         SUM(CASE WHEN created_at > ?1 THEN 1 ELSE 0 END) AS orders
-       FROM orders WHERE status IN ${EARNED} AND created_at > ?2`,
+         SUM(CASE WHEN t > ?1 THEN pence ELSE 0 END) AS now,
+         SUM(CASE WHEN t <= ?1 THEN pence ELSE 0 END) AS before,
+         COUNT(DISTINCT CASE WHEN t > ?1 THEN checkout END) AS orders
+       FROM (SELECT ${TAKEN_AT()} AS t, COALESCE(total_pence, subtotal_pence) AS pence,
+                    ${CHECKOUT()} AS checkout
+               FROM orders WHERE status IN ${EARNED})
+      WHERE t > ?2`,
     ).bind(from, previousFrom),
     env.DB.prepare(
-      `SELECT date(created_at, 'unixepoch') AS day,
-              SUM(COALESCE(total_pence, subtotal_pence)) AS pence,
-              COUNT(*) AS orders
-         FROM orders WHERE status IN ${EARNED} AND created_at > ?
+      `SELECT date(t + ?2, 'unixepoch') AS day, SUM(pence) AS pence,
+              COUNT(DISTINCT checkout) AS orders
+         FROM (SELECT ${TAKEN_AT()} AS t, COALESCE(total_pence, subtotal_pence) AS pence,
+                      ${CHECKOUT()} AS checkout
+                 FROM orders WHERE status IN ${EARNED})
+        WHERE t > ?1
         GROUP BY day ORDER BY day`,
-    ).bind(from),
+    ).bind(from, offset),
+    /* Per checkout, like the order count beside it, so the two agree. */
     env.DB.prepare(
       `SELECT
-         SUM(CASE WHEN fulfilment = 'collection' THEN 1 ELSE 0 END) AS collection,
-         SUM(CASE WHEN fulfilment <> 'collection' THEN 1 ELSE 0 END) AS posted,
-         SUM(CASE WHEN COALESCE(cash_payment,0) = 1 THEN 1 ELSE 0 END) AS cash,
-         SUM(CASE WHEN COALESCE(cash_payment,0) = 0 THEN 1 ELSE 0 END) AS transferred
-       FROM orders WHERE status IN ${EARNED} AND created_at > ?`,
+         COUNT(DISTINCT CASE WHEN fulfilment = 'collection' THEN checkout END) AS collection,
+         COUNT(DISTINCT CASE WHEN fulfilment <> 'collection' THEN checkout END) AS posted,
+         COUNT(DISTINCT CASE WHEN cash = 1 THEN checkout END) AS cash,
+         COUNT(DISTINCT CASE WHEN cash = 0 THEN checkout END) AS transferred
+       FROM (SELECT fulfilment, COALESCE(cash_payment, 0) AS cash, ${CHECKOUT()} AS checkout,
+                    ${TAKEN_AT()} AS t
+               FROM orders WHERE status IN ${EARNED})
+      WHERE t > ?`,
     ).bind(from),
+    /*
+     * By book, not by the title as it was typed into each order. A listing
+     * renamed between two sales was two rows, each looking half as popular.
+     */
     env.DB.prepare(
-      `SELECT oi.title_snapshot AS title, SUM(oi.qty) AS qty
-         FROM order_items oi JOIN orders o ON o.id = oi.order_id
-        WHERE o.status IN ${EARNED} AND o.created_at > ?
-        GROUP BY oi.title_snapshot ORDER BY qty DESC LIMIT 5`,
+      `SELECT COALESCE(MAX(b.title), MAX(oi.title_snapshot)) AS title, SUM(oi.qty) AS qty
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         LEFT JOIN books b ON b.id = oi.book_id AND b.deleted_at IS NULL
+        WHERE o.status IN ${EARNED} AND ${TAKEN_AT('o.')} > ?
+        GROUP BY COALESCE('b' || oi.book_id, 't' || oi.title_snapshot)
+        ORDER BY qty DESC LIMIT 5`,
     ).bind(from),
     env.DB.prepare(
       `SELECT title, slug, (stock - reserved) AS left_
-         FROM books WHERE status = 'live' AND deleted_at IS NULL
+         FROM books WHERE ${LIVE_NOT_DELETED()}
           AND (stock - reserved) BETWEEN 1 AND 2
         ORDER BY left_, title LIMIT 6`,
     ),
@@ -176,8 +253,8 @@ async function read(days: number): Promise<Dashboard> {
       `SELECT
          COUNT(*) AS customers,
          SUM(CASE WHEN n > 1 THEN 1 ELSE 0 END) AS came_back
-       FROM (SELECT email, COUNT(*) AS n FROM orders
-              WHERE status IN ${EARNED} GROUP BY lower(email))`,
+       FROM (SELECT COUNT(DISTINCT ${CHECKOUT()}) AS n FROM orders
+              WHERE status IN ${EARNED} GROUP BY lower(trim(email)))`,
     ),
     env.DB.prepare(
       /*
@@ -193,19 +270,34 @@ async function read(days: number): Promise<Dashboard> {
        * ordering, so the figure is deterministic and the rows never exceed the
        * takings.
        */
-      `SELECT c.name AS name, SUM(oi.price_pence_snapshot * oi.qty - oi.multibuy_pence) AS pence
+      /*
+       * And by the shelf at the top of the tree, found by path.
+       *
+       * This used to ask for a shelf the book was filed under *directly* that
+       * had no parent - and a third of the catalogue is filed only on a
+       * sub-shelf (Tafsir, not Qur'an), so their sales vanished from this
+       * panel altogether. The first segment of any shelf's path is its
+       * top-level shelf. A sale with no shelf at all is shown as such rather
+       * than dropped, so the rows can be checked against the takings.
+       */
+      `SELECT COALESCE(top.name, 'Not on a shelf') AS name,
+              SUM(oi.price_pence_snapshot * oi.qty - oi.multibuy_pence) AS pence
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
-         JOIN categories c ON c.id = (
-                SELECT c2.id
+         LEFT JOIN categories top ON top.id = (
+                SELECT t.id
                   FROM book_categories bc2
                   JOIN categories c2 ON c2.id = bc2.category_id
-                 WHERE bc2.book_id = oi.book_id AND c2.parent_id IS NULL
-                 ORDER BY c2.sort, c2.id
+                  JOIN categories t ON t.parent_id IS NULL
+                   AND t.path = CASE WHEN instr(c2.path, '/') > 0
+                                     THEN substr(c2.path, 1, instr(c2.path, '/') - 1)
+                                     ELSE c2.path END
+                 WHERE bc2.book_id = oi.book_id
+                 ORDER BY t.sort, t.id
                  LIMIT 1
               )
-        WHERE o.status IN ${EARNED} AND o.created_at > ?
-        GROUP BY c.id ORDER BY pence DESC LIMIT 5`,
+        WHERE o.status IN ${EARNED} AND ${TAKEN_AT('o.')} > ?
+        GROUP BY top.id ORDER BY pence DESC LIMIT 6`,
     ).bind(from),
     /*
      * The catalogue worklist. It used to be its own query on every portal home
@@ -214,25 +306,25 @@ async function read(days: number): Promise<Dashboard> {
      */
     env.DB.prepare(
       `SELECT
-         (SELECT COUNT(*) FROM books b WHERE b.status='live' AND b.deleted_at IS NULL
+         (SELECT COUNT(*) FROM books b WHERE ${LIVE_NOT_DELETED('b.')}
             AND NOT EXISTS (SELECT 1 FROM book_images WHERE book_id = b.id)) AS noImage,
-         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
+         (SELECT COUNT(*) FROM books WHERE ${LIVE_NOT_DELETED()}
             AND (description_html IS NULL OR description_html='')) AS noDescription,
-         (SELECT COUNT(*) FROM books b WHERE b.status='live' AND b.deleted_at IS NULL
+         (SELECT COUNT(*) FROM books b WHERE ${LIVE_NOT_DELETED('b.')}
             AND NOT EXISTS (SELECT 1 FROM book_categories WHERE book_id = b.id)) AS noCategory,
-         (SELECT COUNT(*) FROM books b2 WHERE b2.status='live' AND b2.deleted_at IS NULL
+         (SELECT COUNT(*) FROM books b2 WHERE ${LIVE_NOT_DELETED('b2.')}
             AND EXISTS (SELECT 1 FROM book_images i WHERE i.book_id = b2.id AND i.sort = 0
                           AND i.width IS NOT NULL AND i.height > 0
                           AND MIN(i.width, CAST(i.height * 5.0 / 7.0 AS INTEGER)) < 300)) AS thinImage,
-         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
+         (SELECT COUNT(*) FROM books WHERE ${LIVE_NOT_DELETED()}
             AND telegram_message_id IS NULL) AS unposted,
-         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
+         (SELECT COUNT(*) FROM books WHERE ${LIVE_NOT_DELETED()}
             AND telegram_message_id IS NOT NULL AND telegram_shown_available = 0
             AND (stock - reserved) > 0
             AND telegram_sold_out_at <= unixepoch() - ${REPOST_AFTER_SECONDS}) AS repost,
-         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
+         (SELECT COUNT(*) FROM books WHERE ${LIVE_NOT_DELETED()}
             AND (stock - reserved) <= 0) AS outOfStock,
-         (SELECT COUNT(*) FROM books WHERE status='live' AND deleted_at IS NULL
+         (SELECT COUNT(*) FROM books WHERE ${LIVE_NOT_DELETED()}
             AND (stock - reserved) > 0 AND (stock - reserved) <= 2) AS lowStock`,
     ),
     // Reads inside the batch the dashboard was already making, so the panel
@@ -263,7 +355,12 @@ async function read(days: number): Promise<Dashboard> {
   const missRead = await readMisses(
     misses.results.map((r) => {
       const row = r as Record<string, unknown>;
-      return { terms: String(row.terms), times: Number(row.times), lastAt: Number(row.lastAt) };
+      return {
+        terms: String(row.terms),
+        times: Number(row.times),
+        lastAt: Number(row.lastAt),
+        visitors: String(row.visitors ?? '').split(',').filter(Boolean),
+      };
     }),
   );
 
@@ -281,10 +378,15 @@ async function read(days: number): Promise<Dashboard> {
     previousPence: Number(m.before ?? 0),
     orders,
     averagePence: orders > 0 ? Math.round(revenuePence / orders) : 0,
-    repeatPct: (() => {
+    ...(() => {
       const r = (repeat.results[0] ?? {}) as Record<string, number | null>;
       const customers = Number(r.customers ?? 0);
-      return customers > 0 ? Math.round((Number(r.came_back ?? 0) / customers) * 100) : 0;
+      const repeatCustomers = Number(r.came_back ?? 0);
+      return {
+        customers,
+        repeatCustomers,
+        repeatPct: customers > 0 ? Math.round((repeatCustomers / customers) * 100) : 0,
+      };
     })(),
     daily: daily.results.map((r) => {
       const row = r as Record<string, unknown>;

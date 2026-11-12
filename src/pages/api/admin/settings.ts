@@ -60,6 +60,9 @@ export const POST: APIRoute = async ({ request }) => {
     forgetOrderDiscount();
   }
 
+  // The owner's saved replies. Written only when that section was submitted.
+  await text(form, 'quick_replies', 'quick_replies', 6000);
+
   // Empty closes nothing; anything else is what customers are told.
   await text(form, 'maintenance', 'maintenance', 400);
   forgetMaintenance();
@@ -74,7 +77,11 @@ export const POST: APIRoute = async ({ request }) => {
 
   return new Response(null, {
     status: 302,
-    headers: { Location: `/admin/settings?saved=1${dropped ? '&unbound=1' : ''}` },
+    headers: {
+      Location: `/admin/settings?saved=1${dropped ? '&unbound=1' : ''}${
+        /^[a-z]{2,20}$/.test(String(form.get('s') ?? '')) ? `&s=${form.get('s')}` : ''
+      }`,
+    },
   });
 };
 

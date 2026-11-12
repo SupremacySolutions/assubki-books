@@ -13,6 +13,8 @@
  * customer sees the thread on the way back.
  */
 
+import { linkPieces, isExternal } from '../lib/linkify';
+
 const root = document.querySelector<HTMLElement>('[data-order-status]');
 const section = document.querySelector<HTMLElement>('[data-thread]');
 
@@ -96,6 +98,23 @@ if (root) {
    * already ignores.
    */
   let cursor = newest();
+
+  /*
+   * Open at the newest message, the way every conversation does.
+   *
+   * The list scrolls inside its pane, and it opened at the top - so the owner
+   * landed on the first question of a long thread with the reply they came to
+   * read out of sight below it. Again once the photos have loaded, since each
+   * one makes the list taller after this first pass.
+   */
+  const toNewest = () => {
+    const list = listNow();
+    if (list) list.scrollTop = list.scrollHeight;
+  };
+  toNewest();
+  for (const img of listNow()?.querySelectorAll('img') ?? []) {
+    if (!img.complete) img.addEventListener('load', toNewest, { once: true });
+  }
 
   /** The poll address with its cursor, whichever side's route it is. */
   const asked = () => `${pollUrl}${pollUrl!.includes('?') ? '&' : '?'}since=${cursor}`;
@@ -185,19 +204,42 @@ if (root) {
 
   const side = section?.dataset.side ?? 'customer';
 
-  const when = (at: number) => {
-    const date = new Date(at * 1000);
-    const today = new Date();
-    const sameDay =
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear();
-    return date.toLocaleString('en-GB', {
-      ...(sameDay ? {} : { day: 'numeric', month: 'short' }),
-      hour: '2-digit',
-      minute: '2-digit',
+  /* The same clock and wording as Thread.astro: a time on each bubble, the
+     day once on the line above the day's first message. */
+  const when = (at: number) =>
+    new Date(at * 1000).toLocaleTimeString('en-GB', {
+      timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit',
+    });
+  const dayKey = (at: number) =>
+    new Date(at * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+  const dayLabel = (at: number) => {
+    const key = dayKey(at);
+    const now = Math.floor(Date.now() / 1000);
+    if (key === dayKey(now)) return 'Today';
+    if (key === dayKey(now - 86_400)) return 'Yesterday';
+    return new Date(at * 1000).toLocaleDateString('en-GB', {
+      timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short',
     });
   };
+
+  function divider(at: number): HTMLLIElement {
+    const item = document.createElement('li');
+    item.className = 'flex items-center gap-3 py-1';
+    item.dataset.day = dayKey(at);
+    item.setAttribute('aria-hidden', 'true');
+    const rule = () => {
+      const line = document.createElement('span');
+      line.className = 'h-px flex-1 bg-[var(--color-rule-faint)]';
+      return line;
+    };
+    const label = document.createElement('span');
+    label.className = 'text-[11.5px] font-medium tracking-wide text-[var(--color-ink-faint)]';
+    label.textContent = dayLabel(at);
+    item.appendChild(rule());
+    item.appendChild(label);
+    item.appendChild(rule());
+    return item;
+  }
 
   /**
    * Builds the bubble node for node, matching Thread.astro.
@@ -223,7 +265,24 @@ if (root) {
     if (message.body) {
       const p = document.createElement('p');
       p.className = 'text-[14.5px] leading-relaxed whitespace-pre-line break-words';
-      p.textContent = message.body;
+      // Text nodes and anchors, never innerHTML: these are somebody else's words.
+      for (const piece of linkPieces(message.body)) {
+        if (!piece.href) {
+          p.appendChild(document.createTextNode(piece.text));
+          continue;
+        }
+        const a = document.createElement('a');
+        a.href = piece.href;
+        a.textContent = piece.text;
+        if (isExternal(piece.href, location.origin)) {
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer nofollow';
+        }
+        a.className =
+          'underline underline-offset-2 break-all ' +
+          (ours ? 'text-white decoration-white/60 hover:decoration-white' : 'text-[var(--color-navy)] hover:decoration-2');
+        p.appendChild(a);
+      }
       box.appendChild(p);
     }
 
@@ -237,7 +296,7 @@ if (root) {
       const img = document.createElement('img');
       img.src = href;
       img.alt = 'Photo sent with this message';
-      img.className = 'rounded-[8px] max-h-64 w-auto';
+      img.className = 'rounded-[8px] max-h-64 w-auto bg-[var(--color-paper)]';
       link.appendChild(img);
       box.appendChild(link);
     }
@@ -273,6 +332,9 @@ if (root) {
     const target = ensureList();
     if (!target) return;
     if (target.querySelector(`[data-message-id="${message.id}"]`)) return;
+    const days = target.querySelectorAll<HTMLElement>('[data-day]');
+    const lastDay = days.length ? days[days.length - 1].dataset.day : null;
+    if (lastDay !== dayKey(message.created_at)) target.appendChild(divider(message.created_at));
     target.appendChild(bubble(message));
     target.scrollTop = target.scrollHeight;
     paintReadNote(message);
@@ -292,9 +354,9 @@ if (root) {
     const note = section?.querySelector<HTMLElement>('[data-thread-note]');
     if (!note || !section?.dataset.readState) return;
     if (message.sender === side) {
-      note.textContent = 'Last message unread';
+      note.textContent = 'They have not read your last message yet';
     } else if (message.via === 'web') {
-      note.textContent = 'They are up to date';
+      note.textContent = 'They have read everything';
     } else {
       return;
     }
@@ -413,13 +475,20 @@ if (root) {
   /* A local preview needs no upload and no round trip - `img-src` allows
      `blob:` for exactly this. The paperclip gives no other sign it took
      something, so this is the only confirmation the customer gets. */
-  picker?.addEventListener('change', async () => {
+  picker?.addEventListener('change', () => {
     const file = picker.files?.[0] ?? null;
     if (!file) {
       dropAttachment();
       return;
     }
+    void take(file);
+  });
 
+  /** Shows and prepares a photo, from the paperclip, a paste or a drop. */
+  async function take(file: File): Promise<void> {
+    // The original stands in until the smaller copy is ready, so pressing Send
+    // straight after a paste still sends the photo.
+    prepared = file;
     const img = preview?.querySelector('img');
     if (preview && img) {
       img.src = URL.createObjectURL(file);
@@ -432,7 +501,76 @@ if (root) {
       chosen.classList.remove('hidden');
     }
 
-    prepared = await shrink(file);
+    const smaller = await shrink(file);
+    // Only if it is still the photo in the box - it may have been removed.
+    if (prepared === file) prepared = smaller;
+  }
+
+  /*
+   * Paste and drop, wherever the box can take a photo.
+   *
+   * The owner works at a desk with a screenshot or a photo already on the
+   * clipboard; reaching for the paperclip and digging through Downloads for
+   * the same picture was three steps for nothing. Only images are taken -
+   * pasted text goes into the box as it always did.
+   */
+  const imageFrom = (items: DataTransferItemList | null | undefined): File | null => {
+    for (const item of items ?? []) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) return item.getAsFile();
+    }
+    return null;
+  };
+
+  if (picker && form) {
+    box?.addEventListener('paste', (event) => {
+      const file = imageFrom(event.clipboardData?.items);
+      if (!file) return;
+      event.preventDefault();
+      void take(file);
+    });
+    form.addEventListener('dragover', (event) => {
+      if (![...(event.dataTransfer?.items ?? [])].some((i) => i.kind === 'file')) return;
+      event.preventDefault();
+      form.classList.add('bg-[var(--color-wash-soft)]');
+    });
+    form.addEventListener('dragleave', (event) => {
+      if (!form.contains(event.relatedTarget as Node | null)) form.classList.remove('bg-[var(--color-wash-soft)]');
+    });
+    form.addEventListener('drop', (event) => {
+      form.classList.remove('bg-[var(--color-wash-soft)]');
+      const file = imageFrom(event.dataTransfer?.items);
+      if (!file) return;
+      event.preventDefault();
+      void take(file);
+    });
+  }
+
+  /*
+   * Saved replies go into the box, not straight out. The owner reads them
+   * before they go, and can add a line - which a one-tap send would not allow.
+   */
+  for (const chip of section?.querySelectorAll<HTMLButtonElement>('[data-quick-reply]') ?? []) {
+    chip.addEventListener('click', () => {
+      if (!box) return;
+      const text = chip.dataset.quickReply ?? '';
+      const start = box.selectionStart ?? box.value.length;
+      const end = box.selectionEnd ?? box.value.length;
+      const before = box.value.slice(0, start);
+      const joiner = before && !/\s$/.test(before) ? ' ' : '';
+      box.value = before + joiner + text + box.value.slice(end);
+      const caret = (before + joiner + text).length;
+      box.focus();
+      box.setSelectionRange(caret, caret);
+    });
+  }
+
+  /* Ctrl or Cmd + Enter sends; plain Enter is still a new line, because a
+     message about an order often has a list in it. */
+  box?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && form) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
   });
 
   form?.addEventListener('submit', async (event) => {
@@ -444,8 +582,10 @@ if (root) {
     const data = new FormData(form);
 
     // FormData took whatever the input holds; swap in the re-encoded copy so a
-    // three-megabyte HEIC is not what actually goes up.
-    if (prepared && picker?.files?.length) data.set('image', prepared, prepared.name);
+    // three-megabyte HEIC is not what actually goes up. A pasted or dropped
+    // photo never reached the input at all, so it is added the same way.
+    if (prepared) data.set('image', prepared, prepared.name);
+    if (!typed.trim() && !prepared && !picker?.files?.length) return;
 
     if (send) send.disabled = true;
 

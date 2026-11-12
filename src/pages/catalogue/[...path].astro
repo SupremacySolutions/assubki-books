@@ -10,7 +10,7 @@ import {
 import { buildQuery, truncate } from '../../lib/format';
 import { allCategories } from '../../lib/db';
 import { shelfTrail, breadcrumbJsonLd } from '../../lib/breadcrumbs';
-import { recordMiss, isHumanSearch } from '../../lib/searches';
+import { recordMissFrom, isHumanSearch } from '../../lib/searches';
 import { SESSION_COOKIE } from '../../lib/admin-auth';
 import { WANTED } from '../../lib/order-status';
 import { liveSale } from '../../lib/sales';
@@ -93,7 +93,7 @@ const chosenPublisher =
  * with close spellings is not recorded either: they found something.
  */
 if (q && result.total === 0 && page === 1 && isHumanSearch(Astro.request, q, SESSION_COOKIE)) {
-  const miss = recordMiss(q);
+  const miss = recordMissFrom(Astro.request, q);
   const ctx = (Astro.locals as { cfContext?: ExecutionContext }).cfContext;
   if (ctx?.waitUntil) ctx.waitUntil(miss);
   else await miss;

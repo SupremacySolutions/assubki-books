@@ -362,7 +362,9 @@ async function publicCatalogue() {
    * exactly what is meant to keep a search out of the log - so these replace
    * the headers rather than adding to them.
    */
-  const asCustomer = { redirect: 'follow', headers: { 'Sec-Fetch-Site': 'same-origin' } };
+  const BROWSER = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
+  const OTHER_BROWSER = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
+  const asCustomer = { redirect: 'follow', headers: { 'Sec-Fetch-Site': 'same-origin', 'User-Agent': BROWSER } };
   const search = (q, extra = '') => get(`/catalogue?q=${encodeURIComponent(q)}${extra}`, asCustomer);
 
   // Three spellings of one thing, which must normalise to one row.
@@ -371,6 +373,10 @@ async function publicCatalogue() {
   }
   // A pager walking an empty result must not log it again.
   await search(miss, '&page=2');
+  // A second person wanting the same thing is a second vote.
+  await get(`/catalogue?q=${encodeURIComponent(miss)}`, {
+    redirect: 'follow', headers: { 'Sec-Fetch-Site': 'same-origin', 'User-Agent': OTHER_BROWSER },
+  });
   // One letter is not a search anybody typed on purpose.
   await search('z');
   // And a search that found something is not a miss.
@@ -380,7 +386,12 @@ async function publicCatalogue() {
     `SELECT terms, COUNT(*) AS times FROM searches WHERE terms LIKE 'e2e %' GROUP BY terms`,
   );
   t.ok(logged.length === 1, 'three spellings of one miss are logged as one thing', JSON.stringify(logged));
-  t.ok(logged[0]?.times === 3, 'counted once per search, not once per spelling');
+  t.ok(logged[0]?.times === 2,
+    'one person searching it three times counts once, and a second person counts again', JSON.stringify(logged));
+  const people = await db(
+    `SELECT COUNT(DISTINCT visitor) AS n, SUM(visitor IS NULL) AS bare FROM searches WHERE terms = '${miss}'`,
+  );
+  t.ok(people[0]?.n === 2 && people[0]?.bare === 0, 'each row carries an anonymous visitor key', JSON.stringify(people));
   t.ok(logged[0]?.terms === miss, 'normalised to lower case with punctuation dropped', logged[0]?.terms);
 
   const single = await db("SELECT COUNT(*) AS n FROM searches WHERE terms = 'z'");
@@ -400,8 +411,23 @@ async function publicCatalogue() {
   });
   const older = `e2e older ${Math.random().toString(36).slice(2, 7)} qzx`;
   await get(`/catalogue?q=${encodeURIComponent(older)}`, {
-    redirect: 'follow', headers: { Referer: `${SITE}/catalogue` },
+    redirect: 'follow', headers: { Referer: `${SITE}/catalogue`, 'User-Agent': BROWSER },
   });
+  /*
+   * AI crawlers and agent browsers run the page and submit the form, so they
+   * arrive with the same-origin header a person's browser sends. They name
+   * themselves in the user agent; a script that names nothing is not a person.
+   */
+  for (const [ua, label] of [
+    ['Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)', 'gptbot'],
+    ['Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)', 'claudebot'],
+    ['Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.0.0 Safari/537.36', 'headless'],
+    ['', 'blank'],
+  ]) {
+    await get(`/catalogue?q=${encodeURIComponent(`e2e crawler ${label} qzx`)}`, {
+      redirect: 'follow', headers: { 'Sec-Fetch-Site': 'same-origin', 'User-Agent': ua },
+    });
+  }
   for (const probe of [`e2e '"><asdf alt="">-f3f3`, 'e2e %27%3E%3Casdf', '{search_term_string}',
     'e2e 273e3c6173646620616c743d22223e2d66336633']) {
     await search(probe);
@@ -411,6 +437,8 @@ async function publicCatalogue() {
   t.ok(!kept.some((k) => k.startsWith('e2e robot')), 'a search fetched straight from outside the site is not logged');
   t.ok(!kept.some((k) => k.startsWith('e2e owner')), 'nor is one made while signed in to the portal');
   t.ok(kept.some((k) => k.startsWith('e2e older')), 'a browser that only sends a same-site Referer still counts');
+  t.ok(!kept.some((k) => k.startsWith('e2e crawler')),
+    'AI crawlers, headless browsers and scripts with no user agent are not logged', JSON.stringify(kept));
   t.ok(!kept.some((k) => /asdf|f3f3|search term|273e3c/.test(k)),
     'markup, escapes, hex and the search-box placeholder are never logged', JSON.stringify(kept));
 
@@ -4930,7 +4958,19 @@ async function messages() {
   // The dashboard is the page the owner opens every day, so it says so too -
   // and its tile goes straight to the newest conversation, not to a list.
   const home = await html('/admin');
-  t.ok(home.includes(`/admin/orders/${order.ref}#thread`), 'the dashboard tile opens the newest unread thread');
+  t.ok(
+    home.includes(`/admin/orders/${order.ref}#thread`) || home.includes('href="/admin/messages"'),
+    'the dashboard tile opens the thread, or the inbox when several are waiting',
+  );
+
+  // The inbox: every conversation in one place, waiting-on-you first.
+  const inboxPage = await html('/admin/messages');
+  t.ok(inboxPage.includes(`/admin/orders/${order.ref}#thread`), 'the Messages inbox lists the conversation');
+  t.ok(inboxPage.includes('second volume in stock'), 'with a preview of what they said');
+  t.ok(/href="\/admin\/messages"[^>]*>[^<]*Messages[\s\S]{0,400}?unread<\/span>/.test(inboxPage),
+    'and the Messages tab carries an unread badge');
+  const found = await html(`/admin/messages?view=all&q=${encodeURIComponent(order.ref)}`);
+  t.ok(found.includes(`/admin/orders/${order.ref}#thread`), 'a conversation can be found by its reference');
 
   const portal = await html(`/admin/orders/${order.ref}`);
   t.ok(portal.includes('second volume in stock'), 'the owner reads it beside the books');
@@ -4957,6 +4997,20 @@ async function messages() {
 
   const page = await html(`/order${link}`);
   t.ok(page.includes('put one aside'), 'the customer sees the reply on their page');
+
+  // Links in a message are links, on both sides, and nothing else becomes markup.
+  await admin(`/api/admin/orders/${order.ref}/message`, {
+    body: 'Tracking: https://www.royalmail.com/track-your-item#/tracking-results/JD0140000012345678. <b>bold?</b>',
+  });
+  const linked = await html(`/order${link}`);
+  t.ok(
+    /<a href="https:\/\/www\.royalmail\.com\/track-your-item#\/tracking-results\/JD0140000012345678"[^>]*target="_blank"[^>]*rel="noopener noreferrer nofollow"/.test(linked),
+    'a link in a message is clickable for the customer, opening in a new tab',
+  );
+  t.ok(!linked.includes('<b>bold?</b>') && linked.includes('&lt;b&gt;bold?&lt;/b&gt;'),
+    'while markup in a message stays as text');
+  t.ok(/<a href="https:\/\/www\.royalmail\.com/.test(await html(`/admin/orders/${order.ref}`)),
+    'and for the owner');
 
   /*
    * Two messages inside one second, which is the case that used to be lost.
@@ -5139,6 +5193,33 @@ async function messages() {
   t.ok(stillFive.n === 5, 'so an order never holds more than five photos, whichever door they came through');
   await db(`UPDATE orders SET telegram_chat_id = NULL WHERE id = ${row.id}`);
 
+  /*
+   * The owner can send photos too, on an allowance of their own - the
+   * customer having used all five must not stop the shop showing them the
+   * edition on the shelf.
+   */
+  const ownerCompose = await html(`/admin/orders/${order.ref}`);
+  t.ok(/enctype="multipart\/form-data"/.test(ownerCompose) && ownerCompose.includes('Attach a photo'),
+    'the owner has a paperclip too');
+  t.ok(ownerCompose.includes('data-quick-reply='), 'and saved replies above the box');
+  const shelfPhoto = new FormData();
+  shelfPhoto.set('body', 'This is the edition we have.');
+  shelfPhoto.set('image', new Blob([png], { type: 'image/png' }), 'edition.png');
+  const ownerSent = await adminUpload(`/api/admin/orders/${order.ref}/message`, shelfPhoto);
+  t.ok(ownerSent.status === 302, 'the owner can attach a photo', JSON.stringify(ownerSent));
+  const ownerPhoto = await one(
+    `SELECT id, image_key FROM messages WHERE order_id = ${row.id} AND sender = 'owner' AND image_key IS NOT NULL`,
+  );
+  t.ok((ownerPhoto?.image_key ?? '').startsWith('proofs/'), 'into the same private store as the customer\'s');
+  t.ok((await fetch(`${SITE}/img/${ownerPhoto?.image_key}`)).status === 404, 'which the public image route will not serve');
+  t.ok((await fetch(`${SITE}/api/orders/proof${link}&id=${ownerPhoto?.id}`)).status === 200,
+    'and the customer can see it on their order');
+  const wrongType = new FormData();
+  wrongType.set('image', new Blob([png], { type: 'application/pdf' }), 'x.pdf');
+  t.ok((await adminUpload(`/api/admin/orders/${order.ref}/message`, wrongType)).status === 302 &&
+    (await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id} AND sender = 'owner' AND image_key IS NOT NULL`)).n === 1,
+    'the owner is held to photos only, as the customer is');
+
   // The retention line belongs to the owner, who is the one holding somebody's
   // bank details - not under the customer's send button.
   const ownerSide = await html(`/admin/orders/${order.ref}`);
@@ -5164,7 +5245,7 @@ async function messages() {
         AND COALESCE(o.completed_at, o.updated_at) < unixepoch() - 183*86400
         AND m.order_id = ${row.id}`,
   );
-  t.ok(due.n === 5, 'the sweep claims every photo on an order closed over six months ago');
+  t.ok(due.n === 6, 'the sweep claims every photo on an order closed over six months ago, the shop\'s too');
 
   const before = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id}`);
 
@@ -5187,7 +5268,7 @@ async function messages() {
   const remembered = await one(
     `SELECT COUNT(*) AS n FROM messages WHERE order_id = ${row.id} AND had_image = 1`,
   );
-  t.ok(remembered.n === 5, 'the rows still remember a photo was there');
+  t.ok(remembered.n === 6, 'the rows still remember a photo was there - the customer\'s five and the shop\'s one');
 
   const swept = await html(`/order${link}`);
   t.ok(swept.includes('Photo removed'), 'and the page says so rather than showing a gap');

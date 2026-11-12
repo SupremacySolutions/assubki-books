@@ -401,6 +401,11 @@ export interface BookScope {
   shelf?: string | null;
   /** Only books already in this sale, applied in SQL rather than after paging. */
   inSale?: number | null;
+  /**
+   * Only listings on sale. The dashboard's worklist counts live listings, and
+   * its tiles open this page with this set so the two show the same rows.
+   */
+  liveOnly?: boolean;
 }
 
 /**
@@ -470,6 +475,7 @@ export function bookListWhere(opts: BookScope): { where: string; binds: unknown[
     );
     binds.push(shelf, shelf);
   }
+  if (opts.liveOnly && filter !== 'deleted') clauses.push("b.status = 'live'");
   if (opts.inSale) {
     clauses.push('EXISTS (SELECT 1 FROM sale_items si WHERE si.book_id = b.id AND si.sale_id = ?)');
     binds.push(opts.inSale);

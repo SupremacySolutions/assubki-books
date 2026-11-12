@@ -63,9 +63,18 @@ const TONE: Record<string, string> = {
 const OPEN = ['requested', 'awaiting_payment', 'paid', 'dispatched'];
 /* Lapsed holds first. They are the only rows where nothing happens until the
    owner acts, and they are holding stock while they wait. */
+/* Lapsed whether or not the sweep has stamped it yet - a hold whose time is up
+   read "hold expires in 0h" for days when the cron worker had not run. */
+const holdOver = (o: (typeof orders)[number]) =>
+  ['requested', 'awaiting_payment'].includes(o.status) &&
+  (o.lapsed_at !== null ||
+    (o.status === 'requested' && !o.pay_by && o.expires_at !== null && Date.now() >= o.expires_at * 1000));
 const queue = orders
   .filter((o) => OPEN.includes(o.status))
-  .sort((a, b) => Number(b.lapsed_at !== null) - Number(a.lapsed_at !== null));
+  .sort((a, b) => Number(holdOver(b)) - Number(holdOver(a)));
+/* "Waiting 1607h" had to be divided in the head. */
+const waitedLabel = (h: number) =>
+  h < 1 ? 'Just in' : h < 48 ? `Waiting ${h}h` : `Waiting ${Math.floor(h / 24)} days`;
 const settled = orders.filter((o) => !OPEN.includes(o.status));
 
 /** Waiting on the owner is the urgent one; the rest are waiting on someone else. */
@@ -188,8 +197,7 @@ function facts(o: (typeof orders)[number]): string[] {
         <ul class="space-y-2.5">
           {queue.map((o) => {
             const waited = hours(o.created_at);
-            const isLapsed =
-              ['requested', 'awaiting_payment'].includes(o.status) && o.lapsed_at !== null;
+            const isLapsed = holdOver(o);
             const left = o.status === 'requested' && !isLapsed ? until(o.expires_at) : null;
             return (
               <li class="lift bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] overflow-hidden hover:border-[var(--color-navy)]">
@@ -239,7 +247,7 @@ function facts(o: (typeof orders)[number]): string[] {
                     </div>
 
                     <div class="row-start-2 col-start-1 md:text-right shrink-0">
-                      <p class="eyebrow !text-[10px]">{waited < 1 ? 'Just in' : `Waiting ${waited}h`}</p>
+                      <p class="eyebrow !text-[10px]">{waitedLabel(waited)}</p>
                       {left !== null && (
                         <p class:list={[
                           'text-[13px] tabular-nums',
