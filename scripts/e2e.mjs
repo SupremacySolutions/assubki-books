@@ -5366,6 +5366,41 @@ async function messages() {
   );
   await db("DELETE FROM settings WHERE key = 'owner_telegram_chat_id'");
 
+  /*
+   * Every reply reaches a customer on Telegram, not just the first.
+   *
+   * The half-hour debounce is for email, and it lifts when the customer opens
+   * their order page - which someone talking to the bot never does. It used to
+   * pass on the first of the owner's replies and drop the rest. The stamp is
+   * written only when something went, so it is the witness: pushed into the
+   * past, a second reply has to move it.
+   */
+  const chatty = await placeOrder(book.id, 'collection');
+  const chattyRow = await one(`SELECT id FROM orders WHERE ref = '${chatty.ref}'`);
+  await db(
+    `UPDATE orders SET telegram_chat_id = '97${String(Date.now()).slice(-8)}' WHERE id = ${chattyRow.id}`,
+  );
+  await admin(`/api/admin/orders/${chatty.ref}/message`, { body: 'It is ready.' });
+  await db(`UPDATE orders SET message_notified_at = unixepoch() - 60 WHERE id = ${chattyRow.id}`);
+  await admin(`/api/admin/orders/${chatty.ref}/message`, { body: 'Come after asr.' });
+  const quick = await one(
+    `SELECT unread_for_customer AS unread, message_notified_at >= unixepoch() - 5 AS fresh
+       FROM orders WHERE id = ${chattyRow.id}`,
+  );
+  t.ok(quick.unread === 2 && quick.fresh === 1,
+    'a second reply straight after the first still goes to the customer on Telegram',
+    JSON.stringify(quick));
+
+  await db(
+    `UPDATE orders SET telegram_chat_id = NULL, message_notified_at = unixepoch() - 60
+      WHERE id = ${chattyRow.id}`,
+  );
+  await admin(`/api/admin/orders/${chatty.ref}/message`, { body: 'Or Sunday.' });
+  const held = await one(
+    `SELECT message_notified_at < unixepoch() - 30 AS held FROM orders WHERE id = ${chattyRow.id}`,
+  );
+  t.ok(held.held === 1, 'while an email-only customer is still not emailed twice in half an hour');
+
   // --- email stopped carrying the conversation ------------------------------
   const notifySource = readFileSync('src/lib/notify.ts', 'utf8');
   t.ok(

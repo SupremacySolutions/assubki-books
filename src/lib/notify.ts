@@ -1036,6 +1036,17 @@ function preview(body: string | null, hasImage: boolean): string {
 }
 
 /**
+ * The message as written, line breaks and all, for a channel that can hold it.
+ * Telegram's limit is 4096 characters and a thread message is far shorter, so
+ * the cap only guards against that changing.
+ */
+function whole(body: string | null): string | null {
+  const text = (body ?? '').trim();
+  if (!text) return null;
+  return text.length > 3500 ? `${text.slice(0, 3499)}…` : text;
+}
+
+/**
  * Do not tell the same customer twice in half an hour.
  *
  * A full test run is already about 38 emails, which is most of a day's free
@@ -1177,6 +1188,8 @@ async function tellOwner(input: {
  * The email is a doorbell, not the message: sender, one line, and a link back
  * to the thread. Enough to judge urgency, not enough to answer by replying to
  * an address nobody reads.
+ *
+ * Telegram is the conversation itself, so it carries every reply, whole.
  */
 async function tellCustomer(input: {
   orderId: number;
@@ -1188,9 +1201,6 @@ async function tellCustomer(input: {
   hasImage: boolean;
   origin: string;
 }): Promise<void> {
-  const due = await notificationDue(input.orderId);
-  if (!due) return;
-
   const line = preview(input.body, input.hasImage);
   const link = `${input.origin}/order?ref=${input.ref}&t=${await tokenFor(input.orderId)}`;
 
@@ -1202,6 +1212,13 @@ async function tellCustomer(input: {
    * that false used to be discarded: the customer heard nothing, the debounce
    * marker was stamped anyway so nothing would try again for half an hour, and
    * the health line on the dashboard was cleared as though all was well.
+   *
+   * The half-hour debounce is not applied to Telegram. It exists for the email
+   * allowance, and it lifts when the customer opens their order page - which
+   * someone talking to the bot never does. So it used to deliver the first of
+   * the owner's replies and silently drop every other one for thirty minutes:
+   * three answers in a row arrived as one, cut at 140 characters, and the
+   * customer was left asking "?" into a chat that had stopped answering.
    */
   let delivered = false;
 
@@ -1211,12 +1228,14 @@ async function tellCustomer(input: {
       [
         `*${esc(`A reply about ${input.ref}`)}*`,
         '',
-        esc(line),
+        esc(whole(input.body) ?? line),
         '',
         mdLink('Open your order', link),
       ].join('\n'),
     );
   }
+
+  if (!delivered && !(await notificationDue(input.orderId))) return;
 
   if (!delivered) {
     // Either they are not on Telegram, or Telegram would not take it. Both end
