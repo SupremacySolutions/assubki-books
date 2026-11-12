@@ -76,7 +76,10 @@ export type SettingKey =
   | 'order_discount_percent'
   // Which sections the front page shows under the hero, and in what order -
   // JSON, read and checked by lib/home-layout.
-  | 'home_layout';
+  | 'home_layout'
+  // The owner's saved replies for order conversations: one per paragraph,
+  // an optional short label before a "|". Read by lib/messages.
+  | 'quick_replies';
 
 export async function getSetting(key: SettingKey, fallback = ''): Promise<string> {
   const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?')

@@ -1,6 +1,7 @@
 ---
 import { THREAD } from '../lib/order-status';
-import { BODY_MAX, IMAGES_PER_ORDER, type Message } from '../lib/messages';
+import { BODY_MAX, IMAGES_PER_ORDER, type Message, type QuickReply } from '../lib/messages';
+import { linkPieces, isExternal } from '../lib/linkify';
 
 /**
  * The conversation on an order, drawn the same way for both sides.
@@ -23,10 +24,19 @@ interface Props {
   hidden?: Record<string, string>;
   /** False on a finished order: readable, not writable. */
   open: boolean;
-  /** Only the customer may attach photographs. */
+  /** Whether this side may attach photographs. Both can now; it is still a prop. */
   canAttach?: boolean;
-  /** How many they have already sent, so the limit can be stated honestly. */
+  /** How many this side has already sent, so the limit can be stated honestly. */
   imagesUsed?: number;
+  /** This side's photo allowance on the order. */
+  maxImages?: number;
+  /**
+   * Owner only: the replies they send every day, one tap from the box. Already
+   * filled in for this order, so a tap puts finished words in the box.
+   */
+  quickReplies?: QuickReply[];
+  /** Where the saved replies are edited, so the row can say so. */
+  quickRepliesHref?: string | null;
   /** Builds the src for a photo in the thread. Both sides read their own route. */
   proofUrl?: (id: number) => string;
   /**
@@ -83,6 +93,9 @@ const {
   open,
   canAttach = false,
   imagesUsed = 0,
+  maxImages = IMAGES_PER_ORDER,
+  quickReplies = [],
+  quickRepliesHref = null,
   proofUrl,
   pollUrl = null,
   proofBase = null,
@@ -104,23 +117,42 @@ const listClass = fill
   ? 'flex-1 min-h-0 overflow-y-auto p-4 space-y-3'
   : 'max-h-[26rem] overflow-y-auto p-4 space-y-3';
 
-const atImageLimit = imagesUsed >= IMAGES_PER_ORDER;
+const atImageLimit = imagesUsed >= maxImages;
+/* Every photo on the order, both sides', for the retention note. */
+const photosHeld = messages.filter((m) => m.image_key).length;
+const origin = Astro.url.origin;
+
+/*
+ * A line across the conversation where the day changes.
+ *
+ * A thread that runs over a week read as one block with a date squeezed into
+ * every bubble; "Yesterday" between two messages says the same thing once and
+ * lets each stamp be just a time.
+ */
+const dayKey = (at: number) =>
+  new Date(at * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+const dayLabel = (at: number) => {
+  const key = dayKey(at);
+  const now = Math.floor(Date.now() / 1000);
+  if (key === dayKey(now)) return 'Today';
+  if (key === dayKey(now - 86_400)) return 'Yesterday';
+  return new Date(at * 1000).toLocaleDateString('en-GB', {
+    timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short',
+    ...(new Date(at * 1000).getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }),
+  });
+};
+const firstOfDay = new Set(
+  messages.filter((m, i) => i === 0 || dayKey(m.created_at) !== dayKey(messages[i - 1].created_at)).map((m) => m.id),
+);
 
 /* A time, not a date, for anything from today: "14:32" is what someone wants
    from a conversation they are in the middle of. */
-const when = (at: number) => {
-  const date = new Date(at * 1000);
-  const today = new Date();
-  const sameDay =
-    date.getDate() === today.getDate() &&
-    date.getMonth() === today.getMonth() &&
-    date.getFullYear() === today.getFullYear();
-  return date.toLocaleString('en-GB', {
-    ...(sameDay ? {} : { day: 'numeric', month: 'short' }),
-    hour: '2-digit',
-    minute: '2-digit',
+/* Just the time: the day is said once, on the line above the day's first
+   message. */
+const when = (at: number) =>
+  new Date(at * 1000).toLocaleTimeString('en-GB', {
+    timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit',
   });
-};
 
 const ours = (m: Message) => m.sender === side;
 ---
@@ -134,6 +166,8 @@ const ours = (m: Message) => m.sender === side;
   data-proof-url={proofBase ?? undefined}
   data-list-class={listClass}
   data-read-state={readCursor === null ? undefined : 'on'}
+  data-max-images={canAttach ? maxImages : undefined}
+  data-images-used={canAttach ? imagesUsed : undefined}
 >
   <div class="mb-3 flex items-baseline justify-between gap-3">
     <h2 class="eyebrow">{THREAD.heading}</h2>
@@ -174,6 +208,14 @@ const ours = (m: Message) => m.sender === side;
            must not push the rest of it out of reach. */
         <ol class={listClass} data-thread-list>
           {messages.map((m) => (
+            <>
+            {firstOfDay.has(m.id) && (
+              <li class="flex items-center gap-3 py-1" data-day={dayKey(m.created_at)} aria-hidden="true">
+                <span class="h-px flex-1 bg-[var(--color-rule-faint)]"></span>
+                <span class="text-[11.5px] font-medium tracking-wide text-[var(--color-ink-faint)]">{dayLabel(m.created_at)}</span>
+                <span class="h-px flex-1 bg-[var(--color-rule-faint)]"></span>
+              </li>
+            )}
             <li
               class:list={['flex', ours(m) ? 'justify-end' : 'justify-start']}
               data-message-id={m.id}
@@ -187,8 +229,24 @@ const ours = (m: Message) => m.sender === side;
                     : 'bg-[var(--color-paper-raised)] border border-[var(--color-rule-soft)]',
                 ]}
               >
+                {/* Links are links: tracking pages, the shop's own books, a map
+                    pin. Built piece by piece, never parsed as markup. */}
                 {m.body && (
-                  <p class="text-[14.5px] leading-relaxed whitespace-pre-line break-words">{m.body}</p>
+                  <p class="text-[14.5px] leading-relaxed whitespace-pre-line break-words">{
+                    linkPieces(m.body).map((piece) =>
+                      piece.href ? (
+                        <a
+                          href={piece.href}
+                          target={isExternal(piece.href, origin) ? '_blank' : undefined}
+                          rel={isExternal(piece.href, origin) ? 'noopener noreferrer nofollow' : undefined}
+                          class:list={[
+                            'underline underline-offset-2 break-all',
+                            ours(m) ? 'text-white decoration-white/60 hover:decoration-white' : 'text-[var(--color-navy)] hover:decoration-2',
+                          ]}
+                        >{piece.text}</a>
+                      ) : piece.text,
+                    )
+                  }</p>
                 )}
 
                 {m.image_key && proofUrl && (
@@ -205,7 +263,7 @@ const ours = (m: Message) => m.sender === side;
                       src={proofUrl(m.id)}
                       alt="Photo sent with this message"
                       loading="lazy"
-                      class="rounded-[8px] max-h-64 w-auto"
+                      class="rounded-[8px] max-h-64 w-auto bg-[var(--color-paper)]"
                     />
                   </a>
                 )}
@@ -239,6 +297,7 @@ const ours = (m: Message) => m.sender === side;
                 </p>
               </div>
             </li>
+            </>
           ))}
         </ol>
       )
@@ -247,9 +306,9 @@ const ours = (m: Message) => m.sender === side;
     {/* Owner side only. The customer does not need the shop's retention policy
         under their compose box; the owner does, because they are the one
         holding somebody's bank details. */}
-    {side === 'owner' && imagesUsed > 0 && (
+    {side === 'owner' && photosHeld > 0 && (
       <p class="px-4 pb-3 -mt-1 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-        {THREAD.ownerRetention(imagesUsed)}
+        {THREAD.ownerRetention(photosHeld)}
       </p>
     )}
 
@@ -276,6 +335,25 @@ const ours = (m: Message) => m.sender === side;
             </p>
           )}
           {!error && <p class="hidden mb-3 text-[13.5px] text-[var(--color-outstock)] leading-relaxed" data-thread-error role="alert" />}
+
+          {/* Owner only. A tap puts the words in the box rather than sending
+              them, so a saved reply can still be read and changed first. */}
+          {quickReplies.length > 0 && (
+            <div class="mb-3 -mx-1 flex flex-wrap items-center gap-1.5" data-quick-replies>
+              <span class="sr-only">{THREAD.savedReplies}</span>
+              {quickReplies.map((r) => (
+                <button
+                  type="button"
+                  class="px-3.5 py-2 min-h-[40px] sm:min-h-[32px] sm:px-3 sm:py-1.5 rounded-[var(--radius-pill)] border border-[var(--color-rule-soft)] bg-[var(--color-paper)] text-[12.5px] text-[var(--color-ink-soft)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] transition-colors"
+                  data-quick-reply={r.text}
+                  title={r.text}
+                >{r.label}</button>
+              ))}
+              {quickRepliesHref && (
+                <a href={quickRepliesHref} class="px-1.5 text-[12.5px] text-[var(--color-ink-faint)] underline underline-offset-2 hover:text-[var(--color-navy)]">Edit</a>
+              )}
+            </div>
+          )}
 
           <label class="sr-only" for="thread-body">{THREAD.placeholder}</label>
           <textarea
@@ -324,9 +402,9 @@ const ours = (m: Message) => m.sender === side;
                */
               <label
                 class="shrink-0 grid place-items-center w-10 h-10 rounded-full border border-[var(--color-rule)] text-[var(--color-ink-faint)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] focus-within:border-[var(--color-navy)] focus-within:text-[var(--color-navy)] transition-colors cursor-pointer"
-                title={THREAD.attach}
+                title={side === 'owner' ? THREAD.attachPhoto : THREAD.attach}
               >
-                <span class="sr-only">{THREAD.attach}</span>
+                <span class="sr-only">{side === 'owner' ? THREAD.attachPhoto : THREAD.attach}</span>
                 <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none"
                      stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -356,7 +434,7 @@ const ours = (m: Message) => m.sender === side;
 
           {canAttach && atImageLimit && (
             <p class="mt-2.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
-              {THREAD.imageCapped}
+              {side === 'owner' ? THREAD.ownerImageCapped : THREAD.imageCapped}
             </p>
           )}
 
@@ -365,14 +443,21 @@ const ours = (m: Message) => m.sender === side;
               answer is here or Telegram. How long the shop keeps the file is a
               privacy-page matter, not something to put between somebody and
               the send button - the owner is told that instead. */}
-          {canAttach && (
+          {canAttach && side === 'customer' && (
             <p class="mt-2.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
               {THREAD.payHint}
             </p>
           )}
-
-          {channelNote && (
-            <p class="mt-2.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">{channelNote}</p>
+          {/* Where the reply goes, and - on a keyboard - how to send it, on one
+              line. Two lines of small print under the box cost the
+              conversation above them its room on a laptop screen. */}
+          {(channelNote || side === 'owner') && (
+            <p class="mt-2.5 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+              {channelNote}
+              {side === 'owner' && (
+                <span class="hidden md:inline">{channelNote ? ' · ' : ''}{THREAD.sendHint}</span>
+              )}
+            </p>
           )}
         </form>
       ) : (

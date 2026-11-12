@@ -25,12 +25,16 @@ const path = Astro.url.pathname;
 const NAV = [
   { href: '/admin', label: 'Dashboard' },
   { href: '/admin/orders', label: 'Orders' },
+  /* Every conversation, waiting-on-you first. Carries the unread count. */
+  { href: '/admin/messages', label: 'Messages' },
   { href: '/admin/books', label: 'Listings' },
   { href: '/admin/shipments', label: 'Shipments' },
-  { href: '/admin/preorders', label: 'Pre-orders' },
 ];
 
 const MORE = [
+  /* Moved here when Messages joined the bar: six tabs pushed Dashboard off
+     the left of a phone. Pre-orders are opened weekly, not hourly. */
+  { href: '/admin/preorders', label: 'Pre-orders' },
   { href: '/admin/shelves', label: 'Shelves' },
   /* Which rows the shop's front page shows, and in what order. */
   { href: '/admin/front-page', label: 'Front page' },
@@ -54,7 +58,10 @@ const active = (href: string) =>
    it, so a hidden tab still tells you where you are. */
 const openHere = MORE.find((item) => active(item.href)) ?? null;
 import { maintenanceNotice } from '../lib/maintenance';
+import { unreadTotal } from '../lib/messages';
 const closed = await maintenanceNotice();
+/* Only behind the sign-in: the login page uses this layout too. */
+const unread = admin ? await unreadTotal() : 0;
 ---
 
 <!doctype html>
@@ -131,6 +138,12 @@ const closed = await maintenanceNotice();
                   ]}
                 >
                   {item.label}
+                  {item.href === '/admin/messages' && unread > 0 && (
+                    <span class="ml-1.5 inline-grid place-items-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-[var(--color-brass-on-navy)] text-[var(--color-navy-deep)] text-[11.5px] font-semibold tabular-nums align-[1px]">
+                      {unread > 99 ? '99+' : unread}
+                      <span class="sr-only"> unread</span>
+                    </span>
+                  )}
                 </a>
               ))
             }

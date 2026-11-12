@@ -1,0 +1,150 @@
+---
+/*
+ * Every conversation in one place.
+ *
+ * Messages lived only on their orders, so finding the one a customer had
+ * written meant knowing which order it was on and which tab that order sat in
+ * - the dashboard tile could only open the newest. This is the owner's inbox:
+ * who is waiting on an answer first, then everything else, each row opening
+ * straight onto the thread.
+ *
+ * Read-only. Answering still happens on the order, beside the books, the
+ * address and the status the question is about.
+ */
+import Admin from '../../layouts/Admin.astro';
+import { inbox, type InboxView, type Conversation } from '../../lib/messages';
+import { portalLabel } from '../../lib/order-status';
+import { buildQuery } from '../../lib/format';
+
+export const prerender = false;
+
+const params = Astro.url.searchParams;
+const asked = params.get('view');
+const view: InboxView = asked === 'open' || asked === 'all' ? asked : 'waiting';
+const q = params.get('q')?.trim() || null;
+
+const [rows, waitingRows] = await Promise.all([
+  inbox(view, q),
+  view === 'waiting' && !q ? Promise.resolve(null) : inbox('waiting'),
+]);
+const waitingCount = (waitingRows ?? rows).length;
+
+const VIEWS: { key: InboxView; label: string }[] = [
+  { key: 'waiting', label: 'Waiting on you' },
+  { key: 'open', label: 'Open orders' },
+  { key: 'all', label: 'Everything' },
+];
+
+/* "3 min", "2 h", "Tue", "4 Nov": a list wants how long, not a timestamp. */
+const ago = (at: number) => {
+  const secs = Math.max(0, Math.floor(Date.now() / 1000) - at);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)} min`;
+  if (secs < 86_400) return `${Math.floor(secs / 3600)} h`;
+  const date = new Date(at * 1000);
+  if (secs < 6 * 86_400) return date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/London' });
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' });
+};
+
+const previewOf = (c: Conversation) => {
+  const text = (c.lastBody ?? '').replace(/\s+/g, ' ').trim();
+  const who = c.lastSender === 'owner' ? 'You: ' : '';
+  if (!text) return `${who}${c.lastHadImage ? 'Sent a photo' : 'Sent a message'}`;
+  return `${who}${text}`;
+};
+
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
+
+const closed = (status: string) => ['completed', 'cancelled', 'expired'].includes(status);
+---
+
+<Admin title="Messages" sub={waitingCount === 0 ? 'nobody waiting on an answer' : `${waitingCount} waiting on an answer`}>
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <nav class="inline-flex gap-0.5 p-0.5 rounded-[var(--radius-pill)] bg-white border border-[var(--color-rule-soft)] text-[13.5px]" aria-label="Which conversations">
+      {VIEWS.map((v) => (
+        <a
+          href={`/admin/messages${buildQuery({ view: v.key === 'waiting' ? null : v.key, q })}`}
+          aria-current={view === v.key ? 'page' : undefined}
+          class:list={[
+            'px-3.5 py-2.5 sm:py-1.5 rounded-[var(--radius-pill)] whitespace-nowrap transition-colors duration-200',
+            view === v.key ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]',
+          ]}
+        >
+          {v.label}
+          {v.key === 'waiting' && waitingCount > 0 && <span class="tabular-nums"> ({waitingCount})</span>}
+        </a>
+      ))}
+    </nav>
+    <form method="get" class="flex gap-2 w-full sm:w-auto" role="search">
+      {view !== 'waiting' && <input type="hidden" name="view" value={view} />}
+      <label for="inbox-q" class="sr-only">Find a conversation</label>
+      <input id="inbox-q" name="q" type="search" value={q ?? ''} placeholder="Name, email or reference" class="field !py-2 !text-[14px] sm:w-64" />
+      <button type="submit" class="btn btn-ghost !py-2 !px-4 !text-[14px]">Find</button>
+    </form>
+  </div>
+
+  {
+    rows.length === 0 ? (
+      <p class="p-6 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[15px] text-[var(--color-ink-soft)] leading-relaxed">
+        {q
+          ? `No conversation matches “${q}”.`
+          : view === 'waiting'
+            ? 'Nobody is waiting on an answer. When a customer writes on their order it appears here, and on Telegram if you have connected it.'
+            : 'No conversations yet. A thread starts when you or a customer write on an order.'}
+      </p>
+    ) : (
+      <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)] overflow-hidden">
+        {rows.map((c) => {
+          const unread = c.unread > 0;
+          const theirTurn = c.lastSender === 'customer' && !closed(c.status);
+          return (
+            <li>
+              <a
+                href={`/admin/orders/${c.ref}#thread`}
+                class:list={[
+                  'group flex items-start gap-3 sm:gap-4 p-4 transition-colors hover:bg-[var(--color-paper)]',
+                  unread && 'bg-[var(--color-wash-soft)]/40',
+                ]}
+              >
+                <span
+                  aria-hidden="true"
+                  class:list={[
+                    'shrink-0 grid place-items-center w-10 h-10 rounded-full text-[13.5px] font-semibold',
+                    unread ? 'bg-[var(--color-navy)] text-white' : 'bg-[var(--color-paper)] text-[var(--color-ink-soft)] border border-[var(--color-rule-soft)]',
+                  ]}
+                >{initials(c.name)}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-baseline gap-2">
+                    <p class:list={['min-w-0 truncate text-[15px]', unread ? 'font-semibold' : 'font-medium']}>{c.name}</p>
+                    <span class="shrink-0 text-[12.5px] text-[var(--color-ink-faint)]">{c.ref}</span>
+                    <span class="ml-auto shrink-0 text-[12.5px] tabular-nums text-[var(--color-ink-faint)]">{ago(c.lastAt)}</span>
+                  </div>
+                  <p class:list={['mt-0.5 text-[14px] leading-snug line-clamp-2 break-words', unread ? 'text-[var(--color-ink)]' : 'text-[var(--color-ink-soft)]']}>
+                    {previewOf(c)}
+                  </p>
+                  <p class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--color-ink-faint)]">
+                    <span>{portalLabel(c.status, c.fulfilment, Boolean(c.cash))}</span>
+                    {c.reservation && <span>· reservation</span>}
+                    {c.lastVia === 'telegram' && <span>· via Telegram</span>}
+                    {unread ? (
+                      <span class="ml-auto inline-flex items-center rounded-full bg-[var(--color-navy)] px-2 py-0.5 text-[11.5px] font-semibold text-white tabular-nums">
+                        {c.unread} new
+                      </span>
+                    ) : theirTurn ? (
+                      <span class="ml-auto font-medium text-[var(--color-brass)]">Your turn to reply</span>
+                    ) : null}
+                  </p>
+                </div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )
+  }
+  <p class="mt-4 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+    Opening a conversation marks it read. “Your turn to reply” stays until you answer, so a
+    message read on your phone and left for later is not lost.
+  </p>
+</Admin>

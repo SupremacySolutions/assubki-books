@@ -18,9 +18,11 @@ const filter = (params.get('filter') ?? 'all') as BookFilter;
 const sort = (params.get('sort') ?? 'recent') as BookSort;
 const perPage = Number.parseInt(params.get('per') ?? '40', 10) || 40;
 const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
+/* Set by the dashboard's worklist, which counts live listings only. */
+const liveOnly = params.get('live') === '1';
 
 const [result, counts, shelves] = await Promise.all([
-  listBooksAdmin({ q, filter, sort, page, perPage }),
+  listBooksAdmin({ q, filter, sort, page, perPage, liveOnly }),
   bookFilterCounts(),
   listShelves(),
 ]);
@@ -93,7 +95,7 @@ const SORTS: { key: BookSort; label: string }[] = [
   { key: 'price-desc', label: 'Price high to low' },
 ];
 
-const base = { q, filter: filter === 'all' ? null : filter, sort: sort === 'recent' ? null : sort, per: perPage === 40 ? null : perPage };
+const base = { q, filter: filter === 'all' ? null : filter, sort: sort === 'recent' ? null : sort, per: perPage === 40 ? null : perPage, live: liveOnly ? 1 : null };
 const pageUrl = (n: number) => `/admin/books${buildQuery(base, { page: n > 1 ? n : null })}`;
 const filterUrl = (f: BookFilter) =>
   `/admin/books${buildQuery({ q, sort: sort === 'recent' ? null : sort, per: perPage === 40 ? null : perPage }, { filter: f === 'all' ? null : f })}`;
@@ -272,7 +274,17 @@ const windowed = () => {
     }
   </nav>
 
+  {/* Said out loud, because the chip counts above include drafts and this
+      list does not - otherwise the two numbers disagree with no explanation. */}
+  {liveOnly && (
+    <p class="mb-4 text-[13.5px] text-[var(--color-ink-soft)]">
+      Showing listings on sale only, to match the dashboard.
+      <a href={`/admin/books${buildQuery({ ...base, live: null }, {})}`} class="ml-1 text-[var(--color-navy)] underline underline-offset-2">Include drafts and archived</a>
+    </p>
+  )}
+
   <form method="get" class="flex flex-wrap items-center gap-3 mb-5 pb-4 border-b border-[var(--color-rule)]">
+    {liveOnly && <input type="hidden" name="live" value="1" />}
     {q && <input type="hidden" name="q" value={q} />}
     {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
     <label class="flex items-center gap-2 text-[14px] text-[var(--color-ink-soft)]">
