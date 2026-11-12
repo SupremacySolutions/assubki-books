@@ -9,6 +9,7 @@ import {
   partBodyKey,
   partLabelKey,
 } from '../../lib/settings';
+import { DEFAULT_REPLIES } from '../../lib/messages';
 import { botConfigured, botUsername, ownerOptInLink } from '../../lib/telegram';
 import { emailConfigured, ownerAddress, lastEmailError, fromAddress } from '../../lib/email';
 import { recentFailures } from '../../lib/login-throttle';
@@ -70,6 +71,7 @@ const draftGroups = [
 const SECTIONS = [
   { id: 'messages', group: 'Orders', label: 'Payment wording' },
   { id: 'discount', group: 'Orders', label: 'Order discount' },
+  { id: 'replies', group: 'Orders', label: 'Saved replies' },
   { id: 'contact', group: 'Shop', label: 'Where people reach you' },
   { id: 'alerts', group: 'Shop', label: 'Owner alerts' },
   { id: 'maintenance', group: 'Shop', label: 'Closing the shop' },
@@ -362,6 +364,39 @@ const groups = [...new Set(SECTIONS.map((s) => s.group))];
       </form>
     </section>
       )}
+
+      {
+        section === 'replies' && (
+          <form method="post" action="/api/admin/settings" class="space-y-5">
+            <input type="hidden" name="s" value="replies" />
+            <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
+              <h2 class="font-[family-name:var(--font-display)] text-[19px] font-semibold">
+                Saved replies
+              </h2>
+              <p class="mt-1.5 mb-3 text-[14.5px] text-[var(--color-ink-soft)] leading-relaxed">
+                The answers you give every day, shown as buttons above the message box on every
+                order. Tapping one puts it in the box for you to check before sending - it never
+                sends by itself.
+              </p>
+              <ul class="mb-4 text-[13.5px] text-[var(--color-ink-soft)] leading-relaxed list-disc pl-5 space-y-1">
+                <li>One reply per paragraph - leave an empty line between them.</li>
+                <li>Start with a short button name and a <code>|</code> if you like: <code>Posted|Your order has been posted today.</code></li>
+                <li><code>{'{name}'}</code>, <code>{'{ref}'}</code> and <code>{'{total}'}</code> are filled in from the order.</li>
+                <li>Begin with <code>[collect]</code> or <code>[post]</code> to show a reply only on orders being collected or posted.</li>
+              </ul>
+              <label for="quick_replies" class="block text-[14.5px] font-medium mb-1.5">Your replies</label>
+              <textarea
+                id="quick_replies"
+                name="quick_replies"
+                rows="12"
+                maxlength="6000"
+                class="field font-[family-name:var(--font-body)]">{(settings.quick_replies ?? '').trim() || DEFAULT_REPLIES}</textarea>
+              <p class="mt-2 text-[12.5px] text-[var(--color-ink-faint)]">Empty the box and save to go back to the starting set.</p>
+            </section>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </form>
+        )
+      }
 
       {
         section === 'maintenance' && (

@@ -5,7 +5,7 @@ import { price } from '../../lib/format';
 import { botConfigured } from '../../lib/telegram';
 import { emailConfigured, lastEmailError, fromAddress } from '../../lib/email';
 import { lastNotifyError } from '../../lib/notify';
-import { dashboard } from '../../lib/dashboard';
+import { dashboard, shopDay } from '../../lib/dashboard';
 import { stuckNotices } from '../../lib/shipment-notify';
 import { d1Usage, usageLevel, compact, D1_DAILY_ROW_LIMIT } from '../../lib/d1-usage';
 import { env } from 'cloudflare:workers';
@@ -65,25 +65,37 @@ const warnings = [
 // Only surface work that exists. A row reading "0 listings with no photo" is
 // not information, it is furniture.
 const jobs = [
-  { n: work.outOfStock, label: 'out of stock', href: '/admin/books?filter=out-of-stock' },
-  { n: work.lowStock, label: 'running low', href: '/admin/books?filter=low-stock' },
-  { n: work.noImage, label: 'without a photo', href: '/admin/books?filter=no-photo' },
+  { n: work.outOfStock, label: 'out of stock', href: '/admin/books?filter=out-of-stock&live=1' },
+  { n: work.lowStock, label: 'running low', href: '/admin/books?filter=low-stock&live=1' },
+  { n: work.noImage, label: 'without a photo', href: '/admin/books?filter=no-photo&live=1' },
   // Next to "without a photo" on purpose: a cover too small to fill the box is
   // the same job, and reads worse on the shop than an honest blank would.
-  { n: work.thinImage, label: 'with a photo too small to print well', href: '/admin/books?filter=thin-photo' },
-  { n: work.noDescription, label: 'without a description', href: '/admin/books?filter=no-description' },
-  { n: work.noCategory, label: 'not on a shelf', href: '/admin/books?filter=no-subject' },
-  { n: work.unposted, label: 'never announced', href: '/admin/books?filter=not-announced' },
-  { n: work.repost, label: 'back in stock, to repost in the channel', href: '/admin/books?filter=repost' },
+  { n: work.thinImage, label: 'with a photo too small to print well', href: '/admin/books?filter=thin-photo&live=1' },
+  { n: work.noDescription, label: 'without a description', href: '/admin/books?filter=no-description&live=1' },
+  { n: work.noCategory, label: 'not on a shelf', href: '/admin/books?filter=no-subject&live=1' },
+  { n: work.unposted, label: 'never announced', href: '/admin/books?filter=not-announced&live=1' },
+  { n: work.repost, label: 'back in stock, to repost in the channel', href: '/admin/books?filter=repost&live=1' },
 ].filter((j) => j.n > 0);
 
 const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0);
 
+/*
+ * The first few, then a count.
+ *
+ * Every waiting request was listed, so a busy week put thirteen rows between
+ * the tiles and every figure below them. The tile already says how many; the
+ * list is for picking the next one up.
+ */
+const SHOW_WAITING = 6;
+const waitingShown = pending.slice(0, SHOW_WAITING);
+const waitingMore = pending.length - waitingShown.length;
+
 // The chart is drawn from the days that actually have orders, padded out so a
 // quiet week does not compress the shape of a busy one.
+// Keyed by the shop's own calendar day, the same clock the query buckets by -
+// UTC put a sale just after midnight in summer on the day before.
 const span = Array.from({ length: days }, (_, i) => {
-  const at = new Date(Date.now() - (days - 1 - i) * 86_400_000);
-  const key = at.toISOString().slice(0, 10);
+  const key = shopDay(days - 1 - i);
   const found = d.daily.find((x) => x.day === key);
   return { day: key, pence: found?.pence ?? 0, orders: found?.orders ?? 0 };
 });
@@ -109,15 +121,23 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
 ---
 
 <Admin title="Dashboard" showHeading={false}>
-  <section class="reveal mb-8 border-l-2 border-[var(--color-navy)] pl-4">
-    {/* An H1, not a paragraph styled like one: the page had no top-level
-        heading, so its outline began at H2 and assistive technology had
-        nothing to announce it by. The eyebrow carries the name because that is
-        what it already reads as; "Welcome back" is a greeting, not a title. */}
-    <h1 class="eyebrow">Owner dashboard</h1>
-    <p class="mt-1 font-[family-name:var(--font-display)] text-[22px] font-semibold">Welcome back.</p>
-    <p class="mt-1 text-[14.5px] text-[var(--color-ink-soft)]">Here is what needs your attention today.</p>
-  </section>
+  {/* The greeting and the one action, on one line. "All listings" and
+      "View the shop" repeated the bar above and pushed the first number a
+      screen's worth of buttons down a phone. */}
+  <div class="reveal mb-6 flex flex-wrap items-end justify-between gap-4">
+    <section class="border-l-2 border-[var(--color-navy)] pl-4">
+      {/* An H1, not a paragraph styled like one: the page had no top-level
+          heading, so its outline began at H2 and assistive technology had
+          nothing to announce it by. */}
+      <h1 class="eyebrow">Owner dashboard</h1>
+      <p class="mt-1 font-[family-name:var(--font-display)] text-[22px] font-semibold">Welcome back.</p>
+      <p class="mt-1 text-[14.5px] text-[var(--color-ink-soft)]">Here is what needs your attention today.</p>
+    </section>
+    <a href="/admin/books/new" class="btn btn-primary w-full sm:w-auto">
+      <span aria-hidden="true" class="text-[18px] leading-none -mt-px">+</span>
+      Add a listing
+    </a>
+  </div>
   {
     warnings.length > 0 && (
       <div class="mb-6 space-y-2">
@@ -130,46 +150,22 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     )
   }
 
-  {/* On a phone the three wrapped into a ragged two-and-one. The main action
-      takes the full width there, with the other two sharing a row under it. */}
-  <div class="reveal grid grid-cols-2 gap-2 mb-6 sm:flex sm:flex-wrap" data-delay="1">
-    <a href="/admin/books/new" class="btn btn-primary col-span-2">
-      <span aria-hidden="true" class="text-[18px] leading-none -mt-px">+</span>
-      Add a listing
-    </a>
-    <a href="/admin/books" class="btn btn-ghost !px-3 sm:!px-6">All listings</a>
-    <a href="/" class="btn btn-ghost !px-3 sm:!px-6">View the shop</a>
-  </div>
-
-  <div class="reveal mb-8" data-delay="2">
-<div class="flex flex-wrap items-baseline justify-between gap-3 mb-5">
-    <p class="text-[14.5px] text-[var(--color-ink-soft)]">
-      Last {days} days
-    </p>
-    <div class="inline-flex gap-0.5 p-0.5 rounded-[var(--radius-pill)] bg-white border border-[var(--color-rule-soft)] text-[13.5px]" role="group" aria-label="Period">
-      <a
-        href="/admin"
-        aria-current={days === 30 ? 'true' : undefined}
-        class:list={['px-3.5 py-1.5 rounded-[var(--radius-pill)] transition-colors duration-200', days === 30 ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]']}
-      >30 days</a>
-      <a
-        href="/admin?d=90"
-        aria-current={days === 90 ? 'true' : undefined}
-        class:list={['px-3.5 py-1.5 rounded-[var(--radius-pill)] transition-colors duration-200', days === 90 ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]']}
-      >90 days</a>
-    </div>
-  </div>
-
+  <div class="reveal mb-8" data-delay="1">
   {/* What needs the owner today, before anything historical.
       Each tile is a two-row subgrid - label, then everything under it - so
       where a label wraps ("Awaiting payment", two across on a phone or six
       across on a wide screen) the figures beside it drop with it and stay
-      level, and rows where nothing wraps keep no spare line. */}
-  <div class="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-6">
+      level, and rows where nothing wraps keep no spare line.
+
+      Five, and all of them "now". The takings tile used to sit in this row
+      under a 30/90-day switch that changed nothing else in it, so the switch
+      looked as though it filtered the work queue. It moved down to the
+      period section, with the switch. */}
+  <div class="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-5">
     <a
       href="/admin/orders?status=requested"
       class:list={[
-        'lift grid grid-rows-subgrid row-span-2 gap-0 bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
+        'lift col-span-2 lg:col-span-1 grid grid-rows-subgrid row-span-2 gap-0 bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
         d.toConfirm > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule-soft)]',
       ]}
     >
@@ -257,7 +253,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       * lands on the one after.
       */}
     <a
-      href={d.unread.newest ? `/admin/orders/${d.unread.newest.ref}#thread` : '/admin/orders'}
+      href={d.unread.orders === 1 && d.unread.newest ? `/admin/orders/${d.unread.newest.ref}#thread` : '/admin/messages'}
       class:list={[
         'lift grid grid-rows-subgrid row-span-2 gap-0 bg-white border rounded-[var(--radius-panel)] p-3.5 sm:p-4 hover:border-[var(--color-navy)]',
         d.unread.messages > 0 ? 'border-[var(--color-navy)] border-l-[3px]' : 'border-[var(--color-rule-soft)]',
@@ -275,22 +271,6 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       </p>
       </div>
     </a>
-
-    <div class="grid grid-rows-subgrid row-span-2 gap-0 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4">
-      <p class="eyebrow">Taken</p>
-      <div>
-      <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.revenuePence)}</p>
-      <p class="mt-1.5 text-[12.5px]">
-        {change === null ? (
-          <span class="text-[var(--color-ink-faint)]">no earlier period to compare</span>
-        ) : (
-          <span class:list={[change >= 0 ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]']}>
-            {change >= 0 ? '▲' : '▼'} {Math.abs(change)}% on the {days} days before
-          </span>
-        )}
-      </p>
-      </div>
-    </div>
   </div>
   </div>
 
@@ -316,8 +296,12 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
         </p>
       ) : (
         <ul class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] divide-y divide-[var(--color-rule-faint)] overflow-hidden">
-          {pending.map((o) => {
-            const isLapsed = o.lapsed_at !== null;
+          {waitingShown.map((o) => {
+            /* A hold whose time is up has lapsed whether or not the sweep has
+               got round to stamping it - it read "0h left" for days when the
+               cron worker was not running. */
+            const isLapsed =
+              o.lapsed_at !== null || (o.expires_at !== null && Date.now() >= o.expires_at * 1000);
             const hoursLeft = !isLapsed && o.expires_at
               ? Math.max(0, Math.round((o.expires_at * 1000 - Date.now()) / 3_600_000))
               : null;
@@ -356,14 +340,99 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
               </li>
             );
           })}
+          {waitingMore > 0 && (
+            <li>
+              <a href="/admin/orders?status=requested" class="block p-3.5 text-center text-[14px] text-[var(--color-navy)] hover:bg-[var(--color-paper)] transition-colors">
+                {waitingMore} more waiting &rarr;
+              </a>
+            </li>
+          )}
         </ul>
       )
     }
   </section>
 
-  <div class="reveal mb-10" data-delay="3">
-    <h2 class="eyebrow mb-3">How the last {days} days went</h2>
-  <div class="grid gap-3 lg:grid-cols-[1.9fr_1fr] mt-3">
+  {/*
+    * Everything that depends on the period, under the switch that sets it.
+    */}
+  <section class="reveal mb-10" data-delay="3" aria-labelledby="period-heading">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h2 id="period-heading" class="font-[family-name:var(--font-display)] text-[20px] font-semibold">
+        The last {days} days
+      </h2>
+      <div class="inline-flex gap-0.5 p-0.5 rounded-[var(--radius-pill)] bg-white border border-[var(--color-rule-soft)] text-[13.5px]" role="group" aria-label="Period">
+      <a
+        href="/admin"
+        aria-current={days === 30 ? 'true' : undefined}
+        class:list={['px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-[var(--radius-pill)] transition-colors duration-200', days === 30 ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]']}
+      >30 days</a>
+      <a
+        href="/admin?d=90"
+        aria-current={days === 90 ? 'true' : undefined}
+        class:list={['px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-[var(--radius-pill)] transition-colors duration-200', days === 90 ? 'bg-[var(--color-navy)] text-white' : 'text-[var(--color-navy)] hover:bg-[var(--color-paper)]']}
+      >90 days</a>
+      </div>
+    </div>
+
+    {/* The money, and the two figures behind it. Repeat customers sits here
+        too, though it is counted all time - it says so under the number. */}
+    <div class="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+    <div class="col-span-2 lg:col-span-1 grid grid-rows-subgrid row-span-2 gap-0 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4">
+      <p class="eyebrow">Taken</p>
+      <div>
+      <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{price(d.revenuePence)}</p>
+      <p class="mt-1.5 text-[12.5px]">
+        {change === null ? (
+          <span class="text-[var(--color-ink-faint)]">no earlier period to compare</span>
+        ) : (
+          <span class:list={[change >= 0 ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]']}>
+            {change >= 0 ? '▲' : '▼'} {Math.abs(change)}% on the {days} days before
+          </span>
+        )}
+      </p>
+      </div>
+    </div>
+      <div class="grid grid-rows-subgrid row-span-2 gap-0 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4">
+        <p class="eyebrow">Orders</p>
+        <div>
+        <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.orders}</p>
+        {/* A basket split into shelf books and reserved books is one checkout,
+            and counted as one here - it was two, which halved the average. */}
+        <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">paid, one per checkout</p>
+        </div>
+      </div>
+      <div class="grid grid-rows-subgrid row-span-2 gap-0 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4">
+        <p class="eyebrow">Average order</p>
+        <div>
+        <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">{d.orders > 0 ? price(d.averagePence) : '–'}</p>
+        <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">{d.orders > 0 ? 'per checkout, with postage' : 'nothing paid yet'}</p>
+        </div>
+      </div>
+      <div class="col-span-2 lg:col-span-1 grid grid-rows-subgrid row-span-2 gap-0 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-3.5 sm:p-4">
+        <p class="eyebrow">Repeat customers</p>
+        <div>
+        {/* A percentage of two people is not a statistic. Below ten customers
+            the count itself is the honest figure. */}
+        <p class="text-[24px] sm:text-[30px] font-semibold leading-none mt-2 tabular-nums">
+          {d.customers === 0 ? '–' : d.customers < 10 ? `${d.repeatCustomers} of ${d.customers}` : `${d.repeatPct}%`}
+        </p>
+        <p class="mt-1.5 text-[12.5px] text-[var(--color-ink-faint)]">
+          {d.customers === 0 ? 'no paying customers yet' : d.customers < 10 ? 'customers have ordered more than once, all time' : `of ${d.customers} customers came back, all time`}
+        </p>
+        </div>
+      </div>
+    </div>
+
+    {
+      /* An empty period is one line, not four empty panels. */
+      d.revenuePence === 0 && fulfilled === 0 ? (
+        <p class="mt-3 p-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] text-[14px] text-[var(--color-ink-soft)]">
+          Nothing paid in the last {days} days, so there is no chart, best seller or shelf breakdown to show yet.
+          {days === 30 && <> <a href="/admin?d=90" class="text-[var(--color-navy)] underline underline-offset-2">Look at 90 days</a>.</>}
+        </p>
+      ) : (
+        <>
+          <div class="grid gap-3 lg:grid-cols-[1.9fr_1fr] mt-3 [&>*]:min-w-0">
     <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-1">Taken per day</p>
       {d.revenuePence > 0 ? (
@@ -427,11 +496,8 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
         <p class="py-10 text-center text-[14px] text-[var(--color-ink-faint)]">No orders yet.</p>
       )}
     </div>
-  </div>
-
-  {/* min-w-0 on the panels: a grid item will not shrink below its content by
-      default, and a long title pushed the column past a 320px screen. */}
-  <div class="grid gap-3 lg:grid-cols-3 mt-3 [&>*]:min-w-0">
+          </div>
+          <div class="grid gap-3 lg:grid-cols-2 mt-3 [&>*]:min-w-0">
     <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
       <p class="eyebrow mb-2.5">Selling best</p>
       {d.bestSellers.length > 0 ? (
@@ -458,7 +524,8 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       {/* Said plainly, because a book can sit on more than one shelf and the
           owner should know which shelf a sale was counted against. */}
       <p class="text-[12px] text-[var(--color-ink-faint)] mb-2.5 leading-relaxed">
-        Each sale counted once, against the first shelf its title is filed under.
+        Each sale counted once, against the top-level shelf its title is filed under. Postage and
+        order discounts are not included, so these add up to a little less than Taken.
       </p>
       {d.byShelf.length > 0 ? (
         <ul class="space-y-2">
@@ -479,26 +546,10 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
       )}
     </div>
 
-    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
-      <p class="eyebrow mb-2.5">Running low</p>
-      {d.lowStock.length > 0 ? (
-        <ul class="space-y-1.5 text-[13px]">
-          {d.lowStock.map((b) => (
-            <li class="flex justify-between gap-3">
-              <a href={`/admin/books?q=${encodeURIComponent(b.title)}`} class="min-w-0 break-words text-[var(--color-navy)] hover:underline underline-offset-2">
-                {b.title}
-              </a>
-              <span
-                class:list={['tabular-nums shrink-0', b.left <= 1 ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-faint)]']}
-              >{b.left} left</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p class="text-[13.5px] text-[var(--color-ink-faint)]">Nothing down to its last copies.</p>
-      )}
-    </div>
-  </div>
+          </div>
+        </>
+      )
+    }
 
   {/*
     * The nearest thing on this page to a customer speaking.
@@ -514,8 +565,8 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     <p class="eyebrow mb-1">Looked for, not found</p>
     <p class="text-[12.5px] text-[var(--color-ink-faint)] mb-3 leading-relaxed">
       What customers searched the shop for and found nothing, most asked first - each one a book
-      somebody wanted. Robots and your own searches are left out, and spellings of one title are
-      counted together.
+      somebody wanted. Each person counts once however often they searched, robots and AI crawlers
+      are left out, so are your own searches, and spellings of one title are counted together.
     </p>
     {d.misses.length > 0 ? (
       /* One column on a phone, sized to the screen rather than to the longest
@@ -532,7 +583,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
                 class="min-w-0 truncate text-[var(--color-navy)] hover:underline underline-offset-2"
               >{m.terms}</a>
               <span class="tabular-nums shrink-0 text-[var(--color-ink-faint)]">
-                {m.times}{m.times === 1 ? '' : '×'}
+                {m.times} {m.times === 1 ? 'person' : 'people'}
               </span>
             </div>
             {m.also && m.also.length > 0 && (
@@ -562,7 +613,7 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
                 class="min-w-0 truncate text-[var(--color-navy)] hover:underline underline-offset-2"
               >{m.terms}</a>
               <span class="tabular-nums shrink-0 text-[var(--color-ink-faint)]">
-                {m.times}{m.times === 1 ? '' : '×'}
+                {m.times} {m.times === 1 ? 'person' : 'people'}
               </span>
             </li>
           ))}
@@ -581,40 +632,40 @@ const shelfPeak = Math.max(1, ...d.byShelf.map((s) => s.pence));
     )}
   </div>
 
-  {/*
-    * Three figures that were a footnote and should not have been. "How many
-    * orders" and "what an order is worth" are the two numbers behind the
-    * takings above, and repeat customers is the one number that says whether
-    * people come back - counted all time, because over thirty days almost
-    * nobody has had the chance to.
-    */}
-  <div class="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-3 mt-3">
-    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
-      <p class="eyebrow">Orders</p>
-      <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{d.orders}</p>
-      <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">paid in the last {days} days</p>
-    </div>
-    <div class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
-      <p class="eyebrow">Average order</p>
-      <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{price(d.averagePence)}</p>
-      <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">across those orders</p>
-    </div>
-    <div class="col-span-2 sm:col-span-1 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] px-4 py-3">
-      <p class="eyebrow">Repeat customers</p>
-      <p class="text-[22px] font-semibold leading-none mt-1.5 tabular-nums">{d.repeatPct}%</p>
-      <p class="mt-1 text-[12.5px] text-[var(--color-ink-faint)]">have ordered more than once</p>
-    </div>
-  </div>
 
-  <p class="mt-4 text-[12.5px] text-[var(--color-ink-faint)]">
-    Figures refresh about once a minute.
-  </p>
-  </div>
+    <p class="mt-4 text-[12.5px] text-[var(--color-ink-faint)]">
+      Figures refresh about once a minute.
+    </p>
+  </section>
 
   <section class="reveal" data-delay="4">
     <h2 class="font-[family-name:var(--font-display)] text-[20px] font-semibold mb-3">
       Catalogue to tidy
     </h2>
+
+    {/* Stock, not takings: it was in the period section, where the 30/90
+        switch looked as if it applied to it. */}
+    {d.lowStock.length > 0 && (
+    <div class="mb-4 bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-4">
+      <p class="eyebrow mb-2.5">Running low</p>
+      {d.lowStock.length > 0 ? (
+        <ul class="space-y-1.5 text-[13px]">
+          {d.lowStock.map((b) => (
+            <li class="flex justify-between gap-3">
+              <a href={`/admin/books?q=${encodeURIComponent(b.title)}`} class="min-w-0 break-words text-[var(--color-navy)] hover:underline underline-offset-2">
+                {b.title}
+              </a>
+              <span
+                class:list={['tabular-nums shrink-0', b.left <= 1 ? 'text-[var(--color-outstock)]' : 'text-[var(--color-ink-faint)]']}
+              >{b.left} left</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="text-[13.5px] text-[var(--color-ink-faint)]">Nothing down to its last copies.</p>
+      )}
+    </div>
+    )}
 
     {
       jobs.length === 0 ? (

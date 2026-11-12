@@ -114,7 +114,8 @@ const whereToCollect =
 const messages = order ? await thread(order.id) : [];
 /* Counted off the thread that was just read, not asked for again: the rows are
    already here and they already carry `image_key`. */
-const imagesUsed = messages.filter((m) => m.image_key).length;
+// Their own photos: the shop's pictures have an allowance of their own.
+const imagesUsed = messages.filter((m) => m.image_key && m.sender === 'customer').length;
 /* Acknowledged through the newest message on the page, so anything that
    arrives while it renders stays counted. */
 if (order && order.unread_for_customer > 0) {

@@ -531,6 +531,14 @@ export const THREAD = {
   /** Sent too much, too fast. */
   tooMany: 'That is a lot of messages at once. Please give the shop a moment to catch up.',
   imageCapped: 'You have sent the most photos this order can take. The shop has them all.',
+  /** Owner side: the shop's own photo allowance on one order. */
+  ownerImageCapped: 'This order already holds the most photos the shop can send on it.',
+  /** The paperclip's name on the owner's side, where it is not a screenshot. */
+  attachPhoto: 'Attach a photo',
+  /** Owner side: how to send without reaching for the mouse. */
+  sendHint: 'Ctrl + Enter sends · paste or drop a photo',
+  /** The heading over the owner's saved replies. */
+  savedReplies: 'Saved replies',
   imageWrongType: 'Photos only, please - a JPEG, PNG or WebP.',
   imageTooBig: 'That photo is larger than 8 MB. Please send a smaller one.',
   /** Something went wrong that is nobody's fault in particular. */

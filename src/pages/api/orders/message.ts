@@ -1,5 +1,4 @@
 import type { APIRoute } from 'astro';
-import { env } from 'cloudflare:workers';
 import { getOrder } from '../../../lib/orders';
 import { notifyNewMessage } from '../../../lib/notify';
 import { THREAD } from '../../../lib/order-status';
@@ -7,8 +6,11 @@ import { readForm } from '../../../lib/request-body';
 import {
   BODY_MAX,
   IMAGES_PER_ORDER,
-  PROOF_PREFIX,
+  IMAGE_TYPES,
+  MAX_IMAGE_BYTES,
+  dropImage,
   imageCount,
+  storeImage,
   normaliseBody,
   overHourlyCap,
   postMessage,
@@ -32,16 +34,6 @@ export const prerender = false;
  * back instead of a redirect; everything else about the route is identical.
  */
 
-const MAX_BYTES = 8 * 1024 * 1024;
-const ALLOWED = new Map([
-  ['image/jpeg', 'jpg'],
-  ['image/png', 'png'],
-  ['image/webp', 'webp'],
-]);
-
-interface UploadEnv {
-  UPLOADS?: R2Bucket;
-}
 
 export const POST: APIRoute = async ({ request }) => {
   const form = await readForm(request);
@@ -90,31 +82,19 @@ export const POST: APIRoute = async ({ request }) => {
   let imageKey: string | null = null;
   if (hasImage) {
     const image = file as File;
-    if (image.size > MAX_BYTES) return refuse('big', THREAD.imageTooBig, 413);
+    if (image.size > MAX_IMAGE_BYTES) return refuse('big', THREAD.imageTooBig, 413);
+    if (!IMAGE_TYPES.has(image.type)) return refuse('type', THREAD.imageWrongType, 415);
 
-    const ext = ALLOWED.get(image.type);
-    if (!ext) return refuse('type', THREAD.imageWrongType, 415);
-
-    if ((await imageCount(order.id)) >= IMAGES_PER_ORDER) {
+    // Their own photos only: the shop sending pictures must never use up the
+    // customer's room for a payment screenshot.
+    if ((await imageCount(order.id, 'customer')) >= IMAGES_PER_ORDER) {
       return refuse('images', THREAD.imageCapped, 409);
     }
 
-    const bucket = (env as unknown as UploadEnv).UPLOADS;
-    if (!bucket) return refuse('nostore', THREAD.failed, 503);
-
-    /*
-     * `proofs/`, and nothing else, because src/pages/img/[...key].ts serves
-     * `books/` and `uploads/` to the whole internet with a year-long cache. A
-     * payment screenshot shows a bank balance, an account number and a real
-     * name; it is read back only through the token-gated route beside this one.
-     *
-     * The order id rather than the reference: a reference is short, guessable
-     * and printed on emails, and the key should not be either.
-     */
-    imageKey = `${PROOF_PREFIX}${order.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
-    await bucket.put(imageKey, image.stream(), {
-      httpMetadata: { contentType: image.type, cacheControl: 'private, no-store' },
-    });
+    // Private store, swept with the order - see `storeImage`.
+    const stored = await storeImage(order.id, image);
+    if ('refusal' in stored) return refuse('nostore', THREAD.failed, 503);
+    imageKey = stored.key;
   }
 
   /*
@@ -128,15 +108,11 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     id = await postMessage({ orderId: order.id, sender: 'customer', via: 'web', body, imageKey });
   } catch (err) {
-    if (imageKey) {
-      await (env as unknown as UploadEnv).UPLOADS?.delete(imageKey).catch(() => {});
-    }
+    await dropImage(imageKey);
     throw err;
   }
   if (id === null) {
-    if (imageKey) {
-      await (env as unknown as UploadEnv).UPLOADS?.delete(imageKey).catch(() => {});
-    }
+    await dropImage(imageKey);
     // There was something to save, so the only refusal left is the hourly cap,
     // reached by a burst that all passed the check above together.
     return refuse('rate', THREAD.tooMany, 429);
@@ -169,6 +145,7 @@ export const POST: APIRoute = async ({ request }) => {
           via: 'web',
           body,
           image_key: imageKey,
+          had_image: imageKey ? 1 : 0,
           created_at: Math.floor(Date.now() / 1000),
         },
       },

@@ -52,6 +52,11 @@ export function normalise(raw: string): string | null {
  *   rare for a search, and indistinguishable from a robot.
  * - **it is not the owner.** Anybody holding a portal session is testing the
  *   shop, and "test" was the second most common entry.
+ * - **it is not a declared robot.** AI crawlers and agent browsers (GPTBot,
+ *   ClaudeBot, Perplexity, headless Chrome) do run pages, follow forms and send
+ *   the same-origin header a person's browser does. They name themselves in the
+ *   user agent, so that is where they are turned away. A missing user agent is
+ *   a script, never a browser.
  * - **it reads like words.** Markup, percent-escapes and long runs of hex are
  *   what probes look like; a title somebody wants does not contain `<` or
  *   `%3E`, and the normaliser would otherwise turn them into plausible-looking
@@ -70,10 +75,42 @@ export function isHumanSearch(request: Request, raw: string, sessionCookie: stri
     }
   }
   if (!fromHere) return false;
+  if (isRobot(headers.get('user-agent'))) return false;
   if ((headers.get('cookie') ?? '').split(/;\s*/).some((c) => c.startsWith(`${sessionCookie}=`))) {
     return false;
   }
   return plausible(raw);
+}
+
+/**
+ * A user agent that says it is not a person.
+ *
+ * Deliberately broad: a false positive costs one row in a list the owner reads
+ * for ideas, while a false negative is a crawler's guess at a title printed as
+ * if a customer asked for it.
+ */
+const ROBOT =
+  /bot\b|bot\/|crawl|spider|slurp|scrap|headless|phantom|puppeteer|playwright|selenium|lighthouse|pagespeed|preview|fetch|python|curl|wget|httpclient|okhttp|go-http|java\/|node-fetch|axios|undici|gpt|openai|chatgpt|claude|anthropic|perplexity|bytespider|ccbot|cohere|diffbot|amazonbot|applebot|google-extended|meta-external|facebookexternalhit|semrush|ahrefs|mj12|dotbot|yandex|baidu|petal|duckassist|youbot|timpibot|imagesift|omgili/i;
+
+export function isRobot(userAgent: string | null): boolean {
+  if (!userAgent || userAgent.trim().length < 10) return true;
+  return ROBOT.test(userAgent);
+}
+
+/**
+ * The same person on the same day, without knowing who they are.
+ *
+ * A one-way hash of the connecting address and browser, salted with a server
+ * secret and today's date. Used only to count a searcher once; it cannot be
+ * reversed, joined to an order, or followed from one day to the next.
+ */
+export async function visitorKey(request: Request, secret: string): Promise<string> {
+  const ip = request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for') ?? '';
+  const ua = request.headers.get('user-agent') ?? '';
+  const day = new Date().toISOString().slice(0, 10);
+  const bytes = new TextEncoder().encode(`${secret}|${day}|${ip}|${ua}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...digest.slice(0, 12)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Words somebody might type, rather than a probe or a template placeholder. */
@@ -92,11 +129,37 @@ export function plausible(raw: string): boolean {
  * throws: a log that cannot be written is not a reason to fail somebody's
  * search results.
  */
-export async function recordMiss(raw: string): Promise<void> {
+export async function recordMiss(raw: string, visitor: string | null = null): Promise<void> {
   const terms = normalise(raw);
   if (!terms) return;
   try {
-    await env.DB.prepare('INSERT INTO searches (terms) VALUES (?)').bind(terms).run();
+    /*
+     * One row per person per wording per day. The count reads distinct
+     * visitors anyway, so a repeat is only a wasted write - skipped here.
+     */
+    await env.DB.prepare(
+      `INSERT INTO searches (terms, visitor)
+       SELECT ?1, ?2
+        WHERE ?2 IS NULL
+           OR NOT EXISTS (SELECT 1 FROM searches
+                           WHERE visitor = ?2 AND terms = ?1 AND at > unixepoch() - 86400)`,
+    ).bind(terms, visitor).run();
+  } catch {
+    /* the log is a convenience; the catalogue is not */
+  }
+}
+
+/**
+ * Records a miss against the person who made it.
+ *
+ * The salt is the portal's session secret: already private, already on every
+ * deployment, and never shown to anybody.
+ */
+export async function recordMissFrom(request: Request, raw: string): Promise<void> {
+  try {
+    const secrets = env as unknown as { ADMIN_SESSION_SECRET?: string; ADMIN_PASSWORD?: string };
+    const salt = secrets.ADMIN_SESSION_SECRET ?? secrets.ADMIN_PASSWORD ?? 'assubki';
+    await recordMiss(raw, await visitorKey(request, salt));
   } catch {
     /* the log is a convenience; the catalogue is not */
   }
@@ -104,10 +167,13 @@ export async function recordMiss(raw: string): Promise<void> {
 
 export interface Miss {
   terms: string;
+  /** How many different people searched it - not how many times. */
   times: number;
   lastAt: number;
   /** Other spellings of the same search, grouped under this one. */
   also?: string[];
+  /** Who searched it, so spellings can be merged without counting anyone twice. */
+  visitors?: string[];
 }
 
 /**
@@ -134,9 +200,11 @@ export async function readMisses(rows: Miss[], limit = 15): Promise<{ open: Miss
 
   const merged: Miss[] = [...groups.values()].map((list) => {
     const [lead, ...rest] = [...list].sort((a, b) => b.times - a.times || b.lastAt - a.lastAt);
+    /* One person typing two spellings is still one person. */
+    const people = new Set(list.flatMap((r) => r.visitors ?? []));
     return {
       terms: lead.terms,
-      times: list.reduce((n, r) => n + r.times, 0),
+      times: people.size > 0 ? people.size : list.reduce((n, r) => n + r.times, 0),
       lastAt: Math.max(...list.map((r) => r.lastAt)),
       also: rest.map((r) => r.terms),
     };
@@ -165,8 +233,13 @@ export async function readMisses(rows: Miss[], limit = 15): Promise<{ open: Miss
  * `db.batch`, so the panel costs no extra round trip.
  */
 export function missesQuery(days: number, limit = 80): D1PreparedStatement {
+  /*
+   * People, not submissions. A row from before `visitor` existed stands for
+   * itself, which is how it was counted then.
+   */
   return env.DB.prepare(
-    `SELECT terms, COUNT(*) AS times, MAX(at) AS lastAt
+    `SELECT terms, COUNT(DISTINCT COALESCE(visitor, 'r' || id)) AS times, MAX(at) AS lastAt,
+            GROUP_CONCAT(DISTINCT COALESCE(visitor, 'r' || id)) AS visitors
        FROM searches
       WHERE at > unixepoch() - ?1 * 86400
       GROUP BY terms

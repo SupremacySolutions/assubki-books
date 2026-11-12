@@ -9,6 +9,7 @@ import {
   defaultMessage,
   composeMessage,
   CASH_SLOT,
+  getSetting,
 } from '../../../lib/settings';
 import {
   moneyReceived,
@@ -22,7 +23,13 @@ import { orderFlags } from '../../../lib/order-flags';
 import Thread from '../../../components/Thread.astro';
 import OrderFlag from '../../../components/OrderFlag.astro';
 import PoundInput from '../../../components/PoundInput.astro';
-import { markRead, thread, threadOpen } from '../../../lib/messages';
+import {
+  markRead,
+  thread,
+  threadOpen,
+  quickReplies,
+  OWNER_IMAGES_PER_ORDER,
+} from '../../../lib/messages';
 import {
   canAmend,
   amendments,
@@ -54,6 +61,16 @@ const siblings = order.split_group
 const messages = await thread(order.id);
 /* Counted off the thread that was just read, not asked for again. */
 const imagesHeld = messages.filter((m) => m.image_key).length;
+/* The shop's own photos, against the shop's own allowance. */
+const ownerImages = messages.filter((m) => m.image_key && m.sender === 'owner').length;
+const replies = threadOpen(order.status)
+  ? quickReplies(await getSetting('quick_replies'), {
+      name: order.customer_name,
+      ref: order.ref,
+      total: price(order.total_pence ?? order.subtotal_pence),
+      collection: order.fulfilment === 'collection',
+    })
+  : [];
 /* Acknowledged through the newest message on the page, so anything that
    arrives while it renders stays counted. */
 if ((order.unread_for_owner ?? 0) > 0) {
@@ -64,6 +81,10 @@ const threadError = ({
   long: THREAD.tooLong,
   closed: THREAD.closed,
   empty: THREAD.failed,
+  images: THREAD.ownerImageCapped,
+  big: THREAD.imageTooBig,
+  type: THREAD.imageWrongType,
+  nostore: THREAD.failed,
 } as Record<string, string>)[Astro.url.searchParams.get('e') ?? ''] ?? null;
 
 const extended = Astro.url.searchParams.get('extended');
@@ -228,7 +249,14 @@ const told = Astro.url.searchParams.get('told') ?? '';
 /** Whether a total has been quoted yet, which is what postage hangs off. */
 const quoted = order.total_pence !== null;
 const totalCopies = items.reduce((n, item) => n + item.qty, 0);
-const hoursLeft = order.expires_at
+/*
+ * A hold whose time is up has run out whether or not the sweep has stamped it
+ * yet. Waiting for the stamp left this page saying "Hold expires in 0h" for
+ * days whenever the cron worker had not run.
+ */
+const holdOver = order.expires_at !== null && Date.now() >= order.expires_at * 1000;
+const lapsedAt = order.lapsed_at ?? (holdOver && !order.pay_by ? order.expires_at : null);
+const hoursLeft = order.expires_at && !holdOver
   ? Math.max(0, Math.round((order.expires_at * 1000 - Date.now()) / 3_600_000))
   : null;
 /*
@@ -236,18 +264,18 @@ const hoursLeft = order.expires_at
  * copies - the sweep flags it and leaves it alone - so this is the one thing on
  * the page that has to be impossible to miss.
  */
-const lapsed = order.status === 'requested' && order.lapsed_at !== null && !order.pay_by;
+const lapsed = order.status === 'requested' && lapsedAt !== null && !order.pay_by;
 /* A reservation's week ran out. Flagged, never cancelled - the card below says
    so and offers the week; this only changes the line under the name. */
 const replyLapsed =
   ['requested', 'awaiting_payment'].includes(order.status) &&
   order.lapsed_at !== null &&
   Boolean(order.pay_by);
-const lapsedDays = order.lapsed_at
-  ? Math.floor((Date.now() - order.lapsed_at * 1000) / 86_400_000)
+const lapsedDays = lapsedAt
+  ? Math.floor((Date.now() - lapsedAt * 1000) / 86_400_000)
   : 0;
-const lapsedWhen = order.lapsed_at
-  ? new Date(order.lapsed_at * 1000).toLocaleString('en-GB', {
+const lapsedWhen = lapsedAt
+  ? new Date(lapsedAt * 1000).toLocaleString('en-GB', {
       dateStyle: 'medium',
       timeStyle: 'short',
     })
@@ -386,11 +414,14 @@ const moneyLabel = !quoted
  * the instant they go. We have said nothing, there is nothing to report.
  */
 const lastOurs = messages.filter((m) => m.sender === 'owner').at(-1) ?? null;
+/* The customer spoke last on an open order: it is the owner's turn. */
+const theirTurn =
+  threadOpen(order.status) && messages.length > 0 && messages[messages.length - 1].sender === 'customer';
 const conversationNote = !lastOurs
   ? null
   : lastOurs.id > (order.read_cursor_customer ?? 0)
-    ? 'Last message unread'
-    : 'They are up to date';
+    ? 'They have not read your last message yet'
+    : 'They have read everything';
 
 /*
  * One strip, and panels for the rest.
@@ -482,6 +513,25 @@ const [strip, ...demotedFlags] = flags;
             target="_blank"
             class="text-[var(--color-navy)] hover:underline underline-offset-2"
           >{['paid', 'dispatched', 'completed'].includes(order.status) ? 'Receipt' : 'Invoice'}</a>
+          {/* Phones only. Below 1024px the conversation drops under the whole
+              order - the confirm form, the address, the history - and sat
+              about two thousand pixels down the page it is most often opened
+              for. */}
+          <span class="lg:hidden">
+            <span aria-hidden="true"> · </span>
+            <a
+              href="#thread"
+              class:list={[
+                'inline-flex items-center gap-1 py-2 -my-2 hover:underline underline-offset-2',
+                theirTurn ? 'font-medium text-[var(--color-brass)]' : 'text-[var(--color-navy)]',
+              ]}
+            >
+              {messages.length === 0 ? 'Message them' : `Messages (${messages.length})`}
+              {theirTurn && <span class="w-[6px] h-[6px] rounded-full bg-current" aria-hidden="true"></span>}
+              <span aria-hidden="true">↓</span>
+              {theirTurn && <span class="sr-only">, waiting on your reply</span>}
+            </a>
+          </span>
         </p>
       </div>
 
@@ -1496,7 +1546,11 @@ const [strip, ...demotedFlags] = flags;
         proofUrl={(id: number) => `/api/admin/orders/${order.ref}/proof?id=${id}`}
         proofBase={`/api/admin/orders/${order.ref}/proof`}
         pollUrl={threadOpen(order.status) ? `/api/admin/orders/${order.ref}/thread` : null}
-        imagesUsed={imagesHeld}
+        imagesUsed={ownerImages}
+        canAttach
+        maxImages={OWNER_IMAGES_PER_ORDER}
+        quickReplies={replies}
+        quickRepliesHref="/admin/settings?s=replies"
         channelNote={replyChannelNote(order.telegram_chat_id, order.email)}
         error={threadError}
         readCursor={order.read_cursor_customer ?? 0}
