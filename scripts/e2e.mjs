@@ -3776,6 +3776,22 @@ async function integrity() {
   t.ok(closed.login === 200, 'the way back into the portal stays open');
   t.ok(closed.order === 200,
     'and so does a customer order page - somebody waiting on paid-for books is not shut out');
+  /*
+   * And the bot, for the same customers. Telegram retries a closed sign for a
+   * day and then drops the update, so every message sent while the shop was
+   * shut used to vanish. An update with no message is the one that touches
+   * nothing.
+   */
+  const botWhileClosed = await fetch(`${SITE}/api/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Telegram-Bot-Api-Secret-Token': vars.TELEGRAM_WEBHOOK_SECRET ?? '',
+    },
+    body: JSON.stringify({ update_id: 1 }),
+  });
+  t.ok(botWhileClosed.status === 200,
+    `and so does the bot's webhook (status ${botWhileClosed.status})`);
 
   await admin('/api/admin/settings', { maintenance: '' });
   await new Promise((r) => setTimeout(r, 100));
@@ -4878,6 +4894,12 @@ async function botAndOptIn() {
   });
   const proofs = await one(`SELECT COALESCE(payment_proofs,0) AS p FROM orders WHERE ref='${shot.ref}'`);
   t.ok(proofs.p === 1, 'a screenshot from a linked chat is passed to the owner');
+  const shotNotice = await one(
+    `SELECT COUNT(*) AS n FROM owner_notices n JOIN orders o ON o.id = n.order_id
+      WHERE o.ref = '${shot.ref}'`,
+  );
+  t.ok(shotNotice.n >= 1,
+    'and the relayed screenshot is remembered, so the owner can answer it by replying');
 
   // A chat whose only order is finished has nothing live to attach a payment
   // to, so the bot must not forward for it either.
@@ -5387,6 +5409,21 @@ async function messages() {
   t.ok(afterOwner.n === beforeOwner.n, "the owner's own chat writes nothing to any thread");
   await db(`DELETE FROM settings WHERE key = 'owner_telegram_chat_id'`);
 
+  /*
+   * A voice note from a customer mid-order is answered as one - not with the
+   * "this bot only handles orders" a stranger gets - and writes nothing, since
+   * the thread holds only words and pictures.
+   */
+  const beforeVoice = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${secondRow.id}`);
+  const voice = await hook({ message_id: 12, chat: { id: Number(chat) }, voice: { file_id: 'v' } });
+  const afterVoice = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${secondRow.id}`);
+  t.ok(voice.status === 200 && afterVoice.n === beforeVoice.n,
+    'a voice note from a connected customer is turned away without throwing');
+  t.ok(
+    readFileSync('src/pages/api/telegram/webhook.ts', 'utf8').includes('I can only pass on text and photos'),
+    'and they are told what the bot can take, rather than that it only handles orders',
+  );
+
   await db(`UPDATE orders SET status = 'cancelled' WHERE id = ${secondRow.id}`);
   await hook({ message_id: 13, chat: { id: Number(chat) }, text: 'one more' });
   const closed = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${secondRow.id}`);
@@ -5445,6 +5482,29 @@ async function messages() {
     (await one("SELECT COUNT(*) AS n FROM messages WHERE sender = 'owner'")).n === ownerBefore.n,
     'but a reply to nothing in particular is never guessed into an order',
   );
+
+  /*
+   * The "New order" alert can be answered the same way. It is the message the
+   * owner is most likely to reply to, and it used to bounce back as "I could
+   * not tell which order you meant".
+   */
+  const alerted = await placeOrder(book.id, 'collection');
+  const alertedRow = await one(`SELECT id FROM orders WHERE ref = '${alerted.ref}'`);
+  const alert = await one(`SELECT message_id FROM owner_notices WHERE order_id = ${alertedRow.id}`);
+  t.ok(Number.isInteger(alert?.message_id), 'the new-order alert is remembered too');
+  if (alert.message_id) {
+    await hook({
+      message_id: 503,
+      chat: { id: Number(replyChat) },
+      text: 'Thank you, we have it.',
+      reply_to_message: { message_id: alert.message_id },
+    });
+  }
+  const thanked = await one(
+    `SELECT body FROM messages WHERE order_id = ${alertedRow.id} AND sender = 'owner'`,
+  );
+  t.ok(thanked?.body === 'Thank you, we have it.',
+    'and replying to it answers that customer');
   await db("DELETE FROM settings WHERE key = 'owner_telegram_chat_id'");
 
   /*

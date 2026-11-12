@@ -11,7 +11,7 @@ import {
 } from '../../../lib/telegram';
 import { getSetting, setSetting } from '../../../lib/settings';
 import { price } from '../../../lib/format';
-import { notifyNewMessage } from '../../../lib/notify';
+import { notifyNewMessage, rememberOwnerNotice } from '../../../lib/notify';
 import {
   IMAGES_PER_ORDER,
   PROOF_PREFIX,
@@ -317,7 +317,11 @@ export const POST: APIRoute = async ({ request }) => {
         .join('\n'),
     );
 
-    if (passed) {
+    if (passed !== null) {
+      // So the owner can answer the screenshot itself - "received, thank you"
+      // - by replying to it, like any other notification about an order.
+      await rememberOwnerNotice(passed, bound.id);
+
       await env.DB.prepare(
         'UPDATE orders SET payment_proofs = COALESCE(payment_proofs, 0) + 1 WHERE id = ?',
       )
@@ -502,6 +506,25 @@ export const POST: APIRoute = async ({ request }) => {
           ? mdLink(`Open ${waiting.ref}`, `${origin}/admin/orders/${waiting.ref}`)
           : mdLink('Open your orders', `${origin}/admin/orders`),
       ].join('\n'),
+    );
+    return new Response('ok');
+  }
+
+  /*
+   * A voice note, a sticker, a video, a PDF receipt - from a customer with a
+   * live order.
+   *
+   * These used to get the same reply as a stranger: "This bot only handles
+   * orders". To somebody in the middle of an order with this very bot, that
+   * reads as the bot having stopped working, and whatever they sent reached
+   * nobody. The thread only holds words and pictures, so say so.
+   */
+  if (bound && !isOwner) {
+    await sendMessage(
+      chat,
+      esc(
+        `Sorry, I can only pass on text and photos. Please type your message, or send a screenshot, and it will reach the shop on ${bound.ref}.`,
+      ),
     );
     return new Response('ok');
   }
