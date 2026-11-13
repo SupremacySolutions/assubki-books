@@ -259,8 +259,13 @@ export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
           ].join('\n'),
         )
       : Promise.resolve(false);
+  /*
+   * Remembered like a message notification, so replying to "New order" in
+   * Telegram answers that customer - it is the alert the owner is most likely
+   * to answer, and it used to bounce back as "I could not tell which order".
+   */
   const telegramOwner = ownerChatId && botConfigured()
-    ? sendMessage(
+    ? sendMessageId(
         ownerChatId,
         [
           `*${esc(`New order ${input.order.ref}`)}*`,
@@ -270,7 +275,10 @@ export async function notifyOrderPlaced(input: PlacedInput): Promise<void> {
           '',
           mdLink(`Open order ${input.order.ref}`, `${input.origin}/admin/orders/${input.order.ref}`),
         ].join('\n'),
-      )
+      ).then(async (sent) => {
+        if (sent !== null && input.order.id) await rememberOwnerNotice(sent, input.order.id);
+        return sent !== null;
+      })
     : Promise.resolve(false);
   const results = await Promise.allSettled([
     deliver({ to: input.email, ...customerPlaced(input) }),
@@ -377,7 +385,7 @@ function confirmedEmail(input: ConfirmedInput) {
   return { subject, html, text };
 }
 
-function confirmedTelegram(input: ConfirmedInput): string {
+export function confirmedTelegram(input: ConfirmedInput): string {
   const cash = Boolean(input.cashPayment);
   const moment = cashMoment(input.fulfilment);
   /*
@@ -1036,6 +1044,17 @@ function preview(body: string | null, hasImage: boolean): string {
 }
 
 /**
+ * The message as written, line breaks and all, for a channel that can hold it.
+ * Telegram's limit is 4096 characters and a thread message is far shorter, so
+ * the cap only guards against that changing.
+ */
+function whole(body: string | null): string | null {
+  const text = (body ?? '').trim();
+  if (!text) return null;
+  return text.length > 3500 ? `${text.slice(0, 3499)}…` : text;
+}
+
+/**
  * Do not tell the same customer twice in half an hour.
  *
  * A full test run is already about 38 emails, which is most of a day's free
@@ -1048,6 +1067,26 @@ function preview(body: string | null, hasImage: boolean): string {
  * notification did its job and the next one is worth sending.
  */
 const NOTIFY_EVERY = 30 * 60;
+
+/**
+ * Records which order a message in the owner's chat was about.
+ *
+ * Telegram puts `reply_to_message.message_id` on a reply, so this row is what
+ * turns "they answered something" into "they answered this order" - exactly,
+ * rather than by guessing at the most recent one and risking the shop's words
+ * landing in a stranger's thread.
+ */
+export async function rememberOwnerNotice(messageId: number, orderId: number): Promise<void> {
+  // A copy Telegram took without naming it cannot be replied to by id.
+  if (!messageId) return;
+  await env.DB.prepare('INSERT OR REPLACE INTO owner_notices (message_id, order_id) VALUES (?, ?)')
+    .bind(messageId, orderId)
+    .run()
+    .catch(() => {
+      /* the notification went; being unable to remember it only costs the
+         reply-to shortcut, not the message */
+    });
+}
 
 export async function notifyNewMessage(input: {
   orderId: number;
@@ -1128,17 +1167,7 @@ async function tellOwner(input: {
            * this order" - exactly, rather than by guessing at the most recent
            * one and risking the shop's words landing in a stranger's thread.
            */
-          if (sent !== null) {
-            await env.DB.prepare(
-              'INSERT OR REPLACE INTO owner_notices (message_id, order_id) VALUES (?, ?)',
-            )
-              .bind(sent, input.orderId)
-              .run()
-              .catch(() => {
-                /* the notification went; being unable to remember it only
-                   costs the reply-to shortcut, not the message */
-              });
-          }
+          if (sent !== null) await rememberOwnerNotice(sent, input.orderId);
           return sent !== null;
         })()
       : false;
@@ -1177,6 +1206,8 @@ async function tellOwner(input: {
  * The email is a doorbell, not the message: sender, one line, and a link back
  * to the thread. Enough to judge urgency, not enough to answer by replying to
  * an address nobody reads.
+ *
+ * Telegram is the conversation itself, so it carries every reply, whole.
  */
 async function tellCustomer(input: {
   orderId: number;
@@ -1188,9 +1219,6 @@ async function tellCustomer(input: {
   hasImage: boolean;
   origin: string;
 }): Promise<void> {
-  const due = await notificationDue(input.orderId);
-  if (!due) return;
-
   const line = preview(input.body, input.hasImage);
   const link = `${input.origin}/order?ref=${input.ref}&t=${await tokenFor(input.orderId)}`;
 
@@ -1202,6 +1230,13 @@ async function tellCustomer(input: {
    * that false used to be discarded: the customer heard nothing, the debounce
    * marker was stamped anyway so nothing would try again for half an hour, and
    * the health line on the dashboard was cleared as though all was well.
+   *
+   * The half-hour debounce is not applied to Telegram. It exists for the email
+   * allowance, and it lifts when the customer opens their order page - which
+   * someone talking to the bot never does. So it used to deliver the first of
+   * the owner's replies and silently drop every other one for thirty minutes:
+   * three answers in a row arrived as one, cut at 140 characters, and the
+   * customer was left asking "?" into a chat that had stopped answering.
    */
   let delivered = false;
 
@@ -1211,12 +1246,14 @@ async function tellCustomer(input: {
       [
         `*${esc(`A reply about ${input.ref}`)}*`,
         '',
-        esc(line),
+        esc(whole(input.body) ?? line),
         '',
         mdLink('Open your order', link),
       ].join('\n'),
     );
   }
+
+  if (!delivered && !(await notificationDue(input.orderId))) return;
 
   if (!delivered) {
     // Either they are not on Telegram, or Telegram would not take it. Both end

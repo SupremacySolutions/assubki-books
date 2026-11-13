@@ -3776,6 +3776,22 @@ async function integrity() {
   t.ok(closed.login === 200, 'the way back into the portal stays open');
   t.ok(closed.order === 200,
     'and so does a customer order page - somebody waiting on paid-for books is not shut out');
+  /*
+   * And the bot, for the same customers. Telegram retries a closed sign for a
+   * day and then drops the update, so every message sent while the shop was
+   * shut used to vanish. An update with no message is the one that touches
+   * nothing.
+   */
+  const botWhileClosed = await fetch(`${SITE}/api/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Telegram-Bot-Api-Secret-Token': vars.TELEGRAM_WEBHOOK_SECRET ?? '',
+    },
+    body: JSON.stringify({ update_id: 1 }),
+  });
+  t.ok(botWhileClosed.status === 200,
+    `and so does the bot's webhook (status ${botWhileClosed.status})`);
 
   await admin('/api/admin/settings', { maintenance: '' });
   await new Promise((r) => setTimeout(r, 100));
@@ -4878,6 +4894,12 @@ async function botAndOptIn() {
   });
   const proofs = await one(`SELECT COALESCE(payment_proofs,0) AS p FROM orders WHERE ref='${shot.ref}'`);
   t.ok(proofs.p === 1, 'a screenshot from a linked chat is passed to the owner');
+  const shotNotice = await one(
+    `SELECT COUNT(*) AS n FROM owner_notices n JOIN orders o ON o.id = n.order_id
+      WHERE o.ref = '${shot.ref}'`,
+  );
+  t.ok(shotNotice.n >= 1,
+    'and the relayed screenshot is remembered, so the owner can answer it by replying');
 
   // A chat whose only order is finished has nothing live to attach a payment
   // to, so the bot must not forward for it either.
@@ -4890,6 +4912,38 @@ async function botAndOptIn() {
   });
   const afterFinished = (await one('SELECT COALESCE(SUM(payment_proofs),0) AS n FROM orders')).n;
   t.ok(afterFinished === beforeFinished, 'a finished order takes no further screenshots');
+
+  /*
+   * Connecting after the shop has confirmed.
+   *
+   * The order page offers Connect while an order awaits payment, and the
+   * welcome used to promise the total "once the shop confirms it" - which it
+   * already had. The details went by email and never came to the chat. Driven
+   * end to end, since this path reads the order's payment columns and items.
+   */
+  const late = await placeOrder(book.id, 'collection', { email: fresh() });
+  await db(`UPDATE orders SET status = 'awaiting_payment', confirmed_at = unixepoch(),
+              payment_sent_at = unixepoch(), postage_pence = 0, total_pence = subtotal_pence,
+              payment_message = 'Pay into the shop account.'
+             WHERE ref = '${late.ref}'`);
+  const lateChat = `98${String(Date.now()).slice(-8)}`;
+  const lateStart = await hook({
+    message: { message_id: 6, chat: { id: Number(lateChat) }, text: `/start ${late.ref}_${late.token.slice(0, 16)}` },
+  });
+  const lateRow = await one(`SELECT telegram_chat_id AS c FROM orders WHERE ref = '${late.ref}'`);
+  t.ok(lateStart.status === 200 && lateRow.c === lateChat,
+    'a customer can connect after the order is confirmed', `status ${lateStart.status}`);
+  const webhookSource = readFileSync('src/pages/api/telegram/webhook.ts', 'utf8');
+  t.ok(webhookSource.includes('Your total and how to pay are below.') &&
+      webhookSource.includes('confirmedTelegram({'),
+    'and is sent the payment details there, rather than told to wait for them');
+
+  // Links have only ever carried sixteen characters of token.
+  await hook({
+    message: { message_id: 7, chat: { id: Number(lateChat) + 1 }, text: `/start ${late.ref}_${late.token.slice(0, 8)}` },
+  });
+  const kept = await one(`SELECT telegram_chat_id AS c FROM orders WHERE ref = '${late.ref}'`);
+  t.ok(kept.c === lateChat, 'a shortened token does not connect a chat');
 
   await db(`DELETE FROM settings WHERE key='owner_telegram_chat_id'`);
 }
@@ -5387,6 +5441,21 @@ async function messages() {
   t.ok(afterOwner.n === beforeOwner.n, "the owner's own chat writes nothing to any thread");
   await db(`DELETE FROM settings WHERE key = 'owner_telegram_chat_id'`);
 
+  /*
+   * A voice note from a customer mid-order is answered as one - not with the
+   * "this bot only handles orders" a stranger gets - and writes nothing, since
+   * the thread holds only words and pictures.
+   */
+  const beforeVoice = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${secondRow.id}`);
+  const voice = await hook({ message_id: 12, chat: { id: Number(chat) }, voice: { file_id: 'v' } });
+  const afterVoice = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${secondRow.id}`);
+  t.ok(voice.status === 200 && afterVoice.n === beforeVoice.n,
+    'a voice note from a connected customer is turned away without throwing');
+  t.ok(
+    readFileSync('src/pages/api/telegram/webhook.ts', 'utf8').includes('I can only pass on text and photos'),
+    'and they are told what the bot can take, rather than that it only handles orders',
+  );
+
   await db(`UPDATE orders SET status = 'cancelled' WHERE id = ${secondRow.id}`);
   await hook({ message_id: 13, chat: { id: Number(chat) }, text: 'one more' });
   const closed = await one(`SELECT COUNT(*) AS n FROM messages WHERE order_id = ${secondRow.id}`);
@@ -5445,7 +5514,65 @@ async function messages() {
     (await one("SELECT COUNT(*) AS n FROM messages WHERE sender = 'owner'")).n === ownerBefore.n,
     'but a reply to nothing in particular is never guessed into an order',
   );
+
+  /*
+   * The "New order" alert can be answered the same way. It is the message the
+   * owner is most likely to reply to, and it used to bounce back as "I could
+   * not tell which order you meant".
+   */
+  const alerted = await placeOrder(book.id, 'collection');
+  const alertedRow = await one(`SELECT id FROM orders WHERE ref = '${alerted.ref}'`);
+  const alert = await one(`SELECT message_id FROM owner_notices WHERE order_id = ${alertedRow.id}`);
+  t.ok(Number.isInteger(alert?.message_id), 'the new-order alert is remembered too');
+  if (alert.message_id) {
+    await hook({
+      message_id: 503,
+      chat: { id: Number(replyChat) },
+      text: 'Thank you, we have it.',
+      reply_to_message: { message_id: alert.message_id },
+    });
+  }
+  const thanked = await one(
+    `SELECT body FROM messages WHERE order_id = ${alertedRow.id} AND sender = 'owner'`,
+  );
+  t.ok(thanked?.body === 'Thank you, we have it.',
+    'and replying to it answers that customer');
   await db("DELETE FROM settings WHERE key = 'owner_telegram_chat_id'");
+
+  /*
+   * Every reply reaches a customer on Telegram, not just the first.
+   *
+   * The half-hour debounce is for email, and it lifts when the customer opens
+   * their order page - which someone talking to the bot never does. It used to
+   * pass on the first of the owner's replies and drop the rest. The stamp is
+   * written only when something went, so it is the witness: pushed into the
+   * past, a second reply has to move it.
+   */
+  const chatty = await placeOrder(book.id, 'collection');
+  const chattyRow = await one(`SELECT id FROM orders WHERE ref = '${chatty.ref}'`);
+  await db(
+    `UPDATE orders SET telegram_chat_id = '97${String(Date.now()).slice(-8)}' WHERE id = ${chattyRow.id}`,
+  );
+  await admin(`/api/admin/orders/${chatty.ref}/message`, { body: 'It is ready.' });
+  await db(`UPDATE orders SET message_notified_at = unixepoch() - 60 WHERE id = ${chattyRow.id}`);
+  await admin(`/api/admin/orders/${chatty.ref}/message`, { body: 'Come after asr.' });
+  const quick = await one(
+    `SELECT unread_for_customer AS unread, message_notified_at >= unixepoch() - 5 AS fresh
+       FROM orders WHERE id = ${chattyRow.id}`,
+  );
+  t.ok(quick.unread === 2 && quick.fresh === 1,
+    'a second reply straight after the first still goes to the customer on Telegram',
+    JSON.stringify(quick));
+
+  await db(
+    `UPDATE orders SET telegram_chat_id = NULL, message_notified_at = unixepoch() - 60
+      WHERE id = ${chattyRow.id}`,
+  );
+  await admin(`/api/admin/orders/${chatty.ref}/message`, { body: 'Or Sunday.' });
+  const held = await one(
+    `SELECT message_notified_at < unixepoch() - 30 AS held FROM orders WHERE id = ${chattyRow.id}`,
+  );
+  t.ok(held.held === 1, 'while an email-only customer is still not emailed twice in half an hour');
 
   // --- email stopped carrying the conversation ------------------------------
   const notifySource = readFileSync('src/lib/notify.ts', 'utf8');
