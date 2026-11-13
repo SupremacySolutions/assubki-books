@@ -9,9 +9,10 @@ import {
   fetchFile,
   mdLink,
 } from '../../../lib/telegram';
-import { getSetting, setSetting } from '../../../lib/settings';
+import { getSetting, setSetting, defaultMessage } from '../../../lib/settings';
 import { price } from '../../../lib/format';
-import { notifyNewMessage, rememberOwnerNotice } from '../../../lib/notify';
+import { notifyNewMessage, rememberOwnerNotice, confirmedTelegram } from '../../../lib/notify';
+import { getOrderItems } from '../../../lib/admin-db';
 import {
   IMAGES_PER_ORDER,
   PROOF_PREFIX,
@@ -161,8 +162,9 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   if (start && payload) {
-    // "ASB-4F7K_0123456789abcdef"
-    const match = /^(ASB-[A-Z0-9]{4})_([a-f0-9]{8,32})$/i.exec(payload);
+    // "ASB-4F7K_0123456789abcdef" - sixteen characters of token, which is all
+    // `optInLink` has ever issued, so a shorter guess is not worth accepting.
+    const match = /^(ASB-[A-Z0-9]{4})_([a-f0-9]{16})$/i.exec(payload);
     if (!match) {
       await sendMessage(chat, esc('That link was not recognised.'));
       return new Response('ok');
@@ -170,10 +172,18 @@ export const POST: APIRoute = async ({ request }) => {
 
     const [, ref, tokenPrefix] = match;
     const order = await env.DB.prepare(
-      'SELECT id, ref, access_token, customer_name FROM orders WHERE ref = ?',
+      `SELECT id, ref, access_token, customer_name, email, status, fulfilment,
+              subtotal_pence, postage_pence, total_pence, payment_message,
+              COALESCE(cash_payment, 0) AS cash_payment
+         FROM orders WHERE ref = ?`,
     )
       .bind(ref.toUpperCase())
-      .first<{ id: number; ref: string; access_token: string; customer_name: string }>();
+      .first<{
+        id: number; ref: string; access_token: string; customer_name: string;
+        email: string; status: string; fulfilment: string; subtotal_pence: number;
+        postage_pence: number | null; total_pence: number | null;
+        payment_message: string | null; cash_payment: number;
+      }>();
 
     // The prefix must match the real token - a guessed reference alone is not
     // enough to attach a chat to an order.
@@ -210,22 +220,72 @@ export const POST: APIRoute = async ({ request }) => {
       .bind(chat, order.id)
       .first();
 
+    /*
+     * What happens next depends on how far the order has got.
+     *
+     * This always promised the total "once the shop confirms it" - but the
+     * order page offers Connect while the order is awaiting payment too, which
+     * is after the shop has confirmed and the details have gone by email. A
+     * customer who connected then was told to wait for a message that had
+     * already been sent and would never come here: to them, the bot was broken.
+     * The details are sent now instead.
+     */
+    const awaitingPayment = order.status === 'awaiting_payment';
+    const next =
+      order.status === 'requested'
+        ? returning
+          ? 'We will send your total and how to pay here once the shop confirms it.'
+          : 'We will send your total and how to pay here as soon as the shop confirms it.'
+        : awaitingPayment
+          ? 'Your total and how to pay are below.'
+          : threadOpen(order.status)
+            ? 'We will message you here about it.'
+            : 'That order is finished, but your next one will come to this chat.';
+
     await sendMessage(
       chat,
       [
         esc(`السلام عليكم ${name}`),
         '',
-        ...(returning
-          ? [
-              esc(`Welcome back. Order ${order.ref} is connected to this chat.`),
-              esc('We will send your total and how to pay here once the shop confirms it.'),
-            ]
-          : [
-              esc(`This chat is now connected to order ${order.ref}.`),
-              esc('We will send your total and how to pay here as soon as the shop confirms it.'),
-            ]),
+        esc(
+          returning
+            ? `Welcome back. Order ${order.ref} is connected to this chat.`
+            : `This chat is now connected to order ${order.ref}.`,
+        ),
+        esc(next),
       ].join('\n'),
     );
+
+    if (awaitingPayment) {
+      const items = await getOrderItems(order.id);
+      const cashPayment = Boolean(order.cash_payment);
+      const postagePence = order.postage_pence ?? 0;
+      await sendMessage(
+        chat,
+        confirmedTelegram({
+          ref: order.ref,
+          token: order.access_token,
+          // Blank, because the greeting has just been said above.
+          name: '',
+          email: order.email,
+          telegramChatId: chat,
+          items: items.map((i) => ({
+            title: i.title_snapshot,
+            qty: i.qty,
+            pricePence: i.price_pence_snapshot,
+            multibuyPence: i.multibuy_pence,
+          })),
+          subtotalPence: order.subtotal_pence,
+          postagePence,
+          totalPence: order.total_pence ?? order.subtotal_pence + postagePence,
+          fulfilment: order.fulfilment,
+          paymentInstructions:
+            order.payment_message?.trim() || (await defaultMessage(order.fulfilment, cashPayment)),
+          cashPayment,
+          origin: new URL(request.url).origin,
+        }),
+      );
+    }
     return new Response('ok');
   }
 

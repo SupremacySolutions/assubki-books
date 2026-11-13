@@ -385,7 +385,7 @@ function confirmedEmail(input: ConfirmedInput) {
   return { subject, html, text };
 }
 
-function confirmedTelegram(input: ConfirmedInput): string {
+export function confirmedTelegram(input: ConfirmedInput): string {
   const cash = Boolean(input.cashPayment);
   const moment = cashMoment(input.fulfilment);
   /*

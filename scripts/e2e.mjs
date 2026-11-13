@@ -4913,6 +4913,38 @@ async function botAndOptIn() {
   const afterFinished = (await one('SELECT COALESCE(SUM(payment_proofs),0) AS n FROM orders')).n;
   t.ok(afterFinished === beforeFinished, 'a finished order takes no further screenshots');
 
+  /*
+   * Connecting after the shop has confirmed.
+   *
+   * The order page offers Connect while an order awaits payment, and the
+   * welcome used to promise the total "once the shop confirms it" - which it
+   * already had. The details went by email and never came to the chat. Driven
+   * end to end, since this path reads the order's payment columns and items.
+   */
+  const late = await placeOrder(book.id, 'collection', { email: fresh() });
+  await db(`UPDATE orders SET status = 'awaiting_payment', confirmed_at = unixepoch(),
+              payment_sent_at = unixepoch(), postage_pence = 0, total_pence = subtotal_pence,
+              payment_message = 'Pay into the shop account.'
+             WHERE ref = '${late.ref}'`);
+  const lateChat = `98${String(Date.now()).slice(-8)}`;
+  const lateStart = await hook({
+    message: { message_id: 6, chat: { id: Number(lateChat) }, text: `/start ${late.ref}_${late.token.slice(0, 16)}` },
+  });
+  const lateRow = await one(`SELECT telegram_chat_id AS c FROM orders WHERE ref = '${late.ref}'`);
+  t.ok(lateStart.status === 200 && lateRow.c === lateChat,
+    'a customer can connect after the order is confirmed', `status ${lateStart.status}`);
+  const webhookSource = readFileSync('src/pages/api/telegram/webhook.ts', 'utf8');
+  t.ok(webhookSource.includes('Your total and how to pay are below.') &&
+      webhookSource.includes('confirmedTelegram({'),
+    'and is sent the payment details there, rather than told to wait for them');
+
+  // Links have only ever carried sixteen characters of token.
+  await hook({
+    message: { message_id: 7, chat: { id: Number(lateChat) + 1 }, text: `/start ${late.ref}_${late.token.slice(0, 8)}` },
+  });
+  const kept = await one(`SELECT telegram_chat_id AS c FROM orders WHERE ref = '${late.ref}'`);
+  t.ok(kept.c === lateChat, 'a shortened token does not connect a chat');
+
   await db(`DELETE FROM settings WHERE key='owner_telegram_chat_id'`);
 }
 
