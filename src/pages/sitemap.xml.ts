@@ -13,7 +13,7 @@ const xml = (value: string) => value.replace(/&/g, '&amp;');
 export const GET: APIRoute = async ({ site, url }) => {
   const origin = (site ?? new URL(url.origin)).origin;
 
-  const [books, categories] = await Promise.all([
+  const [books, categories, shipments, preorders] = await Promise.all([
     // A part of a set shares its parent's page through a picker, so listing its
     // own address here would offer Google several URLs for one thing to buy.
     // With the cover, for Google Images: a cover is how people recognise the
@@ -30,6 +30,16 @@ export const GET: APIRoute = async ({ site, url }) => {
       image_key: string | null;
     }>(),
     env.DB.prepare('SELECT path FROM categories ORDER BY path').all<{ path: string }>(),
+    // Shipments and pre-orders have their own addresses now, and those are the
+    // pages people search for by name ("Pakistan shipment November"). Only
+    // ones that have been given an address; the rest arrive by their number,
+    // which redirects.
+    env.DB.prepare(`SELECT slug, updated_at FROM shipments
+         WHERE status IN ('open','arrived') AND slug IS NOT NULL ORDER BY created_at DESC`)
+      .all<{ slug: string; updated_at: number }>(),
+    env.DB.prepare(`SELECT slug, updated_at, image_key FROM preorders
+         WHERE status = 'open' AND slug IS NOT NULL ORDER BY created_at DESC`)
+      .all<{ slug: string; updated_at: number; image_key: string | null }>(),
   ]);
 
   /*
@@ -64,6 +74,10 @@ export const GET: APIRoute = async ({ site, url }) => {
     entry('/terms', newest),
     entry('/privacy', newest),
     ...categories.results.map((c) => entry(`/catalogue/${c.path}`, newest)),
+    ...shipments.results.map((s) => entry(`/shipments/${s.slug}`, s.updated_at)),
+    ...preorders.results.map((p) =>
+      entry(`/preorders/${p.slug}`, p.updated_at, imageUrl(p.image_key, 'detail')),
+    ),
     ...books.results.map((b) =>
       entry(`/book/${b.slug}`, b.updated_at, imageUrl(b.image_key, 'detail')),
     ),

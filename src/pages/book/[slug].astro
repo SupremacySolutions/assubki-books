@@ -6,6 +6,7 @@ import BookCard from '../../components/BookCard.astro';
 import Rosette from '../../components/Rosette.astro';
 import { bookBySlug, relatedBooks, setOptions } from '../../lib/db';
 import { price, availability, imageUrl, stripTags, truncate, SITE, buildQuery, RETURN_POLICY } from '../../lib/format';
+import { SHARE_SIZE } from '../../lib/image-presets';
 import { delivery } from '../../lib/incoming';
 import { liveSale } from '../../lib/sales';
 import { classmark } from '../../lib/classmarks';
@@ -101,6 +102,8 @@ const pillLabel = mine
       : 'Fully reserved'
     : avail.label;
 const cover = imageUrl(book.images[0]?.image_key, 'detail');
+/* The link preview: the cover framed for a wide card, as a JPEG. See `share`. */
+const shareImage = imageUrl(book.images[0]?.image_key, 'share');
 
 // The other ways this set can be bought. Empty for an ordinary book, which is
 // every listing that is not part of one.
@@ -119,17 +122,24 @@ const plain = stripTags(book.description_html);
 
 // This is the description Telegram shows when the owner posts the link, so it
 // has to stand alone: what the book is, then price and availability.
+//
+// The price and whether it can be had come first: they are what somebody shown
+// the link decides on, and a blurb cut at 160 characters used to push them
+// off the end entirely.
 const shareDescription = truncate(
-  /*
-   * And in here, once, when the description does not already say it. This is
-   * the line under the result as well as the one Telegram shows, so a reader
-   * who searched in Arabic can see their own words in the answer.
-   */
-  plain
-    ? nativeTitle && !plain.includes(nativeTitle)
-      ? `${nativeTitle} - ${plain}`
-      : plain
-    : `${book.title}${nativeTitle ? ` - ${nativeTitle}` : ''}`,
+  [
+    `${price(nowPence)} · ${pillLabel}${book.publisher ? ` · ${book.publisher}` : ''}`,
+    /*
+     * And in here, once, when the description does not already say it. This is
+     * the line under the result as well as the one Telegram shows, so a reader
+     * who searched in Arabic can see their own words in the answer.
+     */
+    plain
+      ? nativeTitle && !plain.includes(nativeTitle)
+        ? `${nativeTitle} - ${plain}`
+        : plain
+      : `${book.title}${nativeTitle ? ` - ${nativeTitle}` : ''}`,
+  ].join(' - '),
   160,
 );
 
@@ -196,7 +206,12 @@ const jsonLd = {
 };
 ---
 
-<Base title={pageTitle} description={shareDescription} image={cover}>
+<Base
+  title={pageTitle}
+  description={shareDescription}
+  image={shareImage}
+  imageSize={shareImage ? SHARE_SIZE : null}
+>
   <div class="py-8 md:py-10">
     <nav aria-label="Breadcrumb" class="text-[13.5px] text-[var(--color-ink-faint)] mb-6">
       <a href="/" class="hover:text-[var(--color-navy)]">Home</a>
@@ -426,7 +441,7 @@ const jsonLd = {
               how much. With multi-buy they are for the quantity chosen, and
               the script below repaints them as it changes. */}
           <div class="flex items-center gap-3.5 flex-wrap">
-            <span id="priceNow" class="price text-[34px] leading-none">{price(nowPence)}</span>
+            <span id="priceNow" class="price text-[34px] leading-none" data-gbp={nowPence}>{price(nowPence)}</span>
             <span id="priceWas" hidden={!(off > 0)} class="text-[18px] text-[var(--color-ink-faint)] line-through decoration-1">
               {price(book.price_pence)}
             </span>
@@ -689,7 +704,7 @@ const jsonLd = {
       const was = document.querySelector<HTMLElement>('#priceWas')!;
       const save = document.querySelector<HTMLElement>('#priceSave')!;
       const forLine = document.querySelector<HTMLElement>('#priceFor')!;
-      const initial = { now: now.textContent, was: was.textContent, save: save.textContent, wasHidden: was.hidden };
+      const initial = { now: now.textContent, gbp: now.dataset.gbp, was: was.textContent, save: save.textContent, wasHidden: was.hidden };
       const chips = [...document.querySelectorAll<HTMLButtonElement>('[data-mb-qty]')];
 
       const paint = () => {
@@ -707,6 +722,8 @@ const jsonLd = {
 
         if (q === 1) {
           now.textContent = initial.now;
+          // The local-currency guide beside it follows this (currency.ts).
+          if (initial.gbp) now.dataset.gbp = initial.gbp;
           was.textContent = initial.was;
           save.textContent = initial.save;
           was.hidden = save.hidden = initial.wasHidden;
@@ -716,6 +733,7 @@ const jsonLd = {
         const cost = lineCost(q, unit, mbOffers);
         const whole = full * q;
         now.textContent = gbp(cost);
+        now.dataset.gbp = String(cost);
         was.textContent = gbp(whole);
         save.textContent = `Save ${gbp(whole - cost)}`;
         was.hidden = save.hidden = cost >= whole;

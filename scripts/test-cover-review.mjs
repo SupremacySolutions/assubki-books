@@ -32,7 +32,7 @@ class Canvas extends Element {
   height = 140;
   getContext() {
     return {
-      drawImage(...args) { draws.push(args); }, putImageData() {}, fillRect() {},
+      drawImage(...args) { draws.push(args); }, putImageData() {}, fillRect() {}, save() {}, restore() {},
       getImageData: (_x, _y, w, h) => new ImageData(w, h),
     };
   }
@@ -97,6 +97,9 @@ try {
   const detail = draws.find(args => args.length === 5 && args[4] === 1176);
   assert.ok(detail, 'detail variant contains the full height');
   assert.ok(Math.abs(detail[3] / detail[4] - 418 / 2046) < 0.001, 'detail preserves spine proportions');
+  assert.equal(dressed.variants.get('share')?.type, 'image/jpeg', 'the link-preview card is a JPEG');
+  const share = draws.find(args => args.length === 5 && args[4] === Math.round(630 * 0.9));
+  assert.ok(share && Math.abs(share[3] / share[4] - 418 / 2046) < 0.01, 'and holds the photo whole, at its own shape');
   console.log('PASS narrow spine keeps full height and proportional variants');
   globalThis.createImageBitmap = async () => ({ width: 100, height: 140 });
   mountCoverReview();

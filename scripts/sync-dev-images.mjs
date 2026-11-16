@@ -3,7 +3,7 @@
 import { getPlatformProxy } from 'wrangler';
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { IMAGE_PRESETS, IMAGE_VERSION } from '../src/lib/image-presets.ts';
+import { IMAGE_PRESETS, IMAGE_VERSION, presetSuffix, presetType } from '../src/lib/image-presets.ts';
 const only = process.argv.find(a => a.startsWith('--only='))?.slice(7);
 const check = process.argv.includes('--check');
 const proxy = await getPlatformProxy({ configPath: 'wrangler.jsonc', remoteBindings: false });
@@ -22,17 +22,19 @@ try {
   const outcomes = await Promise.allSettled(Array.from({ length: 4 }, async () => {
     while (queue.length) {
       const {key, preset} = queue.shift();
-      const storedKey = preset ? `${key.replace(/\.[a-z0-9]+$/i, '')}-${preset}.webp` : key;
+      const storedKey = preset ? `${key.replace(/\.[a-z0-9]+$/i, '')}${presetSuffix(preset)}` : key;
       const url = new URL(`/img/${key}`, 'https://assubkibooks.co.uk');
       url.searchParams.set('v', String(IMAGE_VERSION));
       if (preset) url.searchParams.set('p', preset);
-      const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30000) });
-      if (response.status === 404) { findings.push({ key: storedKey, status: 'missing on production' }); continue; }
+      const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30000) });
+      // A share picture that was never made redirects to the shop's card.
+      // That is a miss here, not a file to store under this key.
+      if (response.status === 404 || (response.status >= 300 && response.status < 400)) { findings.push({ key: storedKey, status: 'missing on production' }); continue; }
       if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw new Error(`${storedKey}: HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
-      // A non-WebP preset response is the route's original-file fallback.
-      // Preserve the miss locally rather than storing JPEG bytes as WebP.
-      if (preset && !response.headers.get('content-type')?.startsWith('image/webp')) {
+      // A preset response in the wrong format is the route's original-file
+      // fallback. Preserve the miss locally rather than storing it as a variant.
+      if (preset && !response.headers.get('content-type')?.startsWith(presetType(preset))) {
         const stale = await proxy.env.UPLOADS.head(storedKey);
         if (stale && !check) await proxy.env.UPLOADS.delete(storedKey);
         findings.push({ key: storedKey, status: stale && check ? 'differs' : 'original fallback' });

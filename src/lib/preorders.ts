@@ -20,11 +20,12 @@ import {
   mdLink,
   postToChannel,
   editChannelPost,
-  deleteChannelMessage,
+  deleteChannelPost,
   type ChannelText,
 } from './telegram';
+import { freeSlug, isSlug, slugify } from './slug';
 import { imageUrl, price, stripTags, truncate } from './format';
-import { IMAGE_PRESETS, isPreset } from './image-presets';
+import { IMAGE_PRESETS, isPreset, presetSuffix, presetType, type PresetName } from './image-presets';
 
 export type PreorderStatus = 'draft' | 'open' | 'closed';
 
@@ -40,10 +41,15 @@ export interface Preorder {
   description_html: string | null;
   price_pence: number | null;
   status: PreorderStatus;
+  /** Its own address. Null only until `ensurePreorderSlugs` has run. */
+  slug: string | null;
+  /** The cover - a copy of photo 0 in `preorder_images`, kept in step. */
   image_key: string | null;
   image_width: number | null;
   image_height: number | null;
   telegram_message_id: number | null;
+  /** Every message of an album post, as JSON. Null for a single photo. */
+  telegram_album_ids: string | null;
   telegram_posted_at: number | null;
   created_at: number;
   updated_at: number;
@@ -112,6 +118,192 @@ export async function getPreorder(id: number): Promise<PreorderWithDemand | null
   return env.DB.prepare(`SELECT p.*, ${DEMAND} FROM preorders p WHERE p.id = ?`)
     .bind(id)
     .first<PreorderWithDemand>();
+}
+
+/**
+ * A pre-order by its address, for its own page: open, or closed - a channel
+ * post keeps its link after the list closes, and should land on a page that
+ * says so rather than on a 404. Never a draft. No totals: see above.
+ */
+export async function publicPreorderBySlug(slug: string): Promise<Preorder | null> {
+  if (!isSlug(slug)) return null;
+  return env.DB.prepare(`SELECT * FROM preorders WHERE slug = ? AND status IN ('open','closed')`)
+    .bind(slug)
+    .first<Preorder>();
+}
+
+// ---------------------------------------------------------------------------
+// The address
+// ---------------------------------------------------------------------------
+
+/** A free address for this pre-order, from `wanted` (usually its title). */
+export async function freePreorderSlug(id: number, wanted: string): Promise<string> {
+  return freeSlug(slugify(wanted), `preorder-${id}`, async (candidate) =>
+    Boolean(
+      await env.DB.prepare('SELECT 1 FROM preorders WHERE slug = ? AND id != ?')
+        .bind(candidate, id)
+        .first(),
+    ),
+  );
+}
+
+/**
+ * Gives an address to a pre-order that has none, or a draft whose title has
+ * moved. Once it is open the address is fixed: it is in the channel and in
+ * people's chats by then, and a renamed title must not break those links.
+ */
+export async function settlePreorderSlug(id: number): Promise<void> {
+  const row = await env.DB.prepare('SELECT title, slug, status FROM preorders WHERE id = ?')
+    .bind(id)
+    .first<{ title: string; slug: string | null; status: PreorderStatus }>();
+  if (!row || (row.slug && row.status !== 'draft')) return;
+  const slug = await freePreorderSlug(id, row.title);
+  if (slug !== row.slug) {
+    await env.DB.prepare('UPDATE preorders SET slug = ? WHERE id = ?').bind(slug, id).run();
+  }
+}
+
+/**
+ * Fills the address of every pre-order made before they had one. One small
+ * read when there is nothing to do; a write per pre-order, once.
+ */
+export async function ensurePreorderSlugs(): Promise<void> {
+  const { results } = await env.DB.prepare('SELECT id FROM preorders WHERE slug IS NULL')
+    .all<{ id: number }>();
+  for (const row of results) await settlePreorderSlug(row.id);
+}
+
+/** Where a pre-order lives. Its card on the list until it has an address. */
+export const preorderPath = (p: { id: number; slug: string | null }): string =>
+  p.slug ? `/preorders/${p.slug}` : `/preorders#p${p.id}`;
+
+// ---------------------------------------------------------------------------
+// The photos
+// ---------------------------------------------------------------------------
+
+export interface PreorderPhoto {
+  id: number;
+  preorder_id: number;
+  image_key: string;
+  width: number | null;
+  height: number | null;
+  sort: number;
+}
+
+/** The set, the spines, the inside pages. Enough to judge an edition by. */
+export const MAX_PHOTOS = 8;
+
+/**
+ * Copies photo 0 onto the pre-order row, which is what everything showing a
+ * single picture reads. Run in the same batch as every change to the photos.
+ */
+const MIRROR_COVER = `
+  UPDATE preorders SET
+    image_key    = (SELECT image_key FROM preorder_images WHERE preorder_id = ?1 ORDER BY sort, id LIMIT 1),
+    image_width  = (SELECT width     FROM preorder_images WHERE preorder_id = ?1 ORDER BY sort, id LIMIT 1),
+    image_height = (SELECT height    FROM preorder_images WHERE preorder_id = ?1 ORDER BY sort, id LIMIT 1),
+    updated_at   = unixepoch()
+  WHERE id = ?1`;
+
+/** Back to 0, 1, 2… with no gaps, keeping the order they are in. */
+const RENUMBER = `
+  UPDATE preorder_images SET sort = (
+    SELECT COUNT(*) FROM preorder_images x
+     WHERE x.preorder_id = preorder_images.preorder_id
+       AND (x.sort < preorder_images.sort OR (x.sort = preorder_images.sort AND x.id < preorder_images.id)))
+  WHERE preorder_id = ?1`;
+
+export async function preorderPhotos(preorderId: number): Promise<PreorderPhoto[]> {
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM preorder_images WHERE preorder_id = ? ORDER BY sort, id',
+  )
+    .bind(preorderId)
+    .all<PreorderPhoto>();
+  return results;
+}
+
+/** Every photo of several pre-orders in one read, for the list page. */
+export async function photosFor(ids: number[]): Promise<Map<number, PreorderPhoto[]>> {
+  const out = new Map<number, PreorderPhoto[]>();
+  if (!ids.length) return out;
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM preorder_images
+      WHERE preorder_id IN (SELECT value FROM json_each(?))
+      ORDER BY preorder_id, sort, id`,
+  )
+    .bind(JSON.stringify(ids))
+    .all<PreorderPhoto>();
+  for (const photo of results) {
+    const list = out.get(photo.preorder_id) ?? [];
+    list.push(photo);
+    out.set(photo.preorder_id, list);
+  }
+  return out;
+}
+
+/**
+ * Adds a stored photo at the end. The first one a pre-order gets is its cover.
+ *
+ * The ceiling is checked inside the insert, so two uploads racing past a full
+ * set cannot both land. False when the set was full; the caller then removes
+ * the files it stored.
+ */
+export async function addPreorderPhoto(
+  preorderId: number,
+  photo: { key: string; width: number | null; height: number | null },
+): Promise<boolean> {
+  const [added] = await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO preorder_images (preorder_id, image_key, width, height, sort)
+       SELECT ?1, ?2, ?3, ?4, COALESCE(MAX(sort) + 1, 0) FROM preorder_images WHERE preorder_id = ?1
+       HAVING COUNT(*) < ?5`,
+    ).bind(preorderId, photo.key, photo.width, photo.height, MAX_PHOTOS),
+    env.DB.prepare(MIRROR_COVER).bind(preorderId),
+  ]);
+  return Boolean(added.meta.changes);
+}
+
+/** Removes one photo, files and all. The next one along becomes the cover. */
+export async function deletePreorderPhoto(preorderId: number, photoId: number): Promise<boolean> {
+  const [gone] = await env.DB.batch<{ image_key: string }>([
+    env.DB.prepare('DELETE FROM preorder_images WHERE id = ?2 AND preorder_id = ?1 RETURNING image_key')
+      .bind(preorderId, photoId),
+    env.DB.prepare(RENUMBER).bind(preorderId),
+    env.DB.prepare(MIRROR_COVER).bind(preorderId),
+  ]);
+  const key = gone.results[0]?.image_key;
+  if (!key) return false;
+  await deleteCover(key);
+  return true;
+}
+
+/**
+ * Puts a pre-order's photos in the order given, the first being the cover.
+ *
+ * Every photo it has, or nothing - the same rule as a listing's photos, for
+ * the same reason: a list that leaves one out, repeats one or names another
+ * pre-order's was made against a page that is out of date, and guessing what
+ * it meant would be wrong as often as right.
+ */
+export async function reorderPreorderPhotos(preorderId: number, order: number[]): Promise<'ok' | 'stale'> {
+  const held = new Set((await preorderPhotos(preorderId)).map((p) => p.id));
+  if (
+    !order.length ||
+    new Set(order).size !== order.length ||
+    held.size !== order.length ||
+    order.some((n) => !held.has(n))
+  ) {
+    return 'stale';
+  }
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE preorder_images
+          SET sort = (SELECT CAST(j.key AS INTEGER) FROM json_each(?1) j WHERE j.value = preorder_images.id)
+        WHERE preorder_id = ?2`,
+    ).bind(JSON.stringify(order), preorderId),
+    env.DB.prepare(MIRROR_COVER).bind(preorderId),
+  ]);
+  return 'ok';
 }
 
 /** Biggest asks first: those are the people whose answer moves the order. */
@@ -268,10 +460,10 @@ export async function storeCover(preorderId: number, form: FormData): Promise<Co
     [...form.entries()].map(async ([field, value]) => {
       if (!field.startsWith('variant:') || !(value instanceof File)) return;
       const preset = field.slice('variant:'.length);
-      if (!isPreset(preset) || value.type !== 'image/webp' || value.size > MAX_BYTES) return;
+      if (!isPreset(preset) || value.type !== presetType(preset) || value.size > MAX_BYTES) return;
       await store
-        .put(`${stem}-${preset}.webp`, value.stream(), {
-          httpMetadata: { contentType: 'image/webp', cacheControl: immutable },
+        .put(`${stem}${presetSuffix(preset)}`, value.stream(), {
+          httpMetadata: { contentType: presetType(preset), cacheControl: immutable },
         })
         .catch(() => undefined);
     }),
@@ -291,7 +483,7 @@ export async function deleteCover(key: string | null): Promise<void> {
   if (!key || !store) return;
   const stem = key.replace(/\.[a-z0-9]+$/i, '');
   await store
-    .delete([key, ...Object.keys(IMAGE_PRESETS).map((preset) => `${stem}-${preset}.webp`)])
+    .delete([key, ...(Object.keys(IMAGE_PRESETS) as PresetName[]).map((preset) => `${stem}${presetSuffix(preset)}`)])
     .catch((err) => console.error('[preorders] R2 delete failed', err));
 }
 
@@ -299,8 +491,9 @@ export async function deleteCover(key: string | null): Promise<void> {
 // The channel
 // ---------------------------------------------------------------------------
 
-/** Where the post's link lands: the pre-order's own card on the public page. */
-export const preorderUrl = (origin: string, id: number) => `${origin}/preorders#p${id}`;
+/** Where the post's link lands: the pre-order's own page. */
+export const preorderUrl = (origin: string, p: { id: number; slug: string | null }) =>
+  `${origin}${preorderPath(p)}`;
 
 /**
  * The announcement, in the same shape as a listing's so the channel reads as
@@ -328,7 +521,7 @@ export function preorderCaption(p: Preorder, origin: string): ChannelText {
         : esc('Price to be confirmed'),
     );
     lines.push(esc('Tell us how many copies you would like, so we know how many to order.'));
-    lines.push('', mdLink('Register interest', preorderUrl(origin, p.id)));
+    lines.push('', mdLink('Register interest', preorderUrl(origin, p)));
   } else {
     // A post is kept honest after the list closes, exactly as a listing's is
     // when it sells out - the link stays, the invitation does not.
@@ -362,7 +555,7 @@ export function plainPreorderCaption(p: Preorder, origin: string): string {
       p.price_pence !== null ? `Expected price ${price(p.price_pence)}` : 'Price to be confirmed',
     );
     lines.push('Tell us how many copies you would like, so we know how many to order.');
-    lines.push('', `Register interest - ${preorderUrl(origin, p.id)}`);
+    lines.push('', `Register interest - ${preorderUrl(origin, p)}`);
   } else {
     lines.push('Pre-orders for this book are now closed.');
   }
@@ -388,15 +581,20 @@ export async function publishPreorder(id: number, origin: string): Promise<Preor
   }
   if (p.status !== 'open') return 'not-open';
 
-  // `social`, the square variant, because that is the shape Telegram crops to.
-  const photo = p.image_key ? imageUrl(p.image_key, 'social') : null;
-  const posted = await postToChannel(caption, photo ? [`${origin}${photo}`] : []);
+  // Every photo, as an album, in the owner's order. `social`, the square
+  // variant, because that is the shape Telegram crops to.
+  const photos = (await preorderPhotos(id))
+    .map((photo) => imageUrl(photo.image_key, 'social'))
+    .filter((url): url is string => Boolean(url))
+    .map((url) => `${origin}${url}`);
+  const posted = await postToChannel(caption, photos);
   if (!posted) return 'failed';
 
   await env.DB.prepare(
-    'UPDATE preorders SET telegram_message_id = ?, telegram_posted_at = unixepoch() WHERE id = ?',
+    `UPDATE preorders SET telegram_message_id = ?, telegram_album_ids = ?, telegram_posted_at = unixepoch()
+      WHERE id = ?`,
   )
-    .bind(posted.messageId, id)
+    .bind(posted.messageId, posted.albumIds.length > 1 ? JSON.stringify(posted.albumIds) : null, id)
     .run();
   return 'posted';
 }
@@ -416,7 +614,17 @@ export async function syncPreorderPost(id: number, origin: string): Promise<void
   }
 }
 
-/** Takes the post down. False when Telegram refused - older than 48 hours, say. */
-export async function unpostPreorder(messageId: number): Promise<boolean> {
-  return deleteChannelMessage(messageId);
+/**
+ * Takes the post down - every photo of an album, not only the one carrying the
+ * caption. False when Telegram refused - older than 48 hours, say.
+ */
+export async function unpostPreorder(messageId: number, albumIds: string | null = null): Promise<boolean> {
+  let ids = [messageId];
+  try {
+    const album = albumIds ? (JSON.parse(albumIds) as unknown) : null;
+    if (Array.isArray(album) && album.every((n) => Number.isInteger(n))) ids = album as number[];
+  } catch {
+    /* A damaged list still takes the captioned message down. */
+  }
+  return deleteChannelPost(ids);
 }

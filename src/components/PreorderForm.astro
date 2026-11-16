@@ -1,0 +1,114 @@
+---
+import { MAX_COPIES } from '../lib/preorders';
+
+/*
+ * "I would take this many", for one pre-order.
+ *
+ * The same form on the list and on the pre-order's own page. It works as a
+ * plain post with scripting off; with it, src/scripts/preorder-memory.ts
+ * fills in the name and email somebody gave last time and folds those fields
+ * away, and shows the number they asked for on a book they have already
+ * registered for. Nothing about either is read from the server - it is this
+ * browser remembering, and nothing more.
+ *
+ * Its own form, never nested inside another - a nested form is discarded by
+ * the browser and its button submits the outer one, which has broken this
+ * codebase twice.
+ */
+interface Props {
+  id: number;
+  /** On the pre-order's own page, so the answer comes back there. */
+  fromPage?: boolean;
+  /** The answer to this form, if the page is showing one. */
+  answer?: string | null;
+  good?: boolean;
+}
+const { id, fromPage = false, answer = null, good = false } = Astro.props;
+---
+
+<div data-preorder={id} data-answered={answer ? (good ? 'good' : 'bad') : undefined}>
+  {/* Shown in place of the form once this browser has registered for it. */}
+  <div
+    data-asked
+    hidden
+    class="mt-4 rounded-[var(--radius-panel)] bg-[#eef5ef] px-4 py-3.5 flex flex-wrap items-center gap-x-4 gap-y-2"
+  >
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="text-[var(--color-instock)] shrink-0" aria-hidden="true"><path d="m5 12 5 5 9-10" /></svg>
+    <p class="flex-1 min-w-[14rem] text-[14.5px] text-[#1f4d31]">
+      <strong data-asked-line class="font-semibold"></strong>
+      {' '}We will email you first if we bring it in.
+    </p>
+    <button type="button" data-change class="text-[14px] font-medium text-[var(--color-instock)] underline underline-offset-2 min-h-[44px]">
+      Change number
+    </button>
+  </div>
+
+  <form
+    method="post"
+    action="/api/preorders/interest"
+    data-interest
+    class="mt-4 pt-4 border-t border-[var(--color-rule-faint)] grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end"
+  >
+    <input type="hidden" name="preorderId" value={id} />
+    {fromPage && <input type="hidden" name="from" value="page" />}
+    <div data-who>
+      <label for={`name-${id}`} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">Your name</label>
+      <input
+        id={`name-${id}`}
+        name="name"
+        required
+        minlength="2"
+        maxlength="120"
+        autocomplete="name"
+        class="field !py-2.5 !text-[15px]"
+      />
+    </div>
+    <div data-who>
+      <label for={`email-${id}`} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">Email</label>
+      <input
+        id={`email-${id}`}
+        type="email"
+        name="email"
+        required
+        maxlength="160"
+        autocomplete="email"
+        class="field !py-2.5 !text-[15px]"
+      />
+    </div>
+    <div>
+      <label for={`copies-${id}`} class="block text-[13px] text-[var(--color-ink-faint)] mb-1">Copies</label>
+      <div class="inline-flex items-center rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white overflow-hidden">
+        <button type="button" data-step="-1" class="w-11 h-11 text-[18px] text-[var(--color-navy)] hover:bg-[var(--color-paper)]" aria-label="One fewer copy">−</button>
+        <input
+          id={`copies-${id}`}
+          type="number"
+          name="copies"
+          required
+          min="1"
+          max={MAX_COPIES}
+          value="1"
+          inputmode="numeric"
+          class="w-12 h-11 border-0 text-center text-[15px] tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:outline-none"
+        />
+        <button type="button" data-step="1" class="w-11 h-11 text-[18px] text-[var(--color-navy)] hover:bg-[var(--color-paper)]" aria-label="One more copy">+</button>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary !py-3 !text-[15px]">Register interest</button>
+  </form>
+
+  {answer ? (
+    <p
+      role="status"
+      class:list={[
+        'mt-2 text-[13.5px] leading-relaxed',
+        good ? 'text-[var(--color-instock)]' : 'text-[var(--color-outstock)]',
+      ]}
+    >{answer}</p>
+  ) : (
+    <p data-small-print class="mt-2 text-[12.5px] text-[var(--color-ink-faint)] leading-relaxed">
+      Nothing is paid or reserved. Already registered? Enter the same email to change your number.
+      We only use your details for this book - see our{' '}
+      <a href="/privacy" class="underline">privacy notice</a>.
+    </p>
+  )}
+</div>

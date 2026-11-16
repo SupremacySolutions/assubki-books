@@ -3129,7 +3129,7 @@ async function integrity() {
   t.ok(uploadSource.includes("field.startsWith('variant:')") && uploadSource.includes('isPreset(preset)'),
     'uploaded variants are stored only under a preset name the table knows');
   t.ok(/bucket\.delete\(keys\)/.test(uploadSource) &&
-       uploadSource.includes('Object.keys(IMAGE_PRESETS).map'),
+       /Object\.keys\(IMAGE_PRESETS\)( as PresetName\[\])?\)?\.map/.test(uploadSource),
     'and deleting a photo takes its sized versions with it');
   t.ok(portalSource.includes('export async function dress'),
     'the portal frames and cuts the photo before it is sent');
@@ -5887,13 +5887,47 @@ async function findable() {
 
   // --- every page shares with a picture --------------------------------------
   const homePage = await html('/');
-  t.ok(/<meta property="og:image" content="[^"]*\/og\.png"/.test(homePage),
+  t.ok(/<meta property="og:image" content="[^"]*\/og\.jpg\?v=2"/.test(homePage),
     'a page with no picture of its own shares the shop card');
-  t.ok(page.includes('og:image" content=') && !/og:image" content="[^"]*\/og\.png"/.test(page),
-    'and a book still shares its own cover');
-  for (const asset of ['/og.png', '/favicon.ico', '/apple-touch-icon.png']) {
+  t.ok(/<meta property="og:image:type" content="image\/jpeg"/.test(homePage)
+    && /og:image:width" content="1200"/.test(homePage) && /og:image:height" content="630"/.test(homePage),
+    'and says it is a 1200x630 JPEG, so a chat app draws it before fetching it');
+  /*
+   * A book shares a card made for sharing - the cover upright in a wide JPEG
+   * frame - not the tall .webp cover that WhatsApp would not show and the
+   * wide preview sliced through.
+   */
+  t.ok(/og:image" content="[^"]*\/img\/[^"]*\?p=share&amp;v=/.test(page) && !/og:image" content="[^"]*\.webp\?p=detail/.test(page),
+    'and a book shares its own share card, not the shop card or the bare cover');
+  t.ok(/<meta property="og:description" content="£\d+\.\d\d · /.test(page),
+    'whose description leads with the price, the line people decide on');
+  const coverKey = page.match(/og:image" content="[^"]*\/img\/([^"?]+)\?p=share/)?.[1];
+  const card = coverKey ? await get(`/img/${coverKey}?p=share`) : null;
+  t.ok(card && (card.status === 302 ? card.headers.get('location') === '/og.jpg?v=2'
+    : card.status === 200 && card.headers.get('content-type') === 'image/jpeg'),
+    'a share card that was never made stands in as the shop card, never as the tall cover',
+    `${card?.status} ${card?.headers.get('location') ?? card?.headers.get('content-type')}`);
+  for (const asset of ['/og.jpg', '/og.png', '/favicon.ico', '/apple-touch-icon.png']) {
     t.ok((await get(asset)).status === 200, `${asset} is served`);
   }
+
+  // --- a guide to the price in the visitor's own currency ----------------------
+  /*
+   * Pounds stay the price. The guide beside it needs only rates and a
+   * suggestion, which come without a database read and are private to the
+   * visitor, because the suggestion is from where they are.
+   */
+  const rates = await get('/api/rates');
+  const ratesBody = await rates.json().catch(() => null);
+  t.ok(rates.status === 200 && ratesBody && typeof ratesBody.rates === 'object' && 'suggest' in ratesBody
+    && (rates.headers.get('cache-control') ?? '').includes('private'),
+    'the rates answer even when the source cannot be reached, and are never shared between visitors',
+    JSON.stringify(ratesBody)?.slice(0, 120));
+  t.ok(/data-gbp="\d+"/.test(page), "a book's price carries its pence for the guide");
+  t.ok(!(await html('/basket')).includes('data-gbp') && !(await html('/checkout')).includes('data-gbp'),
+    'but the basket and checkout, where the figure is agreed to, show pounds alone');
+  t.ok(/Prices are charged in pounds sterling/.test(visibleText(homePage)) && homePage.includes('id="currencyGuide"'),
+    "and every page says the price is in pounds, with the guide's currency to choose");
 
   // --- one address per page --------------------------------------------------
   const slashed = await get('/catalogue/hadith/?sort=title');
@@ -6616,7 +6650,26 @@ async function shipments() {
    */
   const shopFront = await html('/shipments');
   t.ok(shopFront.includes(shipmentTitle), 'an open shipment is listed on the shipments page');
-  t.ok(shopFront.includes(`/shipments/${sid}`), 'and links through to its own page');
+  /*
+   * Its address says what it is. "/shipments/3" told nobody anything; the
+   * title, less the word "shipment", does - and the old numbered links in
+   * the channel are sent on to it rather than broken.
+   */
+  const { slug: shipSlug } = await one(`SELECT slug FROM shipments WHERE id=${sid}`);
+  t.ok(typeof shipSlug === 'string' && shipSlug.startsWith('e2e-') && !shipSlug.includes('shipment'),
+    'the shipment has an address made from its title');
+  t.ok(shopFront.includes(`href="/shipments/${shipSlug}"`), 'and the shipments page links to it by that address');
+  const byNumber = await get(`/shipments/${sid}?show=all`);
+  t.ok(byNumber.status === 301 && (byNumber.headers.get('location') ?? '').endsWith(`/shipments/${shipSlug}?show=all`),
+    'an old numbered link is sent on to it with a 301, query and all');
+  const slugPage = await html(`/shipments/${shipSlug}`);
+  t.ok(slugPage.includes(`action="/shipments/${shipSlug}"`), 'and its search stays on the address');
+  t.ok(slugPage.includes(`<title>${shipmentTitle} - As-Subkī Books</title>`),
+    'its title is the name alone, not the name and the month twice');
+  t.ok(/<meta property="og:description" content="Arriving [^"]*2 titles/.test(slugPage),
+    'and a shared link says when it lands and how many titles');
+  t.ok((await html('/sitemap.xml')).includes(`/shipments/${shipSlug}</loc>`), 'the sitemap lists it by its address');
+  t.ok((await get('/shipments/no-such-shipment')).status === 404, 'an address that is not a shipment is a 404');
   t.ok(!shopFront.includes(rows[0].title),
     'without printing every book on it, which is what a big shipment would do');
 
@@ -7146,8 +7199,22 @@ async function shipmentRows() {
     t.ok(said((await admin(`/api/admin/shipments/${sid}/remove`, { book: 'abc' })).location).has('e'),
       'nor can nonsense');
 
+    /* The address can be chosen while it is a draft, and only then. */
+    const chosenSlug = `e2e-address-${Math.random().toString(36).slice(2, 6)}`;
+    const shipTitle = (await one(`SELECT title FROM shipments WHERE id=${sid}`)).title;
+    await admin(`/api/admin/shipments/${sid}/details`, {
+      title: shipTitle, incoming_vague: 'late', incoming_month: '2026-12', note: '', slug: chosenSlug,
+    });
+    t.ok((await one(`SELECT slug FROM shipments WHERE id=${sid}`)).slug === chosenSlug,
+      "a draft shipment's address can be set from its details");
+
     // Open, with a reservation on the first title.
     await admin(`/api/admin/shipments/${sid}/open`);
+    await admin(`/api/admin/shipments/${sid}/details`, {
+      title: shipTitle, incoming_vague: 'late', incoming_month: '2026-12', note: '', slug: 'e2e-moved-after-opening',
+    });
+    t.ok((await one(`SELECT slug FROM shipments WHERE id=${sid}`)).slug === chosenSlug,
+      'and once it is open, the address no longer moves - links to it are out in the world');
     t.ok((await one(`SELECT status FROM shipments WHERE id=${sid}`)).status === 'open', 'the shipment opens');
 
     const openAdd = await add({ title: 'Added while open' });
@@ -8366,6 +8433,72 @@ async function preorders() {
     t.ok((await get(`/img/${withCover.image_key}?p=card`)).status === 200, 'and served like any other cover');
     t.ok((await html('/preorders')).includes(withCover.image_key), 'and shown on the public page');
 
+    /*
+     * Its own address and its own page, so one book can be shared alone.
+     */
+    const { slug } = await one(`SELECT slug FROM preorders WHERE id=${id}`);
+    t.ok(typeof slug === 'string' && slug.startsWith('e2e-pre-order-'), 'a pre-order has an address made from its title');
+    const listing = await html('/preorders');
+    t.ok(listing.includes(`href="/preorders/${slug}"`), 'and the list links to its page');
+    const own = await html(`/preorders/${slug}`);
+    t.ok(own.includes(title) && own.includes('name="from" value="page"') && own.includes(withCover.image_key),
+      'which has the book, its photos and the form');
+    t.ok(/og:image" content="[^"]*\?p=share&amp;v=/.test(own), 'and shares the cover as a card');
+    const byNumber = await get(`/preorders/${id}`);
+    t.ok(byNumber.status === 301 && (byNumber.headers.get('location') ?? '').endsWith(`/preorders/${slug}`),
+      'a numbered address is sent on to it');
+    const back = await register({ preorderId: id, name: 'Amina Khan', email: 'amina@example.com', copies: '2', from: 'page', back: 'https://evil.example' });
+    t.ok(back.startsWith(`/preorders/${slug}?r=updated`) && !back.includes('evil'),
+      'registering from that page returns to it, by the address the shop looked up');
+    t.ok((await html('/sitemap.xml')).includes(`/preorders/${slug}</loc>`), 'the sitemap lists it');
+
+    /*
+     * More than one photo: added one at a time, put in order, the first being
+     * the cover everything else reads - and a share card only as a JPEG.
+     */
+    const photo = (extra = {}) => {
+      const f = new FormData();
+      f.append('photo', new File([png], 'more.png', { type: 'image/png' }));
+      for (const [k, v] of Object.entries(extra)) f.append(k, v);
+      return adminUpload(`/api/admin/preorders/${id}/photo-add`, f);
+    };
+    const second = await photo({ 'variant:share': new File([png], 'share.webp', { type: 'image/webp' }) });
+    t.ok(second.status === 200 && second.body.ok, 'a second photo can be added');
+    const third = await photo({ 'variant:share': new File([png], 'share.jpg', { type: 'image/jpeg' }) });
+    const shots = await db(`SELECT id, image_key, sort FROM preorder_images WHERE preorder_id=${id} ORDER BY sort`);
+    t.ok(shots.length === 3 && shots[0].image_key === withCover.image_key && shots.map((r) => r.sort).join() === '0,1,2',
+      'and joins the end, the cover staying first');
+    const wrongType = await get(`/img/${shots[1].image_key}?p=share`);
+    t.ok(wrongType.status === 302, 'a share card sent as anything but a JPEG is not kept');
+    const jpeg = await get(`/img/${shots[2].image_key}?p=share`);
+    t.ok(third.status === 200 && jpeg.status === 200 && jpeg.headers.get('content-type') === 'image/jpeg',
+      'and one sent as a JPEG is served as one');
+
+    const stale = await adminUpload(`/api/admin/preorders/${id}/photos`, (() => {
+      const f = new FormData(); f.append('order', `${shots[2].id},${shots[0].id}`); return f;
+    })());
+    t.ok(stale.status === 409, 'an order that leaves a photo out is refused rather than guessed at');
+    const reordered = await adminUpload(`/api/admin/preorders/${id}/photos`, (() => {
+      const f = new FormData(); f.append('order', [shots[2].id, shots[0].id, shots[1].id].join()); return f;
+    })());
+    const mirror = await one(`SELECT image_key FROM preorders WHERE id=${id}`);
+    t.ok(reordered.status === 200 && mirror.image_key === shots[2].image_key,
+      'putting another photo first makes it the cover everywhere');
+
+    for (let n = 3; n < 8; n++) await photo();
+    const ninth = await photo();
+    t.ok(ninth.status === 409 && (await one(`SELECT COUNT(*) AS n FROM preorder_images WHERE preorder_id=${id}`)).n === 8,
+      'eight photos is the most a pre-order takes');
+
+    const dropped = await adminUpload(`/api/admin/preorders/${id}/photo-delete`, (() => {
+      const f = new FormData(); f.append('photo', String(shots[2].id)); return f;
+    })());
+    const afterDrop = await db(`SELECT image_key, sort FROM preorder_images WHERE preorder_id=${id} ORDER BY sort`);
+    t.ok(dropped.status === 200 && afterDrop.length === 7 && afterDrop.map((r) => r.sort).join() === '0,1,2,3,4,5,6'
+      && (await one(`SELECT image_key FROM preorders WHERE id=${id}`)).image_key === afterDrop[0].image_key,
+      'removing the cover makes the next photo the cover, and the numbering stays whole');
+    t.ok((await get(`/img/${shots[2].image_key}`)).status === 404, 'and its file goes with it');
+
     const bad = new FormData();
     for (const [k, v] of Object.entries({ id, title, status: 'open' })) bad.append(k, v);
     bad.append('photo', new File(['GIF89a'], 'x.gif', { type: 'image/gif' }));
@@ -8373,8 +8506,9 @@ async function preorders() {
       method: 'POST', headers: { ...ORIGIN, Cookie: adminCookie() }, body: bad, redirect: 'manual',
     });
     t.ok((refused.headers.get('location') ?? '').includes('photo=type'), 'a photo of the wrong type is refused, and said so');
-    t.ok((await one(`SELECT image_key FROM preorders WHERE id=${id}`)).image_key === withCover.image_key,
+    t.ok((await one(`SELECT image_key FROM preorders WHERE id=${id}`)).image_key === afterDrop[0].image_key,
       'leaving the cover it had');
+    const keysBefore = await db(`SELECT image_key FROM preorder_images WHERE preorder_id=${id}`);
 
     const gone = await admin(`/api/admin/preorders/${id}/delete`);
     t.ok(gone.location.startsWith('/admin/preorders?deleted='), 'the owner can delete a pre-order');
@@ -8382,6 +8516,10 @@ async function preorders() {
       (await one(`SELECT COUNT(*) AS n FROM preorder_interest WHERE preorder_id=${id}`)).n === 0,
       'and the names go with it');
     t.ok((await get(`/img/${withCover.image_key}`)).status === 404, 'and so does its cover');
+    const leftBehind = [];
+    for (const { image_key } of keysBefore) if ((await get(`/img/${image_key}`)).status !== 404) leftBehind.push(image_key);
+    t.ok(leftBehind.length === 0 && (await one(`SELECT COUNT(*) AS n FROM preorder_images WHERE preorder_id=${id}`)).n === 0,
+      'and every other photo', leftBehind.join(', '));
   } finally {
     for (const id of made) await admin(`/api/admin/preorders/${id}/delete`).catch(() => {});
   }

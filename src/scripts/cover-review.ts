@@ -903,6 +903,32 @@ export async function dress(
     const context = canvas.getContext('2d');
     if (!context) continue;
 
+    if (name === 'share') {
+      /*
+       * The link preview. The cover whole and upright in the middle of a wide
+       * frame on the paper colour, with the soft shadow it has on the shelf.
+       * The middle is the square a chat app crops a thumbnail to, so the book
+       * survives that too. JPEG, because that is what every chat app shows.
+       */
+      context.fillStyle = '#f5f4f0';
+      context.fillRect(0, 0, width, height);
+      const h = Math.round(height * 0.9);
+      const w = Math.round(h * (framed.width / framed.height));
+      const x = Math.round((width - w) / 2);
+      const y = Math.round((height - h) / 2);
+      context.save();
+      context.shadowColor = 'rgba(16, 24, 40, 0.22)';
+      context.shadowBlur = 28;
+      context.shadowOffsetY = 10;
+      context.fillStyle = '#ffffff';
+      context.fillRect(x, y, w, h);
+      context.restore();
+      context.drawImage(framed, x, y, w, h);
+      const card = await toImage(canvas, 'image/jpeg', 0.85, `${name}.jpg`);
+      if (card) variants.set(name, card);
+      continue;
+    }
+
     if (name === 'social' || Math.abs(framed.width / framed.height - BOX) > 0.01) {
       /*
        * The one square well, Telegram's. A cover goes into it whole rather
@@ -1006,10 +1032,19 @@ function toWebp(
   quality: number,
   name = 'photo.webp',
 ): Promise<File | null> {
+  return toImage(canvas, 'image/webp', quality, name);
+}
+
+function toImage(
+  canvas: HTMLCanvasElement,
+  type: 'image/webp' | 'image/jpeg',
+  quality: number,
+  name: string,
+): Promise<File | null> {
   return new Promise((resolve) => {
     canvas.toBlob(
-      (blob) => resolve(blob ? new File([blob], name, { type: 'image/webp' }) : null),
-      'image/webp',
+      (blob) => resolve(blob ? new File([blob], name, { type }) : null),
+      type,
       quality,
     );
   });

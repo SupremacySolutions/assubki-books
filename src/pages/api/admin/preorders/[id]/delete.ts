@@ -1,11 +1,11 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { deleteCover, unpostPreorder } from '../../../../../lib/preorders';
+import { deleteCover, preorderPhotos, unpostPreorder } from '../../../../../lib/preorders';
 
 export const prerender = false;
 
 /**
- * Deletes a pre-order, everybody's interest in it, its cover, and - where
+ * Deletes a pre-order, everybody's interest in it, its photos, and - where
  * Telegram still allows - its channel post.
  *
  * The names go with it, which is the promise on the privacy page:
@@ -20,20 +20,33 @@ export const POST: APIRoute = async ({ params }) => {
   if (!Number.isInteger(id)) return new Response('Bad request', { status: 400 });
 
   const row = await env.DB.prepare(
-    'SELECT title, image_key, telegram_message_id FROM preorders WHERE id = ?',
+    'SELECT title, image_key, telegram_message_id, telegram_album_ids FROM preorders WHERE id = ?',
   )
     .bind(id)
-    .first<{ title: string; image_key: string | null; telegram_message_id: number | null }>();
+    .first<{
+      title: string;
+      image_key: string | null;
+      telegram_message_id: number | null;
+      telegram_album_ids: string | null;
+    }>();
   if (!row) return new Response(null, { status: 302, headers: { Location: '/admin/preorders' } });
 
-  const unposted = row.telegram_message_id ? await unpostPreorder(row.telegram_message_id) : true;
+  const unposted = row.telegram_message_id
+    ? await unpostPreorder(row.telegram_message_id, row.telegram_album_ids)
+    : true;
+  // Read before the rows go: the files are found through them.
+  const photos = await preorderPhotos(id);
   // The cascade would take the names; saying so outright means the promise
   // does not rest on a pragma.
   await env.DB.batch([
     env.DB.prepare('DELETE FROM preorder_interest WHERE preorder_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM preorder_images WHERE preorder_id = ?').bind(id),
     env.DB.prepare('DELETE FROM preorders WHERE id = ?').bind(id),
   ]);
-  await deleteCover(row.image_key);
+  // The cover is photo 0, so it is in this list; the row's own copy is only
+  // read for a pre-order whose photos predate the table.
+  const keys = new Set([...photos.map((photo) => photo.image_key), row.image_key]);
+  await Promise.all([...keys].map((key) => deleteCover(key)));
 
   const back = new URLSearchParams({ deleted: row.title });
   if (!unposted) back.set('orphan', '1');

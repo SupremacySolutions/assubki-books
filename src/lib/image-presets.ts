@@ -85,8 +85,38 @@ export const IMAGE_PRESETS = {
   thumb: { width: 90, height: 126, scale: 2 },
   /** Telegram, which shows a square well and crops anything taller. */
   social: { width: 600, height: 600, scale: 1 },
+  /**
+   * A link preview in WhatsApp, Telegram, iMessage: the cover whole and
+   * upright in the middle of a 1200x630 frame on the paper colour.
+   *
+   * Sending the 5:7 cover itself had two faults. WhatsApp does not reliably
+   * show a .webp share image at all, and the wide preview sliced a strip out
+   * of the middle of the cover. So this one is a JPEG, and it is the one
+   * variant that is not just the cover resized - the frame is part of it. The
+   * cover inside it is untouched and full-bleed, as everywhere else.
+   */
+  share: { width: 1200, height: 630, scale: 1 },
 } as const;
 
 export type PresetName = keyof typeof IMAGE_PRESETS;
 
 export const isPreset = (name: string): name is PresetName => Object.hasOwn(IMAGE_PRESETS, name);
+
+/**
+ * The shop's own share picture, for every page with none of its own.
+ *
+ * The version is in the address because chat apps keep a link's preview for
+ * days: the card that replaced og.png has to be a URL none of them has seen.
+ */
+export const SHOP_CARD = '/og.jpg?v=2';
+
+/** Every share picture is this size, so the tags can say so before it loads. */
+export const SHARE_SIZE = { width: 1200, height: 630 } as const;
+
+/** The stored format of a variant: JPEG for `share`, WebP for the rest. */
+export const presetType = (preset: PresetName): 'image/jpeg' | 'image/webp' =>
+  preset === 'share' ? 'image/jpeg' : 'image/webp';
+
+/** "-card.webp", "-share.jpg" - the suffix a variant is stored under. */
+export const presetSuffix = (preset: PresetName): string =>
+  `-${preset}.${preset === 'share' ? 'jpg' : 'webp'}`;

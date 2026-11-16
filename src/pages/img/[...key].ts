@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { isPreset } from '../../lib/image-presets';
+import { isPreset, presetSuffix, presetType, SHOP_CARD, type PresetName } from '../../lib/image-presets';
 
 export const prerender = false;
 
@@ -47,6 +47,18 @@ export const GET: APIRoute = async ({ params, request }) => {
    */
   const variant = preset ? await bucket.get(variantKey(key, preset)) : null;
 
+  /*
+   * A share picture that was never made is not stood in for by the cover: the
+   * cover is the tall .webp that previewed badly, which is why `share` exists.
+   * The shop's own card is the better miss.
+   */
+  if (preset === 'share' && !variant) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: SHOP_CARD, 'Cache-Control': 'public, max-age=3600' },
+    });
+  }
+
   // No variant - the original is the right image, just larger than this place
   // needs. Better a heavy cover than a missing one. Newly processed covers
   // also have a detail variant so their scanner-white border stays removed in
@@ -62,7 +74,7 @@ export const GET: APIRoute = async ({ params, request }) => {
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
-  if (variant) headers.set('Content-Type', 'image/webp');
+  if (variant && preset) headers.set('Content-Type', presetType(preset));
   headers.set('etag', etag);
   headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 
@@ -78,8 +90,9 @@ export const GET: APIRoute = async ({ params, request }) => {
  * "books/x/1.webp" + "card" → "books/x/1-card.webp".
  *
  * Any extension, not only `.webp`: an owner's upload keeps whatever it
- * arrived as, while every derived size is written as WebP.
+ * arrived as, while every derived size is written as WebP - except `share`,
+ * which is a JPEG because that is what every chat app can show.
  */
-function variantKey(key: string, preset: string): string {
-  return `${key.replace(/\.[a-z0-9]+$/i, '')}-${preset}.webp`;
+function variantKey(key: string, preset: PresetName): string {
+  return `${key.replace(/\.[a-z0-9]+$/i, '')}${presetSuffix(preset)}`;
 }

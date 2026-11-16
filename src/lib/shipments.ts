@@ -19,12 +19,15 @@ import { env } from 'cloudflare:workers';
 import type { ParsedLine } from './shipment-parse';
 import { foldArabic, likeNeedle } from './like';
 import { STUCK_AFTER } from './shipment-notify';
+import { freeSlug, isSlug, slugify } from './slug';
 
 export type ShipmentStatus = 'draft' | 'open' | 'arrived' | 'closed';
 
 export interface Shipment {
   id: number;
   title: string;
+  /** Its address, from the title. Null only until `ensureShipmentSlugs` runs. */
+  slug: string | null;
   note: string | null;
   status: ShipmentStatus;
   incoming_vague: string | null;
@@ -33,6 +36,9 @@ export interface Shipment {
   opened_at: number | null;
   arrived_at: number | null;
   delivery_version: number;
+  /** The picture a shared link shows, and what it was drawn from. */
+  card_key: string | null;
+  card_sig: string | null;
   /** How many books are on it, and how many copies are spoken for. */
   items: number;
   copies: number;
@@ -131,6 +137,58 @@ export async function getShipment(id: number): Promise<Shipment | null> {
     .bind(id)
     .first<Shipment>();
 }
+
+export async function getShipmentBySlug(slug: string): Promise<Shipment | null> {
+  if (!isSlug(slug)) return null;
+  return env.DB.prepare(`SELECT s.*, ${COUNTS} FROM shipments s WHERE s.slug = ?`)
+    .bind(slug)
+    .first<Shipment>();
+}
+
+// ---------------------------------------------------------------------------
+// The address
+// ---------------------------------------------------------------------------
+
+/**
+ * "Pakistan Shipment First Batch November 2026" → "pakistan-first-batch-november-2026".
+ *
+ * The word "shipment" is dropped because the address already says it.
+ */
+export const suggestShipmentSlug = (title: string): string =>
+  slugify(title.replace(/\bshipments?\b/gi, ' ').replace(/\//g, ' '));
+
+/** A free address for this shipment, made from `title` unless one is given. */
+export async function freeShipmentSlug(id: number, wanted: string): Promise<string> {
+  return freeSlug(slugify(wanted), `shipment-${id}`, async (candidate) =>
+    Boolean(
+      await env.DB.prepare('SELECT 1 FROM shipments WHERE slug = ? AND id != ?')
+        .bind(candidate, id)
+        .first(),
+    ),
+  );
+}
+
+/**
+ * Gives every shipment that has no address one.
+ *
+ * Shipments made before addresses existed have a NULL slug, and SQL cannot
+ * fold "Ḥ" to "h", so the migration leaves them for this. It costs one small
+ * read when there is nothing to do, and a write per shipment exactly once.
+ */
+export async function ensureShipmentSlugs(): Promise<void> {
+  const { results } = await env.DB.prepare('SELECT id, title FROM shipments WHERE slug IS NULL')
+    .all<{ id: number; title: string }>();
+  for (const row of results) {
+    const slug = await freeShipmentSlug(row.id, suggestShipmentSlug(row.title));
+    await env.DB.prepare('UPDATE shipments SET slug = ? WHERE id = ? AND slug IS NULL')
+      .bind(slug, row.id)
+      .run();
+  }
+}
+
+/** Where a shipment lives on the public site. */
+export const shipmentPath = (s: { id: number; slug: string | null }): string =>
+  `/shipments/${s.slug ?? s.id}`;
 
 /**
  * The books on a shipment as a customer sees them, with what is left to claim.
@@ -302,7 +360,10 @@ export async function createShipment(fields: {
   )
     .bind(fields.title, fields.note, fields.vague, fields.month)
     .first<{ id: number }>();
-  return row!.id;
+  const id = row!.id;
+  const slug = await freeShipmentSlug(id, suggestShipmentSlug(fields.title));
+  await env.DB.prepare('UPDATE shipments SET slug = ? WHERE id = ?').bind(slug, id).run();
+  return id;
 }
 
 /**
