@@ -151,7 +151,7 @@ export function drawCard(canvas: HTMLCanvasElement, facts: Omit<CardFacts, 'id' 
   ctx.fillText('As-Subkī Books', W - 64, cy - 20);
   ctx.fillStyle = WASH;
   ctx.font = `400 22px ${BODY}`;
-  wrap(ctx, arrived ? 'See what came in' : 'Reserve before they land', 220, 2).forEach((line, i) =>
+  wrap(ctx, arrived ? 'See what came in' : 'Reserve before they land', 270, 2).forEach((line, i) =>
     ctx.fillText(line, W - 64, cy + 20 + i * 30),
   );
 }
