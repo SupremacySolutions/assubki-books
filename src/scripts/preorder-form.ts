@@ -88,3 +88,86 @@ export function submitPreorderForm(): void {
     preview.hidden = false;
   });
 }
+
+/**
+ * A saved pre-order's photos: added several at a time, removed one at a time,
+ * each saved as it happens.
+ *
+ * Every photo goes through the same review and cutting as the cover above -
+ * straightened by the owner, then sent with its sized versions - one after
+ * another, so a refused photo does not stop the ones after it. The page is
+ * reloaded at the end to show them in the grid, where they can be put in
+ * order (src/scripts/photo-order.ts).
+ */
+export function wirePreorderPhotos(): void {
+  const input = document.querySelector<HTMLInputElement>('#morePhotos');
+  const status = document.querySelector<HTMLElement>('#morePhotosStatus');
+  const say = (text: string) => {
+    if (status) status.textContent = text;
+  };
+
+  input?.addEventListener('change', async () => {
+    const endpoint = input.dataset.endpoint;
+    const room = Number(input.dataset.room ?? 0);
+    const chosen = [...(input.files ?? [])];
+    input.value = '';
+    if (!endpoint || !chosen.length) return;
+
+    const files = chosen.slice(0, room);
+    const clean = (window as unknown as { coverClean?: CoverClean }).coverClean;
+    let added = 0;
+    const problems: string[] = [];
+
+    for (const [i, file] of files.entries()) {
+      say(`Photo ${i + 1} of ${files.length}…`);
+      const reviewed = clean ? await clean.review(file) : file;
+      if (!reviewed) continue; // Refused in the review: not sent.
+      const dressed = clean ? await clean.dress(reviewed) : null;
+
+      const body = new FormData();
+      body.append('photo', dressed?.variants.size ? dressed.master : reviewed);
+      if (dressed?.width && dressed.height) {
+        body.append('width', String(dressed.width));
+        body.append('height', String(dressed.height));
+      }
+      for (const [name, variant] of dressed?.variants ?? []) body.append(`variant:${name}`, variant);
+
+      try {
+        const res = await fetch(endpoint, { method: 'POST', body });
+        const reply = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(reply.error || `Could not save ${file.name}.`);
+        added++;
+      } catch (err) {
+        problems.push(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    if (chosen.length > room) problems.push(`Only ${room} more could be added; the rest were left out.`);
+    if (added) {
+      say(problems.length ? `${added} added. ${problems.join(' ')} Reloading…` : `${added} added. Reloading…`);
+      window.location.reload();
+    } else {
+      say(problems.join(' ') || 'No photos were added.');
+    }
+  });
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-remove-photo]')) {
+    button.addEventListener('click', async () => {
+      const grid = button.closest<HTMLElement>('[data-order-endpoint]');
+      const endpoint = grid?.dataset.orderEndpoint?.replace(/\/photos$/, '/photo-delete');
+      if (!endpoint || !confirm('Remove this photo?')) return;
+      button.disabled = true;
+      const body = new FormData();
+      body.append('photo', button.dataset.removePhoto ?? '');
+      const res = await fetch(endpoint, { method: 'POST', body }).catch(() => null);
+      if (res?.ok) {
+        window.location.reload();
+        return;
+      }
+      button.disabled = false;
+      const reply = (await res?.json().catch(() => ({}))) as { error?: string } | undefined;
+      const out = document.querySelector<HTMLElement>('#photoOrderStatus');
+      if (out) out.textContent = reply?.error ?? 'That photo could not be removed. Try again.';
+    });
+  }
+}

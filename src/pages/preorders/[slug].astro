@@ -1,0 +1,248 @@
+---
+import Base from '../../layouts/Base.astro';
+import Rosette from '../../components/Rosette.astro';
+import PreorderForm from '../../components/PreorderForm.astro';
+import {
+  ensurePreorderSlugs,
+  getPreorder,
+  preorderPath,
+  preorderPhotos,
+  publicPreorderBySlug,
+  INTEREST_WORDS,
+  type InterestResult,
+} from '../../lib/preorders';
+import { imageUrl, price, stripTags, truncate } from '../../lib/format';
+import { IMAGE_PRESETS, SHARE_SIZE } from '../../lib/image-presets';
+import { fillsTheBox } from '../../lib/cover-fit';
+
+/*
+ * One pre-order: every photo, the whole description, and the form.
+ *
+ * It exists so one book can be shared on its own. A link to the list unfurled
+ * as the shop's card and opened on five books; this one unfurls as the cover
+ * and opens on it.
+ *
+ * A number is how a link made before addresses existed arrives (the channel
+ * posts pointed at `/preorders#p8`, which still works on the list, but a
+ * number may be typed). It is looked up and sent on with a 301.
+ */
+const param = Astro.params.slug ?? '';
+if (/^\d+$/.test(param)) {
+  let byId = await getPreorder(Number(param));
+  if (byId && !byId.slug) {
+    await ensurePreorderSlugs();
+    byId = await getPreorder(Number(param));
+  }
+  if (!byId?.slug || byId.status === 'draft') return Astro.rewrite('/404');
+  return Astro.redirect(`${preorderPath(byId)}${Astro.url.search}`, 301);
+}
+const p = await publicPreorderBySlug(param);
+if (!p) return Astro.rewrite('/404');
+
+const open = p.status === 'open';
+const photos = await preorderPhotos(p.id);
+const native = p.title_ar || p.title_ur;
+const cover = photos[0] ?? null;
+const shareImage = imageUrl(cover?.image_key, 'share');
+
+const result = Astro.url.searchParams.get('r') as InterestResult | null;
+const answer = result && result in INTEREST_WORDS ? INTEREST_WORDS[result] : null;
+const good = result === 'added' || result === 'updated';
+
+/* What a shared link says under the title: the price and the ask first. */
+const description = truncate(
+  [
+    open
+      ? `Pre-order${p.price_pence !== null ? ` · expected ${price(p.price_pence)}` : ''} · register interest, nothing to pay`
+      : 'Pre-orders for this book are closed',
+    stripTags(p.description_html),
+  ]
+    .filter(Boolean)
+    .join(' - '),
+  160,
+);
+---
+
+<Base
+  title={`${p.title} - pre-order`}
+  description={description}
+  image={shareImage}
+  imageSize={shareImage ? SHARE_SIZE : null}
+>
+  <div class="py-8 md:py-10">
+    <nav aria-label="Breadcrumb" class="text-[13.5px] text-[var(--color-ink-faint)] mb-6">
+      <a href="/" class="hover:text-[var(--color-navy)]">Home</a>
+      <span class="mx-1.5">/</span>
+      <a href="/preorders" class="hover:text-[var(--color-navy)]">Pre-order</a>
+    </nav>
+
+    <div class="grid gap-8 md:grid-cols-[minmax(0,380px)_1fr] md:gap-12 lg:gap-16">
+      <section aria-label="Photos">
+        <div class="relative bg-white rounded-[var(--radius-card)] shadow-[var(--shadow-cover-detail),inset_5px_0_0_rgba(14,42,85,0.12)] aspect-[5/7] grid place-items-center overflow-hidden">
+          {cover ? (
+            <img
+              id="cover"
+              src={imageUrl(cover.image_key, 'detail')}
+              alt={p.title}
+              width={IMAGE_PRESETS.detail.width}
+              height={IMAGE_PRESETS.detail.height}
+              class:list={['absolute inset-0 h-full w-full', fillsTheBox(cover.width, cover.height) ? 'object-cover' : 'object-contain p-4']}
+              fetchpriority="high"
+            />
+          ) : (
+            <div class="grid place-items-center text-[var(--color-wash)]">
+              <Rosette size={96} />
+            </div>
+          )}
+          {photos.length > 1 && (
+            <span id="photoCount" class="absolute right-3 bottom-3 rounded-[var(--radius-pill)] bg-[rgba(14,42,85,.82)] px-2.5 py-1 text-[12.5px] font-medium text-white tabular-nums">
+              1 of {photos.length}
+            </span>
+          )}
+        </div>
+
+        {photos.length > 1 && (
+          <ul class="mt-3 grid grid-cols-[repeat(auto-fill,minmax(52px,1fr))] gap-2.5">
+            {photos.map((photo, i) => (
+              <li>
+                <button
+                  type="button"
+                  class="thumb relative overflow-hidden w-full aspect-[5/7] min-h-[44px] bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-card)] grid place-items-center hover:border-[var(--color-navy)] transition-colors aria-pressed:border-[var(--color-navy)] aria-pressed:ring-2 aria-pressed:ring-[var(--color-navy)]"
+                  data-src={imageUrl(photo.image_key, 'detail')}
+                  data-fit={fillsTheBox(photo.width, photo.height) ? 'cover' : 'contain'}
+                  data-index={i + 1}
+                  aria-pressed={i === 0 ? 'true' : 'false'}
+                >
+                  <img src={imageUrl(photo.image_key, 'thumb')} alt="" class="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+                  <span class="sr-only">Show photo {i + 1} of {photos.length}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section class="min-w-0">
+        <div class="flex flex-wrap gap-2">
+          <span class="text-[12.5px] font-semibold px-2.5 py-1 rounded-[var(--radius-pill)] bg-[#f6efdc] text-[#6d5210]">
+            {open ? 'Pre-order · not yet ordered' : 'Pre-orders closed'}
+          </span>
+          {p.volumes && p.volumes > 1 && (
+            <span class="text-[12.5px] font-semibold px-2.5 py-1 rounded-[var(--radius-pill)] bg-[var(--color-paper)] text-[var(--color-ink-soft)]">
+              {p.volumes} volume set
+            </span>
+          )}
+        </div>
+        <h1 class="mt-3 text-[30px] sm:text-[36px] leading-tight">{p.title}</h1>
+        {native && (
+          <p class="ar mt-2 text-[22px] text-[var(--color-ink-soft)]" dir="rtl" lang={p.title_ar ? 'ar' : 'ur'}>{native}</p>
+        )}
+        {(p.author || p.publisher) && (
+          <p class="mt-2 text-[15px] text-[var(--color-ink-soft)]">
+            {[p.author, p.publisher].filter(Boolean).join(' · ')}
+          </p>
+        )}
+
+        <p class="mt-5 py-4 border-y border-[var(--color-rule-soft)] flex flex-wrap items-baseline gap-x-3">
+          {p.price_pence !== null ? (
+            <>
+              <span class="price text-[32px] leading-none" data-gbp={p.price_pence}>{price(p.price_pence)}</span>
+              <span class="text-[15px] text-[var(--color-ink-soft)]">expected price</span>
+            </>
+          ) : (
+            <span class="text-[17px] font-medium">Price to be confirmed</span>
+          )}
+        </p>
+
+        <div id="register" class="scroll-mt-28">
+          {open ? (
+            <>
+              <p data-registering hidden class="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-[var(--color-ink-soft)]">
+                <span>Registering as <strong data-registering-who class="font-semibold text-[var(--color-ink)]"></strong></span>
+                <button type="button" data-not-me class="text-[var(--color-navy)] underline underline-offset-2 min-h-[32px]">Not you?</button>
+              </p>
+              <PreorderForm id={p.id} fromPage answer={answer} good={good} />
+            </>
+          ) : (
+            <p class="mt-5 text-[15px] text-[var(--color-ink-soft)] leading-relaxed">
+              We are no longer taking interest in this book. If we bring it in, everybody who
+              registered hears first; after that it goes into
+              {' '}<a href="/catalogue" class="underline">the catalogue</a>.
+            </p>
+          )}
+        </div>
+
+        <div class="mt-5 flex flex-wrap gap-2.5">
+          <button
+            type="button"
+            data-share
+            data-title={p.title}
+            class="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-[var(--radius-pill)] border border-[var(--color-rule)] bg-white text-[14px] hover:border-[var(--color-navy)]"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13" /></svg>
+            <span data-share-label>Share this book</span>
+          </button>
+        </div>
+
+        {p.description_html && (
+          <div class="mt-8">
+            <h2 class="text-[22px]">About this book</h2>
+            <div class="prose-book mt-3" set:html={p.description_html} />
+          </div>
+        )}
+
+        <p class="mt-8 text-[13.5px] text-[var(--color-ink-faint)]">
+          <a href="/preorders" class="underline underline-offset-2">← Every book open for pre-order</a>
+        </p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    import '../../scripts/preorder-memory.ts';
+
+    const cover = document.querySelector<HTMLImageElement>('#cover');
+    const count = document.querySelector<HTMLElement>('#photoCount');
+    const thumbs = [...document.querySelectorAll<HTMLButtonElement>('.thumb')];
+    for (const thumb of thumbs) {
+      thumb.addEventListener('click', () => {
+        const src = thumb.dataset.src;
+        if (!src || !cover) return;
+        cover.src = src;
+        // Follow the photo, not the one that happened to be first.
+        const fits = thumb.dataset.fit === 'cover';
+        cover.classList.toggle('object-cover', fits);
+        cover.classList.toggle('object-contain', !fits);
+        cover.classList.toggle('p-4', !fits);
+        for (const t of thumbs) t.setAttribute('aria-pressed', 'false');
+        thumb.setAttribute('aria-pressed', 'true');
+        if (count) count.textContent = `${thumb.dataset.index} of ${thumbs.length}`;
+      });
+    }
+
+    /*
+     * Sharing. The phone's own share sheet where there is one - WhatsApp and
+     * Telegram are in it - and otherwise the link copied, with the button
+     * saying so.
+     */
+    const share = document.querySelector<HTMLButtonElement>('[data-share]');
+    const label = share?.querySelector<HTMLElement>('[data-share-label]');
+    share?.addEventListener('click', async () => {
+      const url = window.location.origin + window.location.pathname;
+      if (navigator.share) {
+        // Dismissing the sheet rejects; either way there is nothing more to do.
+        await navigator.share({ title: share.dataset.title, url }).catch(() => undefined);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        if (label) label.textContent = 'Link copied';
+        setTimeout(() => {
+          if (label) label.textContent = 'Share this book';
+        }, 2000);
+      } catch {
+        if (label) label.textContent = url;
+      }
+    });
+  </script>
+</Base>

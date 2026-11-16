@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { isPreset, IMAGE_PRESETS } from '../../../lib/image-presets';
+import { isPreset, IMAGE_PRESETS, presetSuffix, presetType, type PresetName } from '../../../lib/image-presets';
 import { readForm } from '../../../lib/request-body';
 import { forgetHomeRows } from '../../../lib/db';
 import { forgetDashboard } from '../../../lib/dashboard';
@@ -88,10 +88,10 @@ export const POST: APIRoute = async ({ request }) => {
     [...form.entries()].map(async ([field, value]) => {
       if (!field.startsWith('variant:') || !(value instanceof File)) return;
       const preset = field.slice('variant:'.length);
-      if (!isPreset(preset) || value.type !== 'image/webp' || value.size > MAX_BYTES) return;
+      if (!isPreset(preset) || value.type !== presetType(preset) || value.size > MAX_BYTES) return;
       await bucket
-        .put(`${stem}-${preset}.webp`, value.stream(), {
-          httpMetadata: { contentType: 'image/webp', cacheControl: immutable },
+        .put(`${stem}${presetSuffix(preset)}`, value.stream(), {
+          httpMetadata: { contentType: presetType(preset), cacheControl: immutable },
         })
         .catch(() => undefined);
     }),
@@ -152,7 +152,7 @@ export const DELETE: APIRoute = async ({ request }) => {
     const stem = image.image_key.replace(/\.[a-z0-9]+$/i, '');
     const keys = [
       image.image_key,
-      ...Object.keys(IMAGE_PRESETS).map((preset) => `${stem}-${preset}.webp`),
+      ...(Object.keys(IMAGE_PRESETS) as PresetName[]).map((preset) => `${stem}${presetSuffix(preset)}`),
     ];
     await bucket.delete(keys).catch((err) => console.error('[upload] R2 delete failed', err));
   }

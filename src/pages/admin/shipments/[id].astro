@@ -1,20 +1,28 @@
 ---
 import Admin from '../../../layouts/Admin.astro';
 import PoundInput from '../../../components/PoundInput.astro';
-import { isArabicScript } from '../../../lib/format';
+import { imageUrl, isArabicScript } from '../../../lib/format';
 import { env } from 'cloudflare:workers';
 import {
   ADMIN_SHIPMENT_PAGE,
   adminShipmentPage,
   asFilter,
+  ensureShipmentSlugs,
   getShipment,
+  shipmentPath,
+  suggestShipmentSlug,
 } from '../../../lib/shipments';
 import { pendingNotices, stuckNotices } from '../../../lib/shipment-notify';
 import { VAGUE, monthOptions, whenText } from '../../../lib/incoming';
 
 const id = Number.parseInt(Astro.params.id ?? '', 10);
-const shipment = Number.isInteger(id) ? await getShipment(id) : null;
+let shipment = Number.isInteger(id) ? await getShipment(id) : null;
 if (!shipment) return Astro.rewrite('/404');
+/* Made before shipments had addresses. Filled once, here or on the shop. */
+if (!shipment.slug) {
+  await ensureShipmentSlugs();
+  shipment = (await getShipment(id)) ?? shipment;
+}
 
 const params = Astro.url.searchParams;
 const added = Number(params.get('added') ?? 0);
@@ -129,6 +137,20 @@ if (shipment.incoming_month && !months.some((m) => m.value === shipment.incoming
 }
 
 const when = whenText(shipment.incoming_vague, shipment.incoming_month, { year: true });
+
+/*
+ * What the link picture should say, and a signature of it. When the stored
+ * card was drawn from something else - renamed, re-dated, rows added - the
+ * script on this page draws it again. Only once customers can see the page.
+ */
+const cardWhen =
+  shipment.status === 'arrived' && shipment.arrived_at
+    ? `Arrived ${new Date(shipment.arrived_at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`
+    : when
+      ? `Arriving ${when}`
+      : '';
+const cardSig = `${shipment.title}|${cardWhen}|${shipment.items}`;
+const showCard = shipment.status === 'open' || shipment.status === 'arrived';
 const openedOn = shipment.opened_at
   ? new Date(shipment.opened_at * 1000).toLocaleDateString('en-GB', {
       day: 'numeric',
@@ -418,7 +440,7 @@ const EDIT_COLS =
             {when ? `Expected ${when}` : 'No expected date yet'}
             {openedOn && ` · opened ${openedOn}`}
             {' · '}
-            <a href={`/shipments/${id}`} class="text-[var(--color-navy)] underline underline-offset-2">
+            <a href={shipmentPath(shipment)} class="text-[var(--color-navy)] underline underline-offset-2">
               customer page
             </a>
           </p>
@@ -499,6 +521,34 @@ const EDIT_COLS =
         </dl>
       </div>
 
+      {showCard && (
+        <div
+          data-shipment-card
+          data-id={id}
+          data-sig={cardSig}
+          data-stored={shipment.card_sig ?? ''}
+          data-title={shipment.title}
+          data-when={cardWhen}
+          data-items={shipment.items}
+          class="mt-5 pt-4 border-t border-[var(--color-rule-faint)] flex flex-wrap items-center gap-4"
+        >
+          <img
+            data-card-preview
+            src={imageUrl(shipment.card_key) ?? ''}
+            hidden={!shipment.card_key}
+            alt="The picture this shipment's link shows"
+            width="240"
+            height="126"
+            class="w-[240px] h-[126px] rounded-[var(--radius-card)] border border-[var(--color-rule-soft)] object-cover"
+          />
+          <p class="text-[13px] text-[var(--color-ink-soft)] max-w-[40ch]">
+            <span class="font-medium text-[var(--color-ink)]">Link picture.</span>
+            {' '}What WhatsApp and Telegram show when this shipment's link is shared. It redraws itself when the name, date or number of titles changes.
+            <span data-card-status class="block mt-1 text-[var(--color-ink-faint)]" role="status"></span>
+          </p>
+        </div>
+      )}
+
       {showDetails && (
         <form
           method="post"
@@ -525,6 +575,37 @@ const EDIT_COLS =
                 <option value={m.value} selected={shipment.incoming_month === m.value}>{m.label}</option>
               ))}
             </select>
+          </div>
+          {/*
+            * The address. Free to change while nobody outside the portal has
+            * seen it; fixed from the moment it opens, because by then the link
+            * is in the channel and in people's chats.
+            */}
+          <div class="sm:col-span-3">
+            <label for="s_slug" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">Address</label>
+            {isDraft ? (
+              <div class="flex items-center gap-0 rounded-[var(--radius-field)] border border-[var(--color-rule)] bg-white focus-within:border-[var(--color-navy)]">
+                <span class="pl-3 text-[14px] text-[var(--color-ink-faint)] whitespace-nowrap">/shipments/</span>
+                <input
+                  id="s_slug"
+                  name="slug"
+                  value={shipment.slug ?? suggestShipmentSlug(shipment.title)}
+                  maxlength="70"
+                  pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                  class="field !border-0 !pl-0.5 !text-[14px] flex-1 min-w-0"
+                  aria-describedby="s_slug_hint"
+                />
+              </div>
+            ) : (
+              <p id="s_slug" class="text-[14px] text-[var(--color-ink-soft)] py-2">
+                assubkibooks.co.uk{shipmentPath(shipment)}
+              </p>
+            )}
+            <p id="s_slug_hint" class="mt-1 text-[12px] text-[var(--color-ink-faint)]">
+              {isDraft
+                ? 'Lowercase words joined by hyphens - say where it is from and when. Fixed once the shipment opens.'
+                : 'Fixed now the shipment is open, so links already shared keep working.'}
+            </p>
           </div>
           <div class="sm:col-span-3">
             <label for="s_note" class="block text-[12px] text-[var(--color-ink-faint)] mb-1">
@@ -1126,5 +1207,8 @@ const EDIT_COLS =
         if (document.visibilityState === 'visible') void check();
       });
     }
+  </script>
+  <script>
+    import '../../../scripts/shipment-card.ts';
   </script>
 </Admin>

@@ -1,6 +1,6 @@
 ---
 import Base from '../../layouts/Base.astro';
-import { publicShipments } from '../../lib/shipments';
+import { publicShipments, shipmentPath } from '../../lib/shipments';
 import { whenText } from '../../lib/incoming';
 
 /*
@@ -64,7 +64,7 @@ const when = (s: {
         return (
           <li>
             <a
-              href={`/shipments/${s.id}`}
+              href={shipmentPath(s)}
               class="block bg-white border border-[var(--color-rule)] rounded-[var(--radius-panel)] p-5 hover:border-[var(--color-navy)] transition-colors"
             >
               <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">

@@ -179,7 +179,7 @@ const marks = (book.cat_slugs ?? '')
         off mid-figure - "£45.0" - which reads as a different number rather than
         as a truncation. */}
     <span class="flex items-baseline gap-x-2 gap-y-0.5 flex-wrap min-w-0">
-      <span class="price text-[16.5px]">{price(nowPence)}</span>
+      <span class="price text-[16.5px]" data-gbp={nowPence}>{price(nowPence)}</span>
       {off > 0 && (
         <span class="text-[13.5px] text-[var(--color-ink-faint)] line-through decoration-1">
           {price(book.price_pence)}

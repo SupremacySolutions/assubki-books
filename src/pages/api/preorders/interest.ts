@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { env } from 'cloudflare:workers';
 import { registerInterest } from '../../../lib/preorders';
 import { readForm } from '../../../lib/request-body';
 import { takePublicAction } from '../../../lib/public-throttle';
@@ -12,16 +13,30 @@ export const prerender = false;
  * it works with scripting off and the words live in one place - the page.
  *
  * The return path is built here from the pre-order's id and never read from
- * the form, so there is nothing to point somewhere else.
+ * the form, so there is nothing to point somewhere else. A form on the
+ * pre-order's own page says only `from=page`, and is sent back to that page by
+ * the slug read here - not by any address it supplied.
  */
 export const POST: APIRoute = async ({ request }) => {
   const form = await readForm(request);
   if (!form) return new Response('Bad request', { status: 400 });
 
   const id = Number.parseInt(String(form.get('preorderId') ?? ''), 10);
-  const answer = (result: string) => {
+  const fromPage = form.get('from') === 'page';
+  const answer = async (result: string) => {
     const where = new URLSearchParams({ r: result });
     if (Number.isInteger(id) && id > 0) where.set('p', String(id));
+    if (fromPage && Number.isInteger(id) && id > 0) {
+      const row = await env.DB.prepare('SELECT slug FROM preorders WHERE id = ?')
+        .bind(id)
+        .first<{ slug: string | null }>();
+      if (row?.slug) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/preorders/${row.slug}?${where}#register` },
+        });
+      }
+    }
     const anchor = Number.isInteger(id) && id > 0 ? `#p${id}` : '';
     return new Response(null, {
       status: 302,

@@ -2,7 +2,7 @@
 import Admin from '../../../layouts/Admin.astro';
 import PoundInput from '../../../components/PoundInput.astro';
 import CoverReview from '../../../components/CoverReview.astro';
-import { getPreorder, interestFor, KEEP_DAYS_AFTER_CLOSE } from '../../../lib/preorders';
+import { getPreorder, interestFor, KEEP_DAYS_AFTER_CLOSE, MAX_PHOTOS, preorderPath, preorderPhotos } from '../../../lib/preorders';
 import { publisherSpellings } from '../../../lib/db';
 import { imageUrl, htmlToPlainText } from '../../../lib/format';
 import { botConfigured } from '../../../lib/telegram';
@@ -22,6 +22,7 @@ if (!isNew && !p) return Astro.rewrite('/404');
 const interest = p ? await interestFor(p.id) : [];
 const publishers = await publisherSpellings();
 const cover = imageUrl(p?.image_key, 'card');
+const photos = p ? await preorderPhotos(p.id) : [];
 
 /*
  * What the channel post will say, shown before it is sent.
@@ -48,6 +49,7 @@ const PHOTO: Record<string, string> = {
   storage: 'Saved, but photo storage is not configured, so the cover was not kept.',
   size: 'Saved, but that photo is larger than 8 MB, so the cover was not kept.',
   type: 'Saved, but the cover has to be a JPEG, PNG or WebP.',
+  full: `Saved, but a pre-order can have ${MAX_PHOTOS} photos, so that one was not added.`,
 };
 const TELEGRAM: Record<string, { ok: boolean; text: string }> = {
   posted: { ok: true, text: 'Posted to the Telegram channel.' },
@@ -272,43 +274,138 @@ const mailNote = MAIL[q.get('mail') ?? ''];
     </section>
 
     <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
-      <h2 class="eyebrow mb-3">Cover</h2>
-      <div class="flex flex-wrap items-start gap-5">
-        <div class="w-[120px] aspect-[5/7] overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-wash-soft)] grid place-items-center">
-          {cover ? (
-            <img id="coverPreview" src={cover} alt="" class="w-full h-full object-cover" />
+      <h2 class="eyebrow mb-3">Photos</h2>
+      {p ? (
+        /*
+         * A saved pre-order's photos are managed here, each saved as it is
+         * added, removed or moved - the same as a listing's, and with the same
+         * grid. None of these controls belongs to the form around them: the
+         * file input has no name, and the buttons are not submit buttons.
+         */
+        <div class="grid gap-3">
+          {photos.length > 1 && (
+            <p class="text-[13px] text-[var(--color-ink-faint)] leading-relaxed">
+              Drag the photos into the order you want - on a phone, hold one for a moment, then
+              drag. The first is the cover.
+            </p>
+          )}
+          {photos.length > 0 && (
+            <ul
+              id="preorderPhotos"
+              data-photo-order
+              data-order-endpoint={`/api/admin/preorders/${p.id}/photos`}
+              data-columns="4"
+              class="relative grid grid-cols-4 gap-2 max-w-[28rem]"
+              aria-label="Photos, cover first"
+            >
+              {photos.map((photo, i) => (
+                <li
+                  class:list={['relative rounded-[2px] outline-offset-2 select-none [-webkit-touch-callout:none]', photos.length > 1 && 'cursor-grab']}
+                  data-photo-id={photo.id}
+                  tabindex={photos.length > 1 ? 0 : undefined}
+                  aria-label={`Photo ${i + 1} of ${photos.length}${i === 0 ? ', the cover' : ''}`}
+                >
+                  <div class="aspect-[5/7] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[2px] grid place-items-center overflow-hidden">
+                    <img
+                      src={imageUrl(photo.image_key, 'thumb')}
+                      alt=""
+                      draggable="false"
+                      class:list={[i === 0 ? 'h-full w-full object-cover' : 'max-h-full max-w-full object-contain']}
+                    />
+                  </div>
+                  <span
+                    data-cover-badge
+                    hidden={i !== 0}
+                    class="absolute left-1 bottom-1 px-1.5 py-0.5 rounded-[var(--radius-pill)] bg-[var(--color-navy)] text-white text-[10.5px] font-semibold tracking-[0.06em] uppercase pointer-events-none"
+                  >
+                    Cover
+                  </span>
+                  <button
+                    type="button"
+                    data-make-cover
+                    hidden={i === 0}
+                    class="absolute left-1 bottom-1 px-1.5 py-0.5 rounded-[var(--radius-pill)] bg-white/95 border border-[var(--color-rule)] text-[var(--color-navy)] text-[11px] font-medium hover:border-[var(--color-navy)]"
+                  >
+                    Make cover
+                  </button>
+                  <button
+                    type="button"
+                    data-remove-photo={photo.id}
+                    class="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-[var(--color-outstock)] text-white text-[13px] leading-none grid place-items-center"
+                    aria-label={`Remove photo ${i + 1}`}
+                    title="Remove this photo"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p id="photoOrderStatus" role="status" class="text-[13px] text-[var(--color-ink-soft)] empty:hidden"></p>
+          {photos.length < MAX_PHOTOS ? (
+            <div class="grid gap-1.5">
+              <input
+                id="morePhotos"
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp"
+                class="sr-only peer"
+                data-endpoint={`/api/admin/preorders/${p.id}/photo-add`}
+                data-room={MAX_PHOTOS - photos.length}
+              />
+              <label
+                for="morePhotos"
+                class="inline-flex w-fit cursor-pointer items-center gap-2 rounded-[var(--radius-field)] border border-[var(--color-rule-soft)] bg-white px-3.5 py-2 text-[14px] font-medium text-[var(--color-navy)] transition-colors hover:border-[var(--color-navy)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-navy)]"
+              >
+                {photos.length ? 'Add more photos' : 'Add photos'}
+              </label>
+              <p id="morePhotosStatus" class="text-[13px] text-[var(--color-ink-faint)]" role="status">
+                Up to {MAX_PHOTOS} - the set, the spines, a page inside. JPEG, PNG or WebP, up to 8 MB
+                each. Each is saved as soon as you have checked it.
+              </p>
+            </div>
           ) : (
+            <p class="text-[13px] text-[var(--color-ink-faint)]">
+              {MAX_PHOTOS} photos is the most a pre-order can have. Remove one to add another.
+            </p>
+          )}
+          {p.slug && p.status === 'open' && (
+            <p class="text-[13px] text-[var(--color-ink-soft)]">
+              Its page:{' '}
+              <a href={preorderPath(p)} class="text-[var(--color-navy)] underline underline-offset-2">
+                assubkibooks.co.uk{preorderPath(p)}
+              </a>
+            </p>
+          )}
+        </div>
+      ) : (
+        <div class="flex flex-wrap items-start gap-5">
+          <div class="w-[120px] aspect-[5/7] overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-wash-soft)] grid place-items-center">
             <img id="coverPreview" alt="" class="w-full h-full object-cover" hidden />
-          )}
-        </div>
-        <div class="min-w-0 flex-1 grid gap-2">
-          <label for="photo" class="block text-[14.5px] font-medium">
-            {cover ? 'Replace the cover' : 'Add a cover'}{' '}
-            <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
-          </label>
-          {/* A labelled button rather than a bare file input, so it reads as
-              something to press - the same affordance the listing editor
-              gives. The input itself is what the form posts, and is only
-              visually hidden so the keyboard still reaches it. */}
-          <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only peer" />
-          <label
-            for="photo"
-            class="inline-flex w-fit cursor-pointer items-center gap-2 rounded-[var(--radius-field)] border border-[var(--color-rule-soft)] bg-white px-3.5 py-2 text-[14px] font-medium text-[var(--color-navy)] transition-colors hover:border-[var(--color-navy)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-navy)]"
-          >
-            {cover ? 'Choose a different photo' : 'Upload a photo'}
-          </label>
-          <span id="photoName" class="text-[13px] text-[var(--color-ink-faint)]" aria-live="polite"></span>
-          <p id="coverStatus" class="text-[13px] text-[var(--color-ink-faint)]">
-            JPEG, PNG or WebP, up to 8 MB. You can straighten it before it is saved.
-          </p>
-          {cover && (
-            <label class="inline-flex items-center gap-2 text-[14px]">
-              <input type="checkbox" name="remove_cover" value="1" />
-              Remove the cover
+          </div>
+          <div class="min-w-0 flex-1 grid gap-2">
+            <label for="photo" class="block text-[14.5px] font-medium">
+              Add a cover <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span>
             </label>
-          )}
+            {/* A labelled button rather than a bare file input, so it reads as
+                something to press - the same affordance the listing editor
+                gives. The input itself is what the form posts, and is only
+                visually hidden so the keyboard still reaches it. */}
+            <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only peer" />
+            <label
+              for="photo"
+              class="inline-flex w-fit cursor-pointer items-center gap-2 rounded-[var(--radius-field)] border border-[var(--color-rule-soft)] bg-white px-3.5 py-2 text-[14px] font-medium text-[var(--color-navy)] transition-colors hover:border-[var(--color-navy)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-navy)]"
+            >
+              Upload a photo
+            </label>
+            <span id="photoName" class="text-[13px] text-[var(--color-ink-faint)]" aria-live="polite"></span>
+            <p id="coverStatus" class="text-[13px] text-[var(--color-ink-faint)]">
+              JPEG, PNG or WebP, up to 8 MB. You can straighten it before it is saved, and add more
+              photos once the pre-order is saved.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
     </section>
 
     <section class="bg-white border border-[var(--color-rule-soft)] rounded-[var(--radius-panel)] p-5">
@@ -572,9 +669,11 @@ const mailNote = MAIL[q.get('mail') ?? ''];
 
   <script>
     import { mountCoverReview } from '../../../scripts/cover-review.ts';
-    import { submitPreorderForm } from '../../../scripts/preorder-form.ts';
+    import { submitPreorderForm, wirePreorderPhotos } from '../../../scripts/preorder-form.ts';
+    import '../../../scripts/photo-order.ts';
 
     mountCoverReview();
     submitPreorderForm();
+    wirePreorderPhotos();
   </script>
 </Admin>

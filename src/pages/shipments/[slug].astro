@@ -2,21 +2,44 @@
 import Base from '../../layouts/Base.astro';
 import {
   asPublicFilter,
+  ensureShipmentSlugs,
   getShipment,
+  getShipmentBySlug,
   publicShipmentPage,
   SHIPMENT_PAGE,
+  shipmentPath,
   type PublicFilter,
 } from '../../lib/shipments';
 import { whenText } from '../../lib/incoming';
-import { isArabicScript, price } from '../../lib/format';
+import { imageUrl, isArabicScript, price } from '../../lib/format';
+import { SHARE_SIZE } from '../../lib/image-presets';
 
-const id = Number.parseInt(Astro.params.id ?? '', 10);
-const shipment = Number.isInteger(id) ? await getShipment(id) : null;
+/*
+ * The address is the shipment's slug - where it is from and when.
+ *
+ * A number is how every link made before slugs existed arrives: channel posts,
+ * basket rows, order pages. Those are permanent, so a number is looked up and
+ * sent on to the real address with a 301, query and all, and never served as
+ * a second copy of the page.
+ */
+const param = Astro.params.slug ?? '';
+if (/^\d+$/.test(param)) {
+  let byId = await getShipment(Number(param));
+  if (byId && !byId.slug) {
+    await ensureShipmentSlugs();
+    byId = await getShipment(Number(param));
+  }
+  if (!byId?.slug || !['open', 'arrived'].includes(byId.status)) return Astro.rewrite('/404');
+  return Astro.redirect(`${shipmentPath(byId)}${Astro.url.search}`, 301);
+}
+const shipment = await getShipmentBySlug(param);
 /* Draft and closed shipments are the owner's business, not a customer's. */
 if (!shipment || !['open', 'arrived'].includes(shipment.status)) {
   return Astro.rewrite('/404');
 }
 if (shipment.items === 0) return Astro.rewrite('/404');
+const id = shipment.id;
+const base = shipmentPath(shipment);
 
 /*
  * A shipment is not closed to reservations by its first box.
@@ -70,6 +93,17 @@ const when =
     : whenText(shipment.incoming_vague, shipment.incoming_month, { year: true });
 
 const freeCopies = Math.max(0, shipment.copies - shipment.claimed);
+
+/*
+ * What a shared link says under the title. The title used to carry the date
+ * as well - "… November 2026 - mid-November 2026" - so it lives here instead,
+ * with the count and what to do about it.
+ */
+const description = [
+  open ? (when ? `Arriving ${when}` : 'Arriving soon') : stillComing ? 'Part of it has arrived' : `Arrived ${when}`,
+  `${shipment.items} ${shipment.items === 1 ? 'title' : 'titles'}`,
+  takingReservations ? 'reserve a copy before they land - nothing is paid now' : 'see what came in',
+].join(' · ');
 const first = (at - 1) * SHIPMENT_PAGE + 1;
 const last = Math.min(at * SHIPMENT_PAGE, total);
 
@@ -83,7 +117,7 @@ const href = (over: Record<string, string | number | null>) => {
     else next.set(key, String(value));
   }
   const query = next.toString();
-  return `/shipments/${id}${query ? `?${query}` : ''}`;
+  return `${base}${query ? `?${query}` : ''}`;
 };
 
 const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
@@ -99,8 +133,10 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
 ---
 
 <Base
-  title={`${shipment.title}${when ? ` - ${when}` : ''}`}
-  description={`The ${shipment.items} titles on this shipment, and how to reserve a copy before they land.`}
+  title={shipment.title}
+  description={description}
+  image={shipment.card_key ? imageUrl(shipment.card_key) : null}
+  imageSize={shipment.card_key ? SHARE_SIZE : null}
 >
   <div class="wrap py-10 pb-32">
     <a href="/shipments" class="text-[13.5px] text-[var(--color-navy)] underline underline-offset-2">
@@ -154,7 +190,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
 
     {/* Find one book among three hundred. */}
     <div class="mt-4 flex flex-wrap items-center gap-2.5">
-      <form method="get" action={`/shipments/${id}`} class="flex items-center gap-2 flex-1 min-w-[16rem]">
+      <form method="get" action={base} class="flex items-center gap-2 flex-1 min-w-[16rem]">
         {filter !== (takingReservations ? 'available' : 'all') && <input type="hidden" name="show" value={filter} />}
         <input
           type="search"
@@ -210,7 +246,7 @@ const CHIPS: { key: PublicFilter; label: string; count: number }[] = open
             <div class="min-w-0 flex-1">
               <p dir="auto" class:list={['leading-[1.55]', isArabicScript(item.title) ? 'ar text-[18px] sm:text-[19px]' : 'text-[16px] sm:text-[17px]']}>{item.title}</p>
               <div class="mt-1.5 flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
-                <span class="font-[family-name:var(--font-display)] text-[16px] font-semibold">
+                <span class="font-[family-name:var(--font-display)] text-[16px] font-semibold" data-gbp={item.price_pence}>
                   {price(item.price_pence)}
                 </span>
                 {item.volumes && item.volumes > 1 && (

@@ -7,7 +7,11 @@ import { validIsbn, normaliseIsbn } from '../../../../lib/isbn-search';
 import {
   storeCover,
   deleteCover,
+  addPreorderPhoto,
+  deletePreorderPhoto,
+  preorderPhotos,
   publishPreorder,
+  settlePreorderSlug,
   syncPreorderPost,
   type PreorderStatus,
 } from '../../../../lib/preorders';
@@ -126,32 +130,27 @@ export const POST: APIRoute = async ({ request, url }) => {
   const query = new URLSearchParams({ saved: '1' });
 
   /*
-   * The cover, after the row exists so a new pre-order has an id to file it
-   * under. The old one is removed from the bucket only once the new one is
-   * written to the row - the other way round, a failed write would leave the
-   * pre-order pointing at a photo that has gone.
+   * A photo sent with the form, after the row exists so a new pre-order has an
+   * id to file it under. It joins the end of the photos - the first a
+   * pre-order gets is its cover - and the photos after that are added,
+   * removed and put in order from the grid on the edit page.
    */
-  const previous = await env.DB.prepare('SELECT image_key FROM preorders WHERE id = ?')
-    .bind(preorderId)
-    .first<{ image_key: string | null }>();
-  const cover = await storeCover(preorderId, form);
-  if (cover?.ok) {
-    await env.DB.prepare(
-      'UPDATE preorders SET image_key = ?, image_width = ?, image_height = ? WHERE id = ?',
-    )
-      .bind(cover.key, cover.width, cover.height, preorderId)
-      .run();
-    await deleteCover(previous?.image_key ?? null);
-  } else if (cover && !cover.ok) {
-    query.set('photo', cover.why);
-  } else if (form.get('remove_cover') === '1' && previous?.image_key) {
-    await env.DB.prepare(
-      'UPDATE preorders SET image_key = NULL, image_width = NULL, image_height = NULL WHERE id = ?',
-    )
-      .bind(preorderId)
-      .run();
-    await deleteCover(previous.image_key);
+  const photo = await storeCover(preorderId, form);
+  if (photo?.ok) {
+    if (!(await addPreorderPhoto(preorderId, photo))) {
+      await deleteCover(photo.key);
+      query.set('photo', 'full');
+    }
+  } else if (photo && !photo.ok) {
+    query.set('photo', photo.why);
+  } else if (form.get('remove_cover') === '1') {
+    const [cover] = await preorderPhotos(preorderId);
+    if (cover) await deletePreorderPhoto(preorderId, cover.id);
   }
+
+  // Its address: made on the first save, and kept in step with the title only
+  // while nobody outside the portal can see it.
+  await settlePreorderSlug(preorderId);
 
   if (form.get('post_telegram') === '1') {
     query.set('tg', await publishPreorder(preorderId, url.origin));

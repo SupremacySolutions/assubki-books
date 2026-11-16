@@ -20,6 +20,7 @@
  *   node scripts/resize-covers.mjs --dry      # process all, upload none
  *   node scripts/resize-covers.mjs --dry --public # faster catalogue audit
  *   node scripts/resize-covers.mjs            # process, upload, print SQL
+ *   node scripts/resize-covers.mjs --share-only # just the link-preview cards
  *
  * Safe to re-run: every output is derived from the original, and the original
  * is never written to.
@@ -50,6 +51,14 @@ const SAMPLE = process.argv.includes('--sample');
  */
 const ONLY = process.argv.find((a) => a.startsWith('--only='))?.slice('--only='.length) ?? null;
 const DRY = process.argv.includes('--dry') || SAMPLE;
+/**
+ * `--share-only` makes the link-preview card for every cover - books and
+ * pre-orders - and nothing else. It is how covers uploaded before the card
+ * existed get one: their other sizes are already right, and rewriting them
+ * would only risk that. No SQL is printed, because no pixels a page shows
+ * have moved.
+ */
+const SHARE_ONLY = process.argv.includes('--share-only');
 
 /**
  * Kept in step with src/lib/image-presets.ts by hand, because that file is
@@ -67,6 +76,8 @@ const PRESETS = {
   thumb: { width: 180, height: 252 },
   hero: { width: 170, height: 238 },
   social: { width: 600, height: 600 },
+  /** The link preview. A frame, not a crop - see `shareCard`. Covers only. */
+  share: { width: 1200, height: 630 },
 };
 
 /*
@@ -254,6 +265,7 @@ async function extendToBox(cover) {
  * spine, contents page or spread is fitted whole and never cropped.
  */
 async function resize(input, preset, primary, shape) {
+  if (preset === 'share') return shareCard(input);
   const { width, height } = PRESETS[preset];
   const fill = primary && preset !== 'social';
   return sharp(input)
@@ -273,12 +285,52 @@ async function resize(input, preset, primary, shape) {
     .toBuffer();
 }
 
+/**
+ * The link-preview card: the cover whole, 90% of the height, centred on the
+ * paper colour with the shelf's soft shadow. The same drawing as `dress()` in
+ * src/scripts/cover-review.ts, which makes it for new uploads; the cover inside
+ * is not cropped or padded, only placed.
+ */
+async function shareCard(input) {
+  const { width, height } = PRESETS.share;
+  const coverHeight = Math.round(height * 0.9);
+  const cover = await sharp(input)
+    .rotate()
+    .resize({ height: coverHeight, kernel: 'lanczos3' })
+    .toBuffer({ resolveWithObject: true });
+  const w = cover.info.width;
+  const h = cover.info.height;
+  const left = Math.round((width - w) / 2);
+  const top = Math.round((height - h) / 2);
+  const shadow = await sharp(Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+    `<rect x="${left}" y="${top + 10}" width="${w}" height="${h}" fill="rgba(16,24,40,0.22)"/></svg>`,
+  )).blur(14).png().toBuffer();
+  return sharp({ create: { width, height, channels: 3, background: '#f5f4f0' } })
+    .composite([
+      { input: shadow, left: 0, top: 0 },
+      { input: cover.data, left, top },
+    ])
+    .jpeg({ quality: 85, mozjpeg: true })
+    .toBuffer();
+}
+
 /** Every image the catalogue knows about, newest keys last. */
 async function loadImages() {
+  /*
+   * For the cards alone, only covers - and pre-orders' covers too, which this
+   * script otherwise never sees. Their ids are negated so they cannot be
+   * mistaken for a listing's photo in anything printed.
+   */
+  const sql = SHARE_ONLY
+    ? `SELECT bi.id, bi.image_key, bi.sort, b.slug FROM book_images bi JOIN books b ON b.id = bi.book_id WHERE bi.sort = 0
+       UNION ALL
+       SELECT -pi.id, pi.image_key, pi.sort, 'preorder-' || pi.preorder_id FROM preorder_images pi WHERE pi.sort = 0
+       ORDER BY 1`
+    : "SELECT bi.id, bi.image_key, bi.sort, b.slug FROM book_images bi JOIN books b ON b.id = bi.book_id ORDER BY bi.id";
   const { stdout } = await execFileAsync('npx', [
     'wrangler', 'd1', 'execute', 'assubki-books', '--remote', '--json',
-    '--command',
-    "SELECT bi.id, bi.image_key, bi.sort, b.slug FROM book_images bi JOIN books b ON b.id = bi.book_id ORDER BY bi.id",
+    '--command', sql,
   ], { maxBuffer: 32 * 1024 * 1024 });
   return JSON.parse(stdout)[0].results;
 }
@@ -323,15 +375,18 @@ async function pull(key, dest) {
   ], { maxBuffer: 32 * 1024 * 1024 });
 }
 
-async function push(key, file) {
+async function push(key, file, type = 'image/webp') {
   await execFileAsync('npx', [
     'wrangler', 'r2', 'object', 'put', `${BUCKET}/${key}`,
-    '--file', file, '--content-type', 'image/webp', '--remote',
+    '--file', file, '--content-type', type, '--remote',
   ], { maxBuffer: 32 * 1024 * 1024 });
 }
 
+/** The card is the one JPEG; every other size is WebP. As image-presets.ts. */
+const extFor = (preset) => (preset === 'share' ? 'jpg' : 'webp');
+
 /** "books/x/1.webp" → "books/x/1-card.webp". Matches the route's own maths. */
-const variantKey = (key, preset) => `${key.replace(/\.[a-z0-9]+$/i, '')}-${preset}.webp`;
+const variantKey = (key, preset) => `${key.replace(/\.[a-z0-9]+$/i, '')}-${preset}.${extFor(preset)}`;
 
 // ---------------------------------------------------------------------------
 
@@ -379,13 +434,16 @@ await Promise.all(
         const prepared = await prepareCover(src, primary);
         if (prepared.framed) framesRemoved++;
 
-        for (const preset of Object.keys(PRESETS)) {
-          const out = join(WORK, `${row.id}-${preset}.webp`);
+        const presets = SHARE_ONLY ? ['share'] : Object.keys(PRESETS);
+        for (const preset of presets) {
+          // A preview card is of a cover, never of a spine or a page inside.
+          if (preset === 'share' && !primary) continue;
+          const out = join(WORK, `${row.id}-${preset}.${extFor(preset)}`);
           writeFileSync(
             out,
             await resize(prepared.data, preset, primary, prepared),
           );
-          if (!DRY) await push(variantKey(original, preset), out);
+          if (!DRY) await push(variantKey(original, preset), out, preset === 'share' ? 'image/jpeg' : 'image/webp');
         }
 
         // These are the pixels the variants now contain. The page uses their
@@ -425,7 +483,7 @@ if (failures.length) {
   process.exitCode = 1;
 }
 
-if (!DRY && updates.length) {
+if (!DRY && !SHARE_ONLY && updates.length) {
   // Printed rather than run: pointing the catalogue back at the originals is
   // the one irreversible step, and it should be a deliberate one.
   const sql = updates

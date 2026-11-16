@@ -1,0 +1,180 @@
+---
+import Base from '../../layouts/Base.astro';
+import Rosette from '../../components/Rosette.astro';
+import PreorderForm from '../../components/PreorderForm.astro';
+import {
+  ensurePreorderSlugs,
+  openPreorders,
+  photosFor,
+  preorderPath,
+  INTEREST_WORDS,
+  type InterestResult,
+} from '../../lib/preorders';
+import { imageUrl, price } from '../../lib/format';
+import { IMAGE_PRESETS } from '../../lib/image-presets';
+
+/*
+ * Books the shop is thinking of buying.
+ *
+ * Every word on this page has to keep one promise: registering is not
+ * ordering. Nothing is set aside and nothing is owed, so nothing here may read
+ * as if a copy has been secured - the owner is counting hands, and a customer
+ * who thought they had reserved a book would be let down by an honest count.
+ *
+ * Each book is a card that says what it is and points to its own page, where
+ * the description is in full and the photos can be looked through. The cards
+ * used to carry six paragraphs each, and the second book was a screen away.
+ */
+let preorders = await openPreorders();
+/* Made before pre-orders had addresses. Filled once, then never again. */
+if (preorders.some((p) => !p.slug)) {
+  await ensurePreorderSlugs();
+  preorders = await openPreorders();
+}
+const photos = await photosFor(preorders.map((p) => p.id));
+
+/* The answer from the form, shown on the card it came from. */
+const result = Astro.url.searchParams.get('r') as InterestResult | null;
+const answeredId = Number(Astro.url.searchParams.get('p'));
+const answer = result && result in INTEREST_WORDS ? INTEREST_WORDS[result] : null;
+const good = result === 'added' || result === 'updated';
+---
+
+<Base
+  title="Pre-order"
+  description="Books we are thinking of bringing in. Tell us how many copies you would like and we will order accordingly."
+>
+  <div class="wrap py-10">
+    <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+      <div class="max-w-[44rem]">
+        <h1 class="text-[30px] sm:text-[34px] leading-tight">Pre-order</h1>
+        <p class="mt-3 text-[15.5px] text-[var(--color-ink-soft)] leading-relaxed">
+          These are books we are thinking of bringing in. Tell us how many copies you
+          would like and we will use the numbers to decide how many to order. Registering
+          is not an order: nothing is paid, nothing is reserved, and you are free to change
+          your mind. If we bring a book in, we will write to everyone who registered for it first.
+        </p>
+      </div>
+      {/* Filled in by preorder-memory.ts once this browser has registered. */}
+      <p
+        data-registering
+        hidden
+        class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-panel)] border border-[var(--color-rule-soft)] bg-white px-4 py-2.5 text-[13.5px] text-[var(--color-ink-soft)]"
+      >
+        <span>Registering as <strong data-registering-who class="font-semibold text-[var(--color-ink)]"></strong></span>
+        <button type="button" data-not-me class="text-[var(--color-navy)] underline underline-offset-2 min-h-[32px]">Not you?</button>
+      </p>
+    </div>
+
+    {answer && !preorders.some((p) => p.id === answeredId) && (
+      <p role="status" class="mt-6 text-[14.5px] text-[var(--color-ink-soft)]">{answer}</p>
+    )}
+
+    {preorders.length === 0 && (
+      <p class="mt-8 text-[15.5px] text-[var(--color-ink-soft)]">
+        Nothing open for pre-order just now. Have a look at
+        {' '}<a href="/shipments" class="underline">upcoming shipments</a>
+        {' '}or <a href="/catalogue" class="underline">the catalogue</a>.
+      </p>
+    )}
+
+    <ul class="mt-8 grid gap-5">
+      {preorders.map((p) => {
+        const img = imageUrl(p.image_key, 'card');
+        const native = p.title_ar || p.title_ur;
+        const mine = p.id === answeredId;
+        const page = preorderPath(p);
+        const all = photos.get(p.id) ?? [];
+        // The cover is the big one; the next three sit under it, and a count
+        // stands in for the rest.
+        const more = all.slice(1, 4);
+        const beyond = all.length - 1 - more.length;
+        return (
+          <li id={`p${p.id}`} class="scroll-mt-28">
+            <article class="bg-white border border-[var(--color-rule)] rounded-[var(--radius-panel)] p-5 sm:p-6 grid gap-5 sm:gap-7 sm:grid-cols-[11rem_1fr]">
+              <div class="w-[8.5rem] sm:w-full grid gap-2 content-start">
+                <a
+                  href={page}
+                  class="relative block overflow-hidden bg-white rounded-[var(--radius-card)] shadow-[var(--shadow-cover),inset_3px_0_0_rgba(14,42,85,0.14)] aspect-[5/7]"
+                  aria-label={`${p.title} - see all photos`}
+                >
+                  {img ? (
+                    <img
+                      src={img}
+                      alt={p.title}
+                      width={IMAGE_PRESETS.card.width}
+                      height={IMAGE_PRESETS.card.height}
+                      loading="lazy"
+                      decoding="async"
+                      class="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div class="h-full grid place-items-center text-[var(--color-wash)]">
+                      <Rosette size={48} />
+                    </div>
+                  )}
+                </a>
+                {more.length > 0 && (
+                  <div class="grid grid-cols-4 gap-1.5" aria-hidden="true">
+                    {more.map((photo) => (
+                      <a href={page} tabindex="-1" class="aspect-square overflow-hidden rounded-[3px] border border-[var(--color-rule-soft)] bg-white">
+                        <img src={imageUrl(photo.image_key, 'thumb')} alt="" loading="lazy" class="h-full w-full object-cover" />
+                      </a>
+                    ))}
+                    {beyond > 0 && (
+                      <a href={page} tabindex="-1" class="aspect-square rounded-[3px] bg-[var(--color-navy-deep)] text-white text-[13px] font-semibold grid place-items-center">
+                        +{beyond}
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div class="min-w-0">
+                <h2 class="text-[22px] leading-snug">
+                  <a href={page} class="hover:text-[var(--color-navy)]">{p.title}</a>
+                </h2>
+                {native && (
+                  <p class="ar mt-1 text-[18px] text-[var(--color-ink-soft)]" dir="rtl" lang={p.title_ar ? 'ar' : 'ur'}>
+                    {native}
+                  </p>
+                )}
+                <p class="mt-1 text-[14px] text-[var(--color-ink-soft)]">
+                  {[p.author, p.publisher, p.volumes && p.volumes > 1 ? `${p.volumes} volume set` : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <p class="mt-2.5 flex flex-wrap items-baseline gap-x-2.5">
+                  {p.price_pence !== null ? (
+                    <>
+                      <span class="font-[family-name:var(--font-display)] text-[21px] font-semibold tabular-nums" data-gbp={p.price_pence}>{price(p.price_pence)}</span>
+                      <span class="text-[14px] text-[var(--color-ink-soft)]">expected price</span>
+                    </>
+                  ) : (
+                    <span class="text-[15px] font-medium">Price to be confirmed</span>
+                  )}
+                </p>
+
+                {p.description_html && (
+                  <div
+                    class="prose-book mt-3 !text-[14.5px] leading-relaxed line-clamp-3 [&_p]:inline [&_p]:after:content-['_']"
+                    set:html={p.description_html}
+                  />
+                )}
+                <a href={page} class="mt-2 inline-block text-[14px] font-medium text-[var(--color-navy)] underline underline-offset-2">
+                  {all.length > 1 ? `Read more and see all ${all.length} photos →` : 'Read more →'}
+                </a>
+
+                <PreorderForm id={p.id} answer={mine ? answer : null} good={good} />
+              </div>
+            </article>
+          </li>
+        );
+      })}
+    </ul>
+  </div>
+
+  <script>
+    import '../../scripts/preorder-memory.ts';
+  </script>
+</Base>

@@ -3,6 +3,7 @@ import Rosette from './Rosette.astro';
 import { SITE } from '../lib/format';
 import { contactHandle } from '../lib/telegram';
 import MessageUs from './MessageUs.astro';
+import { CURRENCY_NAMES, GUIDE_CURRENCIES } from '../lib/currency';
 
 // Whoever the owner set in the portal, not the channel: the footer is where
 // someone with a question looks, and a channel cannot be replied to. The read
@@ -54,8 +55,33 @@ const year = new Date().getFullYear();
       </div>
     </div>
 
+    {/*
+      * Prices are in pounds, and say so. The guide in another currency beside
+      * them is chosen from where the visitor seems to be (src/scripts/currency.ts)
+      * and can be changed or switched off here.
+      */}
+    <div class="mt-10 pt-6 border-t border-white/10 flex flex-wrap items-center gap-x-5 gap-y-3 text-[13.5px] text-[var(--color-wash)]/75">
+      <p>Prices are charged in pounds sterling (£).</p>
+      <div class="flex items-center gap-2.5">
+        <label for="currencyGuide">Show a guide in</label>
+        <select
+          id="currencyGuide"
+          class="min-h-[40px] rounded-[var(--radius-field)] border border-white/20 bg-[var(--color-navy)] px-3 text-[13.5px] text-white"
+        >
+          <option value="GBP">Pounds only</option>
+          {GUIDE_CURRENCIES.map((code) => (
+            <option value={code}>{CURRENCY_NAMES[code]} ({code})</option>
+          ))}
+        </select>
+      </div>
+      <p class="text-[12px] text-[var(--color-wash)]/50">
+        A guide only, updated daily.{' '}
+        <a href="https://www.exchangerate-api.com" rel="noopener" class="underline hover:text-white">Rates by Exchange Rate API</a>
+      </p>
+    </div>
+
     <div
-      class="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between text-[13px] text-[var(--color-wash)]/60"
+      class="mt-6 pt-6 border-t border-white/10 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between text-[13px] text-[var(--color-wash)]/60"
     >
       <p>© {year} As-Subkī Books</p>
       {/* Where a customer expects to find them, and where the law expects them

@@ -1,6 +1,8 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { readForm } from '../../../../../lib/request-body';
+import { freeShipmentSlug } from '../../../../../lib/shipments';
+import { slugify } from '../../../../../lib/slug';
 
 export const prerender = false;
 
@@ -38,6 +40,15 @@ export const POST: APIRoute = async ({ params, request }) => {
   if (!title) return back('?e=' + encodeURIComponent('a shipment needs a name'));
 
   /*
+   * The address, only while it is a draft. Once a shipment opens its link is
+   * out in the world, and the page no longer offers the field; a form posted
+   * from an old tab is ignored rather than allowed to break those links. The
+   * status is read inside the UPDATE for the same reason.
+   */
+  const wanted = slugify(String(form.get('slug') ?? ''));
+  const slug = wanted ? await freeShipmentSlug(id, wanted) : null;
+
+  /*
    * A month with no vague part, or the other way round, reads badly - "in
    * 2026-09" or a stray "mid-". They travel together or not at all.
    */
@@ -57,9 +68,10 @@ export const POST: APIRoute = async ({ params, request }) => {
       `UPDATE shipments
           SET title = ?, note = ?,
               incoming_vague = ?, incoming_month = ?,
+              slug = CASE WHEN status = 'draft' AND ? IS NOT NULL THEN ? ELSE slug END,
               updated_at = unixepoch()
         WHERE id = ?`,
-    ).bind(title, note, month ? vague : null, month, id),
+    ).bind(title, note, month ? vague : null, month, slug, slug, id),
     env.DB.prepare(
       `UPDATE books
           SET incoming_vague = ?, incoming_month = ?, updated_at = unixepoch()
