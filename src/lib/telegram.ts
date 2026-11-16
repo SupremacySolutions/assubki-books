@@ -169,13 +169,30 @@ async function call<T = unknown>(
     return { message_id: 999_999 } as T;
   }
 
-  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  const data = (await res.json()) as { ok: boolean; result?: T; description?: string };
+  /*
+   * A failure to reach Telegram is answered like a refusal from it: null.
+   *
+   * Everything downstream is written to that contract - `sendMessage` returns
+   * false, and the caller falls back to email - but a dropped connection, or
+   * the HTML page Telegram serves when it is overloaded, used to throw out of
+   * here instead. The email fallback was skipped, and in the webhook the throw
+   * became a 500, so Telegram delivered the same update again: the customer's
+   * message went into the thread twice, or their screenshot to the owner twice.
+   */
+  let data: { ok: boolean; result?: T; description?: string };
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    data = (await res.json()) as typeof data;
+  } catch (err) {
+    const description = `Telegram could not be reached: ${err instanceof Error ? err.message : String(err)}`;
+    onError?.(description);
+    console.error(`[telegram] ${method} failed:`, description);
+    return null;
+  }
   if (!data.ok) {
     const description = data.description ?? 'Unknown Telegram error';
     onError?.(description);
@@ -587,15 +604,17 @@ export async function copyToOwner(
   fromChatId: string,
   messageId: number,
   caption: string,
-): Promise<boolean> {
-  const result = await call('copyMessage', {
+): Promise<number | null> {
+  const result = await call<{ message_id?: number }>('copyMessage', {
     chat_id: ownerChatId,
     from_chat_id: fromChatId,
     message_id: messageId,
     caption,
     parse_mode: 'MarkdownV2',
   });
-  return result !== null;
+  // The id of the copy, so the owner can answer the screenshot by replying to
+  // it. Not falsy-checked: a copy that went with no id still went.
+  return result === null ? null : (result.message_id ?? 0);
 }
 
 /**

@@ -138,6 +138,13 @@ export const onRequest = defineMiddleware(async (context, next) => {
      * shop precisely to avoid.
      */
     pathname.startsWith('/api/orders/') ||
+    /*
+     * The bot, for the same customers. Closing the shop used to close this
+     * too: Telegram got the closed sign, retried it for a day and then threw
+     * the updates away - every message and payment screenshot sent while the
+     * shop was being worked on, gone without anybody being told.
+     */
+    pathname.startsWith('/api/telegram/') ||
     pathname.startsWith('/img/') ||
     pathname.startsWith('/_astro/') ||
     pathname === '/favicon.svg' ||
