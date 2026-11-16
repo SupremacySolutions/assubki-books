@@ -14,6 +14,8 @@
  * simply goes on sharing its own card.
  */
 
+import { splitShipmentTitle } from '../lib/shipment-title';
+
 const W = 1200;
 const H = 630;
 const NAVY = '#184485';
@@ -29,21 +31,6 @@ interface CardFacts {
   /** "Arriving mid-November 2026", "Arrived 4 November 2026". */
   when: string;
   items: number;
-}
-
-/**
- * "Pakistan Shipment First Batch November 2026" → origin "Pakistan", detail
- * "First Batch". Without the word "shipment" the whole title is the origin.
- */
-export function splitTitle(title: string): { origin: string; detail: string } {
-  const match = title.match(/^(.*?)\bshipments?\b(.*)$/i);
-  if (!match || !match[1].trim()) return { origin: title.trim(), detail: '' };
-  const detail = match[2]
-    .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b(\s*\/\s*\w+)?/gi, '')
-    .replace(/\b20\d\d\b/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return { origin: match[1].trim(), detail };
 }
 
 /** The largest size up to `max` at which `text` fits `width`. */
@@ -77,7 +64,7 @@ export function drawCard(canvas: HTMLCanvasElement, facts: Omit<CardFacts, 'id' 
   canvas.height = H;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const { origin, detail } = splitTitle(facts.title);
+  const { origin, detail } = splitShipmentTitle(facts.title);
   const arrived = /^arrived/i.test(facts.when);
   const date = facts.when.replace(/^(arriving|arrived|expected)\s+/i, '');
 

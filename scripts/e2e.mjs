@@ -6650,6 +6650,7 @@ async function shipments() {
    */
   const shopFront = await html('/shipments');
   t.ok(shopFront.includes(shipmentTitle), 'an open shipment is listed on the shipments page');
+  t.ok(visibleText(shopFront).includes('From E2E'), 'under a line saying where it is from, read off its title');
   /*
    * Its address says what it is. "/shipments/3" told nobody anything; the
    * title, less the word "shipment", does - and the old numbered links in
@@ -8285,6 +8286,7 @@ async function preorders() {
     const page = await html('/preorders');
     t.ok(page.includes(title) && page.includes(`id="p${draft.id}"`), 'an open pre-order is on the public page');
     t.ok(page.includes('Price to be confirmed'), 'saying the price is not known yet');
+    t.ok(/New this week/.test(visibleText(page)), 'and marked new, having gone up in the last seven days');
     const forms = page.match(/<\/?form\b/gi) ?? [];
     let depth = 0;
     let deepest = 0;
