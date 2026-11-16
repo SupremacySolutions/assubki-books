@@ -2,6 +2,7 @@
 import Base from '../../layouts/Base.astro';
 import { publicShipments, shipmentPath } from '../../lib/shipments';
 import { whenText } from '../../lib/incoming';
+import { splitShipmentTitle } from '../../lib/shipment-title';
 
 /*
  * A list of shipments, not a list of books.
@@ -61,6 +62,9 @@ const when = (s: {
     <ul class="mt-8 grid gap-4">
       {shipments.map((s) => {
         const free = Math.max(0, s.copies - s.claimed);
+        // Where it is from, first: four cards that all began "… Shipment
+        // … 2026" read the same until you had read every word of each.
+        const { origin, detail } = splitShipmentTitle(s.title);
         return (
           <li>
             <a
@@ -69,7 +73,10 @@ const when = (s: {
             >
               <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <div class="min-w-0">
-                  <h2 class="text-[21px] leading-snug">{s.title}</h2>
+                  <p class="eyebrow !text-[var(--color-brass)]">
+                    From {origin}{detail && ` · ${detail}`}
+                  </p>
+                  <h2 class="mt-1 text-[21px] leading-snug">{s.title}</h2>
                   {when(s) && (
                     <p class="mt-0.5 text-[14px] text-[var(--color-ink-soft)]">
                       {s.status === 'open'
